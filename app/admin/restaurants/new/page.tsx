@@ -1,14 +1,12 @@
 'use client'
 
-import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
 import Link from 'next/link'
+import { createRestaurant } from './actions'
 
 export default function NewRestaurantPage() {
   const router = useRouter()
-  const supabase = createClient()
-
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [form, setForm] = useState({
@@ -25,59 +23,29 @@ export default function NewRestaurantPage() {
     setForm(prev => ({ ...prev, [e.target.name]: e.target.value }))
   }
 
-  function generateSlug(name: string) {
-    return name
-      .toLowerCase()
-      .trim()
-      .replace(/[^a-z0-9\s-]/g, '')
-      .replace(/\s+/g, '-')
-      + '-' + Math.random().toString(36).substring(2, 7)
-  }
-
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!form.name.trim()) {
       setError('Il nome del ristorante è obbligatorio')
       return
     }
-
     setLoading(true)
     setError('')
 
-    const { data: { user } } = await supabase.auth.getUser()
+    const result = await createRestaurant(form)
 
-    const { data, error: dbError } = await supabase
-      .from('restaurants')
-      .insert({
-        owner_id: user!.id,
-        name: form.name.trim(),
-        slug: generateSlug(form.name),
-        description: form.description.trim() || null,
-        instagram_url: form.instagram_url.trim() || null,
-        facebook_url: form.facebook_url.trim() || null,
-        website_url: form.website_url.trim() || null,
-        tripadvisor_url: form.tripadvisor_url.trim() || null,
-        google_maps_url: form.google_maps_url.trim() || null,
-      })
-      .select()
-      .single()
-
-    if (dbError) {
-      setError('Errore nel salvataggio: ' + dbError.message)
+    if (result.error) {
+      setError(result.error)
       setLoading(false)
     } else {
-      router.push(`/admin/restaurants/${data.id}`)
+      router.push(`/admin/restaurants/${result.id}`)
     }
   }
 
   return (
     <div>
-      {/* Header */}
       <div className="flex items-center gap-3 mb-8">
-        <Link
-          href="/admin/restaurants"
-          className="text-slate-400 hover:text-slate-600 transition-colors"
-        >
+        <Link href="/admin/restaurants" className="text-slate-400 hover:text-slate-600 transition-colors">
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
           </svg>
@@ -89,13 +57,10 @@ export default function NewRestaurantPage() {
       </div>
 
       <form onSubmit={handleSubmit} className="max-w-2xl space-y-6">
-
-        {/* Dati principali */}
         <div className="bg-white rounded-2xl border border-stone-200 p-6 space-y-4">
           <h2 className="text-sm font-semibold text-slate-700 uppercase tracking-wider">
             Informazioni principali
           </h2>
-
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">
               Nome ristorante <span className="text-red-400">*</span>
@@ -109,11 +74,8 @@ export default function NewRestaurantPage() {
               placeholder="Es. Trattoria da Mario"
             />
           </div>
-
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">
-              Descrizione
-            </label>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Descrizione</label>
             <textarea
               name="description"
               value={form.description}
@@ -125,12 +87,10 @@ export default function NewRestaurantPage() {
           </div>
         </div>
 
-        {/* Social links */}
         <div className="bg-white rounded-2xl border border-stone-200 p-6 space-y-4">
           <h2 className="text-sm font-semibold text-slate-700 uppercase tracking-wider">
             Link e social
           </h2>
-
           {[
             { name: 'instagram_url', label: 'Instagram', placeholder: 'https://instagram.com/...' },
             { name: 'facebook_url', label: 'Facebook', placeholder: 'https://facebook.com/...' },
@@ -139,9 +99,7 @@ export default function NewRestaurantPage() {
             { name: 'google_maps_url', label: 'Google Maps', placeholder: 'https://maps.google.com/...' },
           ].map(field => (
             <div key={field.name}>
-              <label className="block text-sm font-medium text-slate-700 mb-1">
-                {field.label}
-              </label>
+              <label className="block text-sm font-medium text-slate-700 mb-1">{field.label}</label>
               <input
                 type="url"
                 name={field.name}
@@ -154,14 +112,12 @@ export default function NewRestaurantPage() {
           ))}
         </div>
 
-        {/* Errore */}
         {error && (
           <div className="bg-red-50 border border-red-200 text-red-600 text-sm rounded-xl px-4 py-3">
             {error}
           </div>
         )}
 
-        {/* Bottoni */}
         <div className="flex gap-3">
           <button
             type="submit"
@@ -177,7 +133,6 @@ export default function NewRestaurantPage() {
             Annulla
           </Link>
         </div>
-
       </form>
     </div>
   )
