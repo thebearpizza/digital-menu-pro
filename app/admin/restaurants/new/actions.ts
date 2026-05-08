@@ -1,6 +1,7 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
+import { cookies } from 'next/headers'
 
 function generateSlug(name: string) {
   return name
@@ -21,9 +22,12 @@ export async function createRestaurant(form: {
   google_maps_url: string
 }) {
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  
+  const { data: { user }, error: authError } = await supabase.auth.getUser()
 
-  if (!user) return { error: 'Non sei autenticato' }
+  if (authError || !user) {
+    return { error: 'Sessione scaduta. Rieffettua il login.' }
+  }
 
   const { data, error } = await supabase
     .from('restaurants')
