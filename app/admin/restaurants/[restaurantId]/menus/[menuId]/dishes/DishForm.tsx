@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { MediaUpload } from '@/components/MediaUpload'
 
 const ALLERGENS_LIST = [
   'Glutine', 'Crostacei', 'Uova', 'Pesce', 'Arachidi',
@@ -92,35 +93,26 @@ export function DishForm({ initial, loading, error, saved, onSubmit, onDelete, s
         </div>
       </div>
 
-      <div className="bg-white rounded-2xl border border-stone-200 p-6 space-y-4">
-        <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Immagine</h2>
-        <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1">URL immagine</label>
-          <input type="url" name="image_url" value={form.image_url} onChange={handleChange}
-            className="w-full border border-stone-200 rounded-xl px-4 py-2.5 text-sm text-slate-800 bg-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900"
-            placeholder="https://..." />
-        </div>
-        {form.image_url && (
-          <div className="w-32 h-32 rounded-xl overflow-hidden border border-stone-200 bg-stone-50">
-            <img src={form.image_url} alt="Anteprima" className="w-full h-full object-cover" />
-          </div>
-        )}
+      <div className="bg-white rounded-2xl border border-stone-200 p-6">
+        <MediaUpload
+          value={form.image_url}
+          onChange={(url) => setForm(prev => ({ ...prev, image_url: url }))}
+          accept="image/*,video/*"
+          label="Immagine piatto"
+          preview="image"
+        />
       </div>
 
       <div className="bg-white rounded-2xl border border-stone-200 p-6 space-y-3">
         <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Allergeni</h2>
         <div className="flex flex-wrap gap-2">
           {ALLERGENS_LIST.map(a => (
-            <button
-              key={a}
-              type="button"
-              onClick={() => toggleAllergen(a)}
+            <button key={a} type="button" onClick={() => toggleAllergen(a)}
               className={`text-xs px-3 py-1.5 rounded-full border transition-colors ${
                 form.allergens.includes(a)
                   ? 'bg-slate-900 text-white border-slate-900'
                   : 'bg-white text-slate-600 border-stone-200 hover:border-slate-400'
-              }`}
-            >
+              }`}>
               {a}
             </button>
           ))}
@@ -130,12 +122,8 @@ export function DishForm({ initial, loading, error, saved, onSubmit, onDelete, s
         )}
       </div>
 
-      {error && (
-        <div className="bg-red-50 border border-red-200 text-red-600 text-sm rounded-xl px-4 py-3">{error}</div>
-      )}
-      {saved && (
-        <div className="bg-emerald-50 border border-emerald-200 text-emerald-700 text-sm rounded-xl px-4 py-3">Modifiche salvate.</div>
-      )}
+      {error && <div className="bg-red-50 border border-red-200 text-red-600 text-sm rounded-xl px-4 py-3">{error}</div>}
+      {saved && <div className="bg-emerald-50 border border-emerald-200 text-emerald-700 text-sm rounded-xl px-4 py-3">Modifiche salvate.</div>}
 
       <div className="flex items-center justify-between">
         <button type="submit" disabled={loading}
@@ -153,7 +141,6 @@ export function DishForm({ initial, loading, error, saved, onSubmit, onDelete, s
           </button>
         )}
       </div>
-
     </form>
   )
 }
