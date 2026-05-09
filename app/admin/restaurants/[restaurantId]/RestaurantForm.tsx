@@ -131,7 +131,7 @@ export function RestaurantForm({ restaurant }: { restaurant: any }) {
           <button
             type="button"
             onClick={() => setShowDeleteModal(true)}
-            className="text-sm text-slate-400 hover:text-red-600 transition-colors"
+            className="text-sm text-red-500 hover:text-red-700 transition-colors"
           >
             Elimina ristorante
           </button>
