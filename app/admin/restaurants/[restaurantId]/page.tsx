@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect, notFound } from 'next/navigation'
 import Link from 'next/link'
+import { QRCodeCard } from './components/QRCodeCard'
 import { RestaurantForm } from './RestaurantForm'
 
 export default async function RestaurantDetailPage({
@@ -115,23 +116,12 @@ export default async function RestaurantDetailPage({
           </div>
 
           <div className="bg-white rounded-2xl border border-stone-200 p-6">
-            <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">QR Code</h2>
-            <p className="text-xs text-slate-400 mb-3">Link pubblico del ristorante</p>
-            <div className="bg-stone-50 rounded-xl px-3 py-2 text-xs text-slate-600 font-mono break-all border border-stone-200">
-              /m/{restaurant.qr_public_token}
-            </div>
+            <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-4">QR Code</h2>
             {restaurant.qr_public_token && (
-              <a
-                href={`/m/${restaurant.qr_public_token}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="mt-3 inline-flex items-center gap-1.5 text-xs text-emerald-600 hover:text-emerald-700 transition-colors font-medium"
-              >
-                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                </svg>
-                Apri menu pubblico
-              </a>
+              <QRCodeCard
+                token={restaurant.qr_public_token}
+                restaurantName={restaurant.name}
+              />
             )}
           </div>
         </div>
