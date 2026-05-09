@@ -1,9 +1,10 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useRouter, useParams } from 'next/navigation'
+import { useRouter, useParams, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { getMenu, updateMenu, deleteMenu } from './actions'
+import { getDishes, deleteDish } from './dishes/actions'
 
 type Menu = {
   id: string
@@ -14,13 +15,24 @@ type Menu = {
   is_active: boolean
 }
 
+type Dish = {
+  id: string
+  name: string
+  price: number | null
+  image_url: string | null
+  is_available: boolean
+  allergens: string[]
+}
+
 export default function MenuDetailPage() {
   const router = useRouter()
   const params = useParams()
+  const searchParams = useSearchParams()
   const restaurantId = params.restaurantId as string
   const menuId = params.menuId as string
 
   const [menu, setMenu] = useState<Menu | null>(null)
+  const [dishes, setDishes] = useState<Dish[]>([])
   const [loading, setLoading] = useState(false)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState('')
@@ -31,6 +43,9 @@ export default function MenuDetailPage() {
     banner_url: '',
     is_active: true,
   })
+
+  const createdDish = searchParams.get('created_dish')
+  const deletedDish = searchParams.get('deleted_dish')
 
   useEffect(() => {
     getMenu(menuId, restaurantId).then((data) => {
@@ -44,11 +59,10 @@ export default function MenuDetailPage() {
         is_active: data.is_active,
       })
     })
+    getDishes(menuId).then(setDishes)
   }, [menuId, restaurantId])
 
-  function handleChange(
-    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
-  ) {
+  function handleChange(e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) {
     const target = e.target as HTMLInputElement
     const value = target.type === 'checkbox' ? target.checked : target.value
     setForm(prev => ({ ...prev, [target.name]: value }))
@@ -62,22 +76,15 @@ export default function MenuDetailPage() {
     setError('')
     const result = await updateMenu(menuId, restaurantId, form)
     setLoading(false)
-    if (result.error) {
-      setError(result.error)
-    } else {
-      setMenu(prev => prev ? { ...prev, name: form.name } : prev)
-      setSaved(true)
-    }
+    if (result.error) { setError(result.error) }
+    else { setMenu(prev => prev ? { ...prev, name: form.name } : prev); setSaved(true) }
   }
 
   async function handleDelete() {
     if (!confirm('Eliminare questo menu? Verranno eliminati anche tutti i piatti.')) return
     const result = await deleteMenu(menuId, restaurantId)
-    if (result.error) {
-      setError(result.error)
-    } else {
-      router.push(`/admin/restaurants/${restaurantId}?deleted_menu=true`)
-    }
+    if (result.error) { setError(result.error) }
+    else { router.push(`/admin/restaurants/${restaurantId}?deleted_menu=true`) }
   }
 
   if (!menu) return (
@@ -88,6 +95,17 @@ export default function MenuDetailPage() {
 
   return (
     <div>
+      {createdDish && (
+        <div className="bg-emerald-50 border border-emerald-200 text-emerald-700 text-sm rounded-2xl px-4 py-3 mb-6">
+          Piatto aggiunto con successo.
+        </div>
+      )}
+      {deletedDish && (
+        <div className="bg-red-50 border border-red-200 text-red-600 text-sm rounded-2xl px-4 py-3 mb-6">
+          Piatto eliminato con successo.
+        </div>
+      )}
+
       <div className="flex items-center gap-3 mb-8">
         <Link href={`/admin/restaurants/${restaurantId}`} className="text-slate-400 hover:text-slate-600 transition-colors">
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -98,7 +116,7 @@ export default function MenuDetailPage() {
           <h1 className="text-2xl font-semibold text-slate-800">{menu.name}</h1>
           <p className="text-slate-500 text-sm">Dettaglio menu</p>
         </div>
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ml-auto">
           <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${form.is_active ? 'bg-emerald-50 text-emerald-600' : 'bg-stone-100 text-slate-500'}`}>
             {form.is_active ? 'Attivo' : 'Inattivo'}
           </span>
@@ -107,34 +125,26 @@ export default function MenuDetailPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
-        <div className="lg:col-span-2 space-y-6">
+        {/* Impostazioni menu */}
+        <div className="lg:col-span-1 space-y-6">
           <form onSubmit={handleSubmit} className="space-y-6">
-
             <div className="bg-white rounded-2xl border border-stone-200 p-6 space-y-4">
-              <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Informazioni menu</h2>
-
+              <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Impostazioni menu</h2>
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Nome menu <span className="text-red-400">*</span></label>
                 <input type="text" name="name" value={form.name} onChange={handleChange}
-                  className="w-full border border-stone-200 rounded-xl px-4 py-2.5 text-sm text-slate-800 bg-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900" />
+                  className="w-full border border-stone-200 rounded-xl px-4 py-2.5 text-sm text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-slate-900" />
               </div>
-
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Descrizione</label>
-                <textarea name="description" value={form.description} onChange={handleChange} rows={3}
-                  className="w-full border border-stone-200 rounded-xl px-4 py-2.5 text-sm text-slate-800 bg-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900 resize-none" />
+                <textarea name="description" value={form.description} onChange={handleChange} rows={2}
+                  className="w-full border border-stone-200 rounded-xl px-4 py-2.5 text-sm text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-slate-900 resize-none" />
               </div>
-
-              <div className="flex items-center gap-3 pt-1">
+              <div className="flex items-center gap-3">
                 <input type="checkbox" name="is_active" id="is_active" checked={form.is_active} onChange={handleChange}
                   className="w-4 h-4 rounded border-stone-300 accent-slate-900" />
-                <label htmlFor="is_active" className="text-sm text-slate-700">Menu attivo (visibile ai clienti)</label>
+                <label htmlFor="is_active" className="text-sm text-slate-700">Menu attivo</label>
               </div>
-            </div>
-
-            <div className="bg-white rounded-2xl border border-stone-200 p-6 space-y-4">
-              <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Banner di copertina</h2>
-
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Tipo banner</label>
                 <select name="banner_type" value={form.banner_type} onChange={handleChange}
@@ -143,14 +153,12 @@ export default function MenuDetailPage() {
                   <option value="video">Video</option>
                 </select>
               </div>
-
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">URL {form.banner_type === 'video' ? 'video' : 'immagine'}</label>
+                <label className="block text-sm font-medium text-slate-700 mb-1">URL banner</label>
                 <input type="url" name="banner_url" value={form.banner_url} onChange={handleChange}
                   className="w-full border border-stone-200 rounded-xl px-4 py-2.5 text-sm text-slate-800 bg-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900"
                   placeholder="https://..." />
               </div>
-
               {form.banner_url && (
                 <div className="rounded-xl overflow-hidden border border-stone-200 aspect-video bg-stone-50">
                   {form.banner_type === 'video'
@@ -161,20 +169,14 @@ export default function MenuDetailPage() {
               )}
             </div>
 
-            {error && (
-              <div className="bg-red-50 border border-red-200 text-red-600 text-sm rounded-xl px-4 py-3">{error}</div>
-            )}
-
-            {saved && (
-              <div className="bg-emerald-50 border border-emerald-200 text-emerald-700 text-sm rounded-xl px-4 py-3">Modifiche salvate.</div>
-            )}
+            {error && <div className="bg-red-50 border border-red-200 text-red-600 text-sm rounded-xl px-4 py-3">{error}</div>}
+            {saved && <div className="bg-emerald-50 border border-emerald-200 text-emerald-700 text-sm rounded-xl px-4 py-3">Modifiche salvate.</div>}
 
             <div className="flex items-center justify-between">
               <button type="submit" disabled={loading}
                 className="bg-slate-900 text-white px-6 py-2.5 rounded-xl text-sm font-medium hover:bg-slate-800 transition-colors disabled:opacity-50">
                 {loading ? 'Salvataggio...' : 'Salva modifiche'}
               </button>
-
               <button type="button" onClick={handleDelete}
                 className="flex items-center gap-2 text-sm text-red-500 hover:text-red-700 transition-colors">
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -184,22 +186,78 @@ export default function MenuDetailPage() {
                 Elimina menu
               </button>
             </div>
-
           </form>
         </div>
 
-        <div className="space-y-4">
+        {/* Lista piatti */}
+        <div className="lg:col-span-2">
           <div className="bg-white rounded-2xl border border-stone-200 p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Piatti</h2>
-              <button disabled className="text-xs bg-slate-900 text-white px-3 py-1.5 rounded-lg opacity-40 cursor-not-allowed">
-                + Aggiungi
-              </button>
+            <div className="flex items-center justify-between mb-6">
+              <div>
+                <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Piatti</h2>
+                <p className="text-xs text-slate-400 mt-0.5">{dishes.length} {dishes.length === 1 ? 'piatto' : 'piatti'}</p>
+              </div>
+              <Link
+                href={`/admin/restaurants/${restaurantId}/menus/${menuId}/dishes/new`}
+                className="text-xs bg-slate-900 text-white px-3 py-1.5 rounded-lg hover:bg-slate-800 transition-colors"
+              >
+                + Aggiungi piatto
+              </Link>
             </div>
-            <div className="text-center py-8">
-              <p className="text-slate-400 text-sm">Prossimo step:</p>
-              <p className="text-slate-500 text-xs mt-1">gestione piatti e categorie</p>
-            </div>
+
+            {dishes.length === 0 ? (
+              <div className="text-center py-12">
+                <p className="text-slate-400 text-sm mb-3">Nessun piatto ancora</p>
+                <Link
+                  href={`/admin/restaurants/${restaurantId}/menus/${menuId}/dishes/new`}
+                  className="text-xs text-slate-500 underline underline-offset-2"
+                >
+                  Aggiungi il primo piatto
+                </Link>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {dishes.map((dish) => (
+                  <Link
+                    key={dish.id}
+                    href={`/admin/restaurants/${restaurantId}/menus/${menuId}/dishes/${dish.id}`}
+                    className="flex items-center gap-4 p-3 rounded-xl hover:bg-stone-50 transition-colors group"
+                  >
+                    <div className="w-12 h-12 rounded-lg overflow-hidden bg-stone-100 flex-shrink-0">
+                      {dish.image_url
+                        ? <img src={dish.image_url} alt={dish.name} className="w-full h-full object-cover" />
+                        : (
+                          <div className="w-full h-full flex items-center justify-center">
+                            <svg className="w-5 h-5 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                            </svg>
+                          </div>
+                        )
+                      }
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium text-slate-800 truncate">{dish.name}</span>
+                        {!dish.is_available && (
+                          <span className="text-xs px-2 py-0.5 rounded-full bg-stone-100 text-slate-400">Non disponibile</span>
+                        )}
+                      </div>
+                      {dish.allergens?.length > 0 && (
+                        <p className="text-xs text-slate-400 mt-0.5 truncate">{dish.allergens.join(', ')}</p>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-3 flex-shrink-0">
+                      {dish.price != null && (
+                        <span className="text-sm font-medium text-slate-700">€{Number(dish.price).toFixed(2)}</span>
+                      )}
+                      <svg className="w-4 h-4 text-slate-300 group-hover:text-slate-400 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                      </svg>
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            )}
           </div>
         </div>
 
