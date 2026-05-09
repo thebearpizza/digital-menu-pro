@@ -38,7 +38,8 @@ export default function NewRestaurantPage() {
       setError(result.error)
       setLoading(false)
     } else {
-      router.push(`/admin/restaurants/${result.id}`)
+      // Torna alla lista ristoranti con messaggio di successo
+      router.push('/admin/restaurants?created=true')
     }
   }
 
