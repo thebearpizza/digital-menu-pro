@@ -29,7 +29,7 @@ export default async function RestaurantsPage({
 
       {deletedName && (
         <div className="bg-stone-100 border border-stone-200 text-slate-600 text-sm rounded-2xl px-4 py-3 mb-6">
-          Il ristorante <span className="font-medium text-slate-700">"{deletedName}"</span> è stato eliminato.
+          Il ristorante <span className="font-medium text-slate-700">&ldquo;{deletedName}&rdquo;</span> è stato eliminato.
         </div>
       )}
 

@@ -149,7 +149,7 @@ export function RestaurantForm({ restaurant }: { restaurant: any }) {
             <div className="space-y-1">
               <h3 className="text-base font-semibold text-slate-800">Elimina ristorante</h3>
               <p className="text-sm text-slate-500">
-                Stai per eliminare <span className="font-medium text-slate-700">"{restaurant.name}"</span>.
+                Stai per eliminare <span className="font-medium text-slate-700">&ldquo;{restaurant.name}&rdquo;</span>.
                 Tutti i menu e i piatti collegati verranno rimossi definitivamente.
                 Questa operazione non può essere annullata.
               </p>
