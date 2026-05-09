@@ -46,7 +46,11 @@ function DishPage({ dish }: { dish: Dish }) {
           )}
           <h3 className="text-xl font-bold text-stone-800 leading-tight">{dish.name}</h3>
           {dish.description && (
-            <p className="text-stone-500 text-sm mt-2 leading-relaxed line-clamp-3">{dish.description}</p>
+            <p className="text-stone-500 text-sm mt-2 leading-relaxed line-clamp-4 overflow-hidden">
+              {dish.description.length > 180
+                ? dish.description.slice(0, 180) + '...'
+                : dish.description}
+            </p>
           )}
         </div>
 

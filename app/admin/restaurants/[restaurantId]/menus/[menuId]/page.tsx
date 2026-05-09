@@ -19,6 +19,7 @@ type Menu = {
 type Dish = {
   id: string
   name: string
+  description: string | null
   price: number | null
   image_url: string | null
   is_available: boolean

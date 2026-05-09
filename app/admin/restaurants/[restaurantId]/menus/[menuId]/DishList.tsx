@@ -23,6 +23,7 @@ import { reorderDishes } from './dishes/actions'
 type Dish = {
   id: string
   name: string
+  description: string | null
   price: number | null
   image_url: string | null
   is_available: boolean
@@ -93,6 +94,11 @@ function SortableDish({ dish, restaurantId, menuId }: { dish: Dish; restaurantId
               </span>
             )}
           </div>
+          {dish.description && (
+            <p className="text-xs text-slate-400 mt-0.5 truncate max-w-xs">
+              {dish.description}
+            </p>
+          )}
           {dish.allergens?.length > 0 && (
             <div className="flex items-center gap-1 mt-0.5 overflow-hidden">
               {dish.allergens.slice(0, 2).map(a => (
