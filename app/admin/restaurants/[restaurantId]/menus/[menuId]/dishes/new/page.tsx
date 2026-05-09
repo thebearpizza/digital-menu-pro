@@ -1,9 +1,9 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import Link from 'next/link'
-import { createDish } from '../actions'
+import { createDish, getDishes } from '../actions'
 import { DishForm, DishFormData } from '../DishForm'
 
 export default function NewDishPage() {
@@ -14,6 +14,14 @@ export default function NewDishPage() {
 
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [existingCategories, setExistingCategories] = useState<string[]>([])
+
+  useEffect(() => {
+    getDishes(menuId).then(dishes => {
+      const cats = [...new Set(dishes.map(d => d.category).filter(Boolean))] as string[]
+      setExistingCategories(cats)
+    })
+  }, [menuId])
 
   async function handleSubmit(form: DishFormData) {
     if (!form.name.trim()) { setError('Il nome è obbligatorio'); return }
@@ -39,11 +47,11 @@ export default function NewDishPage() {
           <p className="text-slate-500 text-sm mt-0.5">Aggiungi un piatto al menu</p>
         </div>
       </div>
-
       <div className="max-w-2xl">
         <DishForm
           loading={loading}
           error={error}
+          existingCategories={existingCategories}
           onSubmit={handleSubmit}
           submitLabel="Crea piatto"
         />

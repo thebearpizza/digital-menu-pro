@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { MediaUpload } from '@/components/MediaUpload'
 
 const ALLERGENS_LIST = [
@@ -21,6 +21,7 @@ export type DishFormData = {
 
 type Props = {
   initial?: Partial<DishFormData>
+  existingCategories?: string[]
   loading: boolean
   error: string
   saved?: boolean
@@ -29,7 +30,7 @@ type Props = {
   submitLabel?: string
 }
 
-export function DishForm({ initial, loading, error, saved, onSubmit, onDelete, submitLabel = 'Salva' }: Props) {
+export function DishForm({ initial, existingCategories = [], loading, error, saved, onSubmit, onDelete, submitLabel = 'Salva' }: Props) {
   const [form, setForm] = useState<DishFormData>({
     name: initial?.name ?? '',
     description: initial?.description ?? '',
@@ -39,6 +40,24 @@ export function DishForm({ initial, loading, error, saved, onSubmit, onDelete, s
     is_available: initial?.is_available ?? true,
     category: initial?.category ?? '',
   })
+
+  const [showSuggestions, setShowSuggestions] = useState(false)
+  const categoryRef = useRef<HTMLDivElement>(null)
+
+  const suggestions = existingCategories.filter(c =>
+    c.toLowerCase().includes(form.category.toLowerCase()) && c !== form.category
+  )
+
+  // Chiudi dropdown cliccando fuori
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (categoryRef.current && !categoryRef.current.contains(e.target as Node)) {
+        setShowSuggestions(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [])
 
   function handleChange(e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) {
     const target = e.target as HTMLInputElement
@@ -73,12 +92,48 @@ export function DishForm({ initial, loading, error, saved, onSubmit, onDelete, s
             placeholder="Es. Margherita, Tiramisù..." />
         </div>
 
-        <div>
+        {/* Categoria con autocomplete */}
+        <div ref={categoryRef} className="relative">
           <label className="block text-sm font-medium text-slate-700 mb-1">Categoria</label>
-          <input type="text" name="category" value={form.category} onChange={handleChange}
+          <input
+            type="text"
+            name="category"
+            value={form.category}
+            onChange={handleChange}
+            onFocus={() => setShowSuggestions(true)}
+            autoComplete="off"
             className="w-full border border-stone-200 rounded-xl px-4 py-2.5 text-sm text-slate-800 bg-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900"
-            placeholder="Es. Antipasti, Primi, Pizze, Dessert..." />
+            placeholder="Es. Antipasti, Primi, Pizze, Dessert..."
+          />
           <p className="text-xs text-slate-400 mt-1">I piatti con la stessa categoria vengono raggruppati nel menu</p>
+
+          {/* Dropdown suggerimenti */}
+          {showSuggestions && existingCategories.length > 0 && (
+            <div className="absolute z-10 top-full mt-1 w-full bg-white border border-stone-200 rounded-xl shadow-lg overflow-hidden">
+              {/* Mostra tutte le categorie se campo vuoto, altrimenti filtra */}
+              {(form.category === ''
+                ? existingCategories
+                : suggestions
+              ).map(cat => (
+                <button
+                  key={cat}
+                  type="button"
+                  onMouseDown={() => {
+                    setForm(prev => ({ ...prev, category: cat }))
+                    setShowSuggestions(false)
+                  }}
+                  className="w-full text-left px-4 py-2.5 text-sm text-slate-700 hover:bg-stone-50 transition-colors"
+                >
+                  {cat}
+                </button>
+              ))}
+              {form.category !== '' && suggestions.length === 0 && (
+                <div className="px-4 py-2.5 text-xs text-slate-400">
+                  Premi invio per creare "{form.category}"
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         <div>

@@ -88,7 +88,6 @@ export default function MenuDetailPage() {
     else { router.push(`/admin/restaurants/${restaurantId}?deleted_menu=true`) }
   }
 
-  // Raggruppa piatti per categoria
   const grouped = dishes.reduce((acc, dish) => {
     const cat = dish.category?.trim() || 'Senza categoria'
     if (!acc[cat]) acc[cat] = []
@@ -115,7 +114,7 @@ export default function MenuDetailPage() {
       )}
       {deletedDish && (
         <div className="bg-red-50 border border-red-200 text-red-600 text-sm rounded-2xl px-4 py-3 mb-6">
-          Piatto eliminato con successo.
+          Piatto <span className="font-medium">"{decodeURIComponent(deletedDish)}"</span> eliminato con successo.
         </div>
       )}
 
@@ -137,8 +136,6 @@ export default function MenuDetailPage() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-
-        {/* Impostazioni menu */}
         <div className="lg:col-span-1">
           <form onSubmit={handleSubmit} className="space-y-6">
             <div className="bg-white rounded-2xl border border-stone-200 p-6 space-y-4">
@@ -202,7 +199,6 @@ export default function MenuDetailPage() {
           </form>
         </div>
 
-        {/* Lista piatti raggruppata */}
         <div className="lg:col-span-2">
           <div className="bg-white rounded-2xl border border-stone-200 p-6">
             <div className="flex items-center justify-between mb-6">
@@ -221,10 +217,8 @@ export default function MenuDetailPage() {
             {dishes.length === 0 ? (
               <div className="text-center py-12">
                 <p className="text-slate-400 text-sm mb-3">Nessun piatto ancora</p>
-                <Link
-                  href={`/admin/restaurants/${restaurantId}/menus/${menuId}/dishes/new`}
-                  className="text-xs text-slate-500 underline underline-offset-2"
-                >
+                <Link href={`/admin/restaurants/${restaurantId}/menus/${menuId}/dishes/new`}
+                  className="text-xs text-slate-500 underline underline-offset-2">
                   Aggiungi il primo piatto
                 </Link>
               </div>
@@ -232,35 +226,27 @@ export default function MenuDetailPage() {
               <div className="space-y-6">
                 {categories.map(cat => (
                   <div key={cat}>
-                    <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2 px-3">
-                      {cat}
-                    </h3>
+                    <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2 px-3">{cat}</h3>
                     <div className="space-y-1">
                       {grouped[cat].map(dish => (
-                        <Link
-                          key={dish.id}
+                        <Link key={dish.id}
                           href={`/admin/restaurants/${restaurantId}/menus/${menuId}/dishes/${dish.id}`}
-                          className="flex items-center gap-4 p-3 rounded-xl hover:bg-stone-50 transition-colors group"
-                        >
+                          className="flex items-center gap-4 p-3 rounded-xl hover:bg-stone-50 transition-colors group">
                           <div className="w-12 h-12 rounded-lg overflow-hidden bg-stone-100 flex-shrink-0">
                             {dish.image_url
                               ? <img src={dish.image_url} alt={dish.name} className="w-full h-full object-cover" />
-                              : (
-                                <div className="w-full h-full flex items-center justify-center">
+                              : <div className="w-full h-full flex items-center justify-center">
                                   <svg className="w-5 h-5 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                                   </svg>
                                 </div>
-                              )
                             }
                           </div>
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2">
                               <span className="text-sm font-medium text-slate-800 truncate">{dish.name}</span>
                               {!dish.is_available && (
-                                <span className="text-xs px-2 py-0.5 rounded-full bg-stone-100 text-slate-400 flex-shrink-0">
-                                  Non disponibile
-                                </span>
+                                <span className="text-xs px-2 py-0.5 rounded-full bg-stone-100 text-slate-400 flex-shrink-0">Non disponibile</span>
                               )}
                             </div>
                             {dish.allergens?.length > 0 && (
@@ -284,7 +270,6 @@ export default function MenuDetailPage() {
             )}
           </div>
         </div>
-
       </div>
     </div>
   )

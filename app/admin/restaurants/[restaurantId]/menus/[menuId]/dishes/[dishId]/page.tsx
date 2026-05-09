@@ -16,12 +16,15 @@ export default function EditDishPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [saved, setSaved] = useState(false)
+  const [dishName, setDishName] = useState('')
   const [initial, setInitial] = useState<Partial<DishFormData> | null>(null)
+  const [existingCategories, setExistingCategories] = useState<string[]>([])
 
   useEffect(() => {
     getDishes(menuId).then((dishes) => {
       const dish = dishes.find(d => d.id === dishId)
       if (!dish) return router.push(`/admin/restaurants/${restaurantId}/menus/${menuId}`)
+      setDishName(dish.name)
       setInitial({
         name: dish.name,
         description: dish.description ?? '',
@@ -31,6 +34,8 @@ export default function EditDishPage() {
         is_available: dish.is_available,
         category: dish.category ?? '',
       })
+      const cats = [...new Set(dishes.map(d => d.category).filter(Boolean))] as string[]
+      setExistingCategories(cats)
     })
   }, [dishId, menuId])
 
@@ -41,14 +46,14 @@ export default function EditDishPage() {
     const result = await updateDish(dishId, menuId, restaurantId, form)
     setLoading(false)
     if (result.error) { setError(result.error) }
-    else { setSaved(true) }
+    else { setDishName(form.name); setSaved(true) }
   }
 
   async function handleDelete() {
-    if (!confirm('Eliminare questo piatto?')) return
+    if (!confirm(`Eliminare il piatto "${dishName}"?`)) return
     const result = await deleteDish(dishId, menuId, restaurantId)
     if (result.error) { setError(result.error) }
-    else { router.push(`/admin/restaurants/${restaurantId}/menus/${menuId}?deleted_dish=true`) }
+    else { router.push(`/admin/restaurants/${restaurantId}/menus/${menuId}?deleted_dish=${encodeURIComponent(dishName)}`) }
   }
 
   if (!initial) return (
@@ -67,14 +72,14 @@ export default function EditDishPage() {
           </svg>
         </Link>
         <div>
-          <h1 className="text-2xl font-semibold text-slate-800">Modifica piatto</h1>
-          <p className="text-slate-500 text-sm mt-0.5">{initial.name}</p>
+          <h1 className="text-2xl font-semibold text-slate-800">{dishName}</h1>
+          <p className="text-slate-500 text-sm mt-0.5">Modifica piatto</p>
         </div>
       </div>
-
       <div className="max-w-2xl">
         <DishForm
           initial={initial}
+          existingCategories={existingCategories}
           loading={loading}
           error={error}
           saved={saved}
