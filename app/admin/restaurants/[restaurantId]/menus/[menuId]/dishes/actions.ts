@@ -93,3 +93,12 @@ export async function deleteDish(dishId: string, menuId: string, restaurantId: s
   revalidatePath(`/admin/restaurants/${restaurantId}/menus/${menuId}`)
   return { success: true }
 }
+
+export async function reorderDishes(orderedIds: string[], menuId: string) {
+  const supabase = await createClient()
+  const updates = orderedIds.map((id, index) =>
+    supabase.from('dishes').update({ sort_order: index }).eq('id', id).eq('menu_id', menuId)
+  )
+  await Promise.all(updates)
+  return { success: true }
+}
