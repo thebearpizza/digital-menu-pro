@@ -8,7 +8,7 @@ export default async function RestaurantDetailPage({
   searchParams,
 }: {
   params: { restaurantId: string }
-  searchParams: { created_menu?: string }
+  searchParams: { created_menu?: string; deleted_menu?: string }
 }) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -34,6 +34,11 @@ export default async function RestaurantDetailPage({
       {searchParams.created_menu && (
         <div className="bg-emerald-50 border border-emerald-200 text-emerald-700 text-sm rounded-2xl px-4 py-3 mb-6">
           Menu creato con successo.
+        </div>
+      )}
+      {searchParams.deleted_menu && (
+        <div className="bg-red-50 border border-red-200 text-red-600 text-sm rounded-2xl px-4 py-3 mb-6">
+          Menu eliminato con successo.
         </div>
       )}
 
@@ -62,13 +67,11 @@ export default async function RestaurantDetailPage({
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-
         <div className="lg:col-span-2 space-y-6">
           <RestaurantForm restaurant={restaurant} />
         </div>
 
         <div className="space-y-4">
-          {/* Menu */}
           <div className="bg-white rounded-2xl border border-stone-200 p-6">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Menu</h2>
@@ -111,7 +114,6 @@ export default async function RestaurantDetailPage({
             )}
           </div>
 
-          {/* QR Code */}
           <div className="bg-white rounded-2xl border border-stone-200 p-6">
             <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">QR Code</h2>
             <p className="text-xs text-slate-400 mb-3">Link pubblico del ristorante</p>
@@ -120,7 +122,6 @@ export default async function RestaurantDetailPage({
             </div>
           </div>
         </div>
-
       </div>
     </div>
   )
