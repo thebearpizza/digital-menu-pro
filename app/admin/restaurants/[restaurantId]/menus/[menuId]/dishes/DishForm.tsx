@@ -128,9 +128,15 @@ export function DishForm({ initial, existingCategories = [], loading, error, sav
                 </button>
               ))}
               {form.category !== '' && suggestions.length === 0 && (
-                <div className="px-4 py-2.5 text-xs text-slate-400">
-                  <div className="px-4 py-2.5 text-xs text-slate-400">Premi invio per creare &quot;{form.category}&quot;</div>
-                </div>
+                <button
+                  type="button"
+                  onMouseDown={() => setShowSuggestions(false)}
+                  className="w-full text-left px-4 py-2.5 text-sm text-slate-700 hover:bg-stone-50 transition-colors flex items-center gap-2"
+                >
+                  <span className="text-slate-400">+</span>
+                  Aggiungi &quot;{form.category}&quot;
+                </button>
+              )}
               )}
             </div>
           )}
