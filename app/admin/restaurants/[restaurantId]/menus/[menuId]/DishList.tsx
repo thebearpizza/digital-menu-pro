@@ -94,7 +94,16 @@ function SortableDish({ dish, restaurantId, menuId }: { dish: Dish; restaurantId
             )}
           </div>
           {dish.allergens?.length > 0 && (
-            <p className="text-xs text-slate-400 mt-0.5 truncate">{dish.allergens.join(', ')}</p>
+            <div className="flex items-center gap-1 mt-0.5 overflow-hidden">
+              {dish.allergens.slice(0, 2).map(a => (
+                <span key={a} className="text-xs bg-stone-100 text-slate-500 px-1.5 py-0.5 rounded-md flex-shrink-0">{a}</span>
+              ))}
+              {dish.allergens.length > 2 && (
+                <span className="text-xs bg-stone-100 text-slate-400 px-1.5 py-0.5 rounded-md flex-shrink-0">
+                  +{dish.allergens.length - 2}
+                </span>
+              )}
+            </div>
           )}
         </div>
 
