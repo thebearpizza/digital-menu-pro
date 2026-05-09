@@ -139,6 +139,7 @@ export default function FlipBook({ dishes, menuName, restaurantName }: Props) {
           swipeDistance={30}
           showPageCorners={true}
           disableFlipByClick={false}
+          maxShadowOpacity={0.5}
         >
           {/* Cover */}
           <div className="page">
