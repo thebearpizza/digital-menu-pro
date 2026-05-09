@@ -1,10 +1,14 @@
 'use client'
 
 import { useState } from 'react'
-import { updateRestaurant } from './actions'
+import { useRouter } from 'next/navigation'
+import { updateRestaurant, deleteRestaurant } from './actions'
 
 export function RestaurantForm({ restaurant }: { restaurant: any }) {
+  const router = useRouter()
   const [loading, setLoading] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [success, setSuccess] = useState(false)
   const [error, setError] = useState('')
   const [form, setForm] = useState({
@@ -38,6 +42,18 @@ export function RestaurantForm({ restaurant }: { restaurant: any }) {
     setLoading(false)
   }
 
+  async function handleDelete() {
+    setDeleting(true)
+    const result = await deleteRestaurant(restaurant.id)
+    if (result.error) {
+      setError(result.error)
+      setDeleting(false)
+      setShowDeleteConfirm(false)
+    } else {
+      router.push('/admin/restaurants?deleted=true')
+    }
+  }
+
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
 
@@ -45,7 +61,6 @@ export function RestaurantForm({ restaurant }: { restaurant: any }) {
         <h2 className="text-sm font-semibold text-slate-700 uppercase tracking-wider">
           Informazioni principali
         </h2>
-
         <div>
           <label className="block text-sm font-medium text-slate-700 mb-1">Nome ristorante</label>
           <input
@@ -56,7 +71,6 @@ export function RestaurantForm({ restaurant }: { restaurant: any }) {
             className="w-full border border-stone-200 rounded-xl px-4 py-2.5 text-sm text-slate-800 bg-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900"
           />
         </div>
-
         <div>
           <label className="block text-sm font-medium text-slate-700 mb-1">Descrizione</label>
           <textarea
@@ -73,7 +87,6 @@ export function RestaurantForm({ restaurant }: { restaurant: any }) {
         <h2 className="text-sm font-semibold text-slate-700 uppercase tracking-wider">
           Link e social
         </h2>
-
         {[
           { name: 'instagram_url', label: 'Instagram', placeholder: 'https://instagram.com/...' },
           { name: 'facebook_url', label: 'Facebook', placeholder: 'https://facebook.com/...' },
@@ -107,13 +120,56 @@ export function RestaurantForm({ restaurant }: { restaurant: any }) {
         </div>
       )}
 
-      <button
-        type="submit"
-        disabled={loading}
-        className="bg-slate-900 text-white px-6 py-2.5 rounded-xl text-sm font-medium hover:bg-slate-800 transition-colors disabled:opacity-50"
-      >
-        {loading ? 'Salvataggio...' : 'Salva modifiche'}
-      </button>
+      {/* Bottoni principali */}
+      <div className="flex items-center justify-between">
+        <button
+          type="submit"
+          disabled={loading}
+          className="bg-slate-900 text-white px-6 py-2.5 rounded-xl text-sm font-medium hover:bg-slate-800 transition-colors disabled:opacity-50"
+        >
+          {loading ? 'Salvataggio...' : 'Salva modifiche'}
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setShowDeleteConfirm(true)}
+          className="text-sm text-red-500 hover:text-red-700 transition-colors px-3 py-2"
+        >
+          Elimina ristorante
+        </button>
+      </div>
+
+      {/* Conferma eliminazione */}
+      {showDeleteConfirm && (
+        <div className="bg-red-50 border border-red-200 rounded-2xl p-5 space-y-3">
+          <div className="flex items-start gap-3">
+            <span className="text-xl">⚠️</span>
+            <div>
+              <p className="text-sm font-semibold text-red-700">Sei sicuro di voler eliminare questo ristorante?</p>
+              <p className="text-xs text-red-500 mt-1">
+                Verranno eliminati anche tutti i menu e i piatti collegati. Questa azione è irreversibile.
+              </p>
+            </div>
+          </div>
+          <div className="flex gap-3">
+            <button
+              type="button"
+              onClick={handleDelete}
+              disabled={deleting}
+              className="bg-red-600 text-white px-4 py-2 rounded-xl text-sm font-medium hover:bg-red-700 transition-colors disabled:opacity-50"
+            >
+              {deleting ? 'Eliminazione...' : 'Sì, elimina tutto'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowDeleteConfirm(false)}
+              className="border border-stone-200 text-slate-600 px-4 py-2 rounded-xl text-sm font-medium hover:bg-stone-50 transition-colors"
+            >
+              Annulla
+            </button>
+          </div>
+        </div>
+      )}
 
     </form>
   )

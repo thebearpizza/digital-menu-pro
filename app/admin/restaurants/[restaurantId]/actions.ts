@@ -35,3 +35,18 @@ export async function updateRestaurant(
   if (error) return { error: error.message }
   return { success: true }
 }
+
+export async function deleteRestaurant(restaurantId: string) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'Non autenticato' }
+
+  const { error } = await supabase
+    .from('restaurants')
+    .delete()
+    .eq('id', restaurantId)
+    .eq('owner_id', user.id)
+
+  if (error) return { error: error.message }
+  return { success: true }
+}

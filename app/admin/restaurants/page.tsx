@@ -4,7 +4,7 @@ import Link from 'next/link'
 export default async function RestaurantsPage({
   searchParams,
 }: {
-  searchParams: { created?: string }
+  searchParams: { created?: string; deleted?: string }
 }) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -17,15 +17,18 @@ export default async function RestaurantsPage({
 
   return (
     <div>
-      {/* Messaggio successo */}
       {searchParams.created && (
         <div className="bg-emerald-50 border border-emerald-200 text-emerald-700 text-sm rounded-2xl px-4 py-3 mb-6 flex items-center gap-2">
-          <span>✅</span>
-          <span>Ristorante creato con successo!</span>
+          <span>✅</span><span>Ristorante creato con successo!</span>
         </div>
       )}
 
-      {/* Header */}
+      {searchParams.deleted && (
+        <div className="bg-orange-50 border border-orange-200 text-orange-700 text-sm rounded-2xl px-4 py-3 mb-6 flex items-center gap-2">
+          <span>🗑️</span><span>Ristorante eliminato.</span>
+        </div>
+      )}
+
       <div className="flex items-center justify-between mb-8">
         <div>
           <h1 className="text-2xl font-semibold text-slate-800">Ristoranti</h1>
@@ -44,7 +47,6 @@ export default async function RestaurantsPage({
         </Link>
       </div>
 
-      {/* Lista vuota */}
       {(!restaurants || restaurants.length === 0) && (
         <div className="bg-white rounded-2xl border border-stone-200 p-12 text-center">
           <div className="w-14 h-14 bg-stone-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
@@ -63,7 +65,6 @@ export default async function RestaurantsPage({
         </div>
       )}
 
-      {/* Griglia ristoranti */}
       {restaurants && restaurants.length > 0 && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {restaurants.map((r) => (
@@ -73,24 +74,15 @@ export default async function RestaurantsPage({
               className="bg-white rounded-2xl border border-stone-200 p-6 hover:border-slate-300 hover:shadow-sm transition-all group"
             >
               <div className="w-12 h-12 rounded-xl bg-stone-100 flex items-center justify-center mb-4 overflow-hidden">
-                {r.logo_url ? (
-                  <img src={r.logo_url} alt={r.name} className="w-full h-full object-cover" />
-                ) : (
-                  <span className="text-xl">🍽️</span>
-                )}
+                {r.logo_url
+                  ? <img src={r.logo_url} alt={r.name} className="w-full h-full object-cover" />
+                  : <span className="text-xl">🍽️</span>
+                }
               </div>
-              <h3 className="font-semibold text-slate-800 group-hover:text-slate-900 mb-1">
-                {r.name}
-              </h3>
-              <p className="text-sm text-slate-400 line-clamp-2 mb-4">
-                {r.description || 'Nessuna descrizione'}
-              </p>
+              <h3 className="font-semibold text-slate-800 group-hover:text-slate-900 mb-1">{r.name}</h3>
+              <p className="text-sm text-slate-400 line-clamp-2 mb-4">{r.description || 'Nessuna descrizione'}</p>
               <div className="mt-4 pt-4 border-t border-stone-100 flex items-center justify-between">
-                <span className={`text-xs px-2 py-1 rounded-full font-medium ${
-                  r.is_active
-                    ? 'bg-emerald-50 text-emerald-600'
-                    : 'bg-stone-100 text-slate-400'
-                }`}>
+                <span className={`text-xs px-2 py-1 rounded-full font-medium ${r.is_active ? 'bg-emerald-50 text-emerald-600' : 'bg-stone-100 text-slate-400'}`}>
                   {r.is_active ? 'Attivo' : 'Inattivo'}
                 </span>
                 <span className="text-xs text-slate-400">Gestisci →</span>
