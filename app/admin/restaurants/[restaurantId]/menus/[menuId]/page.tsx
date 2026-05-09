@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter, useParams, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { getMenu, updateMenu, deleteMenu } from './actions'
-import { getDishes, deleteDish } from './dishes/actions'
+import { getDishes } from './dishes/actions'
 
 type Menu = {
   id: string
@@ -22,6 +22,7 @@ type Dish = {
   image_url: string | null
   is_available: boolean
   allergens: string[]
+  category: string | null
 }
 
 export default function MenuDetailPage() {
@@ -87,6 +88,18 @@ export default function MenuDetailPage() {
     else { router.push(`/admin/restaurants/${restaurantId}?deleted_menu=true`) }
   }
 
+  // Raggruppa piatti per categoria
+  const grouped = dishes.reduce((acc, dish) => {
+    const cat = dish.category?.trim() || 'Senza categoria'
+    if (!acc[cat]) acc[cat] = []
+    acc[cat].push(dish)
+    return acc
+  }, {} as Record<string, Dish[]>)
+
+  const categories = Object.keys(grouped).sort((a, b) =>
+    a === 'Senza categoria' ? 1 : b === 'Senza categoria' ? -1 : a.localeCompare(b)
+  )
+
   if (!menu) return (
     <div className="flex items-center justify-center h-48">
       <div className="w-5 h-5 border-2 border-slate-300 border-t-slate-700 rounded-full animate-spin" />
@@ -126,12 +139,12 @@ export default function MenuDetailPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
         {/* Impostazioni menu */}
-        <div className="lg:col-span-1 space-y-6">
+        <div className="lg:col-span-1">
           <form onSubmit={handleSubmit} className="space-y-6">
             <div className="bg-white rounded-2xl border border-stone-200 p-6 space-y-4">
               <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Impostazioni menu</h2>
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Nome menu <span className="text-red-400">*</span></label>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Nome <span className="text-red-400">*</span></label>
                 <input type="text" name="name" value={form.name} onChange={handleChange}
                   className="w-full border border-stone-200 rounded-xl px-4 py-2.5 text-sm text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-slate-900" />
               </div>
@@ -189,7 +202,7 @@ export default function MenuDetailPage() {
           </form>
         </div>
 
-        {/* Lista piatti */}
+        {/* Lista piatti raggruppata */}
         <div className="lg:col-span-2">
           <div className="bg-white rounded-2xl border border-stone-200 p-6">
             <div className="flex items-center justify-between mb-6">
@@ -216,45 +229,56 @@ export default function MenuDetailPage() {
                 </Link>
               </div>
             ) : (
-              <div className="space-y-2">
-                {dishes.map((dish) => (
-                  <Link
-                    key={dish.id}
-                    href={`/admin/restaurants/${restaurantId}/menus/${menuId}/dishes/${dish.id}`}
-                    className="flex items-center gap-4 p-3 rounded-xl hover:bg-stone-50 transition-colors group"
-                  >
-                    <div className="w-12 h-12 rounded-lg overflow-hidden bg-stone-100 flex-shrink-0">
-                      {dish.image_url
-                        ? <img src={dish.image_url} alt={dish.name} className="w-full h-full object-cover" />
-                        : (
-                          <div className="w-full h-full flex items-center justify-center">
-                            <svg className="w-5 h-5 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+              <div className="space-y-6">
+                {categories.map(cat => (
+                  <div key={cat}>
+                    <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2 px-3">
+                      {cat}
+                    </h3>
+                    <div className="space-y-1">
+                      {grouped[cat].map(dish => (
+                        <Link
+                          key={dish.id}
+                          href={`/admin/restaurants/${restaurantId}/menus/${menuId}/dishes/${dish.id}`}
+                          className="flex items-center gap-4 p-3 rounded-xl hover:bg-stone-50 transition-colors group"
+                        >
+                          <div className="w-12 h-12 rounded-lg overflow-hidden bg-stone-100 flex-shrink-0">
+                            {dish.image_url
+                              ? <img src={dish.image_url} alt={dish.name} className="w-full h-full object-cover" />
+                              : (
+                                <div className="w-full h-full flex items-center justify-center">
+                                  <svg className="w-5 h-5 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                  </svg>
+                                </div>
+                              )
+                            }
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-medium text-slate-800 truncate">{dish.name}</span>
+                              {!dish.is_available && (
+                                <span className="text-xs px-2 py-0.5 rounded-full bg-stone-100 text-slate-400 flex-shrink-0">
+                                  Non disponibile
+                                </span>
+                              )}
+                            </div>
+                            {dish.allergens?.length > 0 && (
+                              <p className="text-xs text-slate-400 mt-0.5 truncate">{dish.allergens.join(', ')}</p>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-3 flex-shrink-0">
+                            {dish.price != null && dish.price > 0 && (
+                              <span className="text-sm font-medium text-slate-700">€{Number(dish.price).toFixed(2)}</span>
+                            )}
+                            <svg className="w-4 h-4 text-slate-300 group-hover:text-slate-400 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                             </svg>
                           </div>
-                        )
-                      }
+                        </Link>
+                      ))}
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium text-slate-800 truncate">{dish.name}</span>
-                        {!dish.is_available && (
-                          <span className="text-xs px-2 py-0.5 rounded-full bg-stone-100 text-slate-400">Non disponibile</span>
-                        )}
-                      </div>
-                      {dish.allergens?.length > 0 && (
-                        <p className="text-xs text-slate-400 mt-0.5 truncate">{dish.allergens.join(', ')}</p>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-3 flex-shrink-0">
-                      {dish.price != null && (
-                        <span className="text-sm font-medium text-slate-700">€{Number(dish.price).toFixed(2)}</span>
-                      )}
-                      <svg className="w-4 h-4 text-slate-300 group-hover:text-slate-400 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                      </svg>
-                    </div>
-                  </Link>
+                  </div>
                 ))}
               </div>
             )}

@@ -16,6 +16,7 @@ export type DishFormData = {
   image_url: string
   allergens: string[]
   is_available: boolean
+  category: string
 }
 
 type Props = {
@@ -36,6 +37,7 @@ export function DishForm({ initial, loading, error, saved, onSubmit, onDelete, s
     image_url: initial?.image_url ?? '',
     allergens: initial?.allergens ?? [],
     is_available: initial?.is_available ?? true,
+    category: initial?.category ?? '',
   })
 
   function handleChange(e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) {
@@ -72,6 +74,14 @@ export function DishForm({ initial, loading, error, saved, onSubmit, onDelete, s
         </div>
 
         <div>
+          <label className="block text-sm font-medium text-slate-700 mb-1">Categoria</label>
+          <input type="text" name="category" value={form.category} onChange={handleChange}
+            className="w-full border border-stone-200 rounded-xl px-4 py-2.5 text-sm text-slate-800 bg-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900"
+            placeholder="Es. Antipasti, Primi, Pizze, Dessert..." />
+          <p className="text-xs text-slate-400 mt-1">I piatti con la stessa categoria vengono raggruppati nel menu</p>
+        </div>
+
+        <div>
           <label className="block text-sm font-medium text-slate-700 mb-1">Descrizione</label>
           <textarea name="description" value={form.description} onChange={handleChange} rows={3}
             className="w-full border border-stone-200 rounded-xl px-4 py-2.5 text-sm text-slate-800 bg-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900 resize-none"
@@ -83,7 +93,8 @@ export function DishForm({ initial, loading, error, saved, onSubmit, onDelete, s
           <input type="number" name="price" value={form.price} onChange={handleChange}
             step="0.01" min="0"
             className="w-40 border border-stone-200 rounded-xl px-4 py-2.5 text-sm text-slate-800 bg-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900"
-            placeholder="0.00" />
+            placeholder="Incluso" />
+          <p className="text-xs text-slate-400 mt-1">Lascia vuoto se il piatto è incluso nel menu</p>
         </div>
 
         <div className="flex items-center gap-3">
