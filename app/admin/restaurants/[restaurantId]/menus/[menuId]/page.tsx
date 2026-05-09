@@ -114,7 +114,7 @@ export default function MenuDetailPage() {
       )}
       {deletedDish && (
         <div className="bg-red-50 border border-red-200 text-red-600 text-sm rounded-2xl px-4 py-3 mb-6">
-          Piatto <span className="font-medium">Piatto <span className="font-medium">"{decodeURIComponent(deletedDish)}"</span>quot;{decodeURIComponent(deletedDish)}Piatto <span className="font-medium">"{decodeURIComponent(deletedDish)}"</span>quot;</span> eliminato con successo.
+          Piatto <span className="font-medium">&quot;{decodeURIComponent(deletedDish)}&quot;</span> eliminato con successo.
         </div>
       )}
 

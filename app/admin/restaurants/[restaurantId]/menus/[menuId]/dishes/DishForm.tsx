@@ -129,7 +129,7 @@ export function DishForm({ initial, existingCategories = [], loading, error, sav
               ))}
               {form.category !== '' && suggestions.length === 0 && (
                 <div className="px-4 py-2.5 text-xs text-slate-400">
-                  Premi invio per creare Premi invio per creare "{form.category}"quot;{form.category}Premi invio per creare "{form.category}"quot;
+                  <div className="px-4 py-2.5 text-xs text-slate-400">Premi invio per creare &quot;{form.category}&quot;</div>
                 </div>
               )}
             </div>
