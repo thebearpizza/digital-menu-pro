@@ -44,11 +44,10 @@ export function DishForm({ initial, existingCategories = [], loading, error, sav
   const [showSuggestions, setShowSuggestions] = useState(false)
   const categoryRef = useRef<HTMLDivElement>(null)
 
-  const suggestions = existingCategories.filter(c =>
-    c.toLowerCase().includes(form.category.toLowerCase()) && c !== form.category
+  const suggestions = existingCategories.filter(
+    c => c.toLowerCase().includes(form.category.toLowerCase()) && c !== form.category
   )
 
-  // Chiudi dropdown cliccando fuori
   useEffect(() => {
     function handleClick(e: MouseEvent) {
       if (categoryRef.current && !categoryRef.current.contains(e.target as Node)) {
@@ -79,6 +78,8 @@ export function DishForm({ initial, existingCategories = [], loading, error, sav
     onSubmit(form)
   }
 
+  const dropdownItems = form.category === '' ? existingCategories : suggestions
+
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
 
@@ -86,13 +87,19 @@ export function DishForm({ initial, existingCategories = [], loading, error, sav
         <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Informazioni piatto</h2>
 
         <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1">Nome <span className="text-red-400">*</span></label>
-          <input type="text" name="name" value={form.name} onChange={handleChange}
+          <label className="block text-sm font-medium text-slate-700 mb-1">
+            Nome <span className="text-red-400">*</span>
+          </label>
+          <input
+            type="text"
+            name="name"
+            value={form.name}
+            onChange={handleChange}
             className="w-full border border-stone-200 rounded-xl px-4 py-2.5 text-sm text-slate-800 bg-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900"
-            placeholder="Es. Margherita, Tiramisù..." />
+            placeholder="Es. Margherita, Tiramisu..."
+          />
         </div>
 
-        {/* Categoria con autocomplete */}
         <div ref={categoryRef} className="relative">
           <label className="block text-sm font-medium text-slate-700 mb-1">Categoria</label>
           <input
@@ -107,14 +114,9 @@ export function DishForm({ initial, existingCategories = [], loading, error, sav
           />
           <p className="text-xs text-slate-400 mt-1">I piatti con la stessa categoria vengono raggruppati nel menu</p>
 
-          {/* Dropdown suggerimenti */}
-          {showSuggestions && existingCategories.length > 0 && (
-            <div className="absolute z-10 top-full mt-1 w-full bg-white border border-stone-200 rounded-xl shadow-lg overflow-hidden">
-              {/* Mostra tutte le categorie se campo vuoto, altrimenti filtra */}
-              {(form.category === ''
-                ? existingCategories
-                : suggestions
-              ).map(cat => (
+          {showSuggestions && (dropdownItems.length > 0 || form.category !== '') && (
+            <div className="absolute z-10 top-[4.5rem] w-full bg-white border border-stone-200 rounded-xl shadow-lg overflow-hidden">
+              {dropdownItems.map(cat => (
                 <button
                   key={cat}
                   type="button"
@@ -137,30 +139,46 @@ export function DishForm({ initial, existingCategories = [], loading, error, sav
                   Aggiungi &quot;{form.category}&quot;
                 </button>
               )}
-              )}
             </div>
           )}
         </div>
 
         <div>
           <label className="block text-sm font-medium text-slate-700 mb-1">Descrizione</label>
-          <textarea name="description" value={form.description} onChange={handleChange} rows={3}
+          <textarea
+            name="description"
+            value={form.description}
+            onChange={handleChange}
+            rows={3}
             className="w-full border border-stone-200 rounded-xl px-4 py-2.5 text-sm text-slate-800 bg-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900 resize-none"
-            placeholder="Ingredienti, preparazione..." />
+            placeholder="Ingredienti, preparazione..."
+          />
         </div>
 
         <div>
           <label className="block text-sm font-medium text-slate-700 mb-1">Prezzo (€)</label>
-          <input type="number" name="price" value={form.price} onChange={handleChange}
-            step="0.01" min="0"
+          <input
+            type="number"
+            name="price"
+            value={form.price}
+            onChange={handleChange}
+            step="0.01"
+            min="0"
             className="w-40 border border-stone-200 rounded-xl px-4 py-2.5 text-sm text-slate-800 bg-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900"
-            placeholder="Incluso" />
-          <p className="text-xs text-slate-400 mt-1">Lascia vuoto se il piatto è incluso nel menu</p>
+            placeholder="Incluso"
+          />
+          <p className="text-xs text-slate-400 mt-1">Lascia vuoto se il piatto e incluso nel menu</p>
         </div>
 
         <div className="flex items-center gap-3">
-          <input type="checkbox" name="is_available" id="is_available" checked={form.is_available} onChange={handleChange}
-            className="w-4 h-4 rounded border-stone-300 accent-slate-900" />
+          <input
+            type="checkbox"
+            name="is_available"
+            id="is_available"
+            checked={form.is_available}
+            onChange={handleChange}
+            className="w-4 h-4 rounded border-stone-300 accent-slate-900"
+          />
           <label htmlFor="is_available" className="text-sm text-slate-700">Disponibile</label>
         </div>
       </div>
@@ -179,12 +197,16 @@ export function DishForm({ initial, existingCategories = [], loading, error, sav
         <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Allergeni</h2>
         <div className="flex flex-wrap gap-2">
           {ALLERGENS_LIST.map(a => (
-            <button key={a} type="button" onClick={() => toggleAllergen(a)}
+            <button
+              key={a}
+              type="button"
+              onClick={() => toggleAllergen(a)}
               className={`text-xs px-3 py-1.5 rounded-full border transition-colors ${
                 form.allergens.includes(a)
                   ? 'bg-slate-900 text-white border-slate-900'
                   : 'bg-white text-slate-600 border-stone-200 hover:border-slate-400'
-              }`}>
+              }`}
+            >
               {a}
             </button>
           ))}
@@ -194,17 +216,27 @@ export function DishForm({ initial, existingCategories = [], loading, error, sav
         )}
       </div>
 
-      {error && <div className="bg-red-50 border border-red-200 text-red-600 text-sm rounded-xl px-4 py-3">{error}</div>}
-      {saved && <div className="bg-emerald-50 border border-emerald-200 text-emerald-700 text-sm rounded-xl px-4 py-3">Modifiche salvate.</div>}
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-600 text-sm rounded-xl px-4 py-3">{error}</div>
+      )}
+      {saved && (
+        <div className="bg-emerald-50 border border-emerald-200 text-emerald-700 text-sm rounded-xl px-4 py-3">Modifiche salvate.</div>
+      )}
 
       <div className="flex items-center justify-between">
-        <button type="submit" disabled={loading}
-          className="bg-slate-900 text-white px-6 py-2.5 rounded-xl text-sm font-medium hover:bg-slate-800 transition-colors disabled:opacity-50">
+        <button
+          type="submit"
+          disabled={loading}
+          className="bg-slate-900 text-white px-6 py-2.5 rounded-xl text-sm font-medium hover:bg-slate-800 transition-colors disabled:opacity-50"
+        >
           {loading ? 'Salvataggio...' : submitLabel}
         </button>
         {onDelete && (
-          <button type="button" onClick={onDelete}
-            className="flex items-center gap-2 text-sm text-red-500 hover:text-red-700 transition-colors">
+          <button
+            type="button"
+            onClick={onDelete}
+            className="flex items-center gap-2 text-sm text-red-500 hover:text-red-700 transition-colors"
+          >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
                 d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -213,6 +245,7 @@ export function DishForm({ initial, existingCategories = [], loading, error, sav
           </button>
         )}
       </div>
+
     </form>
   )
 }
