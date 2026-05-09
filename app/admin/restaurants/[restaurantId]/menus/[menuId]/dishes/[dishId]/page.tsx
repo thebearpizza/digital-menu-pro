@@ -34,7 +34,7 @@ export default function EditDishPage() {
         is_available: dish.is_available,
         category: dish.category ?? '',
       })
-      const cats = [...new Set(dishes.map(d => d.category).filter(Boolean))] as string[]
+      const cats = dishes.map(d => d.category).filter(Boolean).filter((c, i, arr) => arr.indexOf(c) === i) as string[]
       setExistingCategories(cats)
     })
   }, [dishId, menuId])

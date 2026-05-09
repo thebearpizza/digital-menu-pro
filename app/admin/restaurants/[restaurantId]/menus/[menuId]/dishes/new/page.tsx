@@ -18,7 +18,7 @@ export default function NewDishPage() {
 
   useEffect(() => {
     getDishes(menuId).then(dishes => {
-      const cats = [...new Set(dishes.map(d => d.category).filter(Boolean))] as string[]
+      const cats = dishes.map(d => d.category).filter(Boolean).filter((c, i, arr) => arr.indexOf(c) === i) as string[]
       setExistingCategories(cats)
     })
   }, [menuId])
