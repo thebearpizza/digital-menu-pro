@@ -65,7 +65,7 @@ function buildPages(dishes: Dish[]): PageData[] {
   return pages
 }
 
-// ─── Card modale piatto ───────────────────────────────────────────────────────
+// ─── Modale dettaglio piatto ──────────────────────────────────────────────────
 const DESC_PREVIEW_CHARS = 160
 
 function DishModal({ dish, onClose }: { dish: Dish; onClose: () => void }) {
@@ -86,15 +86,10 @@ function DishModal({ dish, onClose }: { dish: Dish; onClose: () => void }) {
       <div
         onPointerUp={e => e.stopPropagation()}
         style={{
-          position: 'relative',
-          background: 'white',
-          width: '100%',
-          maxWidth: '480px',
+          position: 'relative', background: 'white', width: '100%', maxWidth: '480px',
           borderRadius: '24px 24px 0 0',
-          height: hasPhoto ? '88vh' : 'auto',
-          maxHeight: '88vh',
-          display: 'flex',
-          flexDirection: 'column',
+          height: hasPhoto ? '88vh' : 'auto', maxHeight: '88vh',
+          display: 'flex', flexDirection: 'column',
           paddingBottom: 'max(20px, env(safe-area-inset-bottom))',
           boxShadow: '0 -8px 40px rgba(0,0,0,0.4)',
         }}
@@ -143,7 +138,7 @@ function DishModal({ dish, onClose }: { dish: Dish; onClose: () => void }) {
           </div>
         )}
 
-        {/* Allergeni — sotto la descrizione, nomi estesi */}
+        {/* Allergeni — nomi estesi sotto descrizione */}
         {dish.allergens?.length > 0 && (
           <div style={{ padding: '10px 20px 0', flexShrink: 0 }}>
             <p style={{ fontSize: 11, fontWeight: 600, color: '#a8a29e', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>
@@ -162,11 +157,8 @@ function DishModal({ dish, onClose }: { dish: Dish; onClose: () => void }) {
       <button
         onPointerUp={e => { e.stopPropagation(); onClose() }}
         style={{
-          position: 'fixed',
-          top: 'calc(12vh - 16px)',
-          right: 'max(calc(50% - 224px), 12px)',
-          zIndex: 10000,
-          width: 32, height: 32, borderRadius: '50%',
+          position: 'fixed', top: 'calc(12vh - 16px)', right: 'max(calc(50% - 224px), 12px)',
+          zIndex: 10000, width: 32, height: 32, borderRadius: '50%',
           background: 'rgba(0,0,0,0.5)', border: 'none', cursor: 'pointer',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
         }}
@@ -179,19 +171,25 @@ function DishModal({ dish, onClose }: { dish: Dish; onClose: () => void }) {
   )
 }
 
-// ─── Pagina copertina ─────────────────────────────────────────────────────────
+// ─── Copertina ────────────────────────────────────────────────────────────────
 function CoverPage({ menuName, restaurantName }: { menuName: string; restaurantName: string }) {
   return (
-    <div style={{ width: '100%', height: '100%', background: 'linear-gradient(160deg, #292524 0%, #1c1917 100%)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 32, userSelect: 'none', gap: 16, position: 'relative' }}>
-      <div style={{ width: 48, height: 2, background: 'rgba(255,255,255,0.2)', borderRadius: 99 }} />
-      <h1 style={{ color: '#e7e5e4', fontSize: 22, fontWeight: 700, textAlign: 'center', lineHeight: 1.3, margin: 0 }}>{menuName}</h1>
-      <p style={{ color: '#78716c', fontSize: 13, textAlign: 'center', margin: 0 }}>{restaurantName}</p>
-      <div style={{ width: 48, height: 2, background: 'rgba(255,255,255,0.2)', borderRadius: 99 }} />
-      <div style={{ position: 'absolute', bottom: 24, display: 'flex', alignItems: 'center', gap: 6, color: '#44403c', fontSize: 12 }}>
-        <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <div style={{
+      width: '100%', height: '100%',
+      background: 'linear-gradient(160deg, #f5f0e8 0%, #ede6d6 100%)',
+      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+      padding: 32, userSelect: 'none', gap: 16, position: 'relative',
+      borderLeft: '3px solid rgba(180,160,120,0.3)',
+    }}>
+      <div style={{ width: 48, height: 1, background: 'rgba(120,100,70,0.35)', borderRadius: 99 }} />
+      <h1 style={{ color: '#3d2e1a', fontSize: 22, fontWeight: 700, textAlign: 'center', lineHeight: 1.3, margin: 0, fontFamily: 'Georgia, serif' }}>{menuName}</h1>
+      <p style={{ color: '#8c7355', fontSize: 13, textAlign: 'center', margin: 0 }}>{restaurantName}</p>
+      <div style={{ width: 48, height: 1, background: 'rgba(120,100,70,0.35)', borderRadius: 99 }} />
+      <div style={{ position: 'absolute', bottom: 24, display: 'flex', alignItems: 'center', gap: 6, color: '#b8a080', fontSize: 11, letterSpacing: '0.06em' }}>
+        <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
         </svg>
-        Sfoglia il menu
+        SFOGLIA IL MENU
       </div>
     </div>
   )
@@ -200,65 +198,90 @@ function CoverPage({ menuName, restaurantName }: { menuName: string; restaurantN
 // ─── Pagina categoria ─────────────────────────────────────────────────────────
 function CategoryPage({ category, dishes, pageNum, totalPages, onSelect }: PageData & { onSelect: (d: Dish) => void }) {
   return (
-    <div style={{ width: '100%', height: '100%', background: '#1c1917', display: 'flex', flexDirection: 'column', userSelect: 'none', overflow: 'hidden' }}>
-      <div style={{ padding: '14px 16px 10px', borderBottom: '1px solid rgba(255,255,255,0.06)', flexShrink: 0 }}>
+    <div style={{
+      width: '100%', height: '100%',
+      background: 'linear-gradient(180deg, #faf7f2 0%, #f5f0e8 100%)',
+      display: 'flex', flexDirection: 'column', userSelect: 'none', overflow: 'hidden',
+      borderLeft: '1px solid rgba(180,160,120,0.2)',
+    }}>
+      {/* Header categoria */}
+      <div style={{ padding: '14px 16px 10px', borderBottom: '1px solid rgba(160,130,90,0.15)', flexShrink: 0 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-          <h2 style={{ fontSize: 13, fontWeight: 700, color: '#e7e5e4', textTransform: 'uppercase', letterSpacing: '0.1em', margin: 0 }}>{category}</h2>
+          <h2 style={{ fontSize: 11, fontWeight: 700, color: '#8c7355', textTransform: 'uppercase', letterSpacing: '0.12em', margin: 0 }}>{category}</h2>
           {totalPages > 1 && (
-            <span style={{ fontSize: 10, color: '#57534e' }}>{pageNum}/{totalPages}</span>
+            <span style={{ fontSize: 9, color: '#c4b090' }}>{pageNum}/{totalPages}</span>
           )}
         </div>
       </div>
-      <div style={{ flex: 1, overflowY: 'hidden', padding: '8px 0' }}>
-        {dishes.map(dish => (
+
+      {/* Lista piatti */}
+      <div style={{ flex: 1, overflowY: 'hidden', padding: '6px 0' }}>
+        {dishes.map((dish, idx) => (
           <button
             key={dish.id}
             onPointerUp={() => dish.is_available && onSelect(dish)}
             style={{
               width: '100%', display: 'flex', alignItems: 'flex-start',
-              padding: '8px 16px', gap: 10, background: 'none', border: 'none',
+              padding: '7px 14px', gap: 10, background: 'none', border: 'none',
               cursor: dish.is_available ? 'pointer' : 'default',
               textAlign: 'left', WebkitTapHighlightColor: 'transparent',
+              borderBottom: idx < dishes.length - 1 ? '1px solid rgba(160,130,90,0.08)' : 'none',
             }}
           >
+            {/* Miniatura */}
             {dish.image_url && (
-              <div style={{ width: 52, height: 52, borderRadius: 8, overflow: 'hidden', flexShrink: 0, background: '#292524' }}>
+              <div style={{ width: 48, height: 48, borderRadius: 6, overflow: 'hidden', flexShrink: 0, background: '#ede6d6' }}>
                 <img src={dish.image_url} alt={dish.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
               </div>
             )}
+
+            {/* Testo */}
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'flex-start' }}>
-                <span style={{ fontSize: 14, fontWeight: 600, color: dish.is_available ? '#e7e5e4' : '#57534e', lineHeight: 1.3, flex: 1 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 6, alignItems: 'baseline' }}>
+                <span style={{
+                  fontSize: 13, fontWeight: 600,
+                  color: dish.is_available ? '#3d2e1a' : '#c4b090',
+                  lineHeight: 1.3, flex: 1,
+                  whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                }}>
                   {dish.name}
                 </span>
-                <span style={{ fontSize: 13, fontWeight: 600, color: dish.is_available ? '#a8a29e' : '#44403c', flexShrink: 0 }}>
-                  {dish.price != null && dish.price > 0 ? `€${Number(dish.price).toFixed(2)}` : ''}
-                </span>
+                {dish.price != null && dish.price > 0 && (
+                  <span style={{ fontSize: 12, fontWeight: 600, color: dish.is_available ? '#6b5235' : '#c4b090', flexShrink: 0 }}>
+                    €{Number(dish.price).toFixed(2)}
+                  </span>
+                )}
               </div>
+
+              {/* Descrizione troncata */}
               {dish.description && (
-                <p style={{ fontSize: 11, color: '#78716c', lineHeight: 1.4, marginTop: 2, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' } as React.CSSProperties}>
+                <p style={{
+                  fontSize: 10, color: '#a08060', lineHeight: 1.4, margin: '2px 0 0',
+                  overflow: 'hidden', display: '-webkit-box',
+                  WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
+                } as React.CSSProperties}>
                   {dish.description}
                 </p>
               )}
+
+              {/* Allergeni — numeri senza contorno, stesso font del testo piatto */}
               {dish.allergens?.length > 0 && (
-                <div style={{ display: 'flex', gap: 3, flexWrap: 'wrap', marginTop: 4 }}>
-                  {dish.allergens.map(a => (
-                    <span key={a} title={a} style={{
-                      fontSize: 9, fontWeight: 700, color: '#78716c',
-                      background: 'rgba(255,255,255,0.06)',
-                      border: '1px solid rgba(255,255,255,0.08)',
-                      borderRadius: 3, padding: '1px 4px',
-                      minWidth: 16, textAlign: 'center',
-                    }}>{ALLERGEN_NUM[a] ?? '?'}</span>
-                  ))}
-                </div>
+                <p style={{ fontSize: 10, color: '#b8a080', margin: '3px 0 0', lineHeight: 1 }}>
+                  {dish.allergens.map(a => ALLERGEN_NUM[a] ?? '?').join(' · ')}
+                </p>
               )}
+
               {!dish.is_available && (
-                <span style={{ fontSize: 10, color: '#57534e', marginTop: 2, display: 'block' }}>Non disponibile</span>
+                <span style={{ fontSize: 9, color: '#c4b090', marginTop: 2, display: 'block' }}>Non disponibile</span>
               )}
             </div>
           </button>
         ))}
+      </div>
+
+      {/* Footer pagina */}
+      <div style={{ padding: '6px 14px', borderTop: '1px solid rgba(160,130,90,0.1)', flexShrink: 0, display: 'flex', justifyContent: 'flex-end' }}>
+        <span style={{ fontSize: 9, color: '#d4c4a8' }}>· · ·</span>
       </div>
     </div>
   )
@@ -267,9 +290,17 @@ function CategoryPage({ category, dishes, pageNum, totalPages, onSelect }: PageD
 // ─── Pagina finale ────────────────────────────────────────────────────────────
 function BackPage({ restaurantName }: { restaurantName: string }) {
   return (
-    <div style={{ width: '100%', height: '100%', background: '#292524', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 32, userSelect: 'none' }}>
-      <p style={{ color: '#78716c', fontSize: 14, textAlign: 'center', margin: 0 }}>{restaurantName}</p>
-      <p style={{ color: '#44403c', fontSize: 12, marginTop: 8, margin: '8px 0 0' }}>Grazie per la visita</p>
+    <div style={{
+      width: '100%', height: '100%',
+      background: 'linear-gradient(160deg, #ede6d6 0%, #e8dfc8 100%)',
+      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+      padding: 32, userSelect: 'none',
+      borderRight: '3px solid rgba(180,160,120,0.3)',
+    }}>
+      <div style={{ width: 32, height: 1, background: 'rgba(120,100,70,0.3)', borderRadius: 99, marginBottom: 16 }} />
+      <p style={{ color: '#8c7355', fontSize: 13, textAlign: 'center', margin: 0, fontFamily: 'Georgia, serif' }}>{restaurantName}</p>
+      <p style={{ color: '#b8a080', fontSize: 10, marginTop: 8, margin: '8px 0 0', letterSpacing: '0.08em', textTransform: 'uppercase' }}>Grazie per la visita</p>
+      <div style={{ width: 32, height: 1, background: 'rgba(120,100,70,0.3)', borderRadius: 99, marginTop: 16 }} />
     </div>
   )
 }
@@ -279,34 +310,50 @@ export default function FlipBook({ dishes, menuName, restaurantName }: Props) {
   const bookRef = useRef<any>(null)
   const [currentPage, setCurrentPage] = useState(0)
   const [selectedDish, setSelectedDish] = useState<Dish | null>(null)
+  const [isFlipping, setIsFlipping] = useState(false)
 
   const pages = buildPages(dishes)
   const totalPages = pages.length + 2
 
   const categoryPageIndex: Record<string, number> = {}
   pages.forEach((p, i) => {
-    if (!(p.category in categoryPageIndex)) {
-      categoryPageIndex[p.category] = i + 1
-    }
+    if (!(p.category in categoryPageIndex)) categoryPageIndex[p.category] = i + 1
   })
   const categories = Object.keys(categoryPageIndex)
 
+  // Flip con animazione — usa flip() che anima sempre
+  const goToPage = (n: number) => {
+    if (isFlipping) return
+    setIsFlipping(true)
+    bookRef.current?.pageFlip().flip(n)
+    setTimeout(() => setIsFlipping(false), 1050)
+  }
+
+  const goPrev = () => { if (currentPage > 0) goToPage(currentPage - 1) }
+  const goNext = () => { if (currentPage < totalPages - 1) goToPage(currentPage + 1) }
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100dvh', maxHeight: '100dvh', background: '#0c0a09', overflow: 'hidden', touchAction: 'none' }}>
+    <div style={{
+      display: 'flex', flexDirection: 'column',
+      height: '100dvh', maxHeight: '100dvh',
+      background: '#1a1410',
+      overflow: 'hidden', touchAction: 'none',
+    }}>
 
       {/* Barra categorie */}
       {categories.length > 0 && (
-        <div style={{ flexShrink: 0, paddingTop: 12, paddingBottom: 8 }}>
-          <div style={{ display: 'flex', gap: 8, overflowX: 'auto', padding: '0 12px', scrollbarWidth: 'none' }}>
+        <div style={{ flexShrink: 0, paddingTop: 10, paddingBottom: 6 }}>
+          <div style={{ display: 'flex', gap: 6, overflowX: 'auto', padding: '0 12px', scrollbarWidth: 'none' }}>
             {categories.map(cat => (
               <button
                 key={cat}
-                onPointerUp={() => bookRef.current?.pageFlip().turnToPage(categoryPageIndex[cat])}
+                onPointerUp={() => goToPage(categoryPageIndex[cat])}
                 style={{
-                  flexShrink: 0, padding: '6px 14px', borderRadius: 99, fontSize: 12, fontWeight: 500,
-                  background: 'rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.55)',
-                  border: '1px solid rgba(255,255,255,0.1)', cursor: 'pointer',
+                  flexShrink: 0, padding: '5px 12px', borderRadius: 99, fontSize: 11, fontWeight: 500,
+                  background: 'rgba(245,240,232,0.08)', color: 'rgba(245,240,232,0.5)',
+                  border: '1px solid rgba(245,240,232,0.12)', cursor: 'pointer',
                   WebkitTapHighlightColor: 'transparent',
+                  transition: 'background 0.2s, color 0.2s',
                 }}
               >
                 {cat}
@@ -316,34 +363,66 @@ export default function FlipBook({ dishes, menuName, restaurantName }: Props) {
         </div>
       )}
 
-      {/* Flipbook centrato */}
-      <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '4px 0', minHeight: 0 }}>
+      {/* Flipbook + frecce integrate lateralmente */}
+      <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 0 }}>
+
+        {/* Freccia sinistra — incollata al bordo sinistro del libro */}
+        <button
+          onPointerUp={goPrev}
+          disabled={currentPage === 0 || isFlipping}
+          style={{
+            width: 28, height: 64, flexShrink: 0,
+            background: currentPage === 0 ? 'rgba(245,240,232,0.02)' : 'rgba(245,240,232,0.06)',
+            border: '1px solid rgba(245,240,232,0.08)',
+            borderRight: 'none',
+            borderRadius: '8px 0 0 8px',
+            cursor: currentPage === 0 ? 'default' : 'pointer',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            opacity: currentPage === 0 ? 0.15 : 1,
+            transition: 'opacity 0.25s, background 0.25s',
+            WebkitTapHighlightColor: 'transparent',
+            boxShadow: currentPage === 0 ? 'none' : '-6px 0 24px rgba(0,0,0,0.5)',
+            alignSelf: 'center',
+          }}
+        >
+          <svg width="14" height="14" fill="none" stroke="rgba(245,240,232,0.6)" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 19l-7-7 7-7" />
+          </svg>
+        </button>
+
+        {/* Il libro */}
         <HTMLFlipBook
           ref={bookRef}
-          width={320}
-          height={490}
+          width={310}
+          height={480}
           size="stretch"
-          minWidth={260}
-          maxWidth={460}
-          minHeight={400}
-          maxHeight={660}
+          minWidth={240}
+          maxWidth={440}
+          minHeight={380}
+          maxHeight={640}
           showCover={true}
           mobileScrollSupport={false}
-          onFlip={(e: any) => setCurrentPage(e.data)}
+          onFlip={(e: any) => { setCurrentPage(e.data); setIsFlipping(false) }}
           className=""
-          style={{ filter: 'drop-shadow(0 32px 64px rgba(0,0,0,1)) drop-shadow(0 8px 24px rgba(0,0,0,0.8)) drop-shadow(0 2px 6px rgba(0,0,0,0.6))' }}
+          style={{
+            filter: [
+              'drop-shadow(0 2px 4px rgba(0,0,0,0.6))',
+              'drop-shadow(0 12px 32px rgba(0,0,0,0.8))',
+              'drop-shadow(0 32px 64px rgba(0,0,0,0.9))',
+            ].join(' '),
+          }}
           startPage={0}
           drawShadow={true}
-          flippingTime={1000}
+          flippingTime={900}
           usePortrait={true}
           startZIndex={0}
           autoSize={true}
-          clickEventForward={true}
+          clickEventForward={false}
           useMouseEvents={true}
-          swipeDistance={5}
+          swipeDistance={0}
           showPageCorners={true}
           disableFlipByClick={true}
-          maxShadowOpacity={1}
+          maxShadowOpacity={0.85}
         >
           <div className="page"><CoverPage menuName={menuName} restaurantName={restaurantName} /></div>
           {pages.map((page, i) => (
@@ -353,70 +432,41 @@ export default function FlipBook({ dishes, menuName, restaurantName }: Props) {
           ))}
           <div className="page"><BackPage restaurantName={restaurantName} /></div>
         </HTMLFlipBook>
-      </div>
 
-      {/* Navigazione bottom: frecce + contatore */}
-      <div style={{
-        flexShrink: 0,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: 0,
-        paddingBottom: 'max(16px, env(safe-area-inset-bottom))',
-        paddingTop: 8,
-      }}>
+        {/* Freccia destra — incollata al bordo destro del libro */}
         <button
-          onPointerUp={() => { if (currentPage > 0) bookRef.current?.pageFlip().turnToPrevPage() }}
-          disabled={currentPage === 0}
+          onPointerUp={goNext}
+          disabled={currentPage >= totalPages - 1 || isFlipping}
           style={{
-            width: 44, height: 44,
-            borderRadius: '12px 0 0 12px',
-            background: currentPage === 0 ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.08)',
-            border: '1px solid rgba(255,255,255,0.1)',
-            borderRight: 'none',
-            cursor: currentPage === 0 ? 'default' : 'pointer',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            opacity: currentPage === 0 ? 0.2 : 1,
-            transition: 'opacity 0.2s, background 0.2s',
-            WebkitTapHighlightColor: 'transparent',
-          }}
-        >
-          <svg width="16" height="16" fill="none" stroke="rgba(255,255,255,0.75)" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 19l-7-7 7-7" />
-          </svg>
-        </button>
-
-        <div style={{
-          height: 44, minWidth: 64, padding: '0 12px',
-          background: 'rgba(255,255,255,0.05)',
-          border: '1px solid rgba(255,255,255,0.1)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-        }}>
-          <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', fontVariantNumeric: 'tabular-nums', letterSpacing: '0.05em' }}>
-            {currentPage + 1} / {totalPages}
-          </span>
-        </div>
-
-        <button
-          onPointerUp={() => { if (currentPage < totalPages - 1) bookRef.current?.pageFlip().turnToNextPage() }}
-          disabled={currentPage >= totalPages - 1}
-          style={{
-            width: 44, height: 44,
-            borderRadius: '0 12px 12px 0',
-            background: currentPage >= totalPages - 1 ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.08)',
-            border: '1px solid rgba(255,255,255,0.1)',
+            width: 28, height: 64, flexShrink: 0,
+            background: currentPage >= totalPages - 1 ? 'rgba(245,240,232,0.02)' : 'rgba(245,240,232,0.06)',
+            border: '1px solid rgba(245,240,232,0.08)',
             borderLeft: 'none',
+            borderRadius: '0 8px 8px 0',
             cursor: currentPage >= totalPages - 1 ? 'default' : 'pointer',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
-            opacity: currentPage >= totalPages - 1 ? 0.2 : 1,
-            transition: 'opacity 0.2s, background 0.2s',
+            opacity: currentPage >= totalPages - 1 ? 0.15 : 1,
+            transition: 'opacity 0.25s, background 0.25s',
             WebkitTapHighlightColor: 'transparent',
+            boxShadow: currentPage >= totalPages - 1 ? 'none' : '6px 0 24px rgba(0,0,0,0.5)',
+            alignSelf: 'center',
           }}
         >
-          <svg width="16" height="16" fill="none" stroke="rgba(255,255,255,0.75)" viewBox="0 0 24 24">
+          <svg width="14" height="14" fill="none" stroke="rgba(245,240,232,0.6)" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" />
           </svg>
         </button>
+      </div>
+
+      {/* Contatore pagine + safe area */}
+      <div style={{
+        flexShrink: 0, textAlign: 'center',
+        paddingBottom: 'max(14px, env(safe-area-inset-bottom))',
+        paddingTop: 8,
+      }}>
+        <span style={{ fontSize: 10, color: 'rgba(245,240,232,0.2)', fontVariantNumeric: 'tabular-nums', letterSpacing: '0.08em' }}>
+          {currentPage + 1} · {totalPages}
+        </span>
       </div>
 
       {/* Modale piatto */}
