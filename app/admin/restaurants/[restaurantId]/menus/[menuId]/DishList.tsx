@@ -71,9 +71,9 @@ function SortableDish({ dish, restaurantId, menuId }: { dish: Dish; restaurantId
       {/* Card piatto */}
       <Link
         href={`/admin/restaurants/${restaurantId}/menus/${menuId}/dishes/${dish.id}`}
-        className="flex-1 flex items-start gap-3 p-3 rounded-xl hover:bg-stone-50 transition-colors"
+        className="flex-1 flex items-center gap-3 p-3 rounded-xl hover:bg-stone-50 transition-colors"
       >
-        <div className="w-12 h-12 rounded-lg overflow-hidden bg-stone-100 flex-shrink-0 mt-0.5">
+        <div className="w-12 h-12 rounded-lg overflow-hidden bg-stone-100 flex-shrink-0">
           {dish.image_url ? (
             <img src={dish.image_url} alt={dish.name} className="w-full h-full object-cover" />
           ) : (
@@ -113,7 +113,7 @@ function SortableDish({ dish, restaurantId, menuId }: { dish: Dish; restaurantId
           )}
         </div>
 
-        <div className="flex items-center gap-3 flex-shrink-0 pt-1">
+        <div className="flex items-center gap-3 flex-shrink-0 self-start mt-3">
           {dish.price != null && dish.price > 0 && (
             <span className="text-sm font-medium text-slate-700">
               €{Number(dish.price).toFixed(2)}
