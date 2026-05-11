@@ -262,7 +262,7 @@ export default function FlipBook({ dishes, menuName, restaurantName }: Props) {
             {categories.map(cat => (
               <button
                 key={cat}
-                onPointerUp={() => bookRef.current?.pageFlip().flip(categoryPageIndex[cat])}
+                onPointerUp={() => bookRef.current?.pageFlip().turnToPage(categoryPageIndex[cat])}
                 style={{
                   flexShrink: 0, padding: '6px 14px', borderRadius: 99, fontSize: 12, fontWeight: 500,
                   background: 'rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.55)',
@@ -314,54 +314,44 @@ export default function FlipBook({ dishes, menuName, restaurantName }: Props) {
           ))}
           <div className="page"><BackPage restaurantName={restaurantName} /></div>
         </HTMLFlipBook>
-      </div>
 
-      {/* Frecce con safe area per Safari iPhone */}
-      <div style={{
-        flexShrink: 0,
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        padding: '8px 24px',
-        paddingBottom: 'max(16px, env(safe-area-inset-bottom))',
-      }}>
+        {/* Freccia destra */}
         <button
-          onPointerUp={() => { if (currentPage > 0) bookRef.current?.pageFlip().flip(currentPage - 1) }}
-          disabled={currentPage === 0}
-          style={{
-            width: 44, height: 44, borderRadius: '50%', border: '1px solid rgba(255,255,255,0.12)',
-            background: currentPage === 0 ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.09)',
-            cursor: currentPage === 0 ? 'default' : 'pointer',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            opacity: currentPage === 0 ? 0.25 : 1,
-            transition: 'opacity 0.2s',
-            WebkitTapHighlightColor: 'transparent',
-          }}
-        >
-          <svg width="18" height="18" fill="none" stroke="white" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-          </svg>
-        </button>
-
-        <span style={{ fontSize: 12, color: '#57534e', fontVariantNumeric: 'tabular-nums' }}>
-          {currentPage + 1} / {totalPages}
-        </span>
-
-        <button
-          onPointerUp={() => { if (currentPage < totalPages - 1) bookRef.current?.pageFlip().flip(currentPage + 1) }}
+          onPointerUp={() => { if (currentPage < totalPages - 1) bookRef.current?.pageFlip().turnToNextPage() }}
           disabled={currentPage >= totalPages - 1}
           style={{
-            width: 44, height: 44, borderRadius: '50%', border: '1px solid rgba(255,255,255,0.12)',
-            background: currentPage >= totalPages - 1 ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.09)',
+            flexShrink: 0,
+            width: 40, height: 72,
+            borderRadius: '0 12px 12px 0',
+            background: currentPage >= totalPages - 1 ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.07)',
+            border: '1px solid rgba(255,255,255,0.08)',
+            borderLeft: 'none',
             cursor: currentPage >= totalPages - 1 ? 'default' : 'pointer',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
-            opacity: currentPage >= totalPages - 1 ? 0.25 : 1,
-            transition: 'opacity 0.2s',
+            opacity: currentPage >= totalPages - 1 ? 0.2 : 1,
+            transition: 'opacity 0.2s, background 0.2s',
             WebkitTapHighlightColor: 'transparent',
+            alignSelf: 'center',
+            boxShadow: currentPage >= totalPages - 1 ? 'none' : '4px 0 20px rgba(0,0,0,0.4)',
           }}
         >
-          <svg width="18" height="18" fill="none" stroke="white" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+          <svg width="16" height="16" fill="none" stroke="rgba(255,255,255,0.7)" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" />
           </svg>
         </button>
+
+      </div>
+
+      {/* Contatore pagine — safe area iPhone */}
+      <div style={{
+        flexShrink: 0,
+        textAlign: 'center',
+        paddingBottom: 'max(14px, env(safe-area-inset-bottom))',
+        paddingTop: 6,
+      }}>
+        <span style={{ fontSize: 11, color: '#44403c', fontVariantNumeric: 'tabular-nums', letterSpacing: '0.05em' }}>
+          {currentPage + 1} / {totalPages}
+        </span>
       </div>
 
       {/* Modale piatto — z-index altissimo, fuori da tutto */}
