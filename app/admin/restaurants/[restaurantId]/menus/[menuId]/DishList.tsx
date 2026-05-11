@@ -95,7 +95,7 @@ function SortableDish({ dish, restaurantId, menuId }: { dish: Dish; restaurantId
             )}
           </div>
           {dish.description && (
-            <p className="text-xs text-slate-400 mt-0.5 truncate max-w-xs">
+            <p className="text-xs text-slate-400 mt-0.5 w-40 truncate">
               {dish.description}
             </p>
           )}
