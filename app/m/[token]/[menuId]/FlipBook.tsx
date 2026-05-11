@@ -36,20 +36,15 @@ function buildPages(dishes: Dish[]): PageData[] {
     if (!grouped[cat]) grouped[cat] = []
     grouped[cat].push(dish)
   })
-  const categories = Object.keys(grouped).sort((a, b) =>
+  const cats = Object.keys(grouped).sort((a, b) =>
     a === 'Senza categoria' ? 1 : b === 'Senza categoria' ? -1 : a.localeCompare(b)
   )
   const pages: PageData[] = []
-  categories.forEach(cat => {
-    const catDishes = grouped[cat]
-    const totalPages = Math.ceil(catDishes.length / MAX_PER_PAGE)
-    for (let i = 0; i < totalPages; i++) {
-      pages.push({
-        category: cat,
-        dishes: catDishes.slice(i * MAX_PER_PAGE, (i + 1) * MAX_PER_PAGE),
-        pageNum: i + 1,
-        totalPages,
-      })
+  cats.forEach(cat => {
+    const items = grouped[cat]
+    const tot = Math.ceil(items.length / MAX_PER_PAGE)
+    for (let i = 0; i < tot; i++) {
+      pages.push({ category: cat, dishes: items.slice(i * MAX_PER_PAGE, (i + 1) * MAX_PER_PAGE), pageNum: i + 1, totalPages: tot })
     }
   })
   return pages
@@ -57,40 +52,36 @@ function buildPages(dishes: Dish[]): PageData[] {
 
 function DishModal({ dish, onClose }: { dish: Dish; onClose: () => void }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center" onClick={onClose}>
-      <div className="absolute inset-0 bg-black/75 backdrop-blur-md" />
+    <div className="fixed inset-0 z-[100] flex items-end justify-center" onClick={onClose}>
+      <div className="absolute inset-0 bg-black/80 backdrop-blur-md" />
       <div
-        className="relative bg-white rounded-t-3xl w-full max-w-lg overflow-hidden shadow-2xl"
-        style={{ maxHeight: '75vh' }}
+        className="relative bg-white w-full max-w-lg overflow-hidden flex flex-col"
+        style={{ borderRadius: '24px 24px 0 0', maxHeight: '78vh' }}
         onClick={e => e.stopPropagation()}
       >
-        {/* Drag handle */}
-        <div className="flex justify-center pt-3 pb-1">
+        <div className="flex justify-center pt-3 pb-2 flex-shrink-0">
           <div className="w-10 h-1 bg-stone-200 rounded-full" />
         </div>
 
-        {/* Foto solo se presente */}
         {dish.image_url && (
-          <div className="w-full bg-stone-100" style={{ height: '220px' }}>
+          <div className="w-full flex-shrink-0" style={{ height: '230px' }}>
             <img src={dish.image_url} alt={dish.name} className="w-full h-full object-cover" />
           </div>
         )}
 
-        <div className="p-5 overflow-y-auto" style={{ maxHeight: dish.image_url ? 'calc(75vh - 280px)' : 'calc(75vh - 60px)' }}>
+        <div className="p-5 overflow-y-auto flex-1">
           <div className="flex items-start justify-between gap-3 mb-2">
             <h3 className="text-xl font-bold text-stone-800 leading-tight">{dish.name}</h3>
             {dish.price != null && dish.price > 0 && (
-              <span className="text-xl font-bold text-stone-800 flex-shrink-0">
-                €{Number(dish.price).toFixed(2)}
-              </span>
+              <span className="text-xl font-bold text-stone-800 flex-shrink-0">€{Number(dish.price).toFixed(2)}</span>
             )}
           </div>
           {dish.description && (
             <p className="text-stone-500 text-sm leading-relaxed mb-3">{dish.description}</p>
           )}
           {dish.allergens?.length > 0 && (
-            <div>
-              <p className="text-xs font-semibold text-stone-400 uppercase tracking-wider mb-1.5">Allergeni</p>
+            <div className="mt-2">
+              <p className="text-xs font-semibold text-stone-400 uppercase tracking-wider mb-2">Allergeni</p>
               <div className="flex flex-wrap gap-1.5">
                 {dish.allergens.map(a => (
                   <span key={a} className="text-xs bg-stone-100 text-stone-600 px-2.5 py-1 rounded-full">{a}</span>
@@ -99,9 +90,7 @@ function DishModal({ dish, onClose }: { dish: Dish; onClose: () => void }) {
             </div>
           )}
           {!dish.is_available && (
-            <span className="inline-block mt-3 text-xs bg-stone-100 text-stone-400 px-3 py-1 rounded-full">
-              Non disponibile
-            </span>
+            <span className="inline-block mt-3 text-xs bg-stone-100 text-stone-400 px-3 py-1 rounded-full">Non disponibile</span>
           )}
         </div>
 
@@ -120,10 +109,9 @@ function DishModal({ dish, onClose }: { dish: Dish; onClose: () => void }) {
 
 function DishRow({ dish, onSelect }: { dish: Dish; onSelect: (d: Dish) => void }) {
   return (
-    <button
-      type="button"
-      onClick={() => onSelect(dish)}
-      className="w-full text-left flex items-start justify-between gap-3 py-2.5 px-2 rounded-xl hover:bg-stone-50 active:bg-stone-100 transition-colors border-b border-stone-100 last:border-0"
+    <div
+      onClick={(e) => { e.stopPropagation(); onSelect(dish) }}
+      className="w-full flex items-start justify-between gap-3 py-2.5 px-2 rounded-xl active:bg-stone-100 transition-colors border-b border-stone-100 last:border-0 cursor-pointer"
     >
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-1.5">
@@ -133,20 +121,18 @@ function DishRow({ dish, onSelect }: { dish: Dish; onSelect: (d: Dish) => void }
           {!dish.is_available && <span className="text-xs text-stone-300 flex-shrink-0">(N/D)</span>}
         </div>
         {dish.description && (
-          <p className="text-xs text-stone-400 mt-0.5 leading-snug truncate max-w-[180px]">{dish.description}</p>
+          <p className="text-xs text-stone-400 mt-0.5 leading-snug truncate" style={{ maxWidth: '180px' }}>{dish.description}</p>
         )}
         {dish.allergens?.length > 0 && (
-          <p className="text-xs text-stone-300 mt-0.5 truncate max-w-[180px]">
+          <p className="text-xs text-stone-300 mt-0.5 truncate" style={{ maxWidth: '180px' }}>
             {dish.allergens.slice(0, 3).join(', ')}{dish.allergens.length > 3 ? ` +${dish.allergens.length - 3}` : ''}
           </p>
         )}
       </div>
       {dish.price != null && dish.price > 0 && (
-        <span className="text-sm font-bold text-stone-700 flex-shrink-0 mt-0.5">
-          €{Number(dish.price).toFixed(2)}
-        </span>
+        <span className="text-sm font-bold text-stone-700 flex-shrink-0 mt-0.5">€{Number(dish.price).toFixed(2)}</span>
       )}
-    </button>
+    </div>
   )
 }
 
@@ -155,9 +141,7 @@ function CategoryPage({ category, dishes, pageNum, totalPages, onSelect }: PageD
     <div className="w-full h-full bg-white flex flex-col select-none">
       <div className="px-4 pt-4 pb-2 border-b border-stone-100 flex-shrink-0 flex items-center justify-between">
         <h2 className="text-xs font-bold text-stone-400 uppercase tracking-widest">{category}</h2>
-        {totalPages > 1 && (
-          <span className="text-xs text-stone-300">{pageNum}/{totalPages}</span>
-        )}
+        {totalPages > 1 && <span className="text-xs text-stone-300">{pageNum}/{totalPages}</span>}
       </div>
       <div className="flex-1 px-2 py-1 overflow-hidden">
         {dishes.map(dish => (
@@ -196,113 +180,133 @@ export default function FlipBook({ dishes, menuName, restaurantName }: Props) {
   const bookRef = useRef<any>(null)
   const [currentPage, setCurrentPage] = useState(0)
   const [selectedDish, setSelectedDish] = useState<Dish | null>(null)
+  const [isFlipping, setIsFlipping] = useState(false)
 
   const pages = buildPages(dishes)
   const totalPages = pages.length + 2
 
-  // Indice di pagina per categoria (cover = 0, prima cat = 1)
   const categoryPageIndex: Record<string, number> = {}
   pages.forEach((p, i) => {
-    if (!(p.category in categoryPageIndex)) {
-      categoryPageIndex[p.category] = i + 1
-    }
+    if (!(p.category in categoryPageIndex)) categoryPageIndex[p.category] = i + 1
   })
-
   const categories = Object.keys(categoryPageIndex)
 
-  function goToCategory(cat: string) {
-    bookRef.current?.pageFlip().flip(categoryPageIndex[cat])
-  }
-
-  const handleSelect = useCallback((dish: Dish) => {
-    setSelectedDish(dish)
+  const handleFlip = useCallback((e: any) => {
+    setCurrentPage(e.data)
+    setIsFlipping(false)
   }, [])
 
+  function flipPrev() {
+    if (isFlipping || currentPage === 0) return
+    setIsFlipping(true)
+    bookRef.current?.pageFlip().flipPrev('top')
+  }
+
+  function flipNext() {
+    if (isFlipping || currentPage >= totalPages - 1) return
+    setIsFlipping(true)
+    bookRef.current?.pageFlip().flipNext('top')
+  }
+
   return (
-    <div
-      className="flex flex-col items-center bg-stone-950 overflow-hidden"
-      style={{ minHeight: '100dvh' }}
-    >
-      {/* Navigazione categorie */}
-      {categories.length > 0 && (
-        <div className="w-full px-3 pt-4 pb-2 flex gap-2 overflow-x-auto scrollbar-hide flex-shrink-0">
+    <div className="flex flex-col bg-stone-950" style={{ minHeight: '100dvh', overflow: 'hidden' }}>
+
+      {/* Top bar con back e categorie */}
+      <div className="flex-shrink-0 pt-3 pb-1 px-3">
+        <div className="flex gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none' }}>
           {categories.map(cat => (
             <button
               key={cat}
-              onClick={() => goToCategory(cat)}
-              className="flex-shrink-0 px-3 py-1.5 rounded-full text-xs font-medium bg-white/10 hover:bg-white/20 text-stone-300 hover:text-white transition-colors"
+              onClick={() => bookRef.current?.pageFlip().flip(categoryPageIndex[cat])}
+              className="flex-shrink-0 px-3.5 py-1.5 rounded-full text-xs font-medium transition-all"
+              style={{
+                background: 'rgba(255,255,255,0.08)',
+                color: 'rgba(255,255,255,0.6)',
+                border: '1px solid rgba(255,255,255,0.08)',
+              }}
             >
               {cat}
             </button>
           ))}
         </div>
-      )}
+      </div>
 
       {/* Flipbook */}
-      <div className="flex-1 flex flex-col items-center justify-center w-full px-2 py-2">
+      <div className="flex-1 flex items-center justify-center px-1 py-2" style={{ minHeight: 0 }}>
         <HTMLFlipBook
           ref={bookRef}
-          width={340}
-          height={520}
+          width={320}
+          height={490}
           size="stretch"
-          minWidth={280}
-          maxWidth={520}
-          minHeight={440}
-          maxHeight={720}
+          minWidth={260}
+          maxWidth={480}
+          minHeight={400}
+          maxHeight={680}
           showCover={true}
           mobileScrollSupport={false}
-          onFlip={(e: any) => setCurrentPage(e.data)}
-          className="shadow-2xl"
+          onFlip={handleFlip}
+          onChangeState={(e: any) => { if (e.data === 'flipping') setIsFlipping(true) }}
+          className=""
           style={{
-            filter: 'drop-shadow(0 25px 50px rgba(0,0,0,0.8))',
+            filter: 'drop-shadow(0 30px 60px rgba(0,0,0,0.9)) drop-shadow(0 8px 20px rgba(0,0,0,0.6))',
           }}
           startPage={0}
           drawShadow={true}
-          flippingTime={800}
+          flippingTime={900}
           usePortrait={true}
           startZIndex={0}
           autoSize={true}
-          clickEventForward={false}
+          clickEventForward={true}
           useMouseEvents={true}
-          swipeDistance={15}
+          swipeDistance={10}
           showPageCorners={true}
-          disableFlipByClick={false}
-          maxShadowOpacity={0.8}
+          disableFlipByClick={true}
+          maxShadowOpacity={0.9}
         >
           <div className="page"><CoverPage menuName={menuName} restaurantName={restaurantName} /></div>
           {pages.map((page, i) => (
             <div key={i} className="page">
-              <CategoryPage {...page} onSelect={handleSelect} />
+              <CategoryPage {...page} onSelect={(d) => setSelectedDish(d)} />
             </div>
           ))}
           <div className="page"><BackPage restaurantName={restaurantName} /></div>
         </HTMLFlipBook>
       </div>
 
-      {/* Controlli */}
-      <div className="flex items-center gap-8 py-4 flex-shrink-0">
+      {/* Frecce eleganti */}
+      <div className="flex-shrink-0 flex items-center justify-between px-6 pb-5 pt-1">
         <button
-          onClick={() => bookRef.current?.pageFlip().flipPrev()}
+          onClick={flipPrev}
           disabled={currentPage === 0}
-          className="w-11 h-11 rounded-full bg-white/10 hover:bg-white/20 disabled:opacity-30 transition-colors flex items-center justify-center text-white"
+          className="group flex items-center gap-2 transition-all disabled:opacity-20"
         >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-          </svg>
+          <div className="w-10 h-10 rounded-full flex items-center justify-center transition-all"
+            style={{ background: currentPage === 0 ? 'rgba(255,255,255,0.04)' : 'rgba(255,255,255,0.10)', border: '1px solid rgba(255,255,255,0.10)' }}>
+            <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            </svg>
+          </div>
+          <span className="text-xs text-stone-500 group-hover:text-stone-300 transition-colors hidden sm:block">Indietro</span>
         </button>
-        <span className="text-stone-500 text-xs tabular-nums">{currentPage + 1} / {totalPages}</span>
+
+        <span className="text-stone-600 text-xs tabular-nums">{currentPage + 1} / {totalPages}</span>
+
         <button
-          onClick={() => bookRef.current?.pageFlip().flipNext()}
+          onClick={flipNext}
           disabled={currentPage >= totalPages - 1}
-          className="w-11 h-11 rounded-full bg-white/10 hover:bg-white/20 disabled:opacity-30 transition-colors flex items-center justify-center text-white"
+          className="group flex items-center gap-2 transition-all disabled:opacity-20"
         >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-          </svg>
+          <span className="text-xs text-stone-500 group-hover:text-stone-300 transition-colors hidden sm:block">Avanti</span>
+          <div className="w-10 h-10 rounded-full flex items-center justify-center transition-all"
+            style={{ background: currentPage >= totalPages - 1 ? 'rgba(255,255,255,0.04)' : 'rgba(255,255,255,0.10)', border: '1px solid rgba(255,255,255,0.10)' }}>
+            <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
+          </div>
         </button>
       </div>
 
-      {/* Modale piatto — fuori dal flipbook, non interferisce */}
+      {/* Modale piatto */}
       {selectedDish && (
         <DishModal dish={selectedDish} onClose={() => setSelectedDish(null)} />
       )}
