@@ -56,8 +56,13 @@ function buildPages(dishes: Dish[]): PageData[] {
 }
 
 // Modale montata nel body via portal-like div fisso
+const DESC_PREVIEW_CHARS = 160
+
 function DishModal({ dish, onClose }: { dish: Dish; onClose: () => void }) {
-  // Blocca scroll body quando modale aperta
+  const [descExpanded, setDescExpanded] = useState(false)
+  const descLong = (dish.description?.length ?? 0) > DESC_PREVIEW_CHARS
+  const hasPhoto = !!dish.image_url
+
   useEffect(() => {
     document.body.style.overflow = 'hidden'
     return () => { document.body.style.overflow = '' }
@@ -66,39 +71,40 @@ function DishModal({ dish, onClose }: { dish: Dish; onClose: () => void }) {
   return (
     <div
       style={{ position: 'fixed', inset: 0, zIndex: 9999, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}
-      onClick={onClose}
+      onPointerUp={onClose}
     >
       <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.82)', backdropFilter: 'blur(8px)' }} />
       <div
-        onClick={e => e.stopPropagation()}
+        onPointerUp={e => e.stopPropagation()}
         style={{
           position: 'relative',
           background: 'white',
           width: '100%',
           maxWidth: '480px',
           borderRadius: '24px 24px 0 0',
-          maxHeight: '80vh',
+          height: hasPhoto ? '88vh' : 'auto',
+          maxHeight: '88vh',
           display: 'flex',
           flexDirection: 'column',
-          paddingBottom: 'env(safe-area-inset-bottom)',
+          paddingBottom: 'max(20px, env(safe-area-inset-bottom))',
           boxShadow: '0 -8px 40px rgba(0,0,0,0.4)',
         }}
       >
         {/* Handle */}
-        <div style={{ display: 'flex', justifyContent: 'center', padding: '12px 0 8px' }}>
+        <div style={{ display: 'flex', justifyContent: 'center', padding: '12px 0 8px', flexShrink: 0 }}>
           <div style={{ width: 40, height: 4, background: '#e5e5e5', borderRadius: 99 }} />
         </div>
 
-        {/* Foto solo se presente */}
-        {dish.image_url && (
-          <div style={{ width: '100%', height: 220, flexShrink: 0, overflow: 'hidden', background: '#f5f5f4' }}>
-            <img src={dish.image_url} alt={dish.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+        {/* Foto */}
+        {hasPhoto && (
+          <div style={{ width: '100%', flex: '0 0 52%', overflow: 'hidden', background: '#f5f5f4' }}>
+            <img src={dish.image_url!} alt={dish.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
           </div>
         )}
 
-        {/* Contenuto scrollabile */}
-        <div style={{ padding: '20px', overflowY: 'auto', flex: 1 }}>
-          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, marginBottom: 8 }}>
+        {/* Info fisse: nome + prezzo + allergeni */}
+        <div style={{ padding: '16px 20px 0', flexShrink: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, marginBottom: 6 }}>
             <h3 style={{ fontSize: 20, fontWeight: 700, color: '#1c1917', lineHeight: 1.3, margin: 0 }}>{dish.name}</h3>
             {dish.price != null && dish.price > 0 && (
               <span style={{ fontSize: 20, fontWeight: 700, color: '#1c1917', flexShrink: 0 }}>
@@ -106,43 +112,52 @@ function DishModal({ dish, onClose }: { dish: Dish; onClose: () => void }) {
               </span>
             )}
           </div>
-          {dish.description && (
-            <p style={{ fontSize: 14, color: '#78716c', lineHeight: 1.6, marginBottom: 12 }}>{dish.description}</p>
-          )}
           {dish.allergens?.length > 0 && (
-            <div>
-              <p style={{ fontSize: 11, fontWeight: 600, color: '#a8a29e', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>
-                Allergeni
-              </p>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                {dish.allergens.map(a => (
-                  <span key={a} style={{ fontSize: 12, background: '#f5f5f4', color: '#57534e', padding: '4px 10px', borderRadius: 99 }}>{a}</span>
-                ))}
-              </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
+              {dish.allergens.map(a => (
+                <span key={a} style={{ fontSize: 12, background: '#f5f5f4', color: '#57534e', padding: '3px 10px', borderRadius: 99 }}>{a}</span>
+              ))}
             </div>
           )}
           {!dish.is_available && (
-            <span style={{ display: 'inline-block', marginTop: 12, fontSize: 12, background: '#f5f5f4', color: '#a8a29e', padding: '4px 12px', borderRadius: 99 }}>
+            <span style={{ display: 'inline-block', marginBottom: 8, fontSize: 12, background: '#f5f5f4', color: '#a8a29e', padding: '3px 12px', borderRadius: 99 }}>
               Non disponibile
             </span>
           )}
         </div>
 
-        {/* Tasto chiudi */}
-        <button
-          onClick={onClose}
-          style={{
-            position: 'absolute', top: 14, right: 14,
-            width: 32, height: 32, borderRadius: '50%',
-            background: '#f5f5f4', border: 'none', cursor: 'pointer',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}
-        >
-          <svg width="16" height="16" fill="none" stroke="#57534e" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-          </svg>
-        </button>
+        {/* Descrizione: scroll solo se lunga */}
+        {dish.description && (
+          <div style={{
+            padding: '8px 20px 0',
+            flex: descLong ? '1 1 auto' : '0 0 auto',
+            overflowY: descLong ? 'auto' : 'visible',
+            WebkitOverflowScrolling: 'touch',
+          }}>
+            <p style={{ fontSize: 14, color: '#78716c', lineHeight: 1.6, margin: 0 }}>
+              {dish.description}
+            </p>
+          </div>
+        )}
       </div>
+
+      {/* Tasto chiudi sopra tutto */}
+      <button
+        onPointerUp={(e) => { e.stopPropagation(); onClose() }}
+        style={{
+          position: 'fixed',
+          top: 'calc(12vh - 16px)',
+          right: 'calc(50% - 224px)',
+          zIndex: 10000,
+          width: 32, height: 32, borderRadius: '50%',
+          background: 'rgba(0,0,0,0.5)', border: 'none', cursor: 'pointer',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}
+      >
+        <svg width="16" height="16" fill="none" stroke="white" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+        </svg>
+      </button>
     </div>
   )
 }
@@ -238,7 +253,7 @@ export default function FlipBook({ dishes, menuName, restaurantName }: Props) {
   const categories = Object.keys(categoryPageIndex)
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100dvh', background: '#0c0a09', overflow: 'hidden' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100dvh', maxHeight: '100dvh', background: '#0c0a09', overflow: 'hidden', touchAction: 'none' }}>
 
       {/* Barra categorie */}
       {categories.length > 0 && (
@@ -277,19 +292,19 @@ export default function FlipBook({ dishes, menuName, restaurantName }: Props) {
           mobileScrollSupport={false}
           onFlip={(e: any) => setCurrentPage(e.data)}
           className=""
-          style={{ filter: 'drop-shadow(0 24px 48px rgba(0,0,0,0.95)) drop-shadow(0 6px 16px rgba(0,0,0,0.7))' }}
+          style={{ filter: 'drop-shadow(0 32px 64px rgba(0,0,0,1)) drop-shadow(0 8px 24px rgba(0,0,0,0.8)) drop-shadow(0 2px 6px rgba(0,0,0,0.6))' }}
           startPage={0}
           drawShadow={true}
-          flippingTime={850}
+          flippingTime={1000}
           usePortrait={true}
           startZIndex={0}
           autoSize={true}
           clickEventForward={true}
           useMouseEvents={true}
-          swipeDistance={30}
+          swipeDistance={5}
           showPageCorners={true}
           disableFlipByClick={true}
-          maxShadowOpacity={0.95}
+          maxShadowOpacity={1}
         >
           <div className="page"><CoverPage menuName={menuName} restaurantName={restaurantName} /></div>
           {pages.map((page, i) => (
@@ -309,7 +324,7 @@ export default function FlipBook({ dishes, menuName, restaurantName }: Props) {
         paddingBottom: 'max(16px, env(safe-area-inset-bottom))',
       }}>
         <button
-          onPointerUp={() => bookRef.current?.pageFlip().flipPrev()}
+          onPointerUp={() => { if (currentPage > 0) bookRef.current?.pageFlip().flip(currentPage - 1) }}
           disabled={currentPage === 0}
           style={{
             width: 44, height: 44, borderRadius: '50%', border: '1px solid rgba(255,255,255,0.12)',
@@ -331,7 +346,7 @@ export default function FlipBook({ dishes, menuName, restaurantName }: Props) {
         </span>
 
         <button
-          onPointerUp={() => bookRef.current?.pageFlip().flipNext()}
+          onPointerUp={() => { if (currentPage < totalPages - 1) bookRef.current?.pageFlip().flip(currentPage + 1) }}
           disabled={currentPage >= totalPages - 1}
           style={{
             width: 44, height: 44, borderRadius: '50%', border: '1px solid rgba(255,255,255,0.12)',
