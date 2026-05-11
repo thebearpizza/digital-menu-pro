@@ -20,57 +20,128 @@ type Props = {
   restaurantName: string
 }
 
-function DishPage({ dish }: { dish: Dish }) {
+// Modale dettaglio piatto
+function DishModal({ dish, onClose }: { dish: Dish; onClose: () => void }) {
   return (
-    <div className="w-full h-full bg-white flex flex-col overflow-hidden">
-      {dish.image_url ? (
-        <div className="w-full flex-shrink-0" style={{ height: '55%' }}>
-          <img
-            src={dish.image_url}
-            alt={dish.name}
-            className="w-full h-full object-cover"
-          />
-        </div>
-      ) : (
-        <div className="w-full flex-shrink-0 bg-stone-100 flex items-center justify-center" style={{ height: '55%' }}>
-          <svg className="w-16 h-16 text-stone-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-          </svg>
-        </div>
-      )}
-
-      <div className="flex-1 p-5 flex flex-col justify-between overflow-hidden">
-        <div>
-          {dish.category && (
-            <p className="text-xs font-semibold text-stone-400 uppercase tracking-wider mb-1">{dish.category}</p>
-          )}
-          <h3 className="text-xl font-bold text-stone-800 leading-tight">{dish.name}</h3>
-          {dish.description && (
-            <p className="text-stone-500 text-sm mt-2 leading-relaxed overflow-hidden" style={{ display: '-webkit-box', WebkitLineClamp: 4, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
-              {dish.description.length > 200
-                ? dish.description.slice(0, 200) + '…'
-                : dish.description}
-            </p>
-          )}
-        </div>
-
-        <div className="mt-3">
-          {dish.allergens?.length > 0 && (
-            <p className="text-xs text-stone-400 mb-2">
-              <span className="font-medium">Allergeni:</span> {dish.allergens.join(', ')}
-            </p>
-          )}
-          <div className="flex items-center justify-between">
-            {!dish.is_available && (
-              <span className="text-xs bg-stone-100 text-stone-400 px-2 py-1 rounded-full">Non disponibile</span>
-            )}
+    <div
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4"
+      onClick={onClose}
+    >
+      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
+      <div
+        className="relative bg-white rounded-3xl w-full max-w-sm overflow-hidden shadow-2xl"
+        onClick={e => e.stopPropagation()}
+      >
+        {dish.image_url ? (
+          <div className="w-full h-52 bg-stone-100">
+            <img src={dish.image_url} alt={dish.name} className="w-full h-full object-cover" />
+          </div>
+        ) : (
+          <div className="w-full h-32 bg-stone-100 flex items-center justify-center">
+            <svg className="w-12 h-12 text-stone-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+            </svg>
+          </div>
+        )}
+        <div className="p-5">
+          <div className="flex items-start justify-between gap-3 mb-2">
+            <h3 className="text-xl font-bold text-stone-800 leading-tight">{dish.name}</h3>
             {dish.price != null && dish.price > 0 && (
-              <span className="text-2xl font-bold text-stone-800 ml-auto">
+              <span className="text-xl font-bold text-stone-800 flex-shrink-0">
                 €{Number(dish.price).toFixed(2)}
               </span>
             )}
           </div>
+          {dish.description && (
+            <p className="text-stone-500 text-sm leading-relaxed mb-3">{dish.description}</p>
+          )}
+          {dish.allergens?.length > 0 && (
+            <div className="flex flex-wrap gap-1 mb-4">
+              {dish.allergens.map(a => (
+                <span key={a} className="text-xs bg-stone-100 text-stone-500 px-2 py-0.5 rounded-full">{a}</span>
+              ))}
+            </div>
+          )}
+          {!dish.is_available && (
+            <span className="text-xs bg-stone-100 text-stone-400 px-3 py-1 rounded-full">Non disponibile</span>
+          )}
         </div>
+        <button
+          onClick={onClose}
+          className="absolute top-3 right-3 w-8 h-8 bg-black/30 hover:bg-black/50 rounded-full flex items-center justify-center transition-colors"
+        >
+          <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// Riga singola piatto nella pagina
+function DishRow({ dish, onSelect }: { dish: Dish; onSelect: (d: Dish) => void }) {
+  return (
+    <button
+      type="button"
+      onClick={() => onSelect(dish)}
+      className="w-full text-left flex items-start justify-between gap-2 py-2.5 px-3 rounded-xl hover:bg-stone-50 active:bg-stone-100 transition-colors border-b border-stone-100 last:border-0"
+    >
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <span className={`text-sm font-semibold text-stone-800 leading-tight ${!dish.is_available ? 'opacity-40' : ''}`}>
+            {dish.name}
+          </span>
+          {!dish.is_available && (
+            <span className="text-xs text-stone-400">(N/D)</span>
+          )}
+        </div>
+        {dish.description && (
+          <p className="text-xs text-stone-400 mt-0.5 leading-snug line-clamp-1">{dish.description}</p>
+        )}
+        {dish.allergens?.length > 0 && (
+          <p className="text-xs text-stone-300 mt-0.5 truncate">
+            {dish.allergens.slice(0, 3).join(', ')}{dish.allergens.length > 3 ? ` +${dish.allergens.length - 3}` : ''}
+          </p>
+        )}
+      </div>
+      {dish.price != null && dish.price > 0 && (
+        <span className="text-sm font-bold text-stone-700 flex-shrink-0 mt-0.5">
+          €{Number(dish.price).toFixed(2)}
+        </span>
+      )}
+    </button>
+  )
+}
+
+// Pagina categoria con max 8 piatti
+function CategoryPage({
+  category,
+  dishes,
+  pageNum,
+  totalPages,
+  onSelect,
+}: {
+  category: string
+  dishes: Dish[]
+  pageNum: number
+  totalPages: number
+  onSelect: (d: Dish) => void
+}) {
+  return (
+    <div className="w-full h-full bg-white flex flex-col">
+      {/* Header categoria */}
+      <div className="px-4 pt-4 pb-2 border-b border-stone-100 flex-shrink-0">
+        <h2 className="text-xs font-bold text-stone-400 uppercase tracking-widest">{category}</h2>
+        {totalPages > 1 && (
+          <p className="text-xs text-stone-300 mt-0.5">{pageNum}/{totalPages}</p>
+        )}
+      </div>
+      {/* Lista piatti */}
+      <div className="flex-1 px-2 py-1 overflow-hidden">
+        {dishes.map(dish => (
+          <DishRow key={dish.id} dish={dish} onSelect={onSelect} />
+        ))}
       </div>
     </div>
   )
@@ -79,8 +150,8 @@ function DishPage({ dish }: { dish: Dish }) {
 function CoverPage({ menuName, restaurantName }: { menuName: string; restaurantName: string }) {
   return (
     <div className="w-full h-full bg-stone-900 flex flex-col items-center justify-center p-8">
-      <p className="text-stone-400 text-sm uppercase tracking-widest mb-3">{restaurantName}</p>
-      <h1 className="text-white text-3xl font-bold text-center">{menuName}</h1>
+      <p className="text-stone-400 text-xs uppercase tracking-widest mb-3">{restaurantName}</p>
+      <h1 className="text-white text-3xl font-bold text-center leading-tight">{menuName}</h1>
       <div className="mt-8 flex items-center gap-2 text-stone-500 text-xs">
         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
@@ -100,72 +171,106 @@ function BackPage({ restaurantName }: { restaurantName: string }) {
   )
 }
 
+// Costruisce le pagine dividendo per categoria, max 8 piatti per pagina
+function buildPages(dishes: Dish[]): Array<{ category: string; dishes: Dish[]; pageNum: number; totalPages: number }> {
+  const MAX = 8
+  const grouped: Record<string, Dish[]> = {}
+
+  dishes.forEach(dish => {
+    const cat = dish.category?.trim() || 'Senza categoria'
+    if (!grouped[cat]) grouped[cat] = []
+    grouped[cat].push(dish)
+  })
+
+  const categories = Object.keys(grouped).sort((a, b) =>
+    a === 'Senza categoria' ? 1 : b === 'Senza categoria' ? -1 : a.localeCompare(b)
+  )
+
+  const pages: Array<{ category: string; dishes: Dish[]; pageNum: number; totalPages: number }> = []
+
+  categories.forEach(cat => {
+    const catDishes = grouped[cat]
+    const totalPages = Math.ceil(catDishes.length / MAX)
+    for (let i = 0; i < totalPages; i++) {
+      pages.push({
+        category: cat,
+        dishes: catDishes.slice(i * MAX, (i + 1) * MAX),
+        pageNum: i + 1,
+        totalPages,
+      })
+    }
+  })
+
+  return pages
+}
+
 export default function FlipBook({ dishes, menuName, restaurantName }: Props) {
   const bookRef = useRef<any>(null)
   const [currentPage, setCurrentPage] = useState(0)
-  const totalPages = dishes.length + 2 // cover + piatti + back
+  const [selectedDish, setSelectedDish] = useState<Dish | null>(null)
 
-  function prevPage() {
-    bookRef.current?.pageFlip().flipPrev()
-  }
+  const pages = buildPages(dishes)
+  const totalPages = pages.length + 2 // cover + pagine + back
 
-  function nextPage() {
-    bookRef.current?.pageFlip().flipNext()
-  }
+  function prevPage() { bookRef.current?.pageFlip().flipPrev() }
+  function nextPage() { bookRef.current?.pageFlip().flipNext() }
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-stone-950 px-4 py-8">
+    <div className="flex flex-col items-center justify-center min-h-screen bg-stone-950 px-2 py-6">
 
-      {/* Flipbook */}
-      <div className="w-full flex justify-center">
-        <HTMLFlipBook
-          ref={bookRef}
-          width={320}
-          height={460}
-          size="fixed"
-          minWidth={280}
-          maxWidth={400}
-          minHeight={400}
-          maxHeight={560}
-          showCover={true}
-          mobileScrollSupport={true}
-          onFlip={(e: any) => setCurrentPage(e.data)}
-          className="shadow-2xl"
-          style={{}}
-          startPage={0}
-          drawShadow={true}
-          flippingTime={700}
-          usePortrait={true}
-          startZIndex={0}
-          autoSize={false}
-          clickEventForward={true}
-          useMouseEvents={true}
-          swipeDistance={30}
-          showPageCorners={true}
-          disableFlipByClick={false}
-          maxShadowOpacity={0.5}
-        >
-          {/* Cover */}
-          <div className="page">
-            <CoverPage menuName={menuName} restaurantName={restaurantName} />
+      <HTMLFlipBook
+        ref={bookRef}
+        width={340}
+        height={500}
+        size="stretch"
+        minWidth={280}
+        maxWidth={500}
+        minHeight={420}
+        maxHeight={680}
+        showCover={true}
+        mobileScrollSupport={true}
+        onFlip={(e: any) => setCurrentPage(e.data)}
+        className="shadow-2xl"
+        style={{}}
+        startPage={0}
+        drawShadow={true}
+        flippingTime={700}
+        usePortrait={true}
+        startZIndex={0}
+        autoSize={true}
+        clickEventForward={false}
+        useMouseEvents={true}
+        swipeDistance={30}
+        showPageCorners={true}
+        disableFlipByClick={false}
+        maxShadowOpacity={0.5}
+      >
+        {/* Cover */}
+        <div className="page">
+          <CoverPage menuName={menuName} restaurantName={restaurantName} />
+        </div>
+
+        {/* Pagine categoria */}
+        {pages.map((page, i) => (
+          <div key={i} className="page">
+            <CategoryPage
+              category={page.category}
+              dishes={page.dishes}
+              pageNum={page.pageNum}
+              totalPages={page.totalPages}
+              onSelect={setSelectedDish}
+            />
           </div>
+        ))}
 
-          {/* Piatti */}
-          {dishes.map((dish) => (
-            <div key={dish.id} className="page">
-              <DishPage dish={dish} />
-            </div>
-          ))}
-
-          {/* Back cover */}
-          <div className="page">
-            <BackPage restaurantName={restaurantName} />
-          </div>
-        </HTMLFlipBook>
-      </div>
+        {/* Back cover */}
+        <div className="page">
+          <BackPage restaurantName={restaurantName} />
+        </div>
+      </HTMLFlipBook>
 
       {/* Controlli navigazione */}
-      <div className="flex items-center gap-8 mt-8">
+      <div className="flex items-center gap-8 mt-6">
         <button
           onClick={prevPage}
           disabled={currentPage === 0}
@@ -175,11 +280,7 @@ export default function FlipBook({ dishes, menuName, restaurantName }: Props) {
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
           </svg>
         </button>
-
-        <span className="text-stone-400 text-sm">
-          {currentPage + 1} / {totalPages}
-        </span>
-
+        <span className="text-stone-400 text-sm tabular-nums">{currentPage + 1} / {totalPages}</span>
         <button
           onClick={nextPage}
           disabled={currentPage >= totalPages - 1}
@@ -191,9 +292,12 @@ export default function FlipBook({ dishes, menuName, restaurantName }: Props) {
         </button>
       </div>
 
-      {/* Hint swipe */}
-      <p className="text-stone-600 text-xs mt-4">Scorri o clicca i bordi per sfogliare</p>
+      <p className="text-stone-600 text-xs mt-3">Tocca un piatto per i dettagli</p>
 
+      {/* Modale dettaglio piatto */}
+      {selectedDish && (
+        <DishModal dish={selectedDish} onClose={() => setSelectedDish(null)} />
+      )}
     </div>
   )
 }
