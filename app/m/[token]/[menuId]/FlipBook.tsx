@@ -134,30 +134,19 @@ function DishModal({ dish, onClose }: { dish: Dish; onClose: () => void }) {
           </div>
         )}
 
-        {/* Allergeni SOTTO la descrizione */}
-            {dish.allergens?.length > 0 && (
-              <div style={{ display: 'flex', gap: 3, flexWrap: 'wrap', marginTop: 4 }}>
-                {dish.allergens.map(a => {
-                  const ALLERGEN_NUM: Record<string, string> = {
-                    'Glutine': '1', 'Cereali contenenti glutine': '1',
-                    'Crostacei': '2', 'Uova': '3', 'Pesce': '4',
-                    'Arachidi': '5', 'Soia': '6', 'Latte': '7', 'Lattosio': '7',
-                    'Frutta a guscio': '8', 'Noci': '8', 'Mandorle': '8', 'Nocciole': '8', 'Anacardi': '8', 'Pistacchi': '8',
-                    'Sedano': '9', 'Senape': '10', 'Semi di sesamo': '11', 'Sesamo': '11',
-                    'Anidride solforosa': '12', 'Solfiti': '12', 'Lupini': '13', 'Molluschi': '14',
-                  }
-                  const num = ALLERGEN_NUM[a] || '?'
-                  return (
-                    <span key={a} title={a} style={{
-                      fontSize: 10, fontWeight: 700, color: '#a8a29e',
-                      background: 'rgba(255,255,255,0.08)',
-                      borderRadius: 4, padding: '1px 5px',
-                      minWidth: 18, textAlign: 'center',
-                    }}>{num}</span>
-                  )
-                })}
-              </div>
-            )}
+        {/* Allergeni SOTTO la descrizione — nomi estesi */}
+        {dish.allergens?.length > 0 && (
+          <div style={{ padding: '10px 20px 0', flexShrink: 0 }}>
+            <p style={{ fontSize: 11, fontWeight: 600, color: '#a8a29e', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>
+              Allergeni
+            </p>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+              {dish.allergens.map(a => (
+                <span key={a} style={{ fontSize: 12, background: '#f5f5f4', color: '#57534e', padding: '3px 10px', borderRadius: 99 }}>{a}</span>
+              ))}
+            </div>
+          </div>
+        )}
 
       {/* Flipbook con spazio laterale per swipe */}
       <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '8px 14px' }}>
