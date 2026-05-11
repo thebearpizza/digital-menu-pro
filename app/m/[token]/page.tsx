@@ -25,7 +25,7 @@ export default async function PublicLandingPage({
     .order('sort_order', { ascending: true })
 
   return (
-    <div className="min-h-screen bg-stone-50">
+    <div className="min-h-screen bg-stone-50" style={{ paddingTop: "env(safe-area-inset-top)" }}>
 
       {/* Header ristorante */}
       <div className="relative">

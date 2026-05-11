@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, useState, useCallback } from 'react'
+import { useRef, useState, useEffect } from 'react'
 import HTMLFlipBook from 'react-pageflip'
 
 type Dish = {
@@ -44,61 +44,101 @@ function buildPages(dishes: Dish[]): PageData[] {
     const items = grouped[cat]
     const tot = Math.ceil(items.length / MAX_PER_PAGE)
     for (let i = 0; i < tot; i++) {
-      pages.push({ category: cat, dishes: items.slice(i * MAX_PER_PAGE, (i + 1) * MAX_PER_PAGE), pageNum: i + 1, totalPages: tot })
+      pages.push({
+        category: cat,
+        dishes: items.slice(i * MAX_PER_PAGE, (i + 1) * MAX_PER_PAGE),
+        pageNum: i + 1,
+        totalPages: tot,
+      })
     }
   })
   return pages
 }
 
+// Modale montata nel body via portal-like div fisso
 function DishModal({ dish, onClose }: { dish: Dish; onClose: () => void }) {
+  // Blocca scroll body quando modale aperta
+  useEffect(() => {
+    document.body.style.overflow = 'hidden'
+    return () => { document.body.style.overflow = '' }
+  }, [])
+
   return (
-    <div className="fixed inset-0 z-[100] flex items-end justify-center" onClick={onClose}>
-      <div className="absolute inset-0 bg-black/80 backdrop-blur-md" />
+    <div
+      style={{ position: 'fixed', inset: 0, zIndex: 9999, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}
+      onClick={onClose}
+    >
+      <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.82)', backdropFilter: 'blur(8px)' }} />
       <div
-        className="relative bg-white w-full max-w-lg overflow-hidden flex flex-col"
-        style={{ borderRadius: '24px 24px 0 0', maxHeight: '78vh' }}
         onClick={e => e.stopPropagation()}
+        style={{
+          position: 'relative',
+          background: 'white',
+          width: '100%',
+          maxWidth: '480px',
+          borderRadius: '24px 24px 0 0',
+          maxHeight: '80vh',
+          display: 'flex',
+          flexDirection: 'column',
+          paddingBottom: 'env(safe-area-inset-bottom)',
+          boxShadow: '0 -8px 40px rgba(0,0,0,0.4)',
+        }}
       >
-        <div className="flex justify-center pt-3 pb-2 flex-shrink-0">
-          <div className="w-10 h-1 bg-stone-200 rounded-full" />
+        {/* Handle */}
+        <div style={{ display: 'flex', justifyContent: 'center', padding: '12px 0 8px' }}>
+          <div style={{ width: 40, height: 4, background: '#e5e5e5', borderRadius: 99 }} />
         </div>
 
+        {/* Foto solo se presente */}
         {dish.image_url && (
-          <div className="w-full flex-shrink-0" style={{ height: '230px' }}>
-            <img src={dish.image_url} alt={dish.name} className="w-full h-full object-cover" />
+          <div style={{ width: '100%', height: 220, flexShrink: 0, overflow: 'hidden', background: '#f5f5f4' }}>
+            <img src={dish.image_url} alt={dish.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
           </div>
         )}
 
-        <div className="p-5 overflow-y-auto flex-1">
-          <div className="flex items-start justify-between gap-3 mb-2">
-            <h3 className="text-xl font-bold text-stone-800 leading-tight">{dish.name}</h3>
+        {/* Contenuto scrollabile */}
+        <div style={{ padding: '20px', overflowY: 'auto', flex: 1 }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, marginBottom: 8 }}>
+            <h3 style={{ fontSize: 20, fontWeight: 700, color: '#1c1917', lineHeight: 1.3, margin: 0 }}>{dish.name}</h3>
             {dish.price != null && dish.price > 0 && (
-              <span className="text-xl font-bold text-stone-800 flex-shrink-0">€{Number(dish.price).toFixed(2)}</span>
+              <span style={{ fontSize: 20, fontWeight: 700, color: '#1c1917', flexShrink: 0 }}>
+                €{Number(dish.price).toFixed(2)}
+              </span>
             )}
           </div>
           {dish.description && (
-            <p className="text-stone-500 text-sm leading-relaxed mb-3">{dish.description}</p>
+            <p style={{ fontSize: 14, color: '#78716c', lineHeight: 1.6, marginBottom: 12 }}>{dish.description}</p>
           )}
           {dish.allergens?.length > 0 && (
-            <div className="mt-2">
-              <p className="text-xs font-semibold text-stone-400 uppercase tracking-wider mb-2">Allergeni</p>
-              <div className="flex flex-wrap gap-1.5">
+            <div>
+              <p style={{ fontSize: 11, fontWeight: 600, color: '#a8a29e', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>
+                Allergeni
+              </p>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                 {dish.allergens.map(a => (
-                  <span key={a} className="text-xs bg-stone-100 text-stone-600 px-2.5 py-1 rounded-full">{a}</span>
+                  <span key={a} style={{ fontSize: 12, background: '#f5f5f4', color: '#57534e', padding: '4px 10px', borderRadius: 99 }}>{a}</span>
                 ))}
               </div>
             </div>
           )}
           {!dish.is_available && (
-            <span className="inline-block mt-3 text-xs bg-stone-100 text-stone-400 px-3 py-1 rounded-full">Non disponibile</span>
+            <span style={{ display: 'inline-block', marginTop: 12, fontSize: 12, background: '#f5f5f4', color: '#a8a29e', padding: '4px 12px', borderRadius: 99 }}>
+              Non disponibile
+            </span>
           )}
         </div>
 
+        {/* Tasto chiudi */}
         <button
           onClick={onClose}
-          className="absolute top-4 right-4 w-8 h-8 bg-stone-100 hover:bg-stone-200 rounded-full flex items-center justify-center transition-colors"
+          style={{
+            position: 'absolute', top: 14, right: 14,
+            width: 32, height: 32, borderRadius: '50%',
+            background: '#f5f5f4', border: 'none', cursor: 'pointer',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}
         >
-          <svg className="w-4 h-4 text-stone-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg width="16" height="16" fill="none" stroke="#57534e" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
           </svg>
         </button>
@@ -110,27 +150,31 @@ function DishModal({ dish, onClose }: { dish: Dish; onClose: () => void }) {
 function DishRow({ dish, onSelect }: { dish: Dish; onSelect: (d: Dish) => void }) {
   return (
     <div
-      onClick={(e) => { e.stopPropagation(); onSelect(dish) }}
-      className="w-full flex items-start justify-between gap-3 py-2.5 px-2 rounded-xl active:bg-stone-100 transition-colors border-b border-stone-100 last:border-0 cursor-pointer"
+      onPointerUp={(e) => { e.stopPropagation(); onSelect(dish) }}
+      style={{ cursor: 'pointer', borderBottom: '1px solid #f5f5f4', padding: '10px 8px', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}
     >
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-1.5">
-          <span className={`text-sm font-semibold text-stone-800 leading-tight ${!dish.is_available ? 'opacity-40' : ''}`}>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span style={{ fontSize: 14, fontWeight: 600, color: dish.is_available ? '#1c1917' : '#a8a29e', lineHeight: 1.3 }}>
             {dish.name}
           </span>
-          {!dish.is_available && <span className="text-xs text-stone-300 flex-shrink-0">(N/D)</span>}
+          {!dish.is_available && <span style={{ fontSize: 11, color: '#d4d0cc' }}>(N/D)</span>}
         </div>
         {dish.description && (
-          <p className="text-xs text-stone-400 mt-0.5 leading-snug truncate" style={{ maxWidth: '180px' }}>{dish.description}</p>
+          <p style={{ fontSize: 12, color: '#a8a29e', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 180 }}>
+            {dish.description}
+          </p>
         )}
         {dish.allergens?.length > 0 && (
-          <p className="text-xs text-stone-300 mt-0.5 truncate" style={{ maxWidth: '180px' }}>
+          <p style={{ fontSize: 11, color: '#d4d0cc', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 180 }}>
             {dish.allergens.slice(0, 3).join(', ')}{dish.allergens.length > 3 ? ` +${dish.allergens.length - 3}` : ''}
           </p>
         )}
       </div>
       {dish.price != null && dish.price > 0 && (
-        <span className="text-sm font-bold text-stone-700 flex-shrink-0 mt-0.5">€{Number(dish.price).toFixed(2)}</span>
+        <span style={{ fontSize: 14, fontWeight: 700, color: '#44403c', flexShrink: 0, marginTop: 2 }}>
+          €{Number(dish.price).toFixed(2)}
+        </span>
       )}
     </div>
   )
@@ -138,12 +182,12 @@ function DishRow({ dish, onSelect }: { dish: Dish; onSelect: (d: Dish) => void }
 
 function CategoryPage({ category, dishes, pageNum, totalPages, onSelect }: PageData & { onSelect: (d: Dish) => void }) {
   return (
-    <div className="w-full h-full bg-white flex flex-col select-none">
-      <div className="px-4 pt-4 pb-2 border-b border-stone-100 flex-shrink-0 flex items-center justify-between">
-        <h2 className="text-xs font-bold text-stone-400 uppercase tracking-widest">{category}</h2>
-        {totalPages > 1 && <span className="text-xs text-stone-300">{pageNum}/{totalPages}</span>}
+    <div style={{ width: '100%', height: '100%', background: 'white', display: 'flex', flexDirection: 'column', userSelect: 'none' }}>
+      <div style={{ padding: '14px 16px 10px', borderBottom: '1px solid #f5f5f4', flexShrink: 0, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <h2 style={{ fontSize: 11, fontWeight: 700, color: '#a8a29e', textTransform: 'uppercase', letterSpacing: '0.1em', margin: 0 }}>{category}</h2>
+        {totalPages > 1 && <span style={{ fontSize: 11, color: '#d4d0cc' }}>{pageNum}/{totalPages}</span>}
       </div>
-      <div className="flex-1 px-2 py-1 overflow-hidden">
+      <div style={{ flex: 1, padding: '0 8px', overflow: 'hidden' }}>
         {dishes.map(dish => (
           <DishRow key={dish.id} dish={dish} onSelect={onSelect} />
         ))}
@@ -154,11 +198,11 @@ function CategoryPage({ category, dishes, pageNum, totalPages, onSelect }: PageD
 
 function CoverPage({ menuName, restaurantName }: { menuName: string; restaurantName: string }) {
   return (
-    <div className="w-full h-full bg-stone-900 flex flex-col items-center justify-center p-8 select-none">
-      <p className="text-stone-400 text-xs uppercase tracking-widest mb-3">{restaurantName}</p>
-      <h1 className="text-white text-3xl font-bold text-center leading-tight">{menuName}</h1>
-      <div className="mt-8 flex items-center gap-2 text-stone-500 text-xs">
-        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <div style={{ width: '100%', height: '100%', background: '#1c1917', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 32, userSelect: 'none' }}>
+      <p style={{ color: '#78716c', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.15em', marginBottom: 12 }}>{restaurantName}</p>
+      <h1 style={{ color: 'white', fontSize: 28, fontWeight: 700, textAlign: 'center', lineHeight: 1.3, margin: 0 }}>{menuName}</h1>
+      <div style={{ marginTop: 32, display: 'flex', alignItems: 'center', gap: 6, color: '#57534e', fontSize: 12 }}>
+        <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
         </svg>
         Sfoglia il menu
@@ -169,9 +213,9 @@ function CoverPage({ menuName, restaurantName }: { menuName: string; restaurantN
 
 function BackPage({ restaurantName }: { restaurantName: string }) {
   return (
-    <div className="w-full h-full bg-stone-800 flex flex-col items-center justify-center p-8 select-none">
-      <p className="text-stone-400 text-sm text-center">{restaurantName}</p>
-      <p className="text-stone-600 text-xs mt-2">Grazie per la visita</p>
+    <div style={{ width: '100%', height: '100%', background: '#292524', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 32, userSelect: 'none' }}>
+      <p style={{ color: '#78716c', fontSize: 14, textAlign: 'center' }}>{restaurantName}</p>
+      <p style={{ color: '#44403c', fontSize: 12, marginTop: 8 }}>Grazie per la visita</p>
     </div>
   )
 }
@@ -180,88 +224,72 @@ export default function FlipBook({ dishes, menuName, restaurantName }: Props) {
   const bookRef = useRef<any>(null)
   const [currentPage, setCurrentPage] = useState(0)
   const [selectedDish, setSelectedDish] = useState<Dish | null>(null)
-  const [isFlipping, setIsFlipping] = useState(false)
 
   const pages = buildPages(dishes)
-  const totalPages = pages.length + 2
+  const totalPages = pages.length + 2 // cover + pagine + back
 
+  // Mappa categoria → indice pagina (cover = pagina 0, prima content = 1)
   const categoryPageIndex: Record<string, number> = {}
   pages.forEach((p, i) => {
-    if (!(p.category in categoryPageIndex)) categoryPageIndex[p.category] = i + 1
+    if (!(p.category in categoryPageIndex)) {
+      categoryPageIndex[p.category] = i + 1
+    }
   })
   const categories = Object.keys(categoryPageIndex)
 
-  const handleFlip = useCallback((e: any) => {
-    setCurrentPage(e.data)
-    setIsFlipping(false)
-  }, [])
-
-  function flipPrev() {
-    if (isFlipping || currentPage === 0) return
-    setIsFlipping(true)
-    bookRef.current?.pageFlip().flipPrev('top')
-  }
-
-  function flipNext() {
-    if (isFlipping || currentPage >= totalPages - 1) return
-    setIsFlipping(true)
-    bookRef.current?.pageFlip().flipNext('top')
-  }
-
   return (
-    <div className="flex flex-col bg-stone-950" style={{ minHeight: '100dvh', overflow: 'hidden' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100dvh', background: '#0c0a09', overflow: 'hidden' }}>
 
-      {/* Top bar con back e categorie */}
-      <div className="flex-shrink-0 pt-3 pb-1 px-3">
-        <div className="flex gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none' }}>
-          {categories.map(cat => (
-            <button
-              key={cat}
-              onClick={() => bookRef.current?.pageFlip().flip(categoryPageIndex[cat])}
-              className="flex-shrink-0 px-3.5 py-1.5 rounded-full text-xs font-medium transition-all"
-              style={{
-                background: 'rgba(255,255,255,0.08)',
-                color: 'rgba(255,255,255,0.6)',
-                border: '1px solid rgba(255,255,255,0.08)',
-              }}
-            >
-              {cat}
-            </button>
-          ))}
+      {/* Barra categorie */}
+      {categories.length > 0 && (
+        <div style={{ flexShrink: 0, paddingTop: 12, paddingBottom: 8 }}>
+          <div style={{ display: 'flex', gap: 8, overflowX: 'auto', padding: '0 12px', scrollbarWidth: 'none' }}>
+            {categories.map(cat => (
+              <button
+                key={cat}
+                onPointerUp={() => bookRef.current?.pageFlip().flip(categoryPageIndex[cat])}
+                style={{
+                  flexShrink: 0, padding: '6px 14px', borderRadius: 99, fontSize: 12, fontWeight: 500,
+                  background: 'rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.55)',
+                  border: '1px solid rgba(255,255,255,0.1)', cursor: 'pointer',
+                  WebkitTapHighlightColor: 'transparent',
+                }}
+              >
+                {cat}
+              </button>
+            ))}
+          </div>
         </div>
-      </div>
+      )}
 
-      {/* Flipbook */}
-      <div className="flex-1 flex items-center justify-center px-1 py-2" style={{ minHeight: 0 }}>
+      {/* Flipbook con spazio laterale per swipe */}
+      <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '8px 14px' }}>
         <HTMLFlipBook
           ref={bookRef}
           width={320}
           height={490}
           size="stretch"
           minWidth={260}
-          maxWidth={480}
+          maxWidth={460}
           minHeight={400}
-          maxHeight={680}
+          maxHeight={660}
           showCover={true}
           mobileScrollSupport={false}
-          onFlip={handleFlip}
-          onChangeState={(e: any) => { if (e.data === 'flipping') setIsFlipping(true) }}
+          onFlip={(e: any) => setCurrentPage(e.data)}
           className=""
-          style={{
-            filter: 'drop-shadow(0 30px 60px rgba(0,0,0,0.9)) drop-shadow(0 8px 20px rgba(0,0,0,0.6))',
-          }}
+          style={{ filter: 'drop-shadow(0 24px 48px rgba(0,0,0,0.95)) drop-shadow(0 6px 16px rgba(0,0,0,0.7))' }}
           startPage={0}
           drawShadow={true}
-          flippingTime={900}
+          flippingTime={850}
           usePortrait={true}
           startZIndex={0}
           autoSize={true}
           clickEventForward={true}
           useMouseEvents={true}
-          swipeDistance={10}
+          swipeDistance={30}
           showPageCorners={true}
           disableFlipByClick={true}
-          maxShadowOpacity={0.9}
+          maxShadowOpacity={0.95}
         >
           <div className="page"><CoverPage menuName={menuName} restaurantName={restaurantName} /></div>
           {pages.map((page, i) => (
@@ -273,40 +301,55 @@ export default function FlipBook({ dishes, menuName, restaurantName }: Props) {
         </HTMLFlipBook>
       </div>
 
-      {/* Frecce eleganti */}
-      <div className="flex-shrink-0 flex items-center justify-between px-6 pb-5 pt-1">
+      {/* Frecce con safe area per Safari iPhone */}
+      <div style={{
+        flexShrink: 0,
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        padding: '8px 24px',
+        paddingBottom: 'max(16px, env(safe-area-inset-bottom))',
+      }}>
         <button
-          onClick={flipPrev}
+          onPointerUp={() => bookRef.current?.pageFlip().flipPrev()}
           disabled={currentPage === 0}
-          className="group flex items-center gap-2 transition-all disabled:opacity-20"
+          style={{
+            width: 44, height: 44, borderRadius: '50%', border: '1px solid rgba(255,255,255,0.12)',
+            background: currentPage === 0 ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.09)',
+            cursor: currentPage === 0 ? 'default' : 'pointer',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            opacity: currentPage === 0 ? 0.25 : 1,
+            transition: 'opacity 0.2s',
+            WebkitTapHighlightColor: 'transparent',
+          }}
         >
-          <div className="w-10 h-10 rounded-full flex items-center justify-center transition-all"
-            style={{ background: currentPage === 0 ? 'rgba(255,255,255,0.04)' : 'rgba(255,255,255,0.10)', border: '1px solid rgba(255,255,255,0.10)' }}>
-            <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-            </svg>
-          </div>
-          <span className="text-xs text-stone-500 group-hover:text-stone-300 transition-colors hidden sm:block">Indietro</span>
+          <svg width="18" height="18" fill="none" stroke="white" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+          </svg>
         </button>
 
-        <span className="text-stone-600 text-xs tabular-nums">{currentPage + 1} / {totalPages}</span>
+        <span style={{ fontSize: 12, color: '#57534e', fontVariantNumeric: 'tabular-nums' }}>
+          {currentPage + 1} / {totalPages}
+        </span>
 
         <button
-          onClick={flipNext}
+          onPointerUp={() => bookRef.current?.pageFlip().flipNext()}
           disabled={currentPage >= totalPages - 1}
-          className="group flex items-center gap-2 transition-all disabled:opacity-20"
+          style={{
+            width: 44, height: 44, borderRadius: '50%', border: '1px solid rgba(255,255,255,0.12)',
+            background: currentPage >= totalPages - 1 ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.09)',
+            cursor: currentPage >= totalPages - 1 ? 'default' : 'pointer',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            opacity: currentPage >= totalPages - 1 ? 0.25 : 1,
+            transition: 'opacity 0.2s',
+            WebkitTapHighlightColor: 'transparent',
+          }}
         >
-          <span className="text-xs text-stone-500 group-hover:text-stone-300 transition-colors hidden sm:block">Avanti</span>
-          <div className="w-10 h-10 rounded-full flex items-center justify-center transition-all"
-            style={{ background: currentPage >= totalPages - 1 ? 'rgba(255,255,255,0.04)' : 'rgba(255,255,255,0.10)', border: '1px solid rgba(255,255,255,0.10)' }}>
-            <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-            </svg>
-          </div>
+          <svg width="18" height="18" fill="none" stroke="white" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+          </svg>
         </button>
       </div>
 
-      {/* Modale piatto */}
+      {/* Modale piatto — z-index altissimo, fuori da tutto */}
       {selectedDish && (
         <DishModal dish={selectedDish} onClose={() => setSelectedDish(null)} />
       )}
