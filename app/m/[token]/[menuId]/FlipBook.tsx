@@ -1,7 +1,6 @@
 'use client'
 
-import { useRef, useState, useEffect } from 'react'
-import HTMLFlipBook from 'react-pageflip'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 type Dish = {
   id: string
@@ -28,6 +27,8 @@ type PageData = {
 }
 
 const MAX_PER_PAGE = 8
+const SWIPE_THRESHOLD = 18
+const DESC_PREVIEW_CHARS = 85
 
 const ALLERGEN_NUM: Record<string, string> = {
   'Glutine': '1', 'Cereali contenenti glutine': '1',
@@ -41,7 +42,7 @@ const ALLERGEN_NUM: Record<string, string> = {
 
 function buildPages(dishes: Dish[]): PageData[] {
   const grouped: Record<string, Dish[]> = {}
-  dishes.forEach(dish => {
+  dishes.forEach((dish) => {
     const cat = dish.category?.trim() || 'Senza categoria'
     if (!grouped[cat]) grouped[cat] = []
     grouped[cat].push(dish)
@@ -52,7 +53,7 @@ function buildPages(dishes: Dish[]): PageData[] {
   )
 
   const pages: PageData[] = []
-  cats.forEach(cat => {
+  cats.forEach((cat) => {
     const items = grouped[cat]
     const tot = Math.ceil(items.length / MAX_PER_PAGE)
     for (let i = 0; i < tot; i++) {
@@ -68,10 +69,13 @@ function buildPages(dishes: Dish[]): PageData[] {
   return pages
 }
 
-const DESC_PREVIEW_CHARS = 160
+function truncateText(text: string | null | undefined, max: number) {
+  if (!text) return ''
+  if (text.length <= max) return text
+  return text.slice(0, max).trimEnd() + '…'
+}
 
 function DishModal({ dish, onClose }: { dish: Dish; onClose: () => void }) {
-  const descLong = (dish.description?.length ?? 0) > DESC_PREVIEW_CHARS
   const hasPhoto = !!dish.image_url
 
   useEffect(() => {
@@ -81,12 +85,20 @@ function DishModal({ dish, onClose }: { dish: Dish; onClose: () => void }) {
 
   return (
     <div
-      style={{ position: 'fixed', inset: 0, zIndex: 9999, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}
       onClick={onClose}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 9999,
+        display: 'flex',
+        alignItems: 'flex-end',
+        justifyContent: 'center',
+      }}
     >
       <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.82)', backdropFilter: 'blur(8px)' }} />
+
       <div
-        onClick={e => e.stopPropagation()}
+        onClick={(e) => e.stopPropagation()}
         style={{
           position: 'relative',
           background: 'white',
@@ -120,6 +132,7 @@ function DishModal({ dish, onClose }: { dish: Dish; onClose: () => void }) {
               </span>
             )}
           </div>
+
           {!dish.is_available && (
             <span style={{ display: 'inline-block', marginBottom: 8, fontSize: 12, background: '#f5f5f4', color: '#a8a29e', padding: '3px 12px', borderRadius: 99 }}>
               Non disponibile
@@ -128,13 +141,7 @@ function DishModal({ dish, onClose }: { dish: Dish; onClose: () => void }) {
         </div>
 
         {dish.description && (
-          <div style={{
-            padding: '8px 20px 0',
-            flex: descLong ? '1 1 auto' : '0 0 auto',
-            overflowY: descLong ? 'auto' : 'visible',
-            WebkitOverflowScrolling: 'touch',
-            flexShrink: descLong ? 1 : 0,
-          }}>
+          <div style={{ padding: '8px 20px 0' }}>
             <p style={{ fontSize: 14, color: '#78716c', lineHeight: 1.6, margin: 0 }}>
               {dish.description}
             </p>
@@ -147,36 +154,15 @@ function DishModal({ dish, onClose }: { dish: Dish; onClose: () => void }) {
               Allergeni
             </p>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-              {dish.allergens.map(a => (
-                <span key={a} style={{ fontSize: 12, background: '#f5f5f4', color: '#57534e', padding: '3px 10px', borderRadius: 99 }}>{a}</span>
+              {dish.allergens.map((a) => (
+                <span key={a} style={{ fontSize: 12, background: '#f5f5f4', color: '#57534e', padding: '3px 10px', borderRadius: 99 }}>
+                  {a}
+                </span>
               ))}
             </div>
           </div>
         )}
       </div>
-
-      <button
-        onClick={(e) => { e.stopPropagation(); onClose() }}
-        style={{
-          position: 'fixed',
-          top: 'calc(12vh - 16px)',
-          right: 'max(calc(50% - 224px), 12px)',
-          zIndex: 10000,
-          width: 32,
-          height: 32,
-          borderRadius: '50%',
-          background: 'rgba(0,0,0,0.5)',
-          border: 'none',
-          cursor: 'pointer',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}
-      >
-        <svg width="16" height="16" fill="none" stroke="white" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-        </svg>
-      </button>
     </div>
   )
 }
@@ -186,7 +172,7 @@ function CoverPage({ menuName, restaurantName }: { menuName: string; restaurantN
     <div style={{
       width: '100%',
       height: '100%',
-      background: 'linear-gradient(160deg, #f5f0e8 0%, #ede6d6 100%)',
+      background: 'linear-gradient(160deg, #f8f3ea 0%, #eee5d6 100%)',
       display: 'flex',
       flexDirection: 'column',
       alignItems: 'center',
@@ -195,10 +181,12 @@ function CoverPage({ menuName, restaurantName }: { menuName: string; restaurantN
       userSelect: 'none',
       gap: 16,
       position: 'relative',
-      borderLeft: '3px solid rgba(180,160,120,0.3)',
+      borderLeft: '3px solid rgba(180,160,120,0.28)',
     }}>
       <div style={{ width: 48, height: 1, background: 'rgba(120,100,70,0.35)', borderRadius: 99 }} />
-      <h1 style={{ color: '#3d2e1a', fontSize: 22, fontWeight: 700, textAlign: 'center', lineHeight: 1.3, margin: 0, fontFamily: 'Georgia, serif' }}>{menuName}</h1>
+      <h1 style={{ color: '#3d2e1a', fontSize: 22, fontWeight: 700, textAlign: 'center', lineHeight: 1.3, margin: 0, fontFamily: 'Georgia, serif' }}>
+        {menuName}
+      </h1>
       <p style={{ color: '#8c7355', fontSize: 13, textAlign: 'center', margin: 0 }}>{restaurantName}</p>
       <div style={{ width: 48, height: 1, background: 'rgba(120,100,70,0.35)', borderRadius: 99 }} />
       <div style={{ position: 'absolute', bottom: 24, display: 'flex', alignItems: 'center', gap: 6, color: '#b8a080', fontSize: 11, letterSpacing: '0.06em' }}>
@@ -216,36 +204,45 @@ function CategoryPage({
   dishes,
   pageNum,
   totalPages,
-}: PageData) {
+  onSelect,
+}: PageData & { onSelect: (dish: Dish) => void }) {
   return (
     <div style={{
       width: '100%',
       height: '100%',
-      background: 'linear-gradient(180deg, #faf7f2 0%, #f5f0e8 100%)',
+      background: 'linear-gradient(180deg, #fcf9f4 0%, #f5eee3 100%)',
       display: 'flex',
       flexDirection: 'column',
       userSelect: 'none',
       overflow: 'hidden',
-      borderLeft: '1px solid rgba(180,160,120,0.2)',
-      pointerEvents: 'none',
+      borderLeft: '1px solid rgba(180,160,120,0.18)',
+      boxShadow: 'inset 0 0 22px rgba(255,255,255,0.24)',
     }}>
       <div style={{ padding: '14px 16px 10px', borderBottom: '1px solid rgba(160,130,90,0.15)', flexShrink: 0 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-          <h2 style={{ fontSize: 11, fontWeight: 700, color: '#8c7355', textTransform: 'uppercase', letterSpacing: '0.12em', margin: 0 }}>{category}</h2>
+          <h2 style={{ fontSize: 11, fontWeight: 700, color: '#8c7355', textTransform: 'uppercase', letterSpacing: '0.12em', margin: 0 }}>
+            {category}
+          </h2>
           {totalPages > 1 && <span style={{ fontSize: 9, color: '#c4b090' }}>{pageNum}/{totalPages}</span>}
         </div>
       </div>
 
       <div style={{ flex: 1, overflowY: 'hidden', padding: '6px 0' }}>
         {dishes.map((dish, idx) => (
-          <div
+          <button
             key={dish.id}
+            onClick={() => dish.is_available && onSelect(dish)}
             style={{
               width: '100%',
               display: 'flex',
               alignItems: 'flex-start',
               padding: '7px 14px',
               gap: 10,
+              background: 'none',
+              border: 'none',
+              cursor: dish.is_available ? 'pointer' : 'default',
+              textAlign: 'left',
+              WebkitTapHighlightColor: 'transparent',
               borderBottom: idx < dishes.length - 1 ? '1px solid rgba(160,130,90,0.08)' : 'none',
             }}
           >
@@ -282,26 +279,24 @@ function CategoryPage({
                   color: '#a08060',
                   lineHeight: 1.4,
                   margin: '2px 0 0',
-                  overflow: 'hidden',
-                  display: '-webkit-box',
-                  WebkitLineClamp: 2,
-                  WebkitBoxOrient: 'vertical',
-                } as React.CSSProperties}>
-                  {dish.description}
+                }}>
+                  {truncateText(dish.description, DESC_PREVIEW_CHARS)}
                 </p>
               )}
 
               {dish.allergens?.length > 0 && (
                 <p style={{ fontSize: 10, color: '#b8a080', margin: '3px 0 0', lineHeight: 1 }}>
-                  {dish.allergens.map(a => ALLERGEN_NUM[a] ?? '?').join(' · ')}
+                  {dish.allergens.map((a) => ALLERGEN_NUM[a] ?? '?').join(' · ')}
                 </p>
               )}
 
               {!dish.is_available && (
-                <span style={{ fontSize: 9, color: '#c4b090', marginTop: 2, display: 'block' }}>Non disponibile</span>
+                <span style={{ fontSize: 9, color: '#c4b090', marginTop: 2, display: 'block' }}>
+                  Non disponibile
+                </span>
               )}
             </div>
-          </div>
+          </button>
         ))}
       </div>
 
@@ -317,14 +312,14 @@ function BackPage({ restaurantName }: { restaurantName: string }) {
     <div style={{
       width: '100%',
       height: '100%',
-      background: 'linear-gradient(160deg, #ede6d6 0%, #e8dfc8 100%)',
+      background: 'linear-gradient(160deg, #efe7d8 0%, #e8dfc8 100%)',
       display: 'flex',
       flexDirection: 'column',
       alignItems: 'center',
       justifyContent: 'center',
       padding: 32,
       userSelect: 'none',
-      borderRight: '3px solid rgba(180,160,120,0.3)',
+      borderRight: '3px solid rgba(180,160,120,0.28)',
     }}>
       <div style={{ width: 32, height: 1, background: 'rgba(120,100,70,0.3)', borderRadius: 99, marginBottom: 16 }} />
       <p style={{ color: '#8c7355', fontSize: 13, textAlign: 'center', margin: 0, fontFamily: 'Georgia, serif' }}>{restaurantName}</p>
@@ -335,12 +330,15 @@ function BackPage({ restaurantName }: { restaurantName: string }) {
 }
 
 export default function FlipBook({ dishes, menuName, restaurantName }: Props) {
-  const bookRef = useRef<any>(null)
-  const [currentPage, setCurrentPage] = useState(0)
-  const [selectedDish, setSelectedDish] = useState<Dish | null>(null)
-
-  const pages = buildPages(dishes)
+  const pages = useMemo(() => buildPages(dishes), [dishes])
   const totalPages = pages.length + 2
+  const [currentPage, setCurrentPage] = useState(0)
+  const [displayPage, setDisplayPage] = useState(0)
+  const [selectedDish, setSelectedDish] = useState<Dish | null>(null)
+  const [isAnimating, setIsAnimating] = useState(false)
+  const [flipDirection, setFlipDirection] = useState<'next' | 'prev'>('next')
+  const touchStartX = useRef<number | null>(null)
+  const touchStartY = useRef<number | null>(null)
 
   const categoryPageIndex: Record<string, number> = {}
   pages.forEach((p, i) => {
@@ -348,31 +346,68 @@ export default function FlipBook({ dishes, menuName, restaurantName }: Props) {
   })
   const categories = Object.keys(categoryPageIndex)
 
-  const goPrev = () => {
-    if (currentPage <= 0) return
-    bookRef.current?.pageFlip().flipPrev()
+  const clampPage = (page: number) => Math.max(0, Math.min(totalPages - 1, page))
+
+  const changePage = (target: number) => {
+    const safeTarget = clampPage(target)
+    if (safeTarget === currentPage || isAnimating) return
+
+    setFlipDirection(safeTarget > currentPage ? 'next' : 'prev')
+    setDisplayPage(currentPage)
+    setIsAnimating(true)
+
+    window.setTimeout(() => {
+      setCurrentPage(safeTarget)
+    }, 140)
+
+    window.setTimeout(() => {
+      setDisplayPage(safeTarget)
+      setIsAnimating(false)
+    }, 520)
   }
 
-  const goNext = () => {
-    if (currentPage >= totalPages - 1) return
-    bookRef.current?.pageFlip().flipNext()
+  const goPrev = () => changePage(currentPage - 1)
+  const goNext = () => changePage(currentPage + 1)
+  const goToCategory = (target: number) => changePage(target)
+
+  const visiblePage = isAnimating ? displayPage : currentPage
+
+  const currentContent = useMemo(() => {
+    if (visiblePage === 0) return <CoverPage menuName={menuName} restaurantName={restaurantName} />
+    if (visiblePage === totalPages - 1) return <BackPage restaurantName={restaurantName} />
+    return (
+      <CategoryPage
+        {...pages[visiblePage - 1]}
+        onSelect={(dish) => setSelectedDish(dish)}
+      />
+    )
+  }, [visiblePage, menuName, restaurantName, totalPages, pages])
+
+  const handleTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (isAnimating) return
+    const t = e.touches[0]
+    touchStartX.current = t.clientX
+    touchStartY.current = t.clientY
   }
 
-  const goToCategory = (target: number) => {
-    if (target === currentPage) return
-    if (target === currentPage - 1) {
-      bookRef.current?.pageFlip().flipPrev()
-      return
+  const handleTouchEnd = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (isAnimating || touchStartX.current == null || touchStartY.current == null) return
+
+    const t = e.changedTouches[0]
+    const dx = t.clientX - touchStartX.current
+    const dy = t.clientY - touchStartY.current
+
+    touchStartX.current = null
+    touchStartY.current = null
+
+    if (Math.abs(dx) < SWIPE_THRESHOLD) return
+    if (Math.abs(dx) <= Math.abs(dy)) return
+
+    if (dx < 0) {
+      goNext()
+    } else {
+      goPrev()
     }
-    if (target === currentPage + 1) {
-      bookRef.current?.pageFlip().flipNext()
-      return
-    }
-    if (target > currentPage) {
-      bookRef.current?.pageFlip().flip(target)
-      return
-    }
-    bookRef.current?.pageFlip().turnToPage(target)
   }
 
   return (
@@ -383,14 +418,12 @@ export default function FlipBook({ dishes, menuName, restaurantName }: Props) {
       maxHeight: 'calc(100dvh - 52px)',
       background: '#1a1410',
       overflow: 'hidden',
-      touchAction: 'pan-x',
       position: 'relative',
     }}>
-      {/* Categorie esterne al libro */}
       {categories.length > 0 && (
         <div style={{ flexShrink: 0, paddingTop: 10, paddingBottom: 6, position: 'relative', zIndex: 20 }}>
           <div style={{ display: 'flex', gap: 6, overflowX: 'auto', padding: '0 12px', scrollbarWidth: 'none' }}>
-            {categories.map(cat => (
+            {categories.map((cat) => (
               <button
                 key={cat}
                 onClick={() => goToCategory(categoryPageIndex[cat])}
@@ -401,7 +434,7 @@ export default function FlipBook({ dishes, menuName, restaurantName }: Props) {
                   fontSize: 11,
                   fontWeight: 500,
                   background: 'rgba(245,240,232,0.08)',
-                  color: 'rgba(245,240,232,0.5)',
+                  color: 'rgba(245,240,232,0.65)',
                   border: '1px solid rgba(245,240,232,0.12)',
                   cursor: 'pointer',
                   WebkitTapHighlightColor: 'transparent',
@@ -414,51 +447,100 @@ export default function FlipBook({ dishes, menuName, restaurantName }: Props) {
         </div>
       )}
 
-      <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 0, margin: '0 -3px' }}>
-        <HTMLFlipBook
-          ref={bookRef}
-          width={310}
-          height={465}
-          size="stretch"
-          minWidth={240}
-          maxWidth={440}
-          minHeight={360}
-          maxHeight={620}
-          showCover={true}
-          mobileScrollSupport={false}
-          onFlip={(e: any) => setCurrentPage(e.data)}
-          className=""
+      <div style={{
+        flex: 1,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        minHeight: 0,
+        margin: '0 -3px',
+        perspective: '1800px',
+        position: 'relative',
+      }}>
+        <div
+          onTouchStart={handleTouchStart}
+          onTouchEnd={handleTouchEnd}
           style={{
-            filter: [
-              'drop-shadow(0 2px 4px rgba(0,0,0,0.6))',
-              'drop-shadow(0 12px 32px rgba(0,0,0,0.8))',
-              'drop-shadow(0 32px 64px rgba(0,0,0,0.9))',
-            ].join(' '),
+            width: 'min(310px, calc(100vw - 38px))',
+            height: '465px',
+            minHeight: '360px',
+            maxHeight: '620px',
+            position: 'relative',
+            transformStyle: 'preserve-3d',
+            userSelect: 'none',
           }}
-          startPage={0}
-          drawShadow={true}
-          flippingTime={900}
-          usePortrait={true}
-          startZIndex={0}
-          autoSize={true}
-          clickEventForward={false}
-          useMouseEvents={true}
-          swipeDistance={8}
-          showPageCorners={true}
-          disableFlipByClick={true}
-          maxShadowOpacity={0.85}
         >
-          <div className="page"><CoverPage menuName={menuName} restaurantName={restaurantName} /></div>
-          {pages.map((page, i) => (
-            <div key={i} className="page">
-              <CategoryPage {...page} />
+          <div
+            style={{
+              position: 'absolute',
+              inset: 0,
+              borderRadius: 2,
+              background: 'linear-gradient(90deg, rgba(255,255,255,0.06) 0%, rgba(0,0,0,0.06) 100%)',
+              boxShadow: [
+                '0 2px 4px rgba(0,0,0,0.6)',
+                '0 12px 32px rgba(0,0,0,0.8)',
+                '0 32px 64px rgba(0,0,0,0.9)',
+              ].join(', '),
+              overflow: 'hidden',
+              transformOrigin: flipDirection === 'next' ? 'left center' : 'right center',
+              transform: isAnimating
+                ? flipDirection === 'next'
+                  ? 'rotateY(-14deg) translateX(-6px)'
+                  : 'rotateY(14deg) translateX(6px)'
+                : 'rotateY(0deg) translateX(0px)',
+              transition: 'transform 520ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 520ms ease',
+            }}
+          >
+            <div
+              style={{
+                position: 'absolute',
+                inset: 0,
+                background: isAnimating
+                  ? flipDirection === 'next'
+                    ? 'linear-gradient(90deg, rgba(255,255,255,0.34) 0%, rgba(255,255,255,0.08) 26%, rgba(0,0,0,0.12) 100%)'
+                    : 'linear-gradient(90deg, rgba(0,0,0,0.12) 0%, rgba(255,255,255,0.08) 74%, rgba(255,255,255,0.34) 100%)'
+                  : 'linear-gradient(90deg, rgba(255,255,255,0.18) 0%, rgba(255,255,255,0.04) 18%, rgba(0,0,0,0.10) 100%)',
+                pointerEvents: 'none',
+                zIndex: 3,
+                transition: 'background 520ms ease',
+              }}
+            />
+
+            <div
+              style={{
+                position: 'absolute',
+                inset: 0,
+                zIndex: 2,
+                overflow: 'hidden',
+                background: '#f7f1e7',
+              }}
+            >
+              {currentContent}
             </div>
-          ))}
-          <div className="page"><BackPage restaurantName={restaurantName} /></div>
-        </HTMLFlipBook>
+          </div>
+
+          <div
+            style={{
+              position: 'absolute',
+              left: 8,
+              right: 8,
+              bottom: -6,
+              height: 18,
+              borderRadius: '50%',
+              background: 'radial-gradient(ellipse at center, rgba(0,0,0,0.45) 0%, rgba(0,0,0,0.12) 55%, rgba(0,0,0,0) 100%)',
+              filter: 'blur(6px)',
+              transform: isAnimating
+                ? flipDirection === 'next'
+                  ? 'translateX(-6px) scaleX(0.96)'
+                  : 'translateX(6px) scaleX(0.96)'
+                : 'translateX(0px) scaleX(1)',
+              transition: 'transform 520ms cubic-bezier(0.22, 1, 0.36, 1)',
+              pointerEvents: 'none',
+            }}
+          />
+        </div>
       </div>
 
-      {/* Frecce bottom esterne ma visivamente integrate */}
       <div style={{
         flexShrink: 0,
         display: 'flex',
@@ -486,11 +568,11 @@ export default function FlipBook({ dishes, menuName, restaurantName }: Props) {
               background: 'none',
               border: 'none',
               borderRight: '1px solid rgba(245,240,232,0.07)',
-              cursor: currentPage === 0 ? 'default' : 'pointer',
+              cursor: currentPage === 0 || isAnimating ? 'default' : 'pointer',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              opacity: currentPage === 0 ? 0.15 : 0.75,
+              opacity: currentPage === 0 ? 0.15 : 0.82,
               transition: 'opacity 0.2s',
               WebkitTapHighlightColor: 'transparent',
             }}
@@ -514,11 +596,11 @@ export default function FlipBook({ dishes, menuName, restaurantName }: Props) {
               background: 'none',
               border: 'none',
               borderLeft: '1px solid rgba(245,240,232,0.07)',
-              cursor: currentPage >= totalPages - 1 ? 'default' : 'pointer',
+              cursor: currentPage >= totalPages - 1 || isAnimating ? 'default' : 'pointer',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              opacity: currentPage >= totalPages - 1 ? 0.15 : 0.75,
+              opacity: currentPage >= totalPages - 1 ? 0.15 : 0.82,
               transition: 'opacity 0.2s',
               WebkitTapHighlightColor: 'transparent',
             }}
@@ -530,7 +612,6 @@ export default function FlipBook({ dishes, menuName, restaurantName }: Props) {
         </div>
       </div>
 
-      {/* Nota: i click sui piatti dentro react-pageflip sono instabili per limite libreria */}
       {selectedDish && (
         <DishModal dish={selectedDish} onClose={() => setSelectedDish(null)} />
       )}
