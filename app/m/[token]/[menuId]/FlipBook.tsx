@@ -282,7 +282,7 @@ export default function FlipBook({ dishes, menuName, restaurantName }: Props) {
   const bookRef = useRef<any>(null)
   const [currentPage, setCurrentPage] = useState(0)
   const [selectedDish, setSelectedDish] = useState<Dish | null>(null)
-  const flipping = useRef(false)
+  const flipLock = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const pages = buildPages(dishes)
   const totalPages = pages.length + 2
@@ -293,33 +293,28 @@ export default function FlipBook({ dishes, menuName, restaurantName }: Props) {
   })
   const categories = Object.keys(categoryPageIndex)
 
-  // ── Navigazione: unico entry point ──────────────────────────────────────────
-  // flip() anima sempre in avanti, flipPrev() anima sempre indietro.
-  // Per salti multi-pagina indietro non esiste API animata in react-pageflip,
-  // quindi usiamo flipPrev() una sola volta verso la direzione giusta.
+  // ── Navigazione: semplice, senza lock che blocca ────────────────────────────
   const navigate = (target: number) => {
-    if (flipping.current) return
     const pf = bookRef.current?.pageFlip()
     if (!pf) return
-    flipping.current = true
+    // Cancella eventuale timer precedente
+    if (flipLock.current) clearTimeout(flipLock.current)
     if (target > currentPage) {
-      pf.flip(target, 'top')
-    } else {
-      pf.flipPrev('top')
-      // Per jump multi-pagina indietro, dopo l'animazione vai diretto
+      pf.flip(target)
+    } else if (target < currentPage) {
+      // flipPrev per 1 pagina indietro con animazione
+      pf.flipPrev()
+      // Se salto multi-pagina, aspetta animazione poi vai diretto
       if (target < currentPage - 1) {
-        setTimeout(() => {
+        flipLock.current = setTimeout(() => {
           bookRef.current?.pageFlip().turnToPage(target)
-          flipping.current = false
-        }, 950)
-        return
+        }, 500)
       }
     }
-    setTimeout(() => { flipping.current = false }, 1000)
   }
 
-  const goPrev = () => navigate(currentPage - 1)
-  const goNext = () => navigate(currentPage + 1)
+  const goPrev = () => { if (currentPage > 0) navigate(currentPage - 1) }
+  const goNext = () => { if (currentPage < totalPages - 1) navigate(currentPage + 1) }
 
   return (
     <div style={{
@@ -368,10 +363,7 @@ export default function FlipBook({ dishes, menuName, restaurantName }: Props) {
           maxHeight={620}
           showCover={true}
           mobileScrollSupport={false}
-          onFlip={(e: any) => {
-            setCurrentPage(e.data)
-            flipping.current = false
-          }}
+          onFlip={(e: any) => setCurrentPage(e.data)}
           className=""
           style={{
             filter: [
@@ -388,7 +380,7 @@ export default function FlipBook({ dishes, menuName, restaurantName }: Props) {
           autoSize={true}
           clickEventForward={false}
           useMouseEvents={true}
-          swipeDistance={80}
+          swipeDistance={10}
           showPageCorners={true}
           disableFlipByClick={true}
           maxShadowOpacity={0.85}
@@ -432,7 +424,7 @@ export default function FlipBook({ dishes, menuName, restaurantName }: Props) {
               borderRight: '1px solid rgba(245,240,232,0.07)',
               cursor: currentPage === 0 ? 'default' : 'pointer',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
-              opacity: currentPage === 0 ? 0.15 : 0.75,
+              opacity: currentPage === 0 ? 0.18 : 0.8,
               transition: 'opacity 0.2s',
               WebkitTapHighlightColor: 'transparent',
             }}
@@ -459,7 +451,7 @@ export default function FlipBook({ dishes, menuName, restaurantName }: Props) {
               borderLeft: '1px solid rgba(245,240,232,0.07)',
               cursor: currentPage >= totalPages - 1 ? 'default' : 'pointer',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
-              opacity: currentPage >= totalPages - 1 ? 0.15 : 0.75,
+              opacity: currentPage >= totalPages - 1 ? 0.18 : 0.8,
               transition: 'opacity 0.2s',
               WebkitTapHighlightColor: 'transparent',
             }}
