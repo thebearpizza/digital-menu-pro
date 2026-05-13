@@ -27,8 +27,8 @@ type PageData = {
 }
 
 const MAX_PER_PAGE = 8
-const SWIPE_THRESHOLD = 18
-const DESC_PREVIEW_CHARS = 85
+const SWIPE_THRESHOLD = 16
+const DESC_PREVIEW_CHARS = 82
 
 const ALLERGEN_NUM: Record<string, string> = {
   'Glutine': '1', 'Cereali contenenti glutine': '1',
@@ -103,7 +103,7 @@ function DishModal({ dish, onClose }: { dish: Dish; onClose: () => void }) {
           position: 'relative',
           background: 'white',
           width: '100%',
-          maxWidth: '480px',
+          maxWidth: '520px',
           borderRadius: '24px 24px 0 0',
           height: hasPhoto ? '88vh' : 'auto',
           maxHeight: '88vh',
@@ -172,7 +172,7 @@ function CoverPage({ menuName, restaurantName }: { menuName: string; restaurantN
     <div style={{
       width: '100%',
       height: '100%',
-      background: 'linear-gradient(160deg, #f8f3ea 0%, #eee5d6 100%)',
+      background: 'linear-gradient(160deg, #fbf6ed 0%, #f2e8d9 100%)',
       display: 'flex',
       flexDirection: 'column',
       alignItems: 'center',
@@ -182,6 +182,7 @@ function CoverPage({ menuName, restaurantName }: { menuName: string; restaurantN
       gap: 16,
       position: 'relative',
       borderLeft: '3px solid rgba(180,160,120,0.28)',
+      boxShadow: 'inset 0 0 28px rgba(255,255,255,0.28)',
     }}>
       <div style={{ width: 48, height: 1, background: 'rgba(120,100,70,0.35)', borderRadius: 99 }} />
       <h1 style={{ color: '#3d2e1a', fontSize: 22, fontWeight: 700, textAlign: 'center', lineHeight: 1.3, margin: 0, fontFamily: 'Georgia, serif' }}>
@@ -210,13 +211,13 @@ function CategoryPage({
     <div style={{
       width: '100%',
       height: '100%',
-      background: 'linear-gradient(180deg, #fcf9f4 0%, #f5eee3 100%)',
+      background: 'linear-gradient(180deg, #fcf9f4 0%, #f7efe4 100%)',
       display: 'flex',
       flexDirection: 'column',
       userSelect: 'none',
       overflow: 'hidden',
       borderLeft: '1px solid rgba(180,160,120,0.18)',
-      boxShadow: 'inset 0 0 22px rgba(255,255,255,0.24)',
+      boxShadow: 'inset 0 0 22px rgba(255,255,255,0.22)',
     }}>
       <div style={{ padding: '14px 16px 10px', borderBottom: '1px solid rgba(160,130,90,0.15)', flexShrink: 0 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
@@ -274,12 +275,7 @@ function CategoryPage({
               </div>
 
               {dish.description && (
-                <p style={{
-                  fontSize: 10,
-                  color: '#a08060',
-                  lineHeight: 1.4,
-                  margin: '2px 0 0',
-                }}>
+                <p style={{ fontSize: 10, color: '#a08060', lineHeight: 1.4, margin: '2px 0 0' }}>
                   {truncateText(dish.description, DESC_PREVIEW_CHARS)}
                 </p>
               )}
@@ -312,7 +308,7 @@ function BackPage({ restaurantName }: { restaurantName: string }) {
     <div style={{
       width: '100%',
       height: '100%',
-      background: 'linear-gradient(160deg, #efe7d8 0%, #e8dfc8 100%)',
+      background: 'linear-gradient(160deg, #f1e9da 0%, #e8dfc8 100%)',
       display: 'flex',
       flexDirection: 'column',
       alignItems: 'center',
@@ -320,6 +316,7 @@ function BackPage({ restaurantName }: { restaurantName: string }) {
       padding: 32,
       userSelect: 'none',
       borderRight: '3px solid rgba(180,160,120,0.28)',
+      boxShadow: 'inset 0 0 28px rgba(255,255,255,0.18)',
     }}>
       <div style={{ width: 32, height: 1, background: 'rgba(120,100,70,0.3)', borderRadius: 99, marginBottom: 16 }} />
       <p style={{ color: '#8c7355', fontSize: 13, textAlign: 'center', margin: 0, fontFamily: 'Georgia, serif' }}>{restaurantName}</p>
@@ -332,11 +329,13 @@ function BackPage({ restaurantName }: { restaurantName: string }) {
 export default function FlipBook({ dishes, menuName, restaurantName }: Props) {
   const pages = useMemo(() => buildPages(dishes), [dishes])
   const totalPages = pages.length + 2
+
   const [currentPage, setCurrentPage] = useState(0)
   const [displayPage, setDisplayPage] = useState(0)
   const [selectedDish, setSelectedDish] = useState<Dish | null>(null)
   const [isAnimating, setIsAnimating] = useState(false)
   const [flipDirection, setFlipDirection] = useState<'next' | 'prev'>('next')
+
   const touchStartX = useRef<number | null>(null)
   const touchStartY = useRef<number | null>(null)
 
@@ -358,12 +357,12 @@ export default function FlipBook({ dishes, menuName, restaurantName }: Props) {
 
     window.setTimeout(() => {
       setCurrentPage(safeTarget)
-    }, 140)
+    }, 150)
 
     window.setTimeout(() => {
       setDisplayPage(safeTarget)
       setIsAnimating(false)
-    }, 520)
+    }, 540)
   }
 
   const goPrev = () => changePage(currentPage - 1)
@@ -403,22 +402,20 @@ export default function FlipBook({ dishes, menuName, restaurantName }: Props) {
     if (Math.abs(dx) < SWIPE_THRESHOLD) return
     if (Math.abs(dx) <= Math.abs(dy)) return
 
-    if (dx < 0) {
-      goNext()
-    } else {
-      goPrev()
-    }
+    if (dx < 0) goNext()
+    else goPrev()
   }
 
   return (
     <div style={{
       display: 'flex',
       flexDirection: 'column',
-      height: 'calc(100dvh - 52px)',
-      maxHeight: 'calc(100dvh - 52px)',
+      height: '100dvh',
+      maxHeight: '100dvh',
       background: '#1a1410',
       overflow: 'hidden',
       position: 'relative',
+      paddingBottom: 'env(safe-area-inset-bottom, 0px)',
     }}>
       {categories.length > 0 && (
         <div style={{ flexShrink: 0, paddingTop: 10, paddingBottom: 6, position: 'relative', zIndex: 20 }}>
@@ -434,7 +431,7 @@ export default function FlipBook({ dishes, menuName, restaurantName }: Props) {
                   fontSize: 11,
                   fontWeight: 500,
                   background: 'rgba(245,240,232,0.08)',
-                  color: 'rgba(245,240,232,0.65)',
+                  color: 'rgba(245,240,232,0.68)',
                   border: '1px solid rgba(245,240,232,0.12)',
                   cursor: 'pointer',
                   WebkitTapHighlightColor: 'transparent',
@@ -449,22 +446,22 @@ export default function FlipBook({ dishes, menuName, restaurantName }: Props) {
 
       <div style={{
         flex: 1,
+        minHeight: 0,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        minHeight: 0,
-        margin: '0 -3px',
-        perspective: '1800px',
+        padding: '0 10px 0',
+        perspective: '2200px',
         position: 'relative',
       }}>
         <div
           onTouchStart={handleTouchStart}
           onTouchEnd={handleTouchEnd}
           style={{
-            width: 'min(310px, calc(100vw - 38px))',
-            height: '465px',
-            minHeight: '360px',
-            maxHeight: '620px',
+            width: 'min(94vw, 430px)',
+            height: 'min(calc(100dvh - 122px - env(safe-area-inset-bottom, 0px)), 78vh)',
+            minHeight: '440px',
+            maxHeight: '760px',
             position: 'relative',
             transformStyle: 'preserve-3d',
             userSelect: 'none',
@@ -475,20 +472,18 @@ export default function FlipBook({ dishes, menuName, restaurantName }: Props) {
               position: 'absolute',
               inset: 0,
               borderRadius: 2,
-              background: 'linear-gradient(90deg, rgba(255,255,255,0.06) 0%, rgba(0,0,0,0.06) 100%)',
-              boxShadow: [
-                '0 2px 4px rgba(0,0,0,0.6)',
-                '0 12px 32px rgba(0,0,0,0.8)',
-                '0 32px 64px rgba(0,0,0,0.9)',
-              ].join(', '),
               overflow: 'hidden',
+              transformStyle: 'preserve-3d',
               transformOrigin: flipDirection === 'next' ? 'left center' : 'right center',
               transform: isAnimating
                 ? flipDirection === 'next'
-                  ? 'rotateY(-14deg) translateX(-6px)'
-                  : 'rotateY(14deg) translateX(6px)'
-                : 'rotateY(0deg) translateX(0px)',
-              transition: 'transform 520ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 520ms ease',
+                  ? 'rotateY(-18deg) translateX(-8px) scale(0.995)'
+                  : 'rotateY(18deg) translateX(8px) scale(0.995)'
+                : 'rotateY(0deg) translateX(0px) scale(1)',
+              transition: 'transform 540ms cubic-bezier(0.22, 1, 0.36, 1)',
+              boxShadow: isAnimating
+                ? '0 6px 18px rgba(0,0,0,0.55), 0 24px 46px rgba(0,0,0,0.72), 0 40px 82px rgba(0,0,0,0.82)'
+                : '0 4px 10px rgba(0,0,0,0.46), 0 18px 38px rgba(0,0,0,0.68), 0 34px 72px rgba(0,0,0,0.80)',
             }}
           >
             <div
@@ -497,12 +492,29 @@ export default function FlipBook({ dishes, menuName, restaurantName }: Props) {
                 inset: 0,
                 background: isAnimating
                   ? flipDirection === 'next'
-                    ? 'linear-gradient(90deg, rgba(255,255,255,0.34) 0%, rgba(255,255,255,0.08) 26%, rgba(0,0,0,0.12) 100%)'
-                    : 'linear-gradient(90deg, rgba(0,0,0,0.12) 0%, rgba(255,255,255,0.08) 74%, rgba(255,255,255,0.34) 100%)'
-                  : 'linear-gradient(90deg, rgba(255,255,255,0.18) 0%, rgba(255,255,255,0.04) 18%, rgba(0,0,0,0.10) 100%)',
+                    ? 'linear-gradient(90deg, rgba(255,255,255,0.42) 0%, rgba(255,255,255,0.12) 22%, rgba(0,0,0,0.16) 100%)'
+                    : 'linear-gradient(90deg, rgba(0,0,0,0.16) 0%, rgba(255,255,255,0.12) 78%, rgba(255,255,255,0.42) 100%)'
+                  : 'linear-gradient(90deg, rgba(255,255,255,0.24) 0%, rgba(255,255,255,0.06) 18%, rgba(0,0,0,0.10) 100%)',
                 pointerEvents: 'none',
                 zIndex: 3,
-                transition: 'background 520ms ease',
+                transition: 'background 540ms ease',
+              }}
+            />
+
+            <div
+              style={{
+                position: 'absolute',
+                top: 0,
+                bottom: 0,
+                width: isAnimating ? 22 : 16,
+                left: flipDirection === 'next' ? 0 : 'auto',
+                right: flipDirection === 'prev' ? 0 : 'auto',
+                background: flipDirection === 'next'
+                  ? 'linear-gradient(90deg, rgba(80,55,20,0.14) 0%, rgba(255,255,255,0) 100%)'
+                  : 'linear-gradient(270deg, rgba(80,55,20,0.14) 0%, rgba(255,255,255,0) 100%)',
+                pointerEvents: 'none',
+                zIndex: 4,
+                transition: 'all 540ms ease',
               }}
             />
 
@@ -512,7 +524,7 @@ export default function FlipBook({ dishes, menuName, restaurantName }: Props) {
                 inset: 0,
                 zIndex: 2,
                 overflow: 'hidden',
-                background: '#f7f1e7',
+                background: '#f8f1e6',
               }}
             >
               {currentContent}
@@ -522,19 +534,19 @@ export default function FlipBook({ dishes, menuName, restaurantName }: Props) {
           <div
             style={{
               position: 'absolute',
-              left: 8,
-              right: 8,
-              bottom: -6,
-              height: 18,
+              left: 10,
+              right: 10,
+              bottom: -8,
+              height: 22,
               borderRadius: '50%',
-              background: 'radial-gradient(ellipse at center, rgba(0,0,0,0.45) 0%, rgba(0,0,0,0.12) 55%, rgba(0,0,0,0) 100%)',
-              filter: 'blur(6px)',
+              background: 'radial-gradient(ellipse at center, rgba(0,0,0,0.42) 0%, rgba(0,0,0,0.16) 56%, rgba(0,0,0,0) 100%)',
+              filter: 'blur(7px)',
               transform: isAnimating
                 ? flipDirection === 'next'
-                  ? 'translateX(-6px) scaleX(0.96)'
-                  : 'translateX(6px) scaleX(0.96)'
+                  ? 'translateX(-8px) scaleX(0.94)'
+                  : 'translateX(8px) scaleX(0.94)'
                 : 'translateX(0px) scaleX(1)',
-              transition: 'transform 520ms cubic-bezier(0.22, 1, 0.36, 1)',
+              transition: 'transform 540ms cubic-bezier(0.22, 1, 0.36, 1)',
               pointerEvents: 'none',
             }}
           />
@@ -545,7 +557,7 @@ export default function FlipBook({ dishes, menuName, restaurantName }: Props) {
         flexShrink: 0,
         display: 'flex',
         justifyContent: 'center',
-        paddingBottom: 'env(safe-area-inset-bottom, 0px)',
+        paddingBottom: 'max(6px, env(safe-area-inset-bottom, 0px))',
         background: '#1a1410',
         position: 'relative',
         zIndex: 20,
@@ -563,8 +575,8 @@ export default function FlipBook({ dishes, menuName, restaurantName }: Props) {
           <button
             onClick={goPrev}
             style={{
-              width: 52,
-              height: 38,
+              width: 54,
+              height: 40,
               background: 'none',
               border: 'none',
               borderRight: '1px solid rgba(245,240,232,0.07)',
@@ -573,11 +585,10 @@ export default function FlipBook({ dishes, menuName, restaurantName }: Props) {
               alignItems: 'center',
               justifyContent: 'center',
               opacity: currentPage === 0 ? 0.15 : 0.82,
-              transition: 'opacity 0.2s',
               WebkitTapHighlightColor: 'transparent',
             }}
           >
-            <svg width="14" height="14" fill="none" stroke="rgba(245,240,232,0.95)" viewBox="0 0 24 24">
+            <svg width="15" height="15" fill="none" stroke="rgba(245,240,232,0.95)" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 19l-7-7 7-7" />
             </svg>
           </button>
@@ -591,8 +602,8 @@ export default function FlipBook({ dishes, menuName, restaurantName }: Props) {
           <button
             onClick={goNext}
             style={{
-              width: 52,
-              height: 38,
+              width: 54,
+              height: 40,
               background: 'none',
               border: 'none',
               borderLeft: '1px solid rgba(245,240,232,0.07)',
@@ -601,11 +612,10 @@ export default function FlipBook({ dishes, menuName, restaurantName }: Props) {
               alignItems: 'center',
               justifyContent: 'center',
               opacity: currentPage >= totalPages - 1 ? 0.15 : 0.82,
-              transition: 'opacity 0.2s',
               WebkitTapHighlightColor: 'transparent',
             }}
           >
-            <svg width="14" height="14" fill="none" stroke="rgba(245,240,232,0.95)" viewBox="0 0 24 24">
+            <svg width="15" height="15" fill="none" stroke="rgba(245,240,232,0.95)" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" />
             </svg>
           </button>
