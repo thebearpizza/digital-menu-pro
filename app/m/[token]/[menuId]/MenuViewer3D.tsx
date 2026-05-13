@@ -1,4 +1,5 @@
 'use client'
+/* eslint-disable @next/next/no-img-element */
 
 import { useMemo, useRef, useState } from 'react'
 
@@ -170,6 +171,79 @@ function BackPage({ restaurantName }: { restaurantName: string }) {
   )
 }
 
+function DishModal({ dish, onClose }: { dish: Dish; onClose: () => void }) {
+  if (!dish) return null
+
+  return (
+    <div
+      onClick={onClose}
+      className="fixed inset-0 z-[9999] flex items-end justify-center bg-black/80 backdrop-blur-sm"
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-md max-h-[85vh] rounded-t-3xl bg-white shadow-2xl flex flex-col"
+      >
+        <div className="flex justify-center pt-3 pb-1.5">
+          <div className="w-10 h-1 rounded-full bg-neutral-300" />
+        </div>
+
+        {dish.image_url && (
+          <div className="w-full max-h-[42vh] overflow-hidden bg-neutral-100">
+            <img
+              src={dish.image_url}
+              alt={dish.name}
+              className="w-full h-full object-cover"
+            />
+          </div>
+        )}
+
+        <div className="px-5 pt-3 pb-4 space-y-2 overflow-y-auto">
+          <div className="flex items-start justify-between gap-3">
+            <h3 className="text-[18px] font-semibold text-neutral-900 leading-snug">
+              {dish.name}
+            </h3>
+            {dish.price != null && dish.price > 0 && (
+              <span className="text-[18px] font-semibold text-neutral-900 flex-shrink-0">
+                €{Number(dish.price).toFixed(2)}
+              </span>
+            )}
+          </div>
+
+          {!dish.is_available && (
+            <span className="inline-block px-3 py-[3px] rounded-full bg-neutral-100 text-[12px] text-neutral-500">
+              Non disponibile
+            </span>
+          )}
+
+          {dish.description && (
+            <p className="text-[14px] text-neutral-600 leading-relaxed">
+              {dish.description}
+            </p>
+          )}
+
+          {dish.allergens?.length > 0 && (
+            <div className="pt-2">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-neutral-400 mb-1.5">
+                Allergeni
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {dish.allergens.map((a) => (
+                  <span
+                    key={a}
+                    className="px-2 py-[2px] rounded-full bg-neutral-100 text-[12px] text-neutral-600"
+                  >
+                    {a}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function MenuViewer3D({ dishes, menuName, restaurantName }: Props) {
   const pages = useMemo(() => buildPages(dishes), [dishes])
   const totalPages = pages.length + 2
@@ -243,7 +317,6 @@ export default function MenuViewer3D({ dishes, menuName, restaurantName }: Props
 
   return (
     <div className="flex flex-col h-[100dvh] max-h-[100dvh] bg-[#15100c] overflow-hidden pb-[env(safe-area-inset-bottom,0px)]">
-      {/* Categorie */}
       {categories.length > 0 && (
         <div className="flex-shrink-0 pt-2.5 pb-1.5 relative z-20">
           <div className="flex gap-1.5 px-3 overflow-x-auto scrollbar-none">
@@ -260,7 +333,6 @@ export default function MenuViewer3D({ dishes, menuName, restaurantName }: Props
         </div>
       )}
 
-      {/* Volantino 3D */}
       <div className="flex-1 min-h-0 flex items-center justify-center px-2 pb-1 relative">
         <div
           onTouchStart={onTouchStart}
@@ -290,7 +362,6 @@ export default function MenuViewer3D({ dishes, menuName, restaurantName }: Props
                 : '0 4px 10px rgba(0,0,0,0.46), 0 18px 38px rgba(0,0,0,0.68), 0 34px 72px rgba(0,0,0,0.80)',
             }}
           >
-            {/* Luce bordo */}
             <div
               className="absolute inset-0 pointer-events-none"
               style={{
@@ -302,13 +373,11 @@ export default function MenuViewer3D({ dishes, menuName, restaurantName }: Props
                 transition: 'background 520ms ease',
               }}
             />
-            {/* Contenuto pagina */}
             <div className="absolute inset-0 bg-[#f8f1e6]">
               {currentContent}
             </div>
           </div>
 
-          {/* Ombra sotto */}
           <div
             className="absolute left-2 right-2 -bottom-2 rounded-full pointer-events-none"
             style={{
@@ -326,7 +395,6 @@ export default function MenuViewer3D({ dishes, menuName, restaurantName }: Props
         </div>
       </div>
 
-      {/* Frecce integrate nel bottom del volantino */}
       <div className="flex-shrink-0 flex justify-center pb-[max(6px,env(safe-area-inset-bottom,0px))] bg-[#15100c] relative z-20">
         <div className="inline-flex items-center bg-white/[0.04] border border-white/12 border-t-0 rounded-b-[10px] shadow-[0_6px_24px_rgba(0,0,0,0.6),_inset_0_-1px_0_rgba(245,240,232,0.04)]">
           <button
