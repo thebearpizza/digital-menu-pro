@@ -30,7 +30,7 @@ export default function ThreeFlipMenu({ dishes, menuName, restaurantName }: Prop
     console.log('ThreeFlipMenu mounted', window.innerWidth, window.innerHeight)
 
     const scene = new THREE.Scene()
-    scene.background = new THREE.Color(0x000000) // sfondo nero
+    scene.background = new THREE.Color(0x000000)
 
     const camera = new THREE.PerspectiveCamera(
       45,
@@ -48,7 +48,6 @@ export default function ThreeFlipMenu({ dishes, menuName, restaurantName }: Prop
     renderer.setPixelRatio(window.devicePixelRatio || 1)
     renderer.setSize(window.innerWidth, window.innerHeight, false)
 
-    // Rettangolo rosso, materiale Basic (non richiede luci)
     const geometry = new THREE.PlaneGeometry(2.2, 1.4)
     const material = new THREE.MeshBasicMaterial({ color: 0xff3333 })
     const pageMesh = new THREE.Mesh(geometry, material)
@@ -81,7 +80,7 @@ export default function ThreeFlipMenu({ dishes, menuName, restaurantName }: Prop
   return (
     <div className="flex flex-col h-[100dvh] bg-black">
       <div className="flex-1 flex items-center justify-center">
-        anvas ref={canvasRef} className="w-full h-full" />
+        <canvas ref={canvasRef} className="w-full h-full" />
       </div>
     </div>
   )
