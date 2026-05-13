@@ -201,7 +201,8 @@ function CategoryPage({ category, dishes, pageNum, totalPages, onSelect }: PageD
         {dishes.map((dish, idx) => (
           <button
             key={dish.id}
-            onPointerUp={() => dish.is_available && onSelect(dish)}
+            onTouchEnd={(e) => { e.stopPropagation(); if (dish.is_available) onSelect(dish) }}
+            onMouseUp={(e) => { e.stopPropagation(); if (dish.is_available) onSelect(dish) }}
             style={{
               width: '100%', display: 'flex', alignItems: 'flex-start',
               padding: '7px 14px', gap: 10, background: 'none', border: 'none',
@@ -335,7 +336,8 @@ export default function FlipBook({ dishes, menuName, restaurantName }: Props) {
             {categories.map(cat => (
               <button
                 key={cat}
-                onClick={() => navigate(categoryPageIndex[cat])}
+                onTouchEnd={(e) => { e.preventDefault(); navigate(categoryPageIndex[cat]) }}
+                onMouseUp={() => navigate(categoryPageIndex[cat])}
                 style={{
                   flexShrink: 0, padding: '5px 12px', borderRadius: 99, fontSize: 11, fontWeight: 500,
                   background: 'rgba(245,240,232,0.08)', color: 'rgba(245,240,232,0.5)',
@@ -378,7 +380,7 @@ export default function FlipBook({ dishes, menuName, restaurantName }: Props) {
           usePortrait={true}
           startZIndex={0}
           autoSize={true}
-          clickEventForward={false}
+          clickEventForward={true}
           useMouseEvents={true}
           swipeDistance={10}
           showPageCorners={true}
@@ -416,7 +418,8 @@ export default function FlipBook({ dishes, menuName, restaurantName }: Props) {
         }}>
           {/* Freccia sinistra */}
           <button
-            onClick={goPrev}
+            onTouchEnd={(e) => { e.preventDefault(); goPrev() }}
+            onMouseUp={goPrev}
             style={{
               width: 52, height: 38,
               background: 'none',
@@ -443,7 +446,8 @@ export default function FlipBook({ dishes, menuName, restaurantName }: Props) {
 
           {/* Freccia destra */}
           <button
-            onClick={goNext}
+            onTouchEnd={(e) => { e.preventDefault(); goNext() }}
+            onMouseUp={goNext}
             style={{
               width: 52, height: 38,
               background: 'none',
