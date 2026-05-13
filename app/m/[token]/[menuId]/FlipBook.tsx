@@ -94,19 +94,14 @@ function DishModal({ dish, onClose }: { dish: Dish; onClose: () => void }) {
           boxShadow: '0 -8px 40px rgba(0,0,0,0.4)',
         }}
       >
-        {/* Handle */}
         <div style={{ display: 'flex', justifyContent: 'center', padding: '12px 0 8px', flexShrink: 0 }}>
           <div style={{ width: 40, height: 4, background: '#e5e5e5', borderRadius: 99 }} />
         </div>
-
-        {/* Foto */}
         {hasPhoto && (
           <div style={{ width: '100%', flex: '0 0 52%', overflow: 'hidden', background: '#f5f5f4' }}>
             <img src={dish.image_url!} alt={dish.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
           </div>
         )}
-
-        {/* Nome + prezzo */}
         <div style={{ padding: '16px 20px 0', flexShrink: 0 }}>
           <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, marginBottom: 6 }}>
             <h3 style={{ fontSize: 20, fontWeight: 700, color: '#1c1917', lineHeight: 1.3, margin: 0 }}>{dish.name}</h3>
@@ -122,8 +117,6 @@ function DishModal({ dish, onClose }: { dish: Dish; onClose: () => void }) {
             </span>
           )}
         </div>
-
-        {/* Descrizione — scroll solo se lunga */}
         {dish.description && (
           <div style={{
             padding: '8px 20px 0',
@@ -132,13 +125,9 @@ function DishModal({ dish, onClose }: { dish: Dish; onClose: () => void }) {
             WebkitOverflowScrolling: 'touch',
             flexShrink: descLong ? 1 : 0,
           }}>
-            <p style={{ fontSize: 14, color: '#78716c', lineHeight: 1.6, margin: 0 }}>
-              {dish.description}
-            </p>
+            <p style={{ fontSize: 14, color: '#78716c', lineHeight: 1.6, margin: 0 }}>{dish.description}</p>
           </div>
         )}
-
-        {/* Allergeni — nomi estesi sotto descrizione */}
         {dish.allergens?.length > 0 && (
           <div style={{ padding: '10px 20px 0', flexShrink: 0 }}>
             <p style={{ fontSize: 11, fontWeight: 600, color: '#a8a29e', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>
@@ -152,8 +141,6 @@ function DishModal({ dish, onClose }: { dish: Dish; onClose: () => void }) {
           </div>
         )}
       </div>
-
-      {/* Tasto chiudi */}
       <button
         onPointerUp={e => { e.stopPropagation(); onClose() }}
         style={{
@@ -204,17 +191,12 @@ function CategoryPage({ category, dishes, pageNum, totalPages, onSelect }: PageD
       display: 'flex', flexDirection: 'column', userSelect: 'none', overflow: 'hidden',
       borderLeft: '1px solid rgba(180,160,120,0.2)',
     }}>
-      {/* Header categoria */}
       <div style={{ padding: '14px 16px 10px', borderBottom: '1px solid rgba(160,130,90,0.15)', flexShrink: 0 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
           <h2 style={{ fontSize: 11, fontWeight: 700, color: '#8c7355', textTransform: 'uppercase', letterSpacing: '0.12em', margin: 0 }}>{category}</h2>
-          {totalPages > 1 && (
-            <span style={{ fontSize: 9, color: '#c4b090' }}>{pageNum}/{totalPages}</span>
-          )}
+          {totalPages > 1 && <span style={{ fontSize: 9, color: '#c4b090' }}>{pageNum}/{totalPages}</span>}
         </div>
       </div>
-
-      {/* Lista piatti */}
       <div style={{ flex: 1, overflowY: 'hidden', padding: '6px 0' }}>
         {dishes.map((dish, idx) => (
           <button
@@ -228,14 +210,11 @@ function CategoryPage({ category, dishes, pageNum, totalPages, onSelect }: PageD
               borderBottom: idx < dishes.length - 1 ? '1px solid rgba(160,130,90,0.08)' : 'none',
             }}
           >
-            {/* Miniatura */}
             {dish.image_url && (
               <div style={{ width: 48, height: 48, borderRadius: 6, overflow: 'hidden', flexShrink: 0, background: '#ede6d6' }}>
                 <img src={dish.image_url} alt={dish.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
               </div>
             )}
-
-            {/* Testo */}
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: 6, alignItems: 'baseline' }}>
                 <span style={{
@@ -252,8 +231,6 @@ function CategoryPage({ category, dishes, pageNum, totalPages, onSelect }: PageD
                   </span>
                 )}
               </div>
-
-              {/* Descrizione troncata */}
               {dish.description && (
                 <p style={{
                   fontSize: 10, color: '#a08060', lineHeight: 1.4, margin: '2px 0 0',
@@ -263,14 +240,11 @@ function CategoryPage({ category, dishes, pageNum, totalPages, onSelect }: PageD
                   {dish.description}
                 </p>
               )}
-
-              {/* Allergeni — numeri senza contorno, stesso font del testo piatto */}
               {dish.allergens?.length > 0 && (
                 <p style={{ fontSize: 10, color: '#b8a080', margin: '3px 0 0', lineHeight: 1 }}>
                   {dish.allergens.map(a => ALLERGEN_NUM[a] ?? '?').join(' · ')}
                 </p>
               )}
-
               {!dish.is_available && (
                 <span style={{ fontSize: 9, color: '#c4b090', marginTop: 2, display: 'block' }}>Non disponibile</span>
               )}
@@ -278,8 +252,6 @@ function CategoryPage({ category, dishes, pageNum, totalPages, onSelect }: PageD
           </button>
         ))}
       </div>
-
-      {/* Footer pagina */}
       <div style={{ padding: '6px 14px', borderTop: '1px solid rgba(160,130,90,0.1)', flexShrink: 0, display: 'flex', justifyContent: 'flex-end' }}>
         <span style={{ fontSize: 9, color: '#d4c4a8' }}>· · ·</span>
       </div>
@@ -299,7 +271,7 @@ function BackPage({ restaurantName }: { restaurantName: string }) {
     }}>
       <div style={{ width: 32, height: 1, background: 'rgba(120,100,70,0.3)', borderRadius: 99, marginBottom: 16 }} />
       <p style={{ color: '#8c7355', fontSize: 13, textAlign: 'center', margin: 0, fontFamily: 'Georgia, serif' }}>{restaurantName}</p>
-      <p style={{ color: '#b8a080', fontSize: 10, marginTop: 8, margin: '8px 0 0', letterSpacing: '0.08em', textTransform: 'uppercase' }}>Grazie per la visita</p>
+      <p style={{ color: '#b8a080', fontSize: 10, margin: '8px 0 0', letterSpacing: '0.08em', textTransform: 'uppercase' }}>Grazie per la visita</p>
       <div style={{ width: 32, height: 1, background: 'rgba(120,100,70,0.3)', borderRadius: 99, marginTop: 16 }} />
     </div>
   )
@@ -310,7 +282,7 @@ export default function FlipBook({ dishes, menuName, restaurantName }: Props) {
   const bookRef = useRef<any>(null)
   const [currentPage, setCurrentPage] = useState(0)
   const [selectedDish, setSelectedDish] = useState<Dish | null>(null)
-  const [isFlipping, setIsFlipping] = useState(false)
+  const flipping = useRef(false)
 
   const pages = buildPages(dishes)
   const totalPages = pages.length + 2
@@ -321,42 +293,44 @@ export default function FlipBook({ dishes, menuName, restaurantName }: Props) {
   })
   const categories = Object.keys(categoryPageIndex)
 
-  // Flip direzione-aware: flip() va solo avanti, flipPrev() va indietro
-  const goToPage = (n: number) => {
-    if (isFlipping) return
-    setIsFlipping(true)
+  // ── Navigazione: unico entry point ──────────────────────────────────────────
+  // flip() anima sempre in avanti, flipPrev() anima sempre indietro.
+  // Per salti multi-pagina indietro non esiste API animata in react-pageflip,
+  // quindi usiamo flipPrev() una sola volta verso la direzione giusta.
+  const navigate = (target: number) => {
+    if (flipping.current) return
     const pf = bookRef.current?.pageFlip()
     if (!pf) return
-    if (n < currentPage) {
-      // Andiamo indietro: flipPrev() ripetuto fino alla pagina target
-      // Per jump diretti indietro usiamo turnToPrevPage + aggiornamento manuale
-      pf.turnToPage(n)
+    flipping.current = true
+    if (target > currentPage) {
+      pf.flip(target, 'top')
     } else {
-      pf.flip(n)
+      pf.flipPrev('top')
+      // Per jump multi-pagina indietro, dopo l'animazione vai diretto
+      if (target < currentPage - 1) {
+        setTimeout(() => {
+          bookRef.current?.pageFlip().turnToPage(target)
+          flipping.current = false
+        }, 950)
+        return
+      }
     }
-    setTimeout(() => setIsFlipping(false), 1050)
+    setTimeout(() => { flipping.current = false }, 1000)
   }
 
-  const goPrev = () => {
-    if (currentPage <= 0 || isFlipping) return
-    setIsFlipping(true)
-    bookRef.current?.pageFlip().flipPrev()
-    setTimeout(() => setIsFlipping(false), 1050)
-  }
-
-  const goNext = () => {
-    if (currentPage >= totalPages - 1 || isFlipping) return
-    setIsFlipping(true)
-    bookRef.current?.pageFlip().flipNext()
-    setTimeout(() => setIsFlipping(false), 1050)
-  }
+  const goPrev = () => navigate(currentPage - 1)
+  const goNext = () => navigate(currentPage + 1)
 
   return (
     <div style={{
       display: 'flex', flexDirection: 'column',
-      height: '100dvh', maxHeight: '100dvh',
+      // Sottraiamo 52px dal basso: 36px fascia frecce + 16px safe-area Safari
+      height: 'calc(100dvh - 52px)',
+      maxHeight: 'calc(100dvh - 52px)',
+      marginTop: 0,
       background: '#1a1410',
-      overflow: 'hidden', touchAction: 'none',
+      overflow: 'hidden',
+      touchAction: 'none',
     }}>
 
       {/* Barra categorie */}
@@ -366,13 +340,12 @@ export default function FlipBook({ dishes, menuName, restaurantName }: Props) {
             {categories.map(cat => (
               <button
                 key={cat}
-                onPointerUp={() => goToPage(categoryPageIndex[cat])}
+                onClick={() => navigate(categoryPageIndex[cat])}
                 style={{
                   flexShrink: 0, padding: '5px 12px', borderRadius: 99, fontSize: 11, fontWeight: 500,
                   background: 'rgba(245,240,232,0.08)', color: 'rgba(245,240,232,0.5)',
                   border: '1px solid rgba(245,240,232,0.12)', cursor: 'pointer',
                   WebkitTapHighlightColor: 'transparent',
-                  transition: 'background 0.2s, color 0.2s',
                 }}
               >
                 {cat}
@@ -382,22 +355,23 @@ export default function FlipBook({ dishes, menuName, restaurantName }: Props) {
         </div>
       )}
 
-      {/* Flipbook centrato */}
-      <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 0 }}>
-
-        {/* Il libro */}
+      {/* Flipbook — margini laterali -3px per swipe più facile */}
+      <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 0, margin: '0 -3px' }}>
         <HTMLFlipBook
           ref={bookRef}
           width={310}
-          height={480}
+          height={465}
           size="stretch"
           minWidth={240}
           maxWidth={440}
-          minHeight={380}
-          maxHeight={640}
+          minHeight={360}
+          maxHeight={620}
           showCover={true}
           mobileScrollSupport={false}
-          onFlip={(e: any) => { setCurrentPage(e.data); setIsFlipping(false) }}
+          onFlip={(e: any) => {
+            setCurrentPage(e.data)
+            flipping.current = false
+          }}
           className=""
           style={{
             filter: [
@@ -414,7 +388,7 @@ export default function FlipBook({ dishes, menuName, restaurantName }: Props) {
           autoSize={true}
           clickEventForward={false}
           useMouseEvents={true}
-          swipeDistance={0}
+          swipeDistance={80}
           showPageCorners={true}
           disableFlipByClick={true}
           maxShadowOpacity={0.85}
@@ -427,80 +401,76 @@ export default function FlipBook({ dishes, menuName, restaurantName }: Props) {
           ))}
           <div className="page"><BackPage restaurantName={restaurantName} /></div>
         </HTMLFlipBook>
-
       </div>
 
-      {/* Navigazione bottom — fascia integrata sotto il volantino */}
+      {/* Fascia frecce — integrata nel 3D del volantino, agganciata al bottom del libro */}
       <div style={{
         flexShrink: 0,
         display: 'flex',
-        alignItems: 'stretch',
         justifyContent: 'center',
-        paddingBottom: 'max(16px, env(safe-area-inset-bottom))',
-        paddingTop: 0,
+        // Safe area Safari: la fascia sta SOPRA la barra indirizzi
+        paddingBottom: 'env(safe-area-inset-bottom, 0px)',
+        background: '#1a1410',
       }}>
         <div style={{
-          display: 'flex',
+          display: 'inline-flex',
           alignItems: 'center',
-          background: 'rgba(245,240,232,0.04)',
-          border: '1px solid rgba(245,240,232,0.08)',
+          background: 'linear-gradient(180deg, rgba(245,240,232,0.06) 0%, rgba(245,240,232,0.03) 100%)',
+          border: '1px solid rgba(245,240,232,0.09)',
+          borderTop: 'none',
           borderRadius: '0 0 10px 10px',
           overflow: 'hidden',
-          boxShadow: '0 8px 32px rgba(0,0,0,0.5), inset 0 1px 0 rgba(245,240,232,0.06)',
+          boxShadow: '0 6px 24px rgba(0,0,0,0.6), inset 0 -1px 0 rgba(245,240,232,0.04)',
         }}>
           {/* Freccia sinistra */}
           <button
-            onPointerUp={goPrev}
-            disabled={currentPage === 0 || isFlipping}
+            onClick={goPrev}
             style={{
-              width: 48, height: 36,
-              background: 'none', border: 'none',
+              width: 52, height: 38,
+              background: 'none',
+              border: 'none',
               borderRight: '1px solid rgba(245,240,232,0.07)',
               cursor: currentPage === 0 ? 'default' : 'pointer',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
-              opacity: currentPage === 0 ? 0.15 : 0.7,
+              opacity: currentPage === 0 ? 0.15 : 0.75,
               transition: 'opacity 0.2s',
               WebkitTapHighlightColor: 'transparent',
             }}
           >
-            <svg width="14" height="14" fill="none" stroke="rgba(245,240,232,0.9)" viewBox="0 0 24 24">
+            <svg width="14" height="14" fill="none" stroke="rgba(245,240,232,0.95)" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 19l-7-7 7-7" />
             </svg>
           </button>
 
           {/* Contatore */}
-          <div style={{ padding: '0 16px', display: 'flex', alignItems: 'center' }}>
-            <span style={{ fontSize: 10, color: 'rgba(245,240,232,0.25)', fontVariantNumeric: 'tabular-nums', letterSpacing: '0.1em' }}>
+          <div style={{ padding: '0 18px', display: 'flex', alignItems: 'center', pointerEvents: 'none' }}>
+            <span style={{ fontSize: 10, color: 'rgba(245,240,232,0.22)', fontVariantNumeric: 'tabular-nums', letterSpacing: '0.1em' }}>
               {currentPage + 1} · {totalPages}
             </span>
           </div>
 
           {/* Freccia destra */}
           <button
-            onPointerUp={goNext}
-            disabled={currentPage >= totalPages - 1 || isFlipping}
+            onClick={goNext}
             style={{
-              width: 48, height: 36,
-              background: 'none', border: 'none',
+              width: 52, height: 38,
+              background: 'none',
+              border: 'none',
               borderLeft: '1px solid rgba(245,240,232,0.07)',
               cursor: currentPage >= totalPages - 1 ? 'default' : 'pointer',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
-              opacity: currentPage >= totalPages - 1 ? 0.15 : 0.7,
+              opacity: currentPage >= totalPages - 1 ? 0.15 : 0.75,
               transition: 'opacity 0.2s',
               WebkitTapHighlightColor: 'transparent',
             }}
           >
-            <svg width="14" height="14" fill="none" stroke="rgba(245,240,232,0.9)" viewBox="0 0 24 24">
+            <svg width="14" height="14" fill="none" stroke="rgba(245,240,232,0.95)" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" />
             </svg>
           </button>
         </div>
       </div>
 
-      {/* Modale piatto */}
-      {selectedDish && (
-        <DishModal dish={selectedDish} onClose={() => setSelectedDish(null)} />
-      )}
     </div>
   )
 }
