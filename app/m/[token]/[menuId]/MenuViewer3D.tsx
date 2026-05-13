@@ -28,7 +28,7 @@ type PageData = {
 }
 
 const MAX_PER_PAGE = 8
-const SWIPE_THRESHOLD = 18
+const SWIPE_THRESHOLD = 10
 const DESC_PREVIEW_CHARS = 80
 
 const ALLERGEN_NUM: Record<string, string> = {
