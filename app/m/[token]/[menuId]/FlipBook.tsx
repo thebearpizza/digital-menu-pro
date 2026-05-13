@@ -321,16 +321,35 @@ export default function FlipBook({ dishes, menuName, restaurantName }: Props) {
   })
   const categories = Object.keys(categoryPageIndex)
 
-  // Flip con animazione — usa flip() che anima sempre
+  // Flip direzione-aware: flip() va solo avanti, flipPrev() va indietro
   const goToPage = (n: number) => {
     if (isFlipping) return
     setIsFlipping(true)
-    bookRef.current?.pageFlip().flip(n)
+    const pf = bookRef.current?.pageFlip()
+    if (!pf) return
+    if (n < currentPage) {
+      // Andiamo indietro: flipPrev() ripetuto fino alla pagina target
+      // Per jump diretti indietro usiamo turnToPrevPage + aggiornamento manuale
+      pf.turnToPage(n)
+    } else {
+      pf.flip(n)
+    }
     setTimeout(() => setIsFlipping(false), 1050)
   }
 
-  const goPrev = () => { if (currentPage > 0) goToPage(currentPage - 1) }
-  const goNext = () => { if (currentPage < totalPages - 1) goToPage(currentPage + 1) }
+  const goPrev = () => {
+    if (currentPage <= 0 || isFlipping) return
+    setIsFlipping(true)
+    bookRef.current?.pageFlip().flipPrev()
+    setTimeout(() => setIsFlipping(false), 1050)
+  }
+
+  const goNext = () => {
+    if (currentPage >= totalPages - 1 || isFlipping) return
+    setIsFlipping(true)
+    bookRef.current?.pageFlip().flipNext()
+    setTimeout(() => setIsFlipping(false), 1050)
+  }
 
   return (
     <div style={{
@@ -363,32 +382,8 @@ export default function FlipBook({ dishes, menuName, restaurantName }: Props) {
         </div>
       )}
 
-      {/* Flipbook + frecce integrate lateralmente */}
+      {/* Flipbook centrato */}
       <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 0 }}>
-
-        {/* Freccia sinistra — incollata al bordo sinistro del libro */}
-        <button
-          onPointerUp={goPrev}
-          disabled={currentPage === 0 || isFlipping}
-          style={{
-            width: 28, height: 64, flexShrink: 0,
-            background: currentPage === 0 ? 'rgba(245,240,232,0.02)' : 'rgba(245,240,232,0.06)',
-            border: '1px solid rgba(245,240,232,0.08)',
-            borderRight: 'none',
-            borderRadius: '8px 0 0 8px',
-            cursor: currentPage === 0 ? 'default' : 'pointer',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            opacity: currentPage === 0 ? 0.15 : 1,
-            transition: 'opacity 0.25s, background 0.25s',
-            WebkitTapHighlightColor: 'transparent',
-            boxShadow: currentPage === 0 ? 'none' : '-6px 0 24px rgba(0,0,0,0.5)',
-            alignSelf: 'center',
-          }}
-        >
-          <svg width="14" height="14" fill="none" stroke="rgba(245,240,232,0.6)" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 19l-7-7 7-7" />
-          </svg>
-        </button>
 
         {/* Il libro */}
         <HTMLFlipBook
@@ -433,40 +428,73 @@ export default function FlipBook({ dishes, menuName, restaurantName }: Props) {
           <div className="page"><BackPage restaurantName={restaurantName} /></div>
         </HTMLFlipBook>
 
-        {/* Freccia destra — incollata al bordo destro del libro */}
-        <button
-          onPointerUp={goNext}
-          disabled={currentPage >= totalPages - 1 || isFlipping}
-          style={{
-            width: 28, height: 64, flexShrink: 0,
-            background: currentPage >= totalPages - 1 ? 'rgba(245,240,232,0.02)' : 'rgba(245,240,232,0.06)',
-            border: '1px solid rgba(245,240,232,0.08)',
-            borderLeft: 'none',
-            borderRadius: '0 8px 8px 0',
-            cursor: currentPage >= totalPages - 1 ? 'default' : 'pointer',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            opacity: currentPage >= totalPages - 1 ? 0.15 : 1,
-            transition: 'opacity 0.25s, background 0.25s',
-            WebkitTapHighlightColor: 'transparent',
-            boxShadow: currentPage >= totalPages - 1 ? 'none' : '6px 0 24px rgba(0,0,0,0.5)',
-            alignSelf: 'center',
-          }}
-        >
-          <svg width="14" height="14" fill="none" stroke="rgba(245,240,232,0.6)" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" />
-          </svg>
-        </button>
       </div>
 
-      {/* Contatore pagine + safe area */}
+      {/* Navigazione bottom — fascia integrata sotto il volantino */}
       <div style={{
-        flexShrink: 0, textAlign: 'center',
-        paddingBottom: 'max(14px, env(safe-area-inset-bottom))',
-        paddingTop: 8,
+        flexShrink: 0,
+        display: 'flex',
+        alignItems: 'stretch',
+        justifyContent: 'center',
+        paddingBottom: 'max(16px, env(safe-area-inset-bottom))',
+        paddingTop: 0,
       }}>
-        <span style={{ fontSize: 10, color: 'rgba(245,240,232,0.2)', fontVariantNumeric: 'tabular-nums', letterSpacing: '0.08em' }}>
-          {currentPage + 1} · {totalPages}
-        </span>
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          background: 'rgba(245,240,232,0.04)',
+          border: '1px solid rgba(245,240,232,0.08)',
+          borderRadius: '0 0 10px 10px',
+          overflow: 'hidden',
+          boxShadow: '0 8px 32px rgba(0,0,0,0.5), inset 0 1px 0 rgba(245,240,232,0.06)',
+        }}>
+          {/* Freccia sinistra */}
+          <button
+            onPointerUp={goPrev}
+            disabled={currentPage === 0 || isFlipping}
+            style={{
+              width: 48, height: 36,
+              background: 'none', border: 'none',
+              borderRight: '1px solid rgba(245,240,232,0.07)',
+              cursor: currentPage === 0 ? 'default' : 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              opacity: currentPage === 0 ? 0.15 : 0.7,
+              transition: 'opacity 0.2s',
+              WebkitTapHighlightColor: 'transparent',
+            }}
+          >
+            <svg width="14" height="14" fill="none" stroke="rgba(245,240,232,0.9)" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 19l-7-7 7-7" />
+            </svg>
+          </button>
+
+          {/* Contatore */}
+          <div style={{ padding: '0 16px', display: 'flex', alignItems: 'center' }}>
+            <span style={{ fontSize: 10, color: 'rgba(245,240,232,0.25)', fontVariantNumeric: 'tabular-nums', letterSpacing: '0.1em' }}>
+              {currentPage + 1} · {totalPages}
+            </span>
+          </div>
+
+          {/* Freccia destra */}
+          <button
+            onPointerUp={goNext}
+            disabled={currentPage >= totalPages - 1 || isFlipping}
+            style={{
+              width: 48, height: 36,
+              background: 'none', border: 'none',
+              borderLeft: '1px solid rgba(245,240,232,0.07)',
+              cursor: currentPage >= totalPages - 1 ? 'default' : 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              opacity: currentPage >= totalPages - 1 ? 0.15 : 0.7,
+              transition: 'opacity 0.2s',
+              WebkitTapHighlightColor: 'transparent',
+            }}
+          >
+            <svg width="14" height="14" fill="none" stroke="rgba(245,240,232,0.9)" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" />
+            </svg>
+          </button>
+        </div>
       </div>
 
       {/* Modale piatto */}
