@@ -31,7 +31,7 @@ function CategoryTabs() {
                 : 'shrink-0 rounded-full bg-white px-3 py-2 text-sm text-[#5e4a38]'
             }
           >
-            {category.emoji} {category.label}
+            {category.label}
           </button>
         ))}
       </div>
