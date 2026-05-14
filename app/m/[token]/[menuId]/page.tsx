@@ -8,11 +8,7 @@ type PageProps = {
 }
 
 export default function PublicMenuRedirectPage({ params }: PageProps) {
-  const { token, menuId } = params
-
-  // PDF temporaneo di test dentro public
-  const pdfUrl = `/sample-menu.pdf`
-
+  const pdfUrl = `/api/menus/${params.menuId}/pdf`
   const viewerUrl = `/flipbook/external/pdfjs-2.1.266-dist/web/viewer.html?file=${encodeURIComponent(pdfUrl)}`
   redirect(viewerUrl)
 }
