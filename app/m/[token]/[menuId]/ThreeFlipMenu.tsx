@@ -25,7 +25,9 @@ type Page = {
   dishes: Dish[]
 }
 
-const MAX_ITEMS_PER_CATEGORY_PAGE = 6
+const MAX_ITEMS = 6
+// Numero di segmenti verticali: più alto = piega più morbida
+const N_SEGMENTS = 30
 
 export default function ThreeFlipMenu({ dishes, menuName, restaurantName }: Props) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -33,36 +35,25 @@ export default function ThreeFlipMenu({ dishes, menuName, restaurantName }: Prop
 
   const pages = useMemo<Page[]>(() => {
     const byCategory = new Map<string, Dish[]>()
-
     for (const dish of dishes) {
       const cat = dish.category || 'Varie'
-      if (!byCategory.has(cat)) {
-        byCategory.set(cat, [])
-      }
+      if (!byCategory.has(cat)) byCategory.set(cat, [])
       byCategory.get(cat)!.push(dish)
     }
-
     const result: Page[] = []
-
     byCategory.forEach((list, cat) => {
-      if (list.length <= MAX_ITEMS_PER_CATEGORY_PAGE) {
+      if (list.length <= MAX_ITEMS) {
         result.push({ category: cat, dishes: list })
       } else {
-        for (let i = 0; i < list.length; i += MAX_ITEMS_PER_CATEGORY_PAGE) {
-          const slice = list.slice(i, i + MAX_ITEMS_PER_CATEGORY_PAGE)
-          const label =
-            i === 0 ? cat : `${cat} (${Math.floor(i / MAX_ITEMS_PER_CATEGORY_PAGE) + 1})`
+        for (let i = 0; i < list.length; i += MAX_ITEMS) {
+          const slice = list.slice(i, i + MAX_ITEMS)
+          const label = i === 0 ? cat : `${cat} (${Math.floor(i / MAX_ITEMS) + 1})`
           result.push({ category: label, dishes: slice })
         }
       }
     })
-
-    if (result.length === 0) {
-      result.push({ category: 'Menu', dishes: [] })
-    }
-
+    if (result.length === 0) result.push({ category: 'Menu', dishes: [] })
     result.sort((a, b) => a.category.localeCompare(b.category))
-
     return result
   }, [dishes])
 
@@ -77,108 +68,179 @@ export default function ThreeFlipMenu({ dishes, menuName, restaurantName }: Prop
     scene.background = new THREE.Color(0x15100c)
 
     const camera = new THREE.PerspectiveCamera(
-      45,
+      42,
       window.innerWidth / window.innerHeight,
       0.1,
       100
     )
-    const baseCameraZ = 3.2
-    camera.position.z = baseCameraZ
+    camera.position.set(0, 0, 3.4)
 
     const renderer = new THREE.WebGLRenderer({
       canvas,
       antialias: true,
       alpha: false,
     })
-    renderer.setPixelRatio(window.devicePixelRatio || 1)
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
     renderer.setSize(window.innerWidth, window.innerHeight, false)
+    renderer.shadowMap.enabled = true
 
-    const shadowGeometry = new THREE.PlaneGeometry(2.5, 1.7)
-    const shadowMaterial = new THREE.MeshBasicMaterial({
+    // Luce ambientale calda
+    scene.add(new THREE.AmbientLight(0xfff5e0, 0.6))
+
+    // Luce direzionale principale (dall'alto sinistra)
+    const dirLight = new THREE.DirectionalLight(0xfff5e0, 0.8)
+    dirLight.position.set(-2, 3, 4)
+    dirLight.castShadow = true
+    scene.add(dirLight)
+
+    // Luce di riempimento (destra bassa)
+    const fillLight = new THREE.DirectionalLight(0xffe0c0, 0.3)
+    fillLight.position.set(3, -1, 2)
+    scene.add(fillLight)
+
+    // Ombra sotto la pagina
+    const shadowGeo = new THREE.PlaneGeometry(2.6, 1.8)
+    const shadowMat = new THREE.MeshBasicMaterial({
       color: 0x000000,
       transparent: true,
-      opacity: 0.25,
+      opacity: 0.22,
     })
-    const shadowMesh = new THREE.Mesh(shadowGeometry, shadowMaterial)
-    shadowMesh.position.z = -0.03
-    shadowMesh.rotation.x = -0.05
+    const shadowMesh = new THREE.Mesh(shadowGeo, shadowMat)
+    shadowMesh.position.set(0.06, -0.06, -0.05)
     scene.add(shadowMesh)
 
-    const pageGeometry = new THREE.PlaneGeometry(2.2, 1.4)
-    const pageMaterial = new THREE.MeshBasicMaterial({ color: 0xf8f1e6 })
-    const pageMesh = new THREE.Mesh(pageGeometry, pageMaterial)
+    // Pagina con N_SEGMENTS segmenti verticali per la deformazione
+    const pageW = 2.2
+    const pageH = 1.4
+    const pageGeo = new THREE.PlaneGeometry(pageW, pageH, N_SEGMENTS, 2)
+    const pageMat = new THREE.MeshStandardMaterial({
+      color: 0xf8f1e6,
+      roughness: 0.7,
+      metalness: 0.0,
+      side: THREE.DoubleSide,
+    })
+    const pageMesh = new THREE.Mesh(pageGeo, pageMat)
+    pageMesh.receiveShadow = true
+    pageMesh.castShadow = true
     scene.add(pageMesh)
 
-    pageMesh.rotation.x = -0.04
+    // Salva le posizioni originali dei vertici (X)
+    const posAttr = pageGeo.attributes.position as THREE.BufferAttribute
+    const originalX = new Float32Array(posAttr.count)
+    for (let i = 0; i < posAttr.count; i++) {
+      originalX[i] = posAttr.getX(i)
+    }
 
     let currentIndex = 0
     const totalPages = pages.length
 
     let isFlipping = false
-    let flipDirection: 1 | -1 = 1
-    let flipProgress = 0
-    const flipDuration = 0.65 // un po' più lungo per un feel più premium
+    let flipDir: 1 | -1 = 1
+    let flipT = 0
+    const flipDuration = 0.7
     const clock = new THREE.Clock()
 
-    const updatePageMaterial = () => {
+    const updateMaterial = () => {
       const page = pages[currentIndex]
       if (page && page.category) {
         const hash = Array.from(page.category).reduce(
-          (acc, c) => acc + c.charCodeAt(0),
-          0
+          (acc, c) => acc + c.charCodeAt(0), 0
         )
-        const tone = 0xf0e4d0 + (hash % 0x30)
-        pageMaterial.color = new THREE.Color(tone)
+        const tone = 0xf0e4d0 + (hash % 0x25)
+        ;(pageMat as THREE.MeshStandardMaterial).color = new THREE.Color(tone)
       } else {
-        pageMaterial.color = new THREE.Color(0xf8f1e6)
+        ;(pageMat as THREE.MeshStandardMaterial).color = new THREE.Color(0xf8f1e6)
       }
-      pageMaterial.needsUpdate = true
+      pageMat.needsUpdate = true
     }
 
-    updatePageMaterial()
+    updateMaterial()
+
+    /**
+     * Deforma i vertici della pagina per simulare la piega della carta.
+     * progress va da 0 (pagina ferma) a 1 (fine flip).
+     * direction: 1 = sfoglia avanti, -1 = sfoglia indietro.
+     *
+     * Tecnica: ogni vertice viene spostato lungo X e Z
+     * secondo una curva coseno che simula l'avvolgimento su un cilindro virtuale.
+     */
+    const deformPage = (progress: number, direction: 1 | -1) => {
+      const eased =
+        progress < 0.5
+          ? 4 * progress * progress * progress
+          : 1 - Math.pow(-2 * progress + 2, 3) / 2
+
+      const angle = eased * Math.PI // 0 → π durante il flip
+
+      for (let i = 0; i < posAttr.count; i++) {
+        const ox = originalX[i] // posizione originale da -1.1 a +1.1
+
+        // Normalizza tra -1 e +1
+        const nx = (ox / (pageW * 0.5)) * direction
+
+        // Mappa nx su una fase dell'angolo
+        // nx = -1 → bordo sinistro (fisso), nx = +1 → bordo destro (fisso)
+        // durante il flip: la parte destra inizia a piegarsi prima
+        const phase = ((nx + 1) * 0.5) * angle // 0 → angle
+
+        // Coordinata X deformata: cos(phase) scalato sulla mezza larghezza
+        const deformedX = Math.cos(phase) * (pageW * 0.5) * direction
+
+        // Coordinata Z: la pagina si alza mentre si piega
+        const deformedZ = Math.sin(phase) * 0.35
+
+        posAttr.setXYZ(
+          i,
+          deformedX,
+          posAttr.getY(i),
+          deformedZ
+        )
+      }
+
+      posAttr.needsUpdate = true
+      pageGeo.computeVertexNormals()
+
+      // L'ombra segue la posizione media della pagina
+      shadowMesh.rotation.y = (angle - Math.PI * 0.5) * direction * 0.15
+      shadowMesh.position.x = Math.sin(angle * 0.5) * 0.08 * direction
+    }
 
     const onResize = () => {
-      const width = window.innerWidth
-      const height = window.innerHeight
-      renderer.setSize(width, height, false)
-      camera.aspect = width / height
+      const w = window.innerWidth
+      const h = window.innerHeight
+      renderer.setSize(w, h, false)
+      camera.aspect = w / h
       camera.updateProjectionMatrix()
     }
-
     window.addEventListener('resize', onResize)
 
     const animate = () => {
       const delta = clock.getDelta()
 
       if (isFlipping) {
-        flipProgress += delta / flipDuration
-        const t = Math.min(flipProgress, 1)
+        flipT += delta / flipDuration
+        const t = Math.min(flipT, 1)
 
-        // easing cubic più morbido (easeInOutCubic)
-        const eased =
-          t < 0.5
-            ? 4 * t * t * t
-            : 1 - Math.pow(-2 * t + 2, 3) / 2
+        deformPage(t, flipDir)
 
-        const angle = eased * Math.PI * flipDirection
-        pageMesh.rotation.y = angle
-        shadowMesh.rotation.y = angle * 0.3
+        // Leggero respiro della camera durante il flip
+        camera.position.z = 3.4 - Math.sin(t * Math.PI) * 0.2
 
-        // leggero respiro di scala
-        const scale = 1 + 0.035 * Math.sin(t * Math.PI)
-        pageMesh.scale.set(scale, scale, 1)
-
-        // piccolo movimento di camera avanti/indietro durante il flip
-        const zoomOffset = 0.18 * Math.sin(t * Math.PI)
-        camera.position.z = baseCameraZ - zoomOffset
-
-        if (flipProgress >= 1) {
+        if (flipT >= 1) {
           isFlipping = false
-          pageMesh.rotation.y = 0
+          flipT = 0
+          camera.position.z = 3.4
+
+          // Ripristina i vertici alla posizione originale
+          for (let i = 0; i < posAttr.count; i++) {
+            posAttr.setXYZ(i, originalX[i], posAttr.getY(i), 0)
+          }
+          posAttr.needsUpdate = true
+          pageGeo.computeVertexNormals()
           shadowMesh.rotation.y = 0
-          pageMesh.scale.set(1, 1, 1)
-          camera.position.z = baseCameraZ
-          updatePageMaterial()
+          shadowMesh.position.x = 0
+
+          updateMaterial()
           setPageIndex(currentIndex)
         }
       }
@@ -192,28 +254,24 @@ export default function ThreeFlipMenu({ dishes, menuName, restaurantName }: Prop
     let touchStartX: number | null = null
 
     const onTouchStart = (e: TouchEvent) => {
-      const t = e.touches[0]
-      touchStartX = t.clientX
+      touchStartX = e.touches[0].clientX
     }
 
     const onTouchEnd = (e: TouchEvent) => {
       if (touchStartX == null || isFlipping) return
-      const t = e.changedTouches[0]
-      const dx = t.clientX - touchStartX
+      const dx = e.changedTouches[0].clientX - touchStartX
       touchStartX = null
-
-      const threshold = 30
-      if (Math.abs(dx) < threshold) return
+      if (Math.abs(dx) < 30) return
 
       if (dx < 0 && currentIndex < totalPages - 1) {
         currentIndex += 1
-        flipDirection = 1
-        flipProgress = 0
+        flipDir = 1
+        flipT = 0
         isFlipping = true
       } else if (dx > 0 && currentIndex > 0) {
         currentIndex -= 1
-        flipDirection = -1
-        flipProgress = 0
+        flipDir = -1
+        flipT = 0
         isFlipping = true
       }
     }
@@ -234,9 +292,8 @@ export default function ThreeFlipMenu({ dishes, menuName, restaurantName }: Prop
       <div className="flex-1 flex items-center justify-center">
         <div className="relative w-full h-full">
           <canvas ref={canvasRef} className="w-full h-full" />
-          {/* Overlay contenuto pagina */}
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-            <div className="pointer-events-none max-w-[88%] max-h-[80%] overflow-hidden rounded-3xl px-4 py-4 text-[#2b2018]">
+            <div className="pointer-events-none max-w-[88%] max-h-[80%] overflow-hidden px-4 py-4">
               <div className="text-center mb-2">
                 <p className="text-[0.65rem] tracking-[0.24em] uppercase text-[#c1b4a3]">
                   {restaurantName}
@@ -265,7 +322,7 @@ export default function ThreeFlipMenu({ dishes, menuName, restaurantName }: Prop
                       )}
                     </div>
                     {dish.description && (
-                      <p className="text-[0.7rem] text-[#7a6755] mt-0.5 leading-snug max-h-[2.6rem] overflow-hidden break-words">
+                      <p className="text-[0.7rem] text-[#7a6755] mt-0.5 leading-snug max-h-[2.6rem] overflow-hidden">
                         {dish.description}
                       </p>
                     )}
