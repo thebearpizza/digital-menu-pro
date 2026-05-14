@@ -2,100 +2,154 @@
 
 import { Loader } from '@react-three/drei'
 import { Canvas } from '@react-three/fiber'
-import { Suspense, useRef } from 'react'
+import { Suspense, useMemo, useState } from 'react'
 import { useAtom } from 'jotai'
 import { Experience } from './Experience'
-import { pageAtom, menus, selectedMenuAtom, selectedCategoryAtom, selectedDishAtom } from './menu-book-state'
-import DishModal from './DishModal'
+import { pageAtom, menus, selectedCategoryAtom, selectedDishAtom, selectedMenuAtom } from './menu-book-state'
 
-function MenuSelector() {
-  const [selectedMenu, setSelectedMenu] = useAtom(selectedMenuAtom)
-  const [, setSelectedCategory] = useAtom(selectedCategoryAtom)
-  const handleSelect = (menuId: string) => {
-    setSelectedMenu(menuId)
-    const menu = menus.find(m => m.id === menuId)
-    if (menu?.categories[0]) setSelectedCategory(menu.categories[0].id)
-  }
+function DishModal() {
+  const [dish, setDish] = useAtom(selectedDishAtom)
+  if (!dish) return null
+
   return (
-    <div className="flex gap-2 justify-center flex-wrap">
-      {menus.map(m => (
-        <button key={m.id} onClick={() => handleSelect(m.id)}
-          className="flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-semibold transition-all duration-200"
-          style={selectedMenu === m.id
-            ? { background: '#8b4513', color: '#faf8f3', boxShadow: '0 2px 12px rgba(139,69,19,0.4)' }
-            : { background: 'rgba(250,248,243,0.14)', color: '#f3e7d3', border: '1px solid rgba(243,231,211,0.25)' }}>
-          <span>{m.emoji}</span><span>{m.label}</span>
-        </button>
-      ))}
+    <div className='fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4' onClick={() => setDish(null)}>
+      <div className='absolute inset-0 bg-black/50 backdrop-blur-sm' />
+      <div className='relative z-10 w-full max-w-md rounded-[24px] border border-[#d8ccb8] bg-[#faf8f3] p-5 shadow-2xl' onClick={(e) => e.stopPropagation()}>
+        <button onClick={() => setDish(null)} className='absolute right-3 top-3 flex h-9 w-9 items-center justify-center rounded-full bg-[#2a1d16] text-white'>✕</button>
+        <div className='mb-3 pr-10'>
+          <h3 className='text-xl font-bold text-[#2a1d16]'>{dish.name}</h3>
+          <p className='mt-1 text-sm text-[#6f5a46]'>{dish.description}</p>
+        </div>
+        <div className='mb-3 flex items-center justify-between'>
+          <span className='rounded-full bg-[#efe3cf] px-3 py-1 text-sm font-semibold text-[#8b5e34]'>€ {dish.price.toFixed(2)}</span>
+          <span className='text-xs text-[#8b7763]'>Pagina {dish.page}</span>
+        </div>
+        <div className='flex flex-wrap gap-2'>
+          {dish.allergens.length > 0 ? dish.allergens.map((a) => (
+            <span key={a} className='rounded-full border border-[#dbcdb7] bg-white px-2.5 py-1 text-xs text-[#5e4a38]'>{a}</span>
+          )) : (
+            <span className='rounded-full border border-[#d7e6c7] bg-[#f4faee] px-2.5 py-1 text-xs text-[#4c6b35]'>Nessun allergene principale</span>
+          )}
+        </div>
+      </div>
     </div>
   )
 }
 
-function CategoryTabs() {
-  const [selectedMenu] = useAtom(selectedMenuAtom)
-  const [selectedCategory, setSelectedCategory] = useAtom(selectedCategoryAtom)
-  const [, setPage] = useAtom(pageAtom)
-  const scrollRef = useRef<HTMLDivElement>(null)
-  const menu = menus.find(m => m.id === selectedMenu)
-  if (!menu) return null
-  const handleCategoryClick = (catId: string, catPage: number) => {
-    setSelectedCategory(catId)
-    setPage(catPage)
-    const el = scrollRef.current?.querySelector('[data-cat="' + catId + '"]') as HTMLElement
-    el?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' })
-  }
-  return (
-    <div ref={scrollRef} className="flex gap-2 overflow-x-auto px-1" style={{ scrollbarWidth: 'none' } as React.CSSProperties}>
-      {menu.categories.map(cat => (
-        <button key={cat.id} data-cat={cat.id} onClick={() => handleCategoryClick(cat.id, cat.page)}
-          className="shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-full text-sm transition-all duration-200"
-          style={selectedCategory === cat.id
-            ? { background: 'rgba(250,248,243,0.88)', color: '#2a1d16', fontWeight: 700 }
-            : { background: 'rgba(250,248,243,0.11)', color: '#e8d5b7', border: '1px solid rgba(243,231,211,0.18)' }}>
-          <span>{cat.emoji}</span><span>{cat.label}</span>
-        </button>
-      ))}
-    </div>
-  )
-}
-
-function DishList() {
-  const [selectedMenu] = useAtom(selectedMenuAtom)
-  const [selectedCategory] = useAtom(selectedCategoryAtom)
-  const [, setSelectedDish] = useAtom(selectedDishAtom)
-  const menu = menus.find(m => m.id === selectedMenu)
-  const category = menu?.categories.find(c => c.id === selectedCategory)
-  if (!category) return null
-  return (
-    <div className="flex gap-3 overflow-x-auto px-1 pb-1" style={{ scrollbarWidth: 'none' } as React.CSSProperties}>
-      {category.dishes.map(dish => (
-        <button key={dish.id} onClick={() => setSelectedDish(dish)}
-          className="shrink-0 flex flex-col gap-1 text-left rounded-xl p-3 transition-all duration-150 active:scale-95"
-          style={{ background: 'rgba(250,248,243,0.13)', border: '1px solid rgba(243,231,211,0.22)', backdropFilter: 'blur(8px)', width: '150px', minWidth: '150px' }}>
-          <div className="w-full h-12 rounded-lg flex items-center justify-center text-2xl mb-1" style={{ background: 'rgba(250,248,243,0.1)' }}>
-            {dish.image ? <img src={dish.image} alt={dish.name} className="w-full h-full object-cover rounded-lg" /> : '\U0001f37d\ufe0f'}
-          </div>
-          <span className="text-sm font-semibold leading-tight line-clamp-2" style={{ color: '#f3e7d3' }}>{dish.name}</span>
-          {dish.price > 0 && <span className="text-xs font-bold" style={{ color: '#e8b87d' }}>€ {dish.price.toFixed(2)}</span>}
-          {dish.tags?.includes('chef') && <span className="text-xs" style={{ color: '#c4956a' }}>Chef</span>}
-        </button>
-      ))}
-    </div>
-  )
-}
-
-function PageDots() {
+function ViewerOverlay() {
   const [page, setPage] = useAtom(pageAtom)
-  const total = 5
+  const [selectedMenu, setSelectedMenu] = useAtom(selectedMenuAtom)
+  const [selectedCategory, setSelectedCategory] = useAtom(selectedCategoryAtom)
+  const [, setSelectedDish] = useAtom(selectedDishAtom)
+  const [showMenuSelector, setShowMenuSelector] = useState(false)
+
+  const activeMenu = useMemo(
+    () => menus.find((menu) => menu.id === selectedMenu) ?? menus[0],
+    [selectedMenu]
+  )
+
+  const activeCategory = useMemo(
+    () => activeMenu.categories.find((category) => category.id === selectedCategory) ?? activeMenu.categories[0],
+    [activeMenu, selectedCategory]
+  )
+
+  const changeMenu = (menuId: string) => {
+    const menu = menus.find((m) => m.id === menuId) ?? menus[0]
+    setSelectedMenu(menu.id)
+    setSelectedCategory(menu.categories[0]?.id ?? '')
+    setPage(0)
+    setShowMenuSelector(false)
+  }
+
+  const goToCategory = (categoryId: string) => {
+    const category = activeMenu.categories.find((c) => c.id === categoryId)
+    if (!category) return
+    setSelectedCategory(category.id)
+    setPage(category.page)
+  }
+
   return (
-    <div className="flex items-center gap-2 justify-center">
-      <button onClick={() => setPage(Math.max(0, page - 1))} className="w-8 h-8 rounded-full flex items-center justify-center text-lg" style={{ background: 'rgba(250,248,243,0.15)', color: '#f3e7d3' }} aria-label="Precedente">{'<'}</button>
-      {Array.from({ length: total }).map((_, i) => (
-        <button key={i} onClick={() => setPage(i)} className="rounded-full transition-all duration-300"
-          style={{ width: i === page ? '22px' : '8px', height: '8px', background: i === page ? '#e8b87d' : 'rgba(250,248,243,0.28)' }}
-          aria-label={i === 0 ? 'Copertina' : 'Pagina ' + i} />
-      ))}
-      <button onClick={() => setPage(Math.min(total - 1, page + 1))} className="w-8 h-8 rounded-full flex items-center justify-center text-lg" style={{ background: 'rgba(250,248,243,0.15)', color: '#f3e7d3' }} aria-label="Successiva">{'>'}</button>
+    <div className='pointer-events-none fixed inset-0 z-20 flex flex-col'>
+      <div className='pointer-events-auto px-3 pt-3'>
+        <div className='mx-auto w-full max-w-md rounded-[28px] border border-[#d9ccb7] bg-[#faf8f3]/92 p-3 shadow-[0_20px_60px_rgba(0,0,0,0.22)] backdrop-blur-md'>
+          <div className='mb-3 flex items-center justify-between gap-2'>
+            <button
+              onClick={() => setShowMenuSelector((v) => !v)}
+              className='rounded-full border border-[#dbcdb8] bg-white px-3 py-2 text-sm font-medium text-[#2a1d16]'
+            >
+              {showMenuSelector ? 'Chiudi menu' : `${activeMenu.emoji} ${activeMenu.label}`}
+            </button>
+
+            <div className='flex items-center gap-2'>
+              <button
+                onClick={() => setPage(Math.max(0, page - 1))}
+                className='flex h-10 w-10 items-center justify-center rounded-full bg-[#2a1d16] text-white'
+              >
+                ←
+              </button>
+              <button
+                onClick={() => setPage(0)}
+                className='rounded-full border border-[#dbcdb8] bg-white px-3 py-2 text-sm text-[#5f4b39]'
+              >
+                Inizio
+              </button>
+            </div>
+          </div>
+
+          {showMenuSelector && (
+            <div className='mb-3 grid grid-cols-1 gap-2'>
+              {menus.map((menu) => (
+                <button
+                  key={menu.id}
+                  onClick={() => changeMenu(menu.id)}
+                  className={`rounded-2xl px-4 py-3 text-left text-sm transition ${
+                    menu.id === activeMenu.id
+                      ? 'bg-[#2a1d16] text-white'
+                      : 'border border-[#dbcdb8] bg-white text-[#2a1d16]'
+                  }`}
+                >
+                  {menu.emoji} {menu.label}
+                </button>
+              ))}
+            </div>
+          )}
+
+          <div className='mb-3 flex gap-2 overflow-x-auto pb-1'>
+            {activeMenu.categories.map((category) => (
+              <button
+                key={category.id}
+                onClick={() => goToCategory(category.id)}
+                className={`shrink-0 rounded-full px-3 py-2 text-sm transition ${
+                  category.id === activeCategory.id
+                    ? 'bg-[#2a1d16] text-white'
+                    : 'border border-[#dbcdb8] bg-white text-[#5e4a38]'
+                }`}
+              >
+                {category.emoji} {category.label}
+              </button>
+            ))}
+          </div>
+
+          <div className='flex gap-2 overflow-x-auto pb-1'>
+            {activeCategory.dishes.map((dish) => (
+              <button
+                key={dish.id}
+                onClick={() => setSelectedDish(dish)}
+                className='min-w-[150px] rounded-[20px] border border-[#dbcdb8] bg-white px-3 py-3 text-left shadow-sm'
+              >
+                <div className='mb-2 flex items-center justify-between gap-2'>
+                  <span className='line-clamp-2 text-sm font-semibold text-[#2a1d16]'>{dish.name}</span>
+                  <span className='rounded-full bg-[#f4eadb] px-2 py-1 text-xs font-semibold text-[#8b5e34]'>
+                    € {dish.price.toFixed(2)}
+                  </span>
+                </div>
+                <p className='line-clamp-2 text-xs text-[#7a6551]'>{dish.description}</p>
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+      <DishModal />
     </div>
   )
 }
@@ -103,32 +157,17 @@ function PageDots() {
 export default function MenuBookClient() {
   return (
     <>
+      <ViewerOverlay />
       <Loader />
-      <div className="fixed inset-0" style={{ background: '#140b08' }}>
+      <div className='h-[100dvh] w-full bg-[#e9dfd0]'>
         <Canvas shadows camera={{ position: [-0.5, -1, 4], fov: 45 }}>
           <group position-y={0}>
-            <Suspense fallback={null}><Experience /></Suspense>
+            <Suspense fallback={null}>
+              <Experience />
+            </Suspense>
           </group>
         </Canvas>
       </div>
-      <div className="fixed inset-0 z-10 pointer-events-none flex flex-col">
-        <div className="pointer-events-auto flex flex-col gap-2.5 px-4 pt-4 pb-3"
-          style={{ background: 'linear-gradient(to bottom,rgba(20,11,8,0.92) 0%,rgba(20,11,8,0.55) 80%,transparent 100%)' }}>
-          <div className="flex items-center justify-between">
-            <span className="text-lg font-bold tracking-wide" style={{ color: '#f3e7d3', fontFamily: 'Georgia,serif' }}>The Bear Pizza</span>
-            <span className="text-xs px-2.5 py-1 rounded-full" style={{ background: 'rgba(139,69,19,0.35)', color: '#e8b87d', border: '1px solid rgba(232,184,125,0.28)' }}>Menu Digitale</span>
-          </div>
-          <MenuSelector />
-          <CategoryTabs />
-        </div>
-        <div className="flex-1" />
-        <div className="pointer-events-auto flex flex-col gap-3 px-4 pb-6 pt-4"
-          style={{ background: 'linear-gradient(to top,rgba(20,11,8,0.95) 0%,rgba(20,11,8,0.65) 70%,transparent 100%)' }}>
-          <DishList />
-          <PageDots />
-        </div>
-      </div>
-      <DishModal />
     </>
   )
 }

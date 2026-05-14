@@ -23,8 +23,8 @@ function GradientBackground() {
   const { scene } = useThree()
 
   useEffect(() => {
-    const colorTop = new THREE.Color('#2a140f')
-    const colorBottom = new THREE.Color('#120907')
+    const colorTop = new THREE.Color('#f3eadc')
+    const colorBottom = new THREE.Color('#d8c7b2')
     const skyGeo = new THREE.SphereGeometry(100, 32, 32)
     const skyMat = new THREE.ShaderMaterial({
       uniforms: {
