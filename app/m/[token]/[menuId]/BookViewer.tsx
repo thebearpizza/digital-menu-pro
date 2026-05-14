@@ -1,16 +1,16 @@
 'use client'
 
-import { useRef, useMemo, useState, useEffect } from 'react'
+import { useRef, useMemo, useState, useEffect, useCallback } from 'react'
 import { Canvas, useFrame } from '@react-three/fiber'
-import { useTexture, Environment } from '@react-three/drei'
 import { easing } from 'maath'
 import {
   Bone,
   BoxGeometry,
-  Group,
   CanvasTexture,
   Color,
   Float32BufferAttribute,
+  Group,
+  Mesh,
   MeshStandardMaterial,
   Skeleton,
   SkinnedMesh,
@@ -19,8 +19,6 @@ import {
   Vector3,
 } from 'three'
 import { degToRad } from 'three/src/math/MathUtils.js'
-
-// ─── Types ───────────────────────────────────────────────────────────────────
 
 type Dish = {
   id: string
@@ -44,23 +42,26 @@ type Props = {
   restaurantName: string
 }
 
-// ─── Costanti pagina ──────────────────────────────────────────────────────────
-
 const PAGE_WIDTH = 1.28
 const PAGE_HEIGHT = 1.71
-const PAGE_DEPTH = 0.003
-const PAGE_SEGMENTS = 30
+const PAGE_DEPTH = 0.0022
+const COVER_DEPTH = 0.05
+const SPINE_WIDTH = 0.08
+const PAGE_SEGMENTS = 24
 const SEGMENT_WIDTH = PAGE_WIDTH / PAGE_SEGMENTS
 
-const easingFactor = 0.5
-const easingFactorFold = 0.3
-const insideCurveStrength = 0.18
-const outsideCurveStrength = 0.05
-const turningCurveStrength = 0.09
+const TURN_SPEED = 0.22
+const FOLD_SPEED = 0.18
+
+const INNER_CURVE = 0.045
+const OUTER_CURVE = 0.015
+const TURN_CURVE = 0.055
 
 const MAX_ITEMS = 5
 
-// ─── Geometry + skinning (creati una volta sola fuori dal componente) ─────────
+const paperWhite = new Color('#f5efe4')
+const coverColor = new Color('#2a1d16')
+const goldColor = new Color('#b08d57')
 
 const pageGeometry = new BoxGeometry(
   PAGE_WIDTH,
@@ -88,155 +89,161 @@ for (let i = 0; i < position.count; i++) {
 pageGeometry.setAttribute('skinIndex', new Uint16BufferAttribute(skinIndexes, 4))
 pageGeometry.setAttribute('skinWeight', new Float32BufferAttribute(skinWeights, 4))
 
-const whiteColor = new Color('white')
-const emissiveColor = new Color('orange')
-
-const pageMaterials = [
-  new MeshStandardMaterial({ color: whiteColor }),
-  new MeshStandardMaterial({ color: '#111' }),
-  new MeshStandardMaterial({ color: whiteColor }),
-  new MeshStandardMaterial({ color: whiteColor }),
-]
-
-// ─── Genera texture canvas per una pagina ────────────────────────────────────
+const sideMaterial = new MeshStandardMaterial({
+  color: '#d8cfbf',
+  roughness: 0.95,
+  metalness: 0,
+})
 
 function buildPageTexture(
   page: BookPage,
   menuName: string,
   restaurantName: string,
-  isCover = false
+  kind: 'cover' | 'inside' | 'backcover'
 ): HTMLCanvasElement {
-  const W = 512
-  const H = 682
+  const W = 1024
+  const H = 1365
   const canvas = document.createElement('canvas')
   canvas.width = W
   canvas.height = H
   const ctx = canvas.getContext('2d')!
 
-  // sfondo carta
-  ctx.fillStyle = isCover ? '#1a0f0a' : '#f8f1e6'
+  if (kind === 'cover' || kind === 'backcover') {
+    ctx.fillStyle = '#241811'
+    ctx.fillRect(0, 0, W, H)
+
+    const g = ctx.createLinearGradient(0, 0, W, H)
+    g.addColorStop(0, '#34241b')
+    g.addColorStop(0.5, '#241811')
+    g.addColorStop(1, '#1a120d')
+    ctx.fillStyle = g
+    ctx.fillRect(0, 0, W, H)
+
+    ctx.strokeStyle = '#8d6a3b'
+    ctx.lineWidth = 4
+    ctx.strokeRect(40, 40, W - 80, H - 80)
+
+    ctx.strokeStyle = '#6e522f'
+    ctx.lineWidth = 1
+    ctx.strokeRect(62, 62, W - 124, H - 124)
+
+    if (kind === 'cover') {
+      ctx.fillStyle = '#b08d57'
+      ctx.textAlign = 'center'
+      ctx.font = 'bold 70px Georgia, serif'
+      ctx.fillText(restaurantName, W / 2, 380)
+
+      ctx.font = '36px Georgia, serif'
+      ctx.fillStyle = '#dbc49a'
+      ctx.fillText(menuName, W / 2, 470)
+
+      ctx.beginPath()
+      ctx.moveTo(W / 2 - 180, 540)
+      ctx.lineTo(W / 2 + 180, 540)
+      ctx.strokeStyle = '#8d6a3b'
+      ctx.lineWidth = 2
+      ctx.stroke()
+
+      ctx.font = '28px Georgia, serif'
+      ctx.fillStyle = '#8d6a3b'
+      ctx.fillText('MENU', W / 2, 610)
+    } else {
+      ctx.fillStyle = '#8d6a3b'
+      ctx.textAlign = 'center'
+      ctx.font = '28px Georgia, serif'
+      ctx.fillText(restaurantName, W / 2, H - 110)
+    }
+
+    return canvas
+  }
+
+  ctx.fillStyle = '#f5efe4'
   ctx.fillRect(0, 0, W, H)
 
-  if (isCover) {
-    // copertina
-    ctx.fillStyle = '#c9a96e'
-    ctx.font = 'bold 38px Georgia, serif'
-    ctx.textAlign = 'center'
-    ctx.fillText(restaurantName, W / 2, 200)
-    ctx.fillStyle = '#e8d5b0'
-    ctx.font = '24px Georgia, serif'
-    ctx.fillText(menuName, W / 2, 260)
-    ctx.strokeStyle = '#c9a96e'
-    ctx.lineWidth = 2
-    ctx.strokeRect(30, 30, W - 60, H - 60)
-  } else {
-    // intestazione categoria
-    ctx.fillStyle = '#5b4634'
-    ctx.font = 'bold 13px Arial, sans-serif'
-    ctx.textAlign = 'center'
-    const catText = page.category.toUpperCase()
-    ctx.fillText(catText, W / 2, 38)
+  const g = ctx.createLinearGradient(0, 0, 0, H)
+  g.addColorStop(0, '#fbf8f1')
+  g.addColorStop(1, '#efe5d6')
+  ctx.fillStyle = g
+  ctx.fillRect(0, 0, W, H)
 
-    // linea separatrice
-    ctx.strokeStyle = '#c9a96e'
+  ctx.fillStyle = '#5e4733'
+  ctx.textAlign = 'center'
+  ctx.font = 'bold 34px Georgia, serif'
+  ctx.fillText(page.category.toUpperCase(), W / 2, 80)
+
+  ctx.strokeStyle = '#b08d57'
+  ctx.lineWidth = 2
+  ctx.beginPath()
+  ctx.moveTo(90, 105)
+  ctx.lineTo(W - 90, 105)
+  ctx.stroke()
+
+  ctx.fillStyle = '#9b8063'
+  ctx.font = '18px Arial, sans-serif'
+  ctx.fillText(restaurantName, W / 2, 140)
+
+  let y = 205
+  ctx.textAlign = 'left'
+
+  for (const dish of page.dishes) {
+    if (y > H - 120) break
+
+    ctx.fillStyle = '#241811'
+    ctx.font = 'bold 28px Arial, sans-serif'
+    ctx.fillText(dish.name, 90, y)
+
+    if (dish.price != null) {
+      ctx.textAlign = 'right'
+      ctx.fillStyle = '#5e4733'
+      ctx.font = '24px Arial, sans-serif'
+      ctx.fillText(`€ ${dish.price.toFixed(2)}`, W - 90, y)
+      ctx.textAlign = 'left'
+    }
+
+    y += 42
+
+    if (dish.description) {
+      ctx.fillStyle = '#7a6755'
+      ctx.font = '20px Arial, sans-serif'
+      const words = dish.description.split(' ')
+      const maxWidth = W - 180
+      let line = ''
+      for (const word of words) {
+        const test = line + word + ' '
+        if (ctx.measureText(test).width > maxWidth && line.length > 0) {
+          ctx.fillText(line.trim(), 90, y)
+          line = word + ' '
+          y += 28
+          if (y > H - 120) break
+        } else {
+          line = test
+        }
+      }
+      if (line.trim() && y <= H - 120) {
+        ctx.fillText(line.trim(), 90, y)
+        y += 28
+      }
+    }
+
+    if (dish.allergens?.length && y <= H - 120) {
+      ctx.fillStyle = '#9d7042'
+      ctx.font = '16px Arial, sans-serif'
+      ctx.fillText(dish.allergens.join(' • '), 90, y)
+      y += 24
+    }
+
+    y += 10
+    ctx.strokeStyle = '#dccfbf'
     ctx.lineWidth = 1
     ctx.beginPath()
-    ctx.moveTo(40, 50)
-    ctx.lineTo(W - 40, 50)
+    ctx.moveTo(90, y)
+    ctx.lineTo(W - 90, y)
     ctx.stroke()
-
-    // nome ristorante piccolo
-    ctx.fillStyle = '#9a8070'
-    ctx.font = '10px Arial, sans-serif'
-    ctx.textAlign = 'center'
-    ctx.fillText(restaurantName, W / 2, 68)
-
-    // elenco piatti
-    let y = 100
-    ctx.textAlign = 'left'
-
-    page.dishes.forEach((dish) => {
-      if (y > H - 60) return
-
-      // nome + prezzo sulla stessa riga
-      ctx.fillStyle = '#2b1f14'
-      ctx.font = 'bold 15px Arial, sans-serif'
-      const nameMaxW = dish.price != null ? W - 130 : W - 80
-      let name = dish.name
-      if (ctx.measureText(name).width > nameMaxW) {
-        while (ctx.measureText(name + '…').width > nameMaxW && name.length > 0) {
-          name = name.slice(0, -1)
-        }
-        name += '…'
-      }
-      ctx.fillText(name, 40, y)
-
-      if (dish.price != null) {
-        ctx.fillStyle = '#5b4634'
-        ctx.font = '14px Arial, sans-serif'
-        ctx.textAlign = 'right'
-        ctx.fillText(`€ ${dish.price.toFixed(2)}`, W - 40, y)
-        ctx.textAlign = 'left'
-      }
-
-      y += 22
-
-      // descrizione
-      if (dish.description) {
-        ctx.fillStyle = '#7a6755'
-        ctx.font = '11px Arial, sans-serif'
-        const words = dish.description.split(' ')
-        let line = ''
-        const lineH = 15
-        const maxW = W - 80
-
-        for (const word of words) {
-          const test = line + word + ' '
-          if (ctx.measureText(test).width > maxW && line.length > 0) {
-            ctx.fillText(line.trimEnd(), 40, y)
-            line = word + ' '
-            y += lineH
-            if (y > H - 60) break
-          } else {
-            line = test
-          }
-        }
-        if (line.trim() && y <= H - 60) {
-          ctx.fillText(line.trimEnd(), 40, y)
-          y += lineH
-        }
-      }
-
-      // allergeni
-      if (dish.allergens && dish.allergens.length > 0 && y <= H - 60) {
-        ctx.fillStyle = '#a1784f'
-        ctx.font = '10px Arial, sans-serif'
-        ctx.fillText(dish.allergens.join(' • '), 40, y)
-        y += 14
-      }
-
-      // divisore
-      y += 6
-      ctx.strokeStyle = '#e0d4c3'
-      ctx.lineWidth = 0.5
-      ctx.beginPath()
-      ctx.moveTo(40, y)
-      ctx.lineTo(W - 40, y)
-      ctx.stroke()
-      y += 12
-    })
-
-    // numero pagina
-    ctx.fillStyle = '#c9a96e'
-    ctx.font = '10px Arial, sans-serif'
-    ctx.textAlign = 'center'
-    ctx.fillText(page.category, W / 2, H - 20)
+    y += 28
   }
 
   return canvas
 }
-
-// ─── Componente Page 3D ───────────────────────────────────────────────────────
 
 type PageProps = {
   number: number
@@ -245,15 +252,24 @@ type PageProps = {
   page: number
   opened: boolean
   bookClosed: boolean
+  isCover?: boolean
+  isBackCover?: boolean
 }
 
-function Page({ number, front, back, page, opened, bookClosed }: PageProps) {
+function Page({
+  number,
+  front,
+  back,
+  page,
+  opened,
+  bookClosed,
+  isCover = false,
+  isBackCover = false,
+}: PageProps) {
   const group = useRef<Group>(null!)
   const skinnedMeshRef = useRef<SkinnedMesh>(null!)
   const turnedAt = useRef(0)
   const lastOpened = useRef(opened)
-
-  const [highlighted, setHighlighted] = useState(false)
 
   const frontTexture = useMemo(() => {
     const t = new CanvasTexture(front)
@@ -272,85 +288,81 @@ function Page({ number, front, back, page, opened, bookClosed }: PageProps) {
     for (let i = 0; i <= PAGE_SEGMENTS; i++) {
       const bone = new Bone()
       bones.push(bone)
-      if (i === 0) {
-        bone.position.x = 0
-      } else {
-        bone.position.x = SEGMENT_WIDTH
-      }
-      if (i > 0) {
-        bones[i - 1].add(bone)
-      }
+      bone.position.x = i === 0 ? 0 : SEGMENT_WIDTH
+      if (i > 0) bones[i - 1].add(bone)
     }
+
     const skeleton = new Skeleton(bones)
 
+    const frontMat = new MeshStandardMaterial({
+      color: isCover || isBackCover ? coverColor : paperWhite,
+      map: frontTexture,
+      roughness: isCover || isBackCover ? 0.85 : 0.95,
+      metalness: 0.02,
+    })
+
+    const backMat = new MeshStandardMaterial({
+      color: isCover || isBackCover ? coverColor : paperWhite,
+      map: backTexture,
+      roughness: isCover || isBackCover ? 0.85 : 0.95,
+      metalness: 0.02,
+    })
+
     const materials = [
-      ...pageMaterials,
-      new MeshStandardMaterial({
-        color: whiteColor,
-        map: frontTexture,
-        ...(number === 0 ? { roughnessMap: undefined, roughness: 0.6 } : {}),
-      }),
-      new MeshStandardMaterial({
-        color: whiteColor,
-        map: backTexture,
-        ...(number === 0 ? { roughnessMap: undefined, roughness: 0.6 } : {}),
-      }),
+      sideMaterial,
+      sideMaterial,
+      sideMaterial,
+      sideMaterial,
+      frontMat,
+      backMat,
     ]
 
     const mesh = new SkinnedMesh(pageGeometry, materials)
     mesh.castShadow = true
     mesh.receiveShadow = true
     mesh.frustumCulled = false
-
     mesh.add(bones[0])
     mesh.bind(skeleton)
     return mesh
-  }, [frontTexture, backTexture, number])
+  }, [frontTexture, backTexture, isCover, isBackCover])
 
   useFrame((_, delta) => {
-    if (!skinnedMeshRef.current) return
-
-    const emissiveIntensity = highlighted ? 0.22 : 0
-    ;(skinnedMeshRef.current.material as MeshStandardMaterial[])[4].emissive =
-      emissiveColor
-    ;(skinnedMeshRef.current.material as MeshStandardMaterial[])[4].emissiveIntensity =
-      emissiveIntensity
-    ;(skinnedMeshRef.current.material as MeshStandardMaterial[])[5].emissive =
-      emissiveColor
-    ;(skinnedMeshRef.current.material as MeshStandardMaterial[])[5].emissiveIntensity =
-      emissiveIntensity
+    if (!skinnedMeshRef.current || !group.current) return
 
     if (lastOpened.current !== opened) {
-      turnedAt.current = +Date.now()
+      turnedAt.current = Date.now()
       lastOpened.current = opened
     }
-    let turningTime = Math.min(400, Date.now() - turnedAt.current) / 400
+
+    let turningTime = Math.min(300, Date.now() - turnedAt.current) / 300
     turningTime = Math.sin(turningTime * Math.PI)
 
     let targetRotation = opened ? -Math.PI / 2 : Math.PI / 2
-    if (!bookClosed) targetRotation += degToRad(number * 0.8)
+
+    if (!bookClosed) {
+      targetRotation += degToRad(number * 0.35)
+    }
 
     const bones = skinnedMeshRef.current.skeleton.bones
+
     for (let i = 0; i < bones.length; i++) {
       const target = i === 0 ? group.current : bones[i]
-      const insideCurveX = insideCurveStrength * (opened ? -1 : 1)
 
-      const outsideCurveX = outsideCurveStrength * (opened ? -1 : 1)
-      const turningCurveX =
-        Math.cos(degToRad((i / PAGE_SEGMENTS) * 180 + 90)) *
-        turningCurveStrength *
+      const insideCurve = INNER_CURVE * (opened ? -1 : 1)
+      const outsideCurve = OUTER_CURVE * (opened ? 1 : -1)
+      const turningCurve =
+        Math.sin((i / PAGE_SEGMENTS) * Math.PI) *
+        TURN_CURVE *
         turningTime *
         (opened ? -1 : 1)
 
-      let rotationAngle =
-        insideCurveStrength * (opened ? -1 : 1) +
-        outsideCurveStrength * (opened ? -1 : 1) +
-        turningCurveX
+      let rotationAngle = insideCurve + outsideCurve + turningCurve
 
-      let foldRotationAngle = degToRad(Math.sign(targetRotation) * 2)
+      if (isCover || isBackCover) {
+        rotationAngle *= 0.25
+      }
 
       if (bookClosed) {
-        foldRotationAngle = 0
         rotationAngle = 0
       }
 
@@ -358,24 +370,14 @@ function Page({ number, front, back, page, opened, bookClosed }: PageProps) {
         target.rotation,
         'y',
         i === 0 ? targetRotation : rotationAngle,
-        i === 0 ? easingFactor : easingFactorFold,
+        i === 0 ? TURN_SPEED : FOLD_SPEED,
         delta
       )
     }
   })
 
-  return (
-    <group
-      ref={group}
-      onPointerEnter={() => setHighlighted(true)}
-      onPointerLeave={() => setHighlighted(false)}
-    >
-      <primitive object={manualSkinnedMesh} ref={skinnedMeshRef} />
-    </group>
-  )
+  return <primitive object={manualSkinnedMesh} ref={skinnedMeshRef} />
 }
-
-// ─── Componente Book 3D ───────────────────────────────────────────────────────
 
 type BookProps = {
   pages: BookPage[]
@@ -385,74 +387,118 @@ type BookProps = {
 }
 
 function Book({ pages: bookPages, menuName, restaurantName, currentPage }: BookProps) {
-  const canvasPages = useMemo(() => {
-    // copertina anteriore
+  const groupRef = useRef<Group>(null!)
+  const frontCoverRef = useRef<Mesh>(null!)
+  const backCoverRef = useRef<Mesh>(null!)
+  const spineRef = useRef<Mesh>(null!)
+
+  const textures = useMemo(() => {
     const cover = buildPageTexture(
       { category: '', dishes: [] },
       menuName,
       restaurantName,
-      true
+      'cover'
     )
-    // pagine contenuto
-    const content = bookPages.map((p) =>
-      buildPageTexture(p, menuName, restaurantName, false)
+
+    const insidePages = bookPages.map((p) =>
+      buildPageTexture(p, menuName, restaurantName, 'inside')
     )
-    // copertina posteriore
+
     const backCover = buildPageTexture(
       { category: '', dishes: [] },
       menuName,
       restaurantName,
-      true
+      'backcover'
     )
-    return [cover, ...content, backCover]
+
+    return [cover, ...insidePages, backCover]
   }, [bookPages, menuName, restaurantName])
 
-  const totalPages = canvasPages.length - 1
+  const totalSheets = textures.length - 1
+
+  useFrame((_, delta) => {
+    if (!groupRef.current || !frontCoverRef.current || !backCoverRef.current || !spineRef.current) return
+
+    easing.dampE(groupRef.current.rotation, [0, -0.95, 0], 0.2, delta)
+
+    easing.damp3(groupRef.current.position, [0, -0.02, 0], 0.2, delta)
+
+    const openFactor = currentPage > 0 ? 1 : 0
+
+    easing.dampAngle(frontCoverRef.current.rotation, 'y', openFactor ? -Math.PI / 2 : 0, 0.18, delta)
+    easing.dampAngle(backCoverRef.current.rotation, 'y', 0, 0.18, delta)
+    easing.damp3(spineRef.current.position, [0, 0, 0], 0.2, delta)
+  })
 
   return (
-    <group rotation-y={-Math.PI / 4}>
-      {canvasPages.slice(0, -1).map((frontCanvas, i) => (
-        <Page
-          key={i}
-          number={i}
-          front={frontCanvas}
-          back={canvasPages[i + 1]}
-          page={currentPage}
-          opened={currentPage > i}
-          bookClosed={currentPage === 0 || currentPage === totalPages}
-        />
-      ))}
+    <group ref={groupRef}>
+      {/* back cover */}
+      <mesh ref={backCoverRef} position={[0, 0, -0.04]} castShadow receiveShadow>
+        <boxGeometry args={[PAGE_WIDTH + 0.02, PAGE_HEIGHT + 0.04, COVER_DEPTH]} />
+        <meshStandardMaterial color="#251912" roughness={0.88} metalness={0.03} />
+      </mesh>
+
+      {/* spine */}
+      <mesh ref={spineRef} position={[-0.04, 0, 0]} castShadow receiveShadow>
+        <boxGeometry args={[SPINE_WIDTH, PAGE_HEIGHT + 0.03, COVER_DEPTH + 0.01]} />
+        <meshStandardMaterial color="#1a120d" roughness={0.9} metalness={0.02} />
+      </mesh>
+
+      {/* front hard cover */}
+      <mesh ref={frontCoverRef} position={[PAGE_WIDTH / 2, 0, 0.05]} castShadow receiveShadow>
+        <boxGeometry args={[PAGE_WIDTH + 0.02, PAGE_HEIGHT + 0.04, COVER_DEPTH]} />
+        <meshStandardMaterial color="#2a1d16" roughness={0.88} metalness={0.03} />
+      </mesh>
+
+      {/* internal sheets */}
+      {textures.slice(0, -1).map((frontCanvas, i) => {
+        const zOffset = 0.01 - i * 0.0015
+        return (
+          <group key={i} position={[0, 0, zOffset]}>
+            <Page
+              number={i}
+              front={frontCanvas}
+              back={textures[i + 1]}
+              page={currentPage}
+              opened={currentPage > i}
+              bookClosed={currentPage === 0}
+              isCover={i === 0}
+              isBackCover={i === totalSheets - 1}
+            />
+          </group>
+        )
+      })}
     </group>
   )
 }
 
-// ─── Componente UI (frecce navigazione) ──────────────────────────────────────
-
-type UIProps = {
+type NavUIProps = {
   currentPage: number
   totalPages: number
   onPrev: () => void
   onNext: () => void
 }
 
-function NavUI({ currentPage, totalPages, onPrev, onNext }: UIProps) {
+function NavUI({ currentPage, totalPages, onPrev, onNext }: NavUIProps) {
   return (
-    <div className="pointer-events-none fixed inset-0 z-10 flex items-end justify-center pb-8 gap-6">
+    <div className="pointer-events-none fixed inset-0 z-10 flex items-end justify-center gap-5 pb-8">
       <button
-        className="pointer-events-auto bg-[#c9a96e]/90 hover:bg-[#c9a96e] text-[#1a0f0a] font-bold w-12 h-12 rounded-full text-xl shadow-lg transition-all disabled:opacity-30"
+        type="button"
         onClick={onPrev}
         disabled={currentPage <= 0}
+        className="pointer-events-auto h-12 w-12 rounded-full bg-[#b08d57]/90 text-[#1b120d] text-2xl shadow-lg disabled:opacity-30"
         aria-label="Pagina precedente"
       >
         ‹
       </button>
-      <span className="pointer-events-none text-[#c9a96e]/70 text-sm self-center">
-        {currentPage} / {totalPages - 1}
-      </span>
+      <div className="pointer-events-none rounded-full border border-[#6e522f]/50 bg-[#1b120d]/80 px-4 py-2 text-sm text-[#d7bf96]">
+        {currentPage} / {Math.max(0, totalPages - 1)}
+      </div>
       <button
-        className="pointer-events-auto bg-[#c9a96e]/90 hover:bg-[#c9a96e] text-[#1a0f0a] font-bold w-12 h-12 rounded-full text-xl shadow-lg transition-all disabled:opacity-30"
+        type="button"
         onClick={onNext}
         disabled={currentPage >= totalPages - 1}
+        className="pointer-events-auto h-12 w-12 rounded-full bg-[#b08d57]/90 text-[#1b120d] text-2xl shadow-lg disabled:opacity-30"
         aria-label="Pagina successiva"
       >
         ›
@@ -461,18 +507,18 @@ function NavUI({ currentPage, totalPages, onPrev, onNext }: UIProps) {
   )
 }
 
-// ─── Componente principale ────────────────────────────────────────────────────
-
 export default function BookViewer({ dishes, menuName, restaurantName }: Props) {
   const [currentPage, setCurrentPage] = useState(0)
 
   const bookPages = useMemo<BookPage[]>(() => {
     const byCategory = new Map<string, Dish[]>()
+
     for (const dish of dishes) {
       const cat = dish.category || 'Varie'
       if (!byCategory.has(cat)) byCategory.set(cat, [])
       byCategory.get(cat)!.push(dish)
     }
+
     const result: BookPage[] = []
     byCategory.forEach((list, cat) => {
       if (list.length <= MAX_ITEMS) {
@@ -485,55 +531,83 @@ export default function BookViewer({ dishes, menuName, restaurantName }: Props) 
         }
       }
     })
-    if (result.length === 0) result.push({ category: 'Menu', dishes: [] })
+
+    if (result.length === 0) {
+      result.push({ category: 'Menu', dishes: [] })
+    }
+
     result.sort((a, b) => a.category.localeCompare(b.category))
     return result
   }, [dishes])
 
-  // totale pagine libro = cover + pagine contenuto + back cover
   const totalPages = bookPages.length + 2
 
-  const handlePrev = () => setCurrentPage((p) => Math.max(0, p - 1))
-  const handleNext = () => setCurrentPage((p) => Math.min(totalPages - 1, p + 1))
+  const handlePrev = useCallback(() => {
+    setCurrentPage((p) => Math.max(0, p - 1))
+  }, [])
 
-  // swipe touch
+  const handleNext = useCallback(() => {
+    setCurrentPage((p) => Math.min(totalPages - 1, p + 1))
+  }, [totalPages])
+
   useEffect(() => {
     let startX: number | null = null
-    const onTouchStart = (e: TouchEvent) => { startX = e.touches[0].clientX }
+
+    const onTouchStart = (e: TouchEvent) => {
+      startX = e.touches[0].clientX
+    }
+
     const onTouchEnd = (e: TouchEvent) => {
       if (startX == null) return
       const dx = e.changedTouches[0].clientX - startX
       startX = null
+
       if (Math.abs(dx) < 40) return
       if (dx < 0) handleNext()
       else handlePrev()
     }
+
     window.addEventListener('touchstart', onTouchStart, { passive: true })
     window.addEventListener('touchend', onTouchEnd)
+
     return () => {
       window.removeEventListener('touchstart', onTouchStart)
       window.removeEventListener('touchend', onTouchEnd)
     }
-  }, [totalPages])
+  }, [handleNext, handlePrev])
 
   return (
-    <div className="w-full h-[100dvh] bg-[#15100c] relative">
+    <div className="relative h-[100dvh] w-full bg-[#15100c]">
       <Canvas
         shadows
-        camera={{ position: [-0.5, 1, 4], fov: 45 }}
+        camera={{ position: [0.8, 0.15, 3.2], fov: 35 }}
         gl={{ antialias: true }}
       >
         <color attach="background" args={['#15100c']} />
-        <fog attach="fog" args={['#15100c', 8, 18]} />
-        <ambientLight intensity={0.3} color="#fff5e0" />
+        <fog attach="fog" args={['#15100c', 6, 14]} />
+        <ambientLight intensity={0.6} color="#ffe7c4" />
         <directionalLight
-          position={[2, 4, 5]}
-          intensity={1.2}
+          position={[3, 4, 4]}
+          intensity={1.3}
+          color="#fff2dc"
           castShadow
-          shadow-mapSize={[1024, 1024]}
-          color="#fff5e0"
+          shadow-mapSize-width={2048}
+          shadow-mapSize-height={2048}
         />
-        <directionalLight position={[-2, -1, 2]} intensity={0.4} color="#ffe0c0" />
+        <directionalLight position={[-2, 1, 2]} intensity={0.45} color="#caa77a" />
+        <spotLight
+          position={[0, 5, 3]}
+          angle={0.45}
+          penumbra={0.5}
+          intensity={0.7}
+          color="#fff0d6"
+        />
+
+        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -1.05, 0]} receiveShadow>
+          <planeGeometry args={[12, 12]} />
+          <shadowMaterial opacity={0.22} />
+        </mesh>
+
         <Book
           pages={bookPages}
           menuName={menuName}
@@ -541,6 +615,7 @@ export default function BookViewer({ dishes, menuName, restaurantName }: Props) 
           currentPage={currentPage}
         />
       </Canvas>
+
       <NavUI
         currentPage={currentPage}
         totalPages={totalPages}
