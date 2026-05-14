@@ -1,10 +1,23 @@
 'use client'
 
-import { Environment, Float, OrbitControls } from '@react-three/drei'
+import { Environment, OrbitControls } from '@react-three/drei'
 import { useThree } from '@react-three/fiber'
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import * as THREE from 'three'
 import { Book } from './Book'
+
+function useIsMobile() {
+  const [isMobile, setIsMobile] = useState(false)
+
+  useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth < 768)
+    onResize()
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
+
+  return isMobile
+}
 
 function GradientBackground() {
   const { scene } = useThree()
@@ -58,31 +71,46 @@ function GradientBackground() {
 }
 
 export function Experience() {
+  const isMobile = useIsMobile()
+
   return (
     <>
       <GradientBackground />
-      <Float rotation-x={-Math.PI / 6} floatIntensity={0.35} speed={1.2} rotationIntensity={0.4}>
+
+      <group
+        position={isMobile ? [0, -0.08, 0.18] : [0, 0, 0]}
+        rotation={isMobile ? [0, 0, 0] : [0, 0, 0]}
+        scale={isMobile ? 1.18 : 1}
+      >
         <Book />
-      </Float>
+      </group>
+
       <OrbitControls
         enablePan={false}
         enableZoom={false}
-        minPolarAngle={Math.PI / 2.4}
-        maxPolarAngle={Math.PI / 1.9}
+        enableRotate={!isMobile}
+        minPolarAngle={isMobile ? Math.PI / 2 : Math.PI / 2.4}
+        maxPolarAngle={isMobile ? Math.PI / 2 : Math.PI / 1.9}
+        minAzimuthAngle={isMobile ? 0 : -0.35}
+        maxAzimuthAngle={isMobile ? 0 : 0.35}
       />
+
       <Environment preset="studio" />
+
       <directionalLight
         position={[2, 5, 2]}
-        intensity={2.2}
+        intensity={isMobile ? 2.5 : 2.2}
         castShadow
         shadow-mapSize-width={2048}
         shadow-mapSize-height={2048}
         shadow-bias={-0.0001}
       />
-      <ambientLight intensity={0.85} />
+
+      <ambientLight intensity={isMobile ? 1 : 0.85} />
+
       <mesh position-y={-1.5} rotation-x={-Math.PI / 2} receiveShadow>
         <planeGeometry args={[100, 100]} />
-        <shadowMaterial transparent opacity={0.18} />
+        <shadowMaterial transparent opacity={isMobile ? 0.12 : 0.18} />
       </mesh>
     </>
   )

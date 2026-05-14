@@ -2,7 +2,7 @@
 
 import { Loader } from '@react-three/drei'
 import { Canvas } from '@react-three/fiber'
-import { Suspense, useEffect, useMemo } from 'react'
+import { Suspense, useEffect, useMemo, useState } from 'react'
 import { useAtom } from 'jotai'
 import { Experience } from './Experience'
 import { pageAtom, viewerPagesAtom } from './menu-book-state'
@@ -12,6 +12,19 @@ type PagerEntry = {
   id: string
   label: string
   targetPage: number
+}
+
+function useIsMobile() {
+  const [isMobile, setIsMobile] = useState(false)
+
+  useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth < 768)
+    onResize()
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
+
+  return isMobile
 }
 
 function MenuPager() {
@@ -69,21 +82,28 @@ function MenuPager() {
   }, [page, viewerPages])
 
   return (
-    <div className="pointer-events-none fixed inset-x-0 bottom-0 z-30 flex justify-center p-4">
-      <div className="pointer-events-auto flex max-w-full gap-2 overflow-x-auto rounded-full border border-[#8f6d43]/40 bg-black/35 px-3 py-3 backdrop-blur-md">
-        {pagerEntries.map((entry) => (
-          <button
-            key={entry.id}
-            onClick={() => setPage(entry.targetPage)}
-            className={`shrink-0 rounded-full px-4 py-2 text-sm transition ${
-              entry.id === activeTabId
-                ? 'bg-[#e7d2b0] text-[#2a1d16]'
-                : 'bg-[#4a3426]/50 text-[#f3e7d3]'
-            }`}
-          >
-            {entry.label}
-          </button>
-        ))}
+    <div
+      className="absolute inset-x-0 bottom-0 z-30 px-3 pt-2"
+      style={{
+        paddingBottom: 'calc(12px + env(safe-area-inset-bottom))',
+      }}
+    >
+      <div className="mx-auto flex max-w-full justify-center">
+        <div className="flex max-w-full gap-2 overflow-x-auto rounded-full border border-[#8f6d43]/40 bg-black/40 px-2 py-2 backdrop-blur-md shadow-[0_10px_30px_rgba(0,0,0,0.35)]">
+          {pagerEntries.map((entry) => (
+            <button
+              key={entry.id}
+              onClick={() => setPage(entry.targetPage)}
+              className={`min-h-[40px] shrink-0 rounded-full px-3 py-2 text-sm leading-none transition ${
+                entry.id === activeTabId
+                  ? 'bg-[#e7d2b0] text-[#2a1d16]'
+                  : 'bg-[#4a3426]/55 text-[#f3e7d3]'
+              }`}
+            >
+              {entry.label}
+            </button>
+          ))}
+        </div>
       </div>
     </div>
   )
@@ -104,19 +124,35 @@ function BootstrapPages({ pages }: Props) {
 }
 
 export default function MenuBookClient({ pages }: Props) {
+  const isMobile = useIsMobile()
+
   return (
     <>
       <BootstrapPages pages={pages} />
-      <MenuPager />
       <Loader />
-      <div className="h-[100dvh] w-full bg-[#140b08]">
-        <Canvas shadows camera={{ position: [0, 0, 4.2], fov: 35 }}>
-          <group position-y={0}>
-            <Suspense fallback={null}>
-              <Experience />
-            </Suspense>
-          </group>
-        </Canvas>
+      <div className="relative h-[100dvh] w-full overflow-hidden bg-[#140b08]">
+        <div
+          className="absolute inset-0"
+          style={{
+            paddingBottom: 'calc(84px + env(safe-area-inset-bottom))',
+          }}
+        >
+          <Canvas
+            shadows
+            camera={{
+              position: isMobile ? [0, 0.02, 3.15] : [0, 0, 4.2],
+              fov: isMobile ? 26 : 35,
+            }}
+          >
+            <group position-y={isMobile ? 0.02 : 0}>
+              <Suspense fallback={null}>
+                <Experience />
+              </Suspense>
+            </group>
+          </Canvas>
+        </div>
+
+        <MenuPager />
       </div>
     </>
   )
