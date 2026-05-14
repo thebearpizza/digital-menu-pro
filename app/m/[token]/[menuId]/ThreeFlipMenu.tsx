@@ -44,7 +44,6 @@ export default function ThreeFlipMenu({ dishes, menuName, restaurantName }: Prop
 
     const result: Page[] = []
 
-    // Usa forEach sulla mappa per evitare problemi di downlevelIteration
     byCategory.forEach((list, cat) => {
       if (list.length <= MAX_ITEMS_PER_CATEGORY_PAGE) {
         result.push({ category: cat, dishes: list })
@@ -83,7 +82,8 @@ export default function ThreeFlipMenu({ dishes, menuName, restaurantName }: Prop
       0.1,
       100
     )
-    camera.position.z = 3.2
+    const baseCameraZ = 3.2
+    camera.position.z = baseCameraZ
 
     const renderer = new THREE.WebGLRenderer({
       canvas,
@@ -117,7 +117,7 @@ export default function ThreeFlipMenu({ dishes, menuName, restaurantName }: Prop
     let isFlipping = false
     let flipDirection: 1 | -1 = 1
     let flipProgress = 0
-    const flipDuration = 0.45
+    const flipDuration = 0.65 // un po' più lungo per un feel più premium
     const clock = new THREE.Clock()
 
     const updatePageMaterial = () => {
@@ -153,18 +153,31 @@ export default function ThreeFlipMenu({ dishes, menuName, restaurantName }: Prop
       if (isFlipping) {
         flipProgress += delta / flipDuration
         const t = Math.min(flipProgress, 1)
-        const eased = t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t
+
+        // easing cubic più morbido (easeInOutCubic)
+        const eased =
+          t < 0.5
+            ? 4 * t * t * t
+            : 1 - Math.pow(-2 * t + 2, 3) / 2
+
         const angle = eased * Math.PI * flipDirection
         pageMesh.rotation.y = angle
         shadowMesh.rotation.y = angle * 0.3
-        const scale = 1 + 0.03 * Math.sin(t * Math.PI)
+
+        // leggero respiro di scala
+        const scale = 1 + 0.035 * Math.sin(t * Math.PI)
         pageMesh.scale.set(scale, scale, 1)
+
+        // piccolo movimento di camera avanti/indietro durante il flip
+        const zoomOffset = 0.18 * Math.sin(t * Math.PI)
+        camera.position.z = baseCameraZ - zoomOffset
 
         if (flipProgress >= 1) {
           isFlipping = false
           pageMesh.rotation.y = 0
           shadowMesh.rotation.y = 0
           pageMesh.scale.set(1, 1, 1)
+          camera.position.z = baseCameraZ
           updatePageMaterial()
           setPageIndex(currentIndex)
         }
