@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { PDFDocument, StandardFonts, rgb } from 'pdf-lib'
+import { PDFDocument, StandardFonts, rgb, PDFPage, PDFFont } from 'pdf-lib'
 import { createClient } from '@/lib/supabase/server'
 
 type Dish = {
@@ -43,6 +43,39 @@ function groupDishesByCategory(dishes: Dish[]) {
   return Array.from(map.entries())
 }
 
+function hexToRgb(hex: string) {
+  const cleaned = hex.replace('#', '')
+  const value = cleaned.length === 3
+    ? cleaned.split('').map((c) => c + c).join('')
+    : cleaned
+
+  const num = parseInt(value, 16)
+
+  return rgb(
+    ((num >> 16) & 255) / 255,
+    ((num >> 8) & 255) / 255,
+    (num & 255) / 255
+  )
+}
+
+function wrapText(text: string, maxChars: number) {
+  const words = text.split(/\s+/)
+  const lines: string[] = []
+  let current = ''
+
+  for (const word of words) {
+    const next = current ? `${current} ${word}` : word
+    if (next.length <= maxChars) current = next
+    else {
+      if (current) lines.push(current)
+      current = word
+    }
+  }
+
+  if (current) lines.push(current)
+  return lines
+}
+
 export async function GET(
   request: Request,
   { params }: { params: { menuId: string } }
@@ -82,9 +115,6 @@ export async function GET(
     }
 
     const pdfDoc = await PDFDocument.create()
-    const page = pdfDoc.addPage([595.28, 841.89]) // A4
-    const { width, height } = page.getSize()
-
     const fontRegular = await pdfDoc.embedFont(StandardFonts.Helvetica)
     const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold)
 
@@ -96,82 +126,120 @@ export async function GET(
     const mutedColor = colors.muted || '#d6d6d6'
     const accentColor = colors.accent || '#f5d08a'
 
-    const hexToRgb = (hex: string) => {
-      const cleaned = hex.replace('#', '')
-      const value = cleaned.length === 3
-        ? cleaned.split('').map((c) => c + c).join('')
-        : cleaned
+    const PAGE_WIDTH = 595.28
+    const PAGE_HEIGHT = 841.89
+    const MARGIN_X = 48
+    const TOP = 60
+    const BOTTOM = 60
 
-      const num = parseInt(value, 16)
-      return rgb(
-        ((num >> 16) & 255) / 255,
-        ((num >> 8) & 255) / 255,
-        (num & 255) / 255
-      )
+    let page: PDFPage
+    let y = 0
+
+    function createPage() {
+      page = pdfDoc.addPage([PAGE_WIDTH, PAGE_HEIGHT])
+      page.drawRectangle({
+        x: 0,
+        y: 0,
+        width: PAGE_WIDTH,
+        height: PAGE_HEIGHT,
+        color: hexToRgb(bgColor),
+      })
+      y = PAGE_HEIGHT - TOP
+      return page
     }
 
-    page.drawRectangle({
-      x: 0,
-      y: 0,
-      width,
-      height,
-      color: hexToRgb(bgColor),
-    })
+    function ensureSpace(minHeight: number) {
+      if (y - minHeight < BOTTOM) createPage()
+    }
 
-    let y = height - 60
+    function drawTextBlock(
+      lines: string[],
+      opts: {
+        x?: number
+        size: number
+        font: PDFFont
+        color: ReturnType<typeof rgb>
+        lineGap?: number
+      }
+    ) {
+      const x = opts.x ?? MARGIN_X
+      const lineGap = opts.lineGap ?? 4
+      for (const line of lines) {
+        page.drawText(line, {
+          x,
+          y,
+          size: opts.size,
+          font: opts.font,
+          color: opts.color,
+        })
+        y -= opts.size + lineGap
+      }
+    }
+
+    createPage()
 
     page.drawText(restaurant.name, {
-      x: 48,
+      x: MARGIN_X,
       y,
-      size: 26,
+      size: 28,
       font: fontBold,
       color: hexToRgb(textColor),
     })
-
-    y -= 34
+    y -= 38
 
     page.drawText(menu.name, {
-      x: 48,
+      x: MARGIN_X,
       y,
       size: 18,
       font: fontBold,
       color: hexToRgb(accentColor),
     })
-
     y -= 28
 
     if (menu.description) {
-      page.drawText(menu.description.slice(0, 140), {
-        x: 48,
-        y,
+      const lines = wrapText(menu.description, 90)
+      drawTextBlock(lines, {
         size: 10,
         font: fontRegular,
         color: hexToRgb(mutedColor),
-        maxWidth: width - 96,
+        lineGap: 3,
       })
-      y -= 28
+      y -= 12
     }
+
+    y -= 20
 
     const grouped = groupDishesByCategory((dishes || []) as Dish[])
 
     for (const [category, items] of grouped) {
-      if (y < 120) break
+      ensureSpace(40)
 
       page.drawText(category.toUpperCase(), {
-        x: 48,
+        x: MARGIN_X,
         y,
         size: 12,
         font: fontBold,
         color: hexToRgb(accentColor),
       })
-
-      y -= 22
+      y -= 24
 
       for (const dish of items) {
-        if (y < 90) break
+        const descriptionLines = dish.description ? wrapText(dish.description, 85) : []
+        const allergensLine =
+          dish.allergens && dish.allergens.length > 0
+            ? `Allergeni: ${dish.allergens.join(', ')}`
+            : null
+
+        const estimatedHeight =
+          18 +
+          (descriptionLines.length * 13) +
+          (allergensLine ? 13 : 0) +
+          16
+
+        ensureSpace(estimatedHeight)
 
         page.drawText(dish.name, {
-          x: 48,
+          x: MARGIN_X,
           y,
           size: 13,
           font: fontBold,
@@ -180,7 +248,7 @@ export async function GET(
 
         if (dish.price != null) {
           page.drawText(money(dish.price), {
-            x: width - 110,
+            x: PAGE_WIDTH - 110,
             y,
             size: 12,
             font: fontBold,
@@ -188,36 +256,32 @@ export async function GET(
           })
         }
 
-        y -= 16
+        y -= 18
 
-        if (dish.description) {
-          page.drawText(dish.description.slice(0, 110), {
-            x: 48,
-            y,
+        if (descriptionLines.length > 0) {
+          drawTextBlock(descriptionLines, {
             size: 10,
             font: fontRegular,
             color: hexToRgb(mutedColor),
-            maxWidth: width - 120,
+            lineGap: 3,
           })
-          y -= 14
         }
 
-        if (dish.allergens && dish.allergens.length > 0) {
-          page.drawText(`Allergeni: ${dish.allergens.join(', ')}`, {
-            x: 48,
+        if (allergensLine) {
+          page.drawText(allergensLine, {
+            x: MARGIN_X,
             y,
             size: 9,
             font: fontRegular,
             color: hexToRgb(mutedColor),
-            maxWidth: width - 120,
           })
-          y -= 14
+          y -= 13
         }
 
-        y -= 10
+        y -= 12
       }
 
-      y -= 8
+      y -= 6
     }
 
     const pdfBytes = await pdfDoc.save()
