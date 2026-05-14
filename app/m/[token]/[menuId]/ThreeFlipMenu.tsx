@@ -20,25 +20,55 @@ type Props = {
   restaurantName: string
 }
 
-// Per test: poche voci per pagina, così generiamo più pagine anche con pochi piatti
-const ITEMS_PER_PAGE = 3
+type Page = {
+  category: string
+  dishes: Dish[]
+}
+
+const MAX_ITEMS_PER_CATEGORY_PAGE = 6
 
 export default function ThreeFlipMenu({ dishes, menuName, restaurantName }: Props) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const [pageIndex, setPageIndex] = useState(0)
 
-  const pages = useMemo(() => {
-    const result: Dish[][] = []
-    for (let i = 0; i < dishes.length; i += ITEMS_PER_PAGE) {
-      result.push(dishes.slice(i, i + ITEMS_PER_PAGE))
+  const pages = useMemo<Page[]>(() => {
+    const byCategory = new Map<string, Dish[]>()
+
+    for (const dish of dishes) {
+      const cat = dish.category || 'Varie'
+      if (!byCategory.has(cat)) {
+        byCategory.set(cat, [])
+      }
+      byCategory.get(cat)!.push(dish)
     }
+
+    const result: Page[] = []
+
+    // Usa forEach sulla mappa per evitare problemi di downlevelIteration
+    byCategory.forEach((list, cat) => {
+      if (list.length <= MAX_ITEMS_PER_CATEGORY_PAGE) {
+        result.push({ category: cat, dishes: list })
+      } else {
+        for (let i = 0; i < list.length; i += MAX_ITEMS_PER_CATEGORY_PAGE) {
+          const slice = list.slice(i, i + MAX_ITEMS_PER_CATEGORY_PAGE)
+          const label =
+            i === 0 ? cat : `${cat} (${Math.floor(i / MAX_ITEMS_PER_CATEGORY_PAGE) + 1})`
+          result.push({ category: label, dishes: slice })
+        }
+      }
+    })
+
     if (result.length === 0) {
-      result.push([])
+      result.push({ category: 'Menu', dishes: [] })
     }
+
+    result.sort((a, b) => a.category.localeCompare(b.category))
+
     return result
   }, [dishes])
 
-  const currentPageDishes = pages[pageIndex] ?? []
+  const currentPage = pages[pageIndex] ?? pages[0]
+  const currentPageDishes = currentPage?.dishes ?? []
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -91,10 +121,9 @@ export default function ThreeFlipMenu({ dishes, menuName, restaurantName }: Prop
     const clock = new THREE.Clock()
 
     const updatePageMaterial = () => {
-      const dishesForPage = pages[currentIndex]
-      const firstDish = dishesForPage && dishesForPage[0]
-      if (firstDish && firstDish.category) {
-        const hash = Array.from(firstDish.category).reduce(
+      const page = pages[currentIndex]
+      if (page && page.category) {
+        const hash = Array.from(page.category).reduce(
           (acc, c) => acc + c.charCodeAt(0),
           0
         )
@@ -196,16 +225,22 @@ export default function ThreeFlipMenu({ dishes, menuName, restaurantName }: Prop
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
             <div className="pointer-events-none max-w-[88%] max-h-[80%] overflow-hidden rounded-3xl px-4 py-4 text-[#2b2018]">
               <div className="text-center mb-2">
-                <p className="text-[0.7rem] tracking-[0.25em] uppercase text-[#c1b4a3]">
+                <p className="text-[0.65rem] tracking-[0.24em] uppercase text-[#c1b4a3]">
                   {restaurantName}
                 </p>
                 <p className="text-[0.9rem] font-semibold text-[#f5eee4]">
                   {menuName}
                 </p>
+                <p className="text-[0.8rem] font-semibold mt-1 text-[#f2e4d4] tracking-[0.18em] uppercase">
+                  {currentPage?.category}
+                </p>
               </div>
               <div className="space-y-2 text-[0.8rem]">
                 {currentPageDishes.map((dish) => (
-                  <div key={dish.id} className="border-b border-[#e0d4c3]/40 pb-1 last:border-b-0">
+                  <div
+                    key={dish.id}
+                    className="border-b border-[#e0d4c3]/40 pb-1 last:border-b-0"
+                  >
                     <div className="flex justify-between items-baseline gap-2">
                       <span className="font-semibold text-[#2b2018]">
                         {dish.name}
@@ -230,7 +265,7 @@ export default function ThreeFlipMenu({ dishes, menuName, restaurantName }: Prop
                 ))}
                 {currentPageDishes.length === 0 && (
                   <p className="text-[0.75rem] text-[#7a6755] text-center mt-4">
-                    Nessun piatto in questa pagina.
+                    Nessun piatto in questa categoria.
                   </p>
                 )}
               </div>
