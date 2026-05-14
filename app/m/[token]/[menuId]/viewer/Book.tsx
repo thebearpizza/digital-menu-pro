@@ -1,6 +1,6 @@
 'use client'
 
-import { useCursor, useTexture } from '@react-three/drei'
+import { useCursor } from '@react-three/drei'
 import { useFrame } from '@react-three/fiber'
 import { useAtom } from 'jotai'
 import { easing } from 'maath'
@@ -14,7 +14,6 @@ import {
   MeshStandardMaterial,
   Skeleton,
   SkinnedMesh,
-  SRGBColorSpace,
   Uint16BufferAttribute,
   Vector3,
 } from 'three'
@@ -33,8 +32,12 @@ const PAGE_DEPTH = 0.003
 const PAGE_SEGMENTS = 30
 const SEGMENT_WIDTH = PAGE_WIDTH / PAGE_SEGMENTS
 
-const whiteColor = new Color('white')
-const emissiveColor = new Color('orange')
+const whiteColor = new Color('#f5efe4')
+const darkEdgeColor = new Color('#2a1d16')
+const coverColor = new Color('#d9c2a0')
+const pageColor = new Color('#f8f1e4')
+const accentColor = new Color('#c49b69')
+const emissiveColor = new Color('#c58a3a')
 
 const pageGeometry = new BoxGeometry(PAGE_WIDTH, PAGE_HEIGHT, PAGE_DEPTH, PAGE_SEGMENTS, 2)
 pageGeometry.translate(PAGE_WIDTH / 2, 0, 0)
@@ -57,45 +60,21 @@ for (let i = 0; i < position.count; i++) {
 pageGeometry.setAttribute('skinIndex', new Uint16BufferAttribute(skinIndexes, 4))
 pageGeometry.setAttribute('skinWeight', new Float32BufferAttribute(skinWeights, 4))
 
-const pageMaterials = [
+const baseMaterials = [
   new MeshStandardMaterial({ color: whiteColor }),
-  new MeshStandardMaterial({ color: '#111111' }),
+  new MeshStandardMaterial({ color: darkEdgeColor }),
   new MeshStandardMaterial({ color: whiteColor }),
   new MeshStandardMaterial({ color: whiteColor }),
 ]
 
-pages.forEach((page) => {
-  useTexture.preload(`/textures/${page.front}.jpg`)
-  useTexture.preload(`/textures/${page.back}.jpg`)
-  useTexture.preload('/textures/book-cover-roughness.jpg')
-})
-
 type PageProps = {
   number: number
-  front: string
-  back: string
   page: number
   opened: boolean
   bookClosed: boolean
 }
 
-function Page({ number, front, back, page, opened, bookClosed }: PageProps) {
-  const texturePaths = [
-    `/textures/${front}.jpg`,
-    `/textures/${back}.jpg`,
-    ...(number === 0 || number === pages.length - 1
-      ? ['/textures/book-cover-roughness.jpg']
-      : []),
-  ]
-
-  const loaded = useTexture(texturePaths) as any[]
-  const picture = loaded[0]
-  const picture2 = loaded[1]
-  const pictureRoughness = loaded[2]
-
-  picture.colorSpace = SRGBColorSpace
-  picture2.colorSpace = SRGBColorSpace
-
+function Page({ number, page, opened, bookClosed }: PageProps) {
   const group = useRef<any>(null)
   const skinnedMeshRef = useRef<any>(null)
   const turnedAt = useRef(0)
@@ -104,6 +83,9 @@ function Page({ number, front, back, page, opened, bookClosed }: PageProps) {
   const [_, setPage] = useAtom(pageAtom)
   const [highlighted, setHighlighted] = useState(false)
   useCursor(highlighted)
+
+  const isCover = number === 0
+  const isBack = number === pages.length - 1
 
   const manualSkinnedMesh = useMemo(() => {
     const bones: Bone[] = []
@@ -120,20 +102,23 @@ function Page({ number, front, back, page, opened, bookClosed }: PageProps) {
 
     const skeleton = new Skeleton(bones)
 
+    const frontColor = isCover || isBack ? coverColor : pageColor
+    const backColor = isCover || isBack ? coverColor : pageColor
+
     const materials = [
-      ...pageMaterials,
+      ...baseMaterials,
       new MeshStandardMaterial({
-        color: whiteColor,
-        map: picture,
-        ...(number === 0 ? { roughnessMap: pictureRoughness } : { roughness: 0.1 }),
-        emissive: emissiveColor,
+        color: frontColor,
+        roughness: isCover || isBack ? 0.9 : 0.95,
+        metalness: 0.02,
+        emissive: accentColor,
         emissiveIntensity: 0,
       }),
       new MeshStandardMaterial({
-        color: whiteColor,
-        map: picture2,
-        ...(number === pages.length - 1 ? { roughnessMap: pictureRoughness } : { roughness: 0.1 }),
-        emissive: emissiveColor,
+        color: backColor,
+        roughness: isCover || isBack ? 0.9 : 0.95,
+        metalness: 0.02,
+        emissive: accentColor,
         emissiveIntensity: 0,
       }),
     ]
@@ -146,16 +131,24 @@ function Page({ number, front, back, page, opened, bookClosed }: PageProps) {
     mesh.bind(skeleton)
 
     return mesh
-  }, [number, picture, picture2, pictureRoughness])
+  }, [isCover, isBack])
 
   useFrame((_, delta) => {
     if (!skinnedMeshRef.current || !group.current) return
 
-    const emissiveIntensity = highlighted ? 0.22 : 0
+    const emissiveIntensity = highlighted ? 0.18 : 0
     const materials = skinnedMeshRef.current.material as MeshStandardMaterial[]
 
-    materials[4].emissiveIntensity = MathUtils.lerp(materials[4].emissiveIntensity, emissiveIntensity, 0.1)
-    materials[5].emissiveIntensity = MathUtils.lerp(materials[5].emissiveIntensity, emissiveIntensity, 0.1)
+    materials[4].emissiveIntensity = MathUtils.lerp(
+      materials[4].emissiveIntensity,
+      emissiveIntensity,
+      0.1
+    )
+    materials[5].emissiveIntensity = MathUtils.lerp(
+      materials[5].emissiveIntensity,
+      emissiveIntensity,
+      0.1
+    )
 
     if (lastOpened.current !== opened) {
       turnedAt.current = Date.now()
@@ -169,6 +162,7 @@ function Page({ number, front, back, page, opened, bookClosed }: PageProps) {
     if (!bookClosed) targetRotation += degToRad(number * 0.8)
 
     const bones = skinnedMeshRef.current.skeleton.bones
+
     for (let i = 0; i < bones.length; i++) {
       const target = i === 0 ? group.current : bones[i]
       const insideCurveIntensity = i < 8 ? Math.sin(i * 0.2 + 0.25) : 0
@@ -197,7 +191,13 @@ function Page({ number, front, back, page, opened, bookClosed }: PageProps) {
       const foldIntensity =
         i > 8 ? Math.sin(i * Math.PI * (1 / bones.length) - 0.5) * turningTime : 0
 
-      easing.dampAngle(target.rotation, 'x', foldRotationAngle * foldIntensity, easingFactorFold, delta)
+      easing.dampAngle(
+        target.rotation,
+        'x',
+        foldRotationAngle * foldIntensity,
+        easingFactorFold,
+        delta
+      )
     }
   })
 
@@ -255,14 +255,13 @@ export function Book() {
 
   return (
     <group rotation-y={-Math.PI / 2}>
-      {pages.map((pageData, index) => (
+      {pages.map((_, index) => (
         <Page
           key={index}
           page={delayedPage}
           number={index}
           opened={delayedPage > index}
           bookClosed={delayedPage === 0 || delayedPage === pages.length}
-          {...pageData}
         />
       ))}
     </group>
