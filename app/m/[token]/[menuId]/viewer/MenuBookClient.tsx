@@ -140,11 +140,11 @@ export default function MenuBookClient({ pages }: Props) {
           <Canvas
             shadows
             camera={{
-              position: isMobile ? [0, 0.02, 3.15] : [0, 0, 4.2],
-              fov: isMobile ? 26 : 35,
+              position: isMobile ? [0, 0.0, 2.55] : [0, 0, 4.2],
+              fov: isMobile ? 24 : 35,
             }}
           >
-            <group position-y={isMobile ? 0.02 : 0}>
+            <group position-y={isMobile ? -0.02 : 0}>
               <Suspense fallback={null}>
                 <Experience />
               </Suspense>

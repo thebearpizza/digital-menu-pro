@@ -560,6 +560,7 @@ function Page({ number, page, opened, bookClosed, pageData, totalPages }: PagePr
         object={manualSkinnedMesh}
         ref={skinnedMeshRef}
         position-z={-number * PAGE_DEPTH + page * PAGE_DEPTH}
+        position-x={0}
       />
     </group>
   )
@@ -569,6 +570,14 @@ export function Book() {
   const [page] = useAtom(pageAtom)
   const [viewerPages] = useAtom(viewerPagesAtom)
   const [delayedPage, setDelayedPage] = useState(page)
+  const [isMobile, setIsMobile] = useState(false)
+
+  useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth < 768)
+    onResize()
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
 
   useEffect(() => {
     let timeout: ReturnType<typeof setTimeout> | undefined
@@ -595,14 +604,14 @@ export function Book() {
   if (!viewerPages.length) return null
 
   return (
-    <group rotation-y={-Math.PI / 2}>
+    <group rotation-y={isMobile ? 0 : -Math.PI / 2} position-x={isMobile ? -0.62 : 0}>
       {viewerPages.map((pageData, index) => (
         <Page
           key={pageData.id}
           page={delayedPage}
           number={index}
           opened={delayedPage > index}
-          bookClosed={delayedPage === 0 || delayedPage === viewerPages.length}
+          bookClosed={isMobile ? false : delayedPage === 0 || delayedPage === viewerPages.length}
           pageData={pageData}
           totalPages={viewerPages.length}
         />
