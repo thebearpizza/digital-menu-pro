@@ -132,11 +132,10 @@ export async function GET(
     const TOP = 60
     const BOTTOM = 60
 
-    let page: PDFPage
+    let page = pdfDoc.addPage([PAGE_WIDTH, PAGE_HEIGHT])
     let y = 0
 
-    function createPage() {
-      page = pdfDoc.addPage([PAGE_WIDTH, PAGE_HEIGHT])
+    const paintPageBackground = () => {
       page.drawRectangle({
         x: 0,
         y: 0,
@@ -145,14 +144,19 @@ export async function GET(
         color: hexToRgb(bgColor),
       })
       y = PAGE_HEIGHT - TOP
+    }
+
+    const createPage = () => {
+      page = pdfDoc.addPage([PAGE_WIDTH, PAGE_HEIGHT])
+      paintPageBackground()
       return page
     }
 
-    function ensureSpace(minHeight: number) {
+    const ensureSpace = (minHeight: number) => {
       if (y - minHeight < BOTTOM) createPage()
     }
 
-    function drawTextBlock(
+    const drawTextBlock = (
       lines: string[],
       opts: {
         x?: number
@@ -161,9 +165,10 @@ export async function GET(
         color: ReturnType<typeof rgb>
         lineGap?: number
       }
-    ) {
+    ) => {
       const x = opts.x ?? MARGIN_X
       const lineGap = opts.lineGap ?? 4
+
       for (const line of lines) {
         page.drawText(line, {
           x,
@@ -176,7 +181,7 @@ export async function GET(
       }
     }
 
-    createPage()
+    paintPageBackground()
 
     page.drawText(restaurant.name, {
       x: MARGIN_X,
