@@ -1,0 +1,67 @@
+/* Nasconde controlli tecnici inutili per il cliente finale */
+#openFile,
+#secondaryOpenFile,
+#print,
+#secondaryPrint,
+#download,
+#secondaryDownload,
+#viewBookmark,
+#secondaryViewBookmark,
+#presentationMode,
+#secondaryPresentationMode,
+#documentProperties,
+#pageRotateCw,
+#pageRotateCcw,
+#cursorSelectTool,
+#cursorHandTool,
+#scrollVertical,
+#scrollHorizontal,
+#scrollWrapped,
+#spreadNone,
+#spreadOdd,
+#spreadEven {
+  display: none !important;
+}
+
+/* Teniamo solo gli elementi essenziali più puliti */
+#toolbarViewerRight {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Viewer full screen più pulito */
+#outerContainer,
+#mainContainer,
+#viewerContainer {
+  background: #111 !important;
+}
+
+/* Mobile first */
+@media (max-width: 768px) {
+  #toolbarViewer {
+    min-height: 56px !important;
+  }
+
+  #toolbarViewerMiddle {
+    display: flex !important;
+    align-items: center;
+    justify-content: center;
+  }
+
+  #numPages,
+  #pageNumberLabel,
+  .hiddenMediumView,
+  .hiddenSmallView {
+    display: none !important;
+  }
+
+  #scaleSelectContainer {
+    display: none !important;
+  }
+
+  #sidebarToggle,
+  #secondaryToolbarToggle {
+    transform: scale(0.95);
+  }
+}
