@@ -36,7 +36,7 @@ export default function ThreeFlipMenu({ dishes, menuName, restaurantName }: Prop
       0.1,
       100
     )
-    camera.position.z = 3
+    camera.position.z = 3.2
 
     const renderer = new THREE.WebGLRenderer({
       canvas,
@@ -46,10 +46,22 @@ export default function ThreeFlipMenu({ dishes, menuName, restaurantName }: Prop
     renderer.setPixelRatio(window.devicePixelRatio || 1)
     renderer.setSize(window.innerWidth, window.innerHeight, false)
 
+    // Ombra sotto al volantino (piano più grande, scuro e trasparente)
+    const shadowGeometry = new THREE.PlaneGeometry(2.5, 1.7)
+    const shadowMaterial = new THREE.MeshBasicMaterial({
+      color: 0x000000,
+      transparent: true,
+      opacity: 0.25,
+    })
+    const shadowMesh = new THREE.Mesh(shadowGeometry, shadowMaterial)
+    shadowMesh.position.z = -0.03
+    shadowMesh.rotation.x = -0.05
+    scene.add(shadowMesh)
+
     // Pagina base: piano 2D color crema, materiale Basic (niente luci necessarie)
-    const geometry = new THREE.PlaneGeometry(2.2, 1.4)
-    const material = new THREE.MeshBasicMaterial({ color: 0xf8f1e6 })
-    const pageMesh = new THREE.Mesh(geometry, material)
+    const pageGeometry = new THREE.PlaneGeometry(2.2, 1.4)
+    const pageMaterial = new THREE.MeshBasicMaterial({ color: 0xf8f1e6 })
+    const pageMesh = new THREE.Mesh(pageGeometry, pageMaterial)
     scene.add(pageMesh)
 
     // Leggero tilt per sensazione 3D
@@ -69,14 +81,16 @@ export default function ThreeFlipMenu({ dishes, menuName, restaurantName }: Prop
     const updatePage = () => {
       const dish = dishes[currentIndex]
       if (dish && dish.category) {
-        // Piccola variazione di tinta in funzione della categoria
-        const hash = Array.from(dish.category).reduce((acc, c) => acc + c.charCodeAt(0), 0)
+        const hash = Array.from(dish.category).reduce(
+          (acc, c) => acc + c.charCodeAt(0),
+          0
+        )
         const tone = 0xf0e4d0 + (hash % 0x30)
-        material.color = new THREE.Color(tone)
+        pageMaterial.color = new THREE.Color(tone)
       } else {
-        material.color = new THREE.Color(0xf8f1e6)
+        pageMaterial.color = new THREE.Color(0xf8f1e6)
       }
-      material.needsUpdate = true
+      pageMaterial.needsUpdate = true
     }
 
     updatePage()
@@ -97,12 +111,23 @@ export default function ThreeFlipMenu({ dishes, menuName, restaurantName }: Prop
       if (isFlipping) {
         flipProgress += delta / flipDuration
         const t = Math.min(flipProgress, 1)
-        const angle = t * Math.PI * flipDirection
+        // easing semplice (ease-in-out)
+        const eased = t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t
+        const angle = eased * Math.PI * flipDirection
         pageMesh.rotation.y = angle
+
+        // ombra segue la rotazione ma meno (per restare "schiacciata")
+        shadowMesh.rotation.y = angle * 0.3
+
+        // leggerissimo zoom in/out durante il flip per effetto "wow"
+        const scale = 1 + 0.03 * Math.sin(t * Math.PI)
+        pageMesh.scale.set(scale, scale, 1)
 
         if (flipProgress >= 1) {
           isFlipping = false
           pageMesh.rotation.y = 0
+          shadowMesh.rotation.y = 0
+          pageMesh.scale.set(1, 1, 1)
           updatePage()
         }
       }
@@ -131,13 +156,11 @@ export default function ThreeFlipMenu({ dishes, menuName, restaurantName }: Prop
       if (Math.abs(dx) < threshold) return
 
       if (dx < 0 && currentIndex < totalPages - 1) {
-        // Swipe verso sinistra → pagina successiva
         currentIndex += 1
         flipDirection = 1
         flipProgress = 0
         isFlipping = true
       } else if (dx > 0 && currentIndex > 0) {
-        // Swipe verso destra → pagina precedente
         currentIndex -= 1
         flipDirection = -1
         flipProgress = 0
