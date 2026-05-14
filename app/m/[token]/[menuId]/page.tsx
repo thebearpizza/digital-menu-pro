@@ -2,6 +2,13 @@ import { createClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
 import MenuBookClient from './viewer/MenuBookClient'
 
+const demoPages = [
+  { id: 'cover', label: 'Cover', kind: 'cover' },
+  { id: 'pizze', label: 'Pizze', kind: 'section' },
+  { id: 'bevande', label: 'Bevande', kind: 'section' },
+  { id: 'back', label: 'Back', kind: 'back' },
+]
+
 type PageProps = {
   params: {
     token: string
@@ -29,5 +36,5 @@ export default async function PublicMenuPage({ params }: PageProps) {
 
   if (!menu) notFound()
 
-  return <MenuBookClient pages={[]} />
+  return <MenuBookClient pages={demoPages as any} />
 }
