@@ -1,13 +1,4 @@
-import { createClient } from '@/lib/supabase/server'
-import { notFound } from 'next/navigation'
-import MenuBookClient from './viewer/MenuBookClient'
-
-const demoPages = [
-  { id: 'cover', label: 'Cover', kind: 'cover' },
-  { id: 'pizze', label: 'Pizze', kind: 'section' },
-  { id: 'bevande', label: 'Bevande', kind: 'section' },
-  { id: 'back', label: 'Back', kind: 'back' },
-]
+import { redirect } from 'next/navigation'
 
 type PageProps = {
   params: {
@@ -16,25 +7,6 @@ type PageProps = {
   }
 }
 
-export default async function PublicMenuPage({ params }: PageProps) {
-  const supabase = await createClient()
-
-  const { data: restaurant } = await supabase
-    .from('restaurants')
-    .select('id, name, qr_public_token')
-    .eq('qr_public_token', params.token)
-    .single()
-
-  if (!restaurant) notFound()
-
-  const { data: menu } = await supabase
-    .from('menus')
-    .select('id, name, restaurant_id, is_active')
-    .eq('id', params.menuId)
-    .eq('restaurant_id', restaurant.id)
-    .single()
-
-  if (!menu) notFound()
-
-  return <MenuBookClient pages={demoPages as any} />
+export default function PublicMenuPage(_props: PageProps) {
+  redirect('/flipbook-test')
 }
