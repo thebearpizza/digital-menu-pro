@@ -20,13 +20,13 @@ type Props = {
   restaurantName: string
 }
 
-const ITEMS_PER_PAGE = 6
+// Per test: poche voci per pagina, così generiamo più pagine anche con pochi piatti
+const ITEMS_PER_PAGE = 3
 
 export default function ThreeFlipMenu({ dishes, menuName, restaurantName }: Props) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const [pageIndex, setPageIndex] = useState(0)
 
-  // Raggruppa i piatti in pagine logiche
   const pages = useMemo(() => {
     const result: Dish[][] = []
     for (let i = 0; i < dishes.length; i += ITEMS_PER_PAGE) {
@@ -63,7 +63,6 @@ export default function ThreeFlipMenu({ dishes, menuName, restaurantName }: Prop
     renderer.setPixelRatio(window.devicePixelRatio || 1)
     renderer.setSize(window.innerWidth, window.innerHeight, false)
 
-    // Ombra sotto al volantino
     const shadowGeometry = new THREE.PlaneGeometry(2.5, 1.7)
     const shadowMaterial = new THREE.MeshBasicMaterial({
       color: 0x000000,
@@ -75,7 +74,6 @@ export default function ThreeFlipMenu({ dishes, menuName, restaurantName }: Prop
     shadowMesh.rotation.x = -0.05
     scene.add(shadowMesh)
 
-    // Pagina base: piano 2D color crema
     const pageGeometry = new THREE.PlaneGeometry(2.2, 1.4)
     const pageMaterial = new THREE.MeshBasicMaterial({ color: 0xf8f1e6 })
     const pageMesh = new THREE.Mesh(pageGeometry, pageMaterial)
@@ -83,7 +81,6 @@ export default function ThreeFlipMenu({ dishes, menuName, restaurantName }: Prop
 
     pageMesh.rotation.x = -0.04
 
-    // Stato del flip interno a Three.js
     let currentIndex = 0
     const totalPages = pages.length
 
@@ -140,7 +137,6 @@ export default function ThreeFlipMenu({ dishes, menuName, restaurantName }: Prop
           shadowMesh.rotation.y = 0
           pageMesh.scale.set(1, 1, 1)
           updatePageMaterial()
-          // aggiorna React con l'indice corrente
           setPageIndex(currentIndex)
         }
       }
@@ -198,9 +194,9 @@ export default function ThreeFlipMenu({ dishes, menuName, restaurantName }: Prop
           <canvas ref={canvasRef} className="w-full h-full" />
           {/* Overlay contenuto pagina */}
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-            <div className="pointer-events-none max-w-[92%] max-h-[85%] rounded-3xl px-5 py-4 text-[#2b2018]">
+            <div className="pointer-events-none max-w-[88%] max-h-[80%] overflow-hidden rounded-3xl px-4 py-4 text-[#2b2018]">
               <div className="text-center mb-2">
-                <p className="text-[0.75rem] tracking-[0.25em] uppercase text-[#c1b4a3]">
+                <p className="text-[0.7rem] tracking-[0.25em] uppercase text-[#c1b4a3]">
                   {restaurantName}
                 </p>
                 <p className="text-[0.9rem] font-semibold text-[#f5eee4]">
@@ -221,7 +217,7 @@ export default function ThreeFlipMenu({ dishes, menuName, restaurantName }: Prop
                       )}
                     </div>
                     {dish.description && (
-                      <p className="text-[0.7rem] text-[#7a6755] mt-0.5">
+                      <p className="text-[0.7rem] text-[#7a6755] mt-0.5 leading-snug max-h-[2.6rem] overflow-hidden break-words">
                         {dish.description}
                       </p>
                     )}
