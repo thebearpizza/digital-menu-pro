@@ -1,5 +1,5 @@
 import dynamic from 'next/dynamic'
-import createClient from '@/lib/supabase/server'
+import { createClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
 
 const MenuBookClient = dynamic(() => import('./viewer/MenuBookClient'), { ssr: false })
