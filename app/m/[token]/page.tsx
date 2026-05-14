@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
-import { notFound } from 'next/navigation'
+import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
 
 export default async function PublicLandingPage({
@@ -23,6 +23,10 @@ export default async function PublicLandingPage({
     .eq('restaurant_id', restaurant.id)
     .eq('is_active', true)
     .order('sort_order', { ascending: true })
+
+  if (menus && menus.length === 1) {
+    redirect(`/m/${params.token}/${menus[0].id}`)
+  }
 
   return (
     <div className="min-h-screen bg-stone-50" style={{ paddingTop: "env(safe-area-inset-top)" }}>
