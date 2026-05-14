@@ -1,7 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
 import BackButton from './BackButton'
-import ThreeFlipMenu from './ThreeFlipMenu'
+import BookViewer from './BookViewer'
 
 export default async function PublicMenuPage({
   params,
@@ -39,8 +39,7 @@ export default async function PublicMenuPage({
     <div>
       <BackButton token={params.token} menuName={menu.name} restaurantName={restaurant.name} />
       <div className="pt-12">
-        <ThreeFlipMenu
-          dishes={dishes ?? []}
+        <BookViewer dishes={dishes ?? []}
           menuName={menu.name}
           restaurantName={restaurant.name}
         />
