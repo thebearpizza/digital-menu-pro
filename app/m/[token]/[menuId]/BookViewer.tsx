@@ -419,9 +419,9 @@ function Book({ pages: bookPages, menuName, restaurantName, currentPage }: BookP
   useFrame((_, delta) => {
     if (!groupRef.current || !frontCoverRef.current || !backCoverRef.current || !spineRef.current) return
 
-    easing.dampE(groupRef.current.rotation, [0, -0.95, 0], 0.2, delta)
+    easing.dampE(groupRef.current.rotation, [0, 0, 0], 0.2, delta)
 
-    easing.damp3(groupRef.current.position, [0, -0.02, 0], 0.2, delta)
+    easing.damp3(groupRef.current.position, [0, 0, 0], 0.2, delta)
 
     const openFactor = currentPage > 0 ? 1 : 0
 
@@ -580,32 +580,32 @@ export default function BookViewer({ dishes, menuName, restaurantName }: Props) 
     <div className="relative h-[100dvh] w-full bg-[#15100c]">
       <Canvas
         shadows
-        camera={{ position: [0.8, 0.15, 3.2], fov: 35 }}
+        camera={{ position: [0, 0, 4.2], fov: 28 }}
         gl={{ antialias: true }}
       >
         <color attach="background" args={['#15100c']} />
-        <fog attach="fog" args={['#15100c', 6, 14]} />
-        <ambientLight intensity={0.6} color="#ffe7c4" />
+        <fog attach="fog" args={['#15100c', 10, 18]} />
+        <ambientLight intensity={0.9} color="#fff1db" />
         <directionalLight
-          position={[3, 4, 4]}
-          intensity={1.3}
+          position={[0, 2, 4]}
+          intensity={1.15}
           color="#fff2dc"
           castShadow
           shadow-mapSize-width={2048}
           shadow-mapSize-height={2048}
         />
-        <directionalLight position={[-2, 1, 2]} intensity={0.45} color="#caa77a" />
+        <directionalLight position={[0, -1, 3]} intensity={0.28} color="#caa77a" />
         <spotLight
-          position={[0, 5, 3]}
-          angle={0.45}
-          penumbra={0.5}
-          intensity={0.7}
+          position={[0, 3, 4]}
+          angle={0.38}
+          penumbra={0.55}
+          intensity={0.45}
           color="#fff0d6"
         />
 
-        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -1.05, 0]} receiveShadow>
-          <planeGeometry args={[12, 12]} />
-          <shadowMaterial opacity={0.22} />
+        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -1.18, 0]} receiveShadow>
+          <planeGeometry args={[10, 10]} />
+          <shadowMaterial opacity={0.12} />
         </mesh>
 
         <Book
