@@ -1,155 +1,48 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useMemo } from 'react'
 import { useAtom } from 'jotai'
 import PdfFlipbookViewer from './PdfFlipbookViewer'
 import {
   menus,
   selectedCategoryAtom,
-  selectedDishAtom,
   selectedMenuAtom,
 } from './menu-book-state'
 
-function DishModal() {
-  const [dish, setDish] = useAtom(selectedDishAtom)
-  if (!dish) return null
-
-  return (
-    <div className='fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4' onClick={() => setDish(null)}>
-      <div className='absolute inset-0 bg-black/45 backdrop-blur-sm' />
-      <div className='relative z-10 w-full max-w-md rounded-[24px] border border-[#d8ccb8] bg-[#faf8f3] p-5 shadow-2xl' onClick={(e) => e.stopPropagation()}>
-        <button onClick={() => setDish(null)} className='absolute right-3 top-3 flex h-9 w-9 items-center justify-center rounded-full bg-[#2a1d16] text-white'>✕</button>
-        <div className='mb-3 pr-10'>
-          <h3 className='text-xl font-bold text-[#2a1d16]'>{dish.name}</h3>
-          <p className='mt-1 text-sm text-[#6f5a46]'>{dish.description}</p>
-        </div>
-        <div className='mb-3 flex items-center justify-between'>
-          <span className='rounded-full bg-[#efe3cf] px-3 py-1 text-sm font-semibold text-[#8b5e34]'>€ {dish.price.toFixed(2)}</span>
-          <span className='text-xs text-[#8b7763]'>Pagina {dish.page}</span>
-        </div>
-        <div className='flex flex-wrap gap-2'>
-          {dish.allergens.length > 0 ? (
-            dish.allergens.map((a) => (
-              <span key={a} className='rounded-full border border-[#dbcdb7] bg-white px-2.5 py-1 text-xs text-[#5e4a38]'>{a}</span>
-            ))
-          ) : (
-            <span className='rounded-full border border-[#d7e6c7] bg-[#f4faee] px-2.5 py-1 text-xs text-[#4c6b35]'>Nessun allergene principale</span>
-          )}
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function ViewerOverlay() {
-  const [selectedMenu, setSelectedMenu] = useAtom(selectedMenuAtom)
+function CategoryTabs() {
+  const [selectedMenu] = useAtom(selectedMenuAtom)
   const [selectedCategory, setSelectedCategory] = useAtom(selectedCategoryAtom)
-  const [, setSelectedDish] = useAtom(selectedDishAtom)
-  const [showMenuSelector, setShowMenuSelector] = useState(false)
 
   const activeMenu = useMemo(
     () => menus.find((menu) => menu.id === selectedMenu) ?? menus[0],
     [selectedMenu]
   )
 
-  const activeCategory = useMemo(
-    () => activeMenu.categories.find((category) => category.id === selectedCategory) ?? activeMenu.categories[0],
-    [activeMenu, selectedCategory]
-  )
-
-  const changeMenu = (menuId: string) => {
-    const menu = menus.find((m) => m.id === menuId) ?? menus[0]
-    setSelectedMenu(menu.id)
-    setSelectedCategory(menu.categories[0]?.id ?? '')
-    setShowMenuSelector(false)
-  }
-
-  const goToCategory = (categoryId: string) => {
-    const category = activeMenu.categories.find((c) => c.id === categoryId)
-    if (!category) return
-    setSelectedCategory(category.id)
-  }
-
   return (
-    <div className='pointer-events-none fixed inset-0 z-20 flex flex-col'>
-      <div className='pointer-events-auto px-3 pt-3'>
-        <div className='mx-auto w-full max-w-md rounded-[28px] border border-[#d9ccb7] bg-[#faf8f3]/92 p-3 shadow-[0_20px_60px_rgba(0,0,0,0.16)] backdrop-blur-md'>
-          <div className='mb-3 flex items-center justify-between gap-2'>
-            <button
-              onClick={() => setShowMenuSelector((v) => !v)}
-              className='rounded-full border border-[#dbcdb8] bg-white px-3 py-2 text-sm font-medium text-[#2a1d16]'
-            >
-              {showMenuSelector ? 'Chiudi menu' : `${activeMenu.emoji} ${activeMenu.label}`}
-            </button>
-
-            <button
-              onClick={() => setShowMenuSelector(false)}
-              className='rounded-full border border-[#dbcdb8] bg-white px-3 py-2 text-sm text-[#5f4b39]'
-            >
-              Indietro
-            </button>
-          </div>
-
-          {showMenuSelector && (
-            <div className='mb-3 grid grid-cols-1 gap-2'>
-              {menus.map((menu) => (
-                <button
-                  key={menu.id}
-                  onClick={() => changeMenu(menu.id)}
-                  className={
-                    menu.id === activeMenu.id
-                      ? 'rounded-2xl bg-[#2a1d16] px-4 py-3 text-left text-sm text-white'
-                      : 'rounded-2xl border border-[#dbcdb8] bg-white px-4 py-3 text-left text-sm text-[#2a1d16]'
-                  }
-                >
-                  {menu.emoji} {menu.label}
-                </button>
-              ))}
-            </div>
-          )}
-
-          <div className='mb-3 flex gap-2 overflow-x-auto pb-1'>
-            {activeMenu.categories.map((category) => (
-              <button
-                key={category.id}
-                onClick={() => goToCategory(category.id)}
-                className={
-                  category.id === activeCategory.id
-                    ? 'shrink-0 rounded-full bg-[#2a1d16] px-3 py-2 text-sm text-white'
-                    : 'shrink-0 rounded-full border border-[#dbcdb8] bg-white px-3 py-2 text-sm text-[#5e4a38]'
-                }
-              >
-                {category.emoji} {category.label}
-              </button>
-            ))}
-          </div>
-
-          <div className='flex gap-2 overflow-x-auto pb-1'>
-            {activeCategory.dishes.map((dish) => (
-              <button
-                key={dish.id}
-                onClick={() => setSelectedDish(dish)}
-                className='min-w-[150px] rounded-[20px] border border-[#dbcdb8] bg-white px-3 py-3 text-left shadow-sm'
-              >
-                <div className='mb-2 flex items-center justify-between gap-2'>
-                  <span className='line-clamp-2 text-sm font-semibold text-[#2a1d16]'>{dish.name}</span>
-                  <span className='rounded-full bg-[#f4eadb] px-2 py-1 text-xs font-semibold text-[#8b5e34]'>€ {dish.price.toFixed(2)}</span>
-                </div>
-                <p className='line-clamp-2 text-xs text-[#7a6551]'>{dish.description}</p>
-              </button>
-            ))}
-          </div>
-        </div>
+    <div className='fixed inset-x-0 top-0 z-30 px-3 pt-3'>
+      <div className='mx-auto flex w-full max-w-lg gap-2 overflow-x-auto rounded-full bg-[#faf8f3]/88 px-2 py-2 shadow-[0_10px_35px_rgba(0,0,0,0.12)] backdrop-blur-md'>
+        {activeMenu.categories.map((category) => (
+          <button
+            key={category.id}
+            onClick={() => setSelectedCategory(category.id)}
+            className={
+              category.id === selectedCategory
+                ? 'shrink-0 rounded-full bg-[#2a1d16] px-3 py-2 text-sm text-white'
+                : 'shrink-0 rounded-full bg-white px-3 py-2 text-sm text-[#5e4a38]'
+            }
+          >
+            {category.emoji} {category.label}
+          </button>
+        ))}
       </div>
-      <DishModal />
     </div>
   )
 }
 
 export default function MenuBookClient() {
   return (
-    <div className='min-h-[100dvh] w-full bg-[#efe4d4] pb-10 pt-24'>
-      <ViewerOverlay />
+    <div className='min-h-[100dvh] w-full bg-[#efe4d4] pt-20 pb-6'>
+      <CategoryTabs />
       <div className='px-3'>
         <PdfFlipbookViewer />
       </div>
