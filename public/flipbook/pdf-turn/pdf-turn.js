@@ -101,7 +101,10 @@ var bookFlip = {
 		}
 		
 		$('#viewer').turn({
+			duration: 1800,
 			elevation: 50,
+			gradients: true,
+			acceleration: true,
 			width:  this._size(PDFViewerApplication.page,'width') * this._spreadMult(),
 			height: this._size(PDFViewerApplication.page,'height'),
 			page: PDFViewerApplication.page,

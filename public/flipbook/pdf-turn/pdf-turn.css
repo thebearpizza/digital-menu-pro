@@ -1,19 +1,22 @@
 .bookViewer{
-    margin: 5px auto 0 auto;
+	margin: 5px auto 0 auto;
 }
 
 .bookViewer .page{
-    background: #1a1a1a;
-    box-shadow: 0 0 0 1px rgba(255,255,255,0.12), 2px 2px 12px rgba(0,0,0,0.6);
-    border-radius: 1px;
+	background: #222222;
+	box-shadow:
+		0 0 0 1px rgba(255,255,255,0.18),
+		4px 4px 20px rgba(0,0,0,0.8),
+		-4px 4px 20px rgba(0,0,0,0.8);
+	border-radius: 1px;
 }
 
 .secondaryToolbarButton.bookFlip::before {
-    content: url(secondaryToolbarButton-bookFlip.png);
+	content: url(secondaryToolbarButton-bookFlip.png);
 }
 
 @media screen and (-webkit-min-device-pixel-ratio: 1.1), screen and (min-resolution: 1.1dppx) {
-    .secondaryToolbarButton.bookFlip::before {
-        content: url(secondaryToolbarButton-bookFlip@2x.png);
-    }
+	.secondaryToolbarButton.bookFlip::before {
+		content: url(secondaryToolbarButton-bookFlip@2x.png);
+	}
 }
