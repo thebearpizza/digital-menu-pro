@@ -1,5 +1,9 @@
-import MenuViewerEntry from './viewer'
+import dynamic from 'next/dynamic'
 
-export default function MenuPage() {
-  return <MenuViewerEntry />
+const MenuBookClient = dynamic(() => import('./viewer/MenuBookClient'), {
+  ssr: false,
+})
+
+export default function MenuViewerPage() {
+  return <MenuBookClient />
 }
