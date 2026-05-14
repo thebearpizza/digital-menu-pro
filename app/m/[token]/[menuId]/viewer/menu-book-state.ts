@@ -1,15 +1,10 @@
 import { atom } from 'jotai'
-
-export type MenuPageTexture = {
-  front: string
-  back: string
-}
+import type { ViewerPage } from './menu-to-pages'
 
 export const pageAtom = atom(0)
+export const viewerPagesAtom = atom<ViewerPage[]>([])
 
-export const pages: MenuPageTexture[] = [
-  { front: 'book-cover', back: 'menu-01' },
-  { front: 'menu-02', back: 'menu-03' },
-  { front: 'menu-04', back: 'menu-05' },
-  { front: 'menu-06', back: 'book-back' },
+export const pages: ViewerPage[] = [
+  { id: 'cover', label: 'Cover', kind: 'cover', title: 'Cover' },
+  { id: 'back', label: 'Back', kind: 'back', title: 'Back' },
 ]
