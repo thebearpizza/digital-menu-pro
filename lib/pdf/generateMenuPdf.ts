@@ -1,5 +1,19 @@
 import { PDFDocument, PDFFont, PDFName, PDFPage, StandardFonts, rgb } from 'pdf-lib'
 import type { PdfMenu, PdfPayload } from './types'
+import { allergenNumbers } from '@/lib/allergens'
+
+export type DishPosition = {
+  id: string
+  pageNumber: number
+  yTopPercent: number
+  yBottomPercent: number
+}
+
+export type GeneratedMenuPdf = {
+  bytes: Uint8Array
+  dishPositions: DishPosition[]
+  totalPages: number
+}
 
 const PAGE_WIDTH = 595
 const PAGE_HEIGHT = 842
@@ -41,14 +55,17 @@ function wrapText(text: string, maxChars: number): string[] {
 
 function drawPageFooter(page: PDFPage, pageNum: number, font: PDFFont) {
   const y = 25
-  page.drawText('«', { x: 30, y, size: 18, font, color: COLOR_ARROW })
-  page.drawText('»', { x: PAGE_WIDTH - 40, y, size: 18, font, color: COLOR_ARROW })
+  const prevLabel = 'Prec.'
+  const nextLabel = 'Succ.'
+  const nextWidth = font.widthOfTextAtSize(nextLabel, 18)
+  page.drawText(prevLabel, { x: 30, y, size: 18, font, color: COLOR_ARROW })
+  page.drawText(nextLabel, { x: PAGE_WIDTH - 30 - nextWidth, y, size: 18, font, color: COLOR_ARROW })
   const label = sanitize(String(pageNum))
-  const labelWidth = font.widthOfTextAtSize(label, 11)
+  const labelWidth = font.widthOfTextAtSize(label, 18)
   page.drawText(label, {
     x: (PAGE_WIDTH - labelWidth) / 2,
     y,
-    size: 11,
+    size: 18,
     font,
     color: COLOR_ARROW,
   })
@@ -67,7 +84,7 @@ function groupByCategory(dishes: PdfMenu['dishes']) {
   }))
 }
 
-export async function generateMenuPdf(payload: PdfPayload): Promise<Uint8Array> {
+export async function generateMenuPdf(payload: PdfPayload): Promise<GeneratedMenuPdf> {
   const pdf = await PDFDocument.create()
   const fontRegular = await pdf.embedFont(StandardFonts.Helvetica)
   const fontBold = await pdf.embedFont(StandardFonts.HelveticaBold)
@@ -75,43 +92,25 @@ export async function generateMenuPdf(payload: PdfPayload): Promise<Uint8Array> 
   // Tracciamo le pagine "copertina menu" per costruire link cliccabili dalla pagina di scelta.
   const menuCoverPages: PDFPage[] = []
 
-  // ---- Pagina 1: copertina ristorante ----
-  const cover = pdf.addPage([PAGE_WIDTH, PAGE_HEIGHT])
-  cover.drawText(sanitize(payload.restaurant.name), {
-    x: MARGIN_X,
-    y: PAGE_HEIGHT - 140,
-    size: 42,
-    font: fontBold,
-    color: COLOR_INK,
-  })
-  cover.drawText('Menu digitale', {
-    x: MARGIN_X,
-    y: PAGE_HEIGHT - 180,
-    size: 16,
-    font: fontRegular,
-    color: COLOR_SOFT,
-  })
+  // Posizioni dei piatti: pagina e Y top/bottom in percentuale (0 = top, 1 = bottom).
+  // Usate dal client per posizionare gli overlay HTML cliccabili sopra il PDF.
+  const dishPositions: DishPosition[] = []
 
-  // ---- Pagina 2: scelta menu (link annotations cliccabili) ----
-  // La creiamo SUBITO ma popoleremo gli annot dopo, quando avremo i ref delle copertine.
+  // ---- Pagina 1: copertina ristorante + scelta menu (accorpate) ----
   const choicePage = pdf.addPage([PAGE_WIDTH, PAGE_HEIGHT])
-  let choiceY = PAGE_HEIGHT - 100
-  choicePage.drawText('Scegli il menu', {
-    x: MARGIN_X,
+  let choiceY = PAGE_HEIGHT - 80
+
+  // Nome ristorante al centro in alto
+  const restaurantName = sanitize(payload.restaurant.name)
+  const nameWidth = fontBold.widthOfTextAtSize(restaurantName, 32)
+  choicePage.drawText(restaurantName, {
+    x: (PAGE_WIDTH - nameWidth) / 2,
     y: choiceY,
-    size: 28,
+    size: 32,
     font: fontBold,
     color: COLOR_INK,
   })
-  choiceY -= 18
-  choicePage.drawText('Tocca un menu per aprirlo', {
-    x: MARGIN_X,
-    y: choiceY,
-    size: 11,
-    font: fontRegular,
-    color: COLOR_SOFT,
-  })
-  choiceY -= 50
+  choiceY -= 80
 
   type ChoiceRect = { x1: number; y1: number; x2: number; y2: number }
   const choiceRects: ChoiceRect[] = []
@@ -142,7 +141,9 @@ export async function generateMenuPdf(payload: PdfPayload): Promise<Uint8Array> 
 
     if (menu.description) {
       const desc = sanitize(menu.description)
-      const truncated = desc.length > 90 ? desc.slice(0, 90) + '…' : desc
+      const lines = wrapText(desc, 50)
+      const text = lines.length > 0 ? lines[0] : ''
+      const truncated = text.length > 50 ? text.slice(0, 50) + '…' : text
       choicePage.drawText(truncated, {
         x: cardX + 18,
         y: cardY + 14,
@@ -165,7 +166,7 @@ export async function generateMenuPdf(payload: PdfPayload): Promise<Uint8Array> 
   }
 
   // ---- Pagine per ogni menu ----
-  let pageCounter = 2 // copertina + scelta = 2 finora
+  let pageCounter = 1 // solo la pagina di benvenuto/scelta
   for (const menu of payload.menus) {
     // Copertina menu
     const menuCover = pdf.addPage([PAGE_WIDTH, PAGE_HEIGHT])
@@ -236,13 +237,30 @@ export async function generateMenuPdf(payload: PdfPayload): Promise<Uint8Array> 
           y -= 28
         }
 
-        page.drawText(sanitize(dish.name), {
+        // Y top del blocco piatto (per overlay hit-box). +14 = ascender approssimato del nome.
+        const dishYTop = y + 14
+
+        const dishName = sanitize(dish.name)
+        page.drawText(dishName, {
           x: MARGIN_X,
           y,
           size: 14,
           font: fontBold,
           color: COLOR_INK,
         })
+
+        // Numeri allergeni accanto al nome del piatto (ordine UE 1-14).
+        const allergenNums = allergenNumbers(dish.allergens)
+        if (allergenNums.length > 0) {
+          const nameWidth = fontBold.widthOfTextAtSize(dishName, 14)
+          page.drawText(`(${allergenNums.join(', ')})`, {
+            x: MARGIN_X + nameWidth + 6,
+            y,
+            size: 10,
+            font: fontRegular,
+            color: COLOR_SOFT,
+          })
+        }
 
         if (dish.price != null) {
           const priceLabel = `EUR ${dish.price.toFixed(2)}`
@@ -271,6 +289,16 @@ export async function generateMenuPdf(payload: PdfPayload): Promise<Uint8Array> 
             y -= 13
           }
         }
+
+        // Y bottom del blocco piatto (prima del gap inferiore).
+        const dishYBottom = y + 6
+
+        dishPositions.push({
+          id: dish.id,
+          pageNumber: pageCounter,
+          yTopPercent: (PAGE_HEIGHT - dishYTop) / PAGE_HEIGHT,
+          yBottomPercent: (PAGE_HEIGHT - dishYBottom) / PAGE_HEIGHT,
+        })
 
         y -= 12
       }
@@ -302,5 +330,6 @@ export async function generateMenuPdf(payload: PdfPayload): Promise<Uint8Array> 
   }
   choicePage.node.set(PDFName.of('Annots'), annotsArray)
 
-  return pdf.save()
+  const bytes = await pdf.save()
+  return { bytes, dishPositions, totalPages: pageCounter }
 }
