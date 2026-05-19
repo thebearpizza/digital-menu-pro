@@ -5,6 +5,8 @@ export type PdfDish = {
   price: number | null
   category: string | null
   sort_order: number | null
+  image_url?: string | null
+  allergens?: string[] | null
 }
 
 export type PdfMenu = {
