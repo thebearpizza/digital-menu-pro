@@ -342,7 +342,7 @@ export async function generateMenuPdf(payload: PdfPayload): Promise<Uint8Array> 
   for (let i = 0; i < menuCoverPages.length; i++) {
     const menuCoverPage = menuCoverPages[i]
     const categoryLinks = menuCoverCategoryLinks[i] || []
-    const categoryAnnots = pdf.context.obj([])
+    const categoryAnnotRefs: any[] = []
 
     for (const link of categoryLinks) {
       const targetPage = categoryPages.get(link.category)
@@ -357,10 +357,11 @@ export async function generateMenuPdf(payload: PdfPayload): Promise<Uint8Array> 
           Dest: [targetPage.ref, 'Fit'],
         })
       )
-      categoryAnnots.push(linkRef)
+      categoryAnnotRefs.push(linkRef)
     }
 
-    if (categoryAnnots.length > 0) {
+    if (categoryAnnotRefs.length > 0) {
+      const categoryAnnots = pdf.context.obj(categoryAnnotRefs)
       menuCoverPage.node.set(PDFName.of('Annots'), categoryAnnots)
     }
   }
