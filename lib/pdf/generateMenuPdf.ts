@@ -328,8 +328,15 @@ export async function generateMenuPdf(payload: PdfPayload): Promise<GeneratedMen
         y -= 18
 
         if (dish.description) {
-          // 10px di margine destro extra per non avvicinarsi troppo alla colonna prezzo
-          const descMaxWidth = PAGE_WIDTH - MARGIN_X * 2 - 8 - 10
+          // La descrizione deve terminare 10px prima della colonna del prezzo
+          // (se c'è il prezzo, altrimenti usa il margine destro standard).
+          let descMaxWidth = PAGE_WIDTH - MARGIN_X * 2 - 8 - 10
+          if (dish.price != null) {
+            const priceLabel = `EUR ${dish.price.toFixed(2)}`
+            const priceWidth = fontBold.widthOfTextAtSize(priceLabel, 13)
+            const priceLeftX = PAGE_WIDTH - MARGIN_X - priceWidth
+            descMaxWidth = priceLeftX - 10 - (MARGIN_X + 8)
+          }
           const allLines = wrapTextByWidth(sanitize(dish.description), fontRegular, 10, descMaxWidth)
           const MAX_LINES = 2
           const lines = allLines.slice(0, MAX_LINES)
