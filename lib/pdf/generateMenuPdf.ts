@@ -77,25 +77,19 @@ export async function generateMenuPdf(payload: PdfPayload): Promise<Uint8Array> 
 
   // ---- Pagina 1: copertina ristorante + scelta menu (accorpate) ----
   const choicePage = pdf.addPage([PAGE_WIDTH, PAGE_HEIGHT])
-  let choiceY = PAGE_HEIGHT - 60
+  let choiceY = PAGE_HEIGHT - 80
 
-  choicePage.drawText(sanitize(payload.restaurant.name), {
-    x: MARGIN_X,
+  // Nome ristorante al centro in alto
+  const restaurantName = sanitize(payload.restaurant.name)
+  const nameWidth = fontBold.widthOfTextAtSize(restaurantName, 32)
+  choicePage.drawText(restaurantName, {
+    x: (PAGE_WIDTH - nameWidth) / 2,
     y: choiceY,
-    size: 36,
+    size: 32,
     font: fontBold,
     color: COLOR_INK,
   })
-  choiceY -= 50
-
-  choicePage.drawText('Scegli il menu', {
-    x: MARGIN_X,
-    y: choiceY,
-    size: 20,
-    font: fontBold,
-    color: COLOR_INK,
-  })
-  choiceY -= 30
+  choiceY -= 80
 
   type ChoiceRect = { x1: number; y1: number; x2: number; y2: number }
   const choiceRects: ChoiceRect[] = []
