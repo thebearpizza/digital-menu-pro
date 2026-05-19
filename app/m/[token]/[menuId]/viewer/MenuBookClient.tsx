@@ -1,7 +1,10 @@
 'use client'
 
 import { useMemo, useState } from 'react'
+import dynamic from 'next/dynamic'
 import PdfFlipbookViewer from './PdfFlipbookViewer'
+
+const Canvas3D = dynamic(() => import('./Canvas3D'), { ssr: false })
 
 type Dish = {
   id: string
@@ -72,7 +75,11 @@ export default function MenuBookClient({ menuId, menuData }: Props) {
     <div className='min-h-[100dvh] w-full bg-[#efe4d4] pt-20 pb-6'>
       <CategoryTabs categories={categories} />
       <div className='px-3'>
-        <PdfFlipbookViewer pdfUrl={pdfUrl} />
+        <div className='mx-auto w-full max-w-5xl overflow-hidden rounded-[28px] border border-[#dbcdb8] bg-white shadow-[0_24px_80px_rgba(74,53,31,0.14)]'>
+          <div style={{ height: '78vh' }}>
+            <Canvas3D />
+          </div>
+        </div>
       </div>
     </div>
   )
