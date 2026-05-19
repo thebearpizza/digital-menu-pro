@@ -63,7 +63,8 @@ export async function GET(request: Request) {
     })
 
     if (!dishes || dishes.length === 0) {
-      return new Response(pdfDoc.save(), {
+      const pdfBytes = await pdfDoc.save()
+      return new Response(pdfBytes, {
         headers: {
           'Content-Type': 'application/pdf',
           'Content-Disposition': `inline; filename="${menu.name}.pdf"`,
