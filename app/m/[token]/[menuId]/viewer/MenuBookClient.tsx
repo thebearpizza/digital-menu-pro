@@ -2,7 +2,6 @@
 
 import { useMemo, useState } from 'react'
 import dynamic from 'next/dynamic'
-import PdfFlipbookViewer from './PdfFlipbookViewer'
 
 const Canvas3D = dynamic(() => import('./Canvas3D'), {
   ssr: false,
@@ -77,9 +76,8 @@ function CategoryTabs({ categories }: { categories: Array<{ id: string; label: s
   )
 }
 
-export default function MenuBookClient({ menuId, menuData }: Props) {
+export default function MenuBookClient({ menuData }: Props) {
   const categories = useMemo(() => groupCategories(menuData.dishes), [menuData.dishes])
-  const pdfUrl = `/api/menus/${menuId}/pdf`
 
   return (
     <div className='min-h-[100dvh] w-full bg-[#efe4d4] pt-20 pb-6'>
