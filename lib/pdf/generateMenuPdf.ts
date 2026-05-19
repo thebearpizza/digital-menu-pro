@@ -249,19 +249,6 @@ export async function generateMenuPdf(payload: PdfPayload): Promise<GeneratedMen
           color: COLOR_INK,
         })
 
-        // Numeri allergeni accanto al nome del piatto (ordine UE 1-14).
-        const allergenNums = allergenNumbers(dish.allergens)
-        if (allergenNums.length > 0) {
-          const nameWidth = fontBold.widthOfTextAtSize(dishName, 14)
-          page.drawText(`(${allergenNums.join(', ')})`, {
-            x: MARGIN_X + nameWidth + 6,
-            y,
-            size: 10,
-            font: fontRegular,
-            color: COLOR_SOFT,
-          })
-        }
-
         if (dish.price != null) {
           const priceLabel = `EUR ${dish.price.toFixed(2)}`
           const priceWidth = fontBold.widthOfTextAtSize(priceLabel, 13)
@@ -288,6 +275,19 @@ export async function generateMenuPdf(payload: PdfPayload): Promise<GeneratedMen
             })
             y -= 13
           }
+        }
+
+        // Numeri allergeni sotto la descrizione (ordine UE 1-14).
+        const allergenNums = allergenNumbers(dish.allergens)
+        if (allergenNums.length > 0) {
+          page.drawText(allergenNums.join(', '), {
+            x: MARGIN_X + 8,
+            y,
+            size: 9,
+            font: fontRegular,
+            color: COLOR_SOFT,
+          })
+          y -= 11
         }
 
         // Y bottom del blocco piatto (prima del gap inferiore).
