@@ -10,7 +10,16 @@ export type MenuPdfData = {
   totalPages: number
 }
 
+export function hasStorageCredentials(): boolean {
+  return Boolean(
+    process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY
+  )
+}
+
 function adminClient() {
+  if (!hasStorageCredentials()) {
+    throw new Error('NO_SERVICE_ROLE_KEY')
+  }
   return createSupabaseJsClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,

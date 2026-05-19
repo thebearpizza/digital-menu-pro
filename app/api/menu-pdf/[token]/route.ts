@@ -1,6 +1,7 @@
 import { createClient as createSupabaseJsClient } from '@supabase/supabase-js'
-import { ensureMenuPdfCached } from '@/lib/pdf/getMenuPdfData'
+import { ensureMenuPdfCached, hasStorageCredentials } from '@/lib/pdf/getMenuPdfData'
 import { buildMenuPdfPayload } from '@/lib/pdf/buildPayload'
+import { generateMenuPdf } from '@/lib/pdf/generateMenuPdf'
 
 export const dynamic = 'force-dynamic'
 
@@ -27,8 +28,19 @@ export async function GET(
     }
 
     const { payload, restaurantId, cacheKey } = result
-    const { pdfUrl } = await ensureMenuPdfCached(payload, restaurantId, cacheKey)
 
+    // Senza service role: serviamo il PDF inline (no cache). Utile in preview deploys.
+    if (!hasStorageCredentials()) {
+      const { bytes } = await generateMenuPdf(payload)
+      return new Response(bytes, {
+        headers: {
+          'Content-Type': 'application/pdf',
+          'Cache-Control': 'public, max-age=60',
+        },
+      })
+    }
+
+    const { pdfUrl } = await ensureMenuPdfCached(payload, restaurantId, cacheKey)
     return Response.redirect(pdfUrl, 302)
   } catch (error) {
     console.error('[menu-pdf] error:', error)
