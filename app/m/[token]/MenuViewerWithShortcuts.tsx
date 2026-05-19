@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, useState, useEffect } from 'react'
+import { useRef, useState, useEffect, useCallback } from 'react'
 
 type Menu = { id: string; name: string }
 
@@ -24,19 +24,19 @@ export function MenuViewerWithShortcuts({
   const iframeRef = useRef<HTMLIFrameElement>(null)
   const [activeMenu, setActiveMenu] = useState(menus[0]?.id || '')
   const [allCategories, setAllCategories] = useState<string[]>([])
-  const [iframeLoaded, setIframeLoaded] = useState(false)
+  const [isLoading, setIsLoading] = useState(true)
   const [currentPage, setCurrentPage] = useState(1)
   const [totalPages] = useState(initialTotalPages)
+  const lastPageRef = useRef(1)
 
   // Calcola quale menu è attivo basato sulla pagina corrente
-  useEffect(() => {
+  const updateActiveMenu = useCallback(() => {
     let pageNum = currentPage
-    let menuIdx = 0
-    let accumulatedPages = 1 // Pagina 1 è la scelta menu
+    let accumulatedPages = 1
 
     for (const menu of menus) {
       const categories = categoriesByMenu[menu.id] || []
-      const menuPages = 1 + categories.length // Copertina + categorie
+      const menuPages = 1 + categories.length
 
       if (pageNum <= accumulatedPages + menuPages) {
         setActiveMenu(menu.id)
@@ -44,9 +44,12 @@ export function MenuViewerWithShortcuts({
       }
 
       accumulatedPages += menuPages
-      menuIdx++
     }
   }, [currentPage, menus, categoriesByMenu])
+
+  useEffect(() => {
+    updateActiveMenu()
+  }, [updateActiveMenu])
 
   useEffect(() => {
     if (activeMenu && categoriesByMenu[activeMenu]) {
@@ -80,7 +83,11 @@ export function MenuViewerWithShortcuts({
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
       if (event.data && event.data.type === 'pagechange') {
-        setCurrentPage(event.data.pageNumber || 1)
+        const newPage = event.data.pageNumber || 1
+        if (newPage !== lastPageRef.current) {
+          lastPageRef.current = newPage
+          setCurrentPage(newPage)
+        }
       }
     }
 
@@ -90,8 +97,35 @@ export function MenuViewerWithShortcuts({
 
   return (
     <div style={{ position: 'fixed', inset: 0, display: 'flex', flexDirection: 'column', background: '#525659' }}>
+      {/* Loading spinner */}
+      {isLoading && (
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: '#525659',
+            zIndex: 1000,
+          }}
+        >
+          <div
+            style={{
+              width: '40px',
+              height: '40px',
+              border: '3px solid rgba(255, 255, 255, 0.3)',
+              borderTop: '3px solid white',
+              borderRadius: '50%',
+              animation: 'spin 1s linear infinite',
+            }}
+          />
+          <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+        </div>
+      )}
+
       {/* Barra sticky con shortcut categorie */}
-      {allCategories.length > 0 && (
+      {!isLoading && allCategories.length > 0 && (
         <div
           style={{
             position: 'sticky',
@@ -140,17 +174,15 @@ export function MenuViewerWithShortcuts({
       )}
 
       {/* PDF viewer */}
-      <div style={{ flex: 1, position: 'relative', display: 'flex', justifyContent: 'center', paddingLeft: '2px', paddingRight: '2px' }}>
-        <div style={{ position: 'relative', width: '100%', maxWidth: '100%' }}>
+      <div style={{ flex: 1, position: 'relative', display: 'flex', justifyContent: 'center', overflow: 'hidden' }}>
+        <div style={{ position: 'relative', width: '100%', height: '100%', maxWidth: 'calc(100% - 4px)', margin: '0 2px' }}>
           <iframe
             ref={iframeRef}
-            src={viewerUrl + '#zoom=page-width'}
+            src={viewerUrl + '#zoom=page-width&pagemode=none'}
             title={`Menu ${restaurantName}`}
-            style={{ width: '100%', height: '100%', border: 0, display: 'block' }}
+            style={{ width: '100%', height: '100%', border: 0, display: 'block', opacity: isLoading ? 0 : 1, transition: 'opacity 0.3s ease' }}
             allow="fullscreen"
             onLoad={() => {
-              setIframeLoaded(true)
-              // Nasconde la toolbar tramite CSS injection e abilita message passing
               try {
                 const iframeDoc = iframeRef.current?.contentDocument
                 if (iframeDoc) {
@@ -159,21 +191,21 @@ export function MenuViewerWithShortcuts({
                     #toolbarContainer { display: none !important; }
                     #toolbar { display: none !important; }
                     .toolbarButtonOpenFile { display: none !important; }
+                    #toolbarSidebar { display: none !important; }
                   `
                   iframeDoc.head.appendChild(style)
 
-                  // Inietta codice per monitorare i cambi di pagina
                   const script = iframeDoc.createElement('script')
                   script.textContent = `
                     (function() {
                       let lastPage = PDFViewerApplication?.page || 1;
-                      setInterval(() => {
+                      const interval = setInterval(() => {
                         const currentPage = PDFViewerApplication?.page || 1;
                         if (currentPage !== lastPage) {
                           lastPage = currentPage;
                           window.parent.postMessage({ type: 'pagechange', pageNumber: currentPage }, '*');
                         }
-                      }, 500);
+                      }, 200);
                     })();
                   `
                   iframeDoc.body.appendChild(script)
@@ -181,45 +213,49 @@ export function MenuViewerWithShortcuts({
               } catch (e) {
                 // Ignore CORS errors
               }
+
+              setIsLoading(false)
             }}
           />
         </div>
       </div>
 
       {/* Barra scorrevole pagine */}
-      <div
-        style={{
-          background: 'rgba(45, 45, 45, 0.95)',
-          borderTop: '1px solid rgba(119, 119, 119, 0.3)',
-          padding: '8px 16px',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '10px',
-        }}
-      >
-        <span style={{ color: '#aaa', fontSize: '12px', minWidth: '40px' }}>
-          {currentPage}
-        </span>
-        <input
-          type="range"
-          min="1"
-          max={totalPages}
-          value={currentPage}
-          onChange={handlePageChange}
+      {!isLoading && (
+        <div
           style={{
-            flex: 1,
-            height: '4px',
-            background: '#555',
-            borderRadius: '2px',
-            outline: 'none',
-            WebkitAppearance: 'slider-horizontal',
-            cursor: 'pointer',
+            background: 'rgba(45, 45, 45, 0.95)',
+            borderTop: '1px solid rgba(119, 119, 119, 0.3)',
+            padding: '8px 16px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '10px',
           }}
-        />
-        <span style={{ color: '#aaa', fontSize: '12px', minWidth: '40px', textAlign: 'right' }}>
-          {totalPages}
-        </span>
-      </div>
+        >
+          <span style={{ color: '#aaa', fontSize: '12px', minWidth: '40px' }}>
+            {currentPage}
+          </span>
+          <input
+            type="range"
+            min="1"
+            max={totalPages}
+            value={currentPage}
+            onChange={handlePageChange}
+            style={{
+              flex: 1,
+              height: '4px',
+              background: '#555',
+              borderRadius: '2px',
+              outline: 'none',
+              WebkitAppearance: 'slider-horizontal',
+              cursor: 'pointer',
+            }}
+          />
+          <span style={{ color: '#aaa', fontSize: '12px', minWidth: '40px', textAlign: 'right' }}>
+            {totalPages}
+          </span>
+        </div>
+      )}
     </div>
   )
 }
