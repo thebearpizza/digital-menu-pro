@@ -54,20 +54,56 @@ function wrapText(text: string, maxChars: number): string[] {
 }
 
 // Wrap basato sulla larghezza in pixel — più preciso del char count.
+// Spezza anche le "parole" troppo lunghe (es. testi senza spazi) carattere per carattere.
 function wrapTextByWidth(text: string, font: PDFFont, fontSize: number, maxWidth: number): string[] {
   const words = text.split(/\s+/)
   const lines: string[] = []
   let current = ''
+
+  function flushCurrent() {
+    if (current) {
+      lines.push(current)
+      current = ''
+    }
+  }
+
+  function splitLongWord(word: string): string[] {
+    const chunks: string[] = []
+    let remaining = word
+    while (font.widthOfTextAtSize(remaining, fontSize) > maxWidth) {
+      let n = 1
+      while (
+        n < remaining.length &&
+        font.widthOfTextAtSize(remaining.slice(0, n + 1), fontSize) <= maxWidth
+      ) {
+        n++
+      }
+      chunks.push(remaining.slice(0, n))
+      remaining = remaining.slice(n)
+    }
+    if (remaining) chunks.push(remaining)
+    return chunks
+  }
+
   for (const word of words) {
+    // Parola gigante: spezzala in chunk di larghezza maxWidth
+    if (font.widthOfTextAtSize(word, fontSize) > maxWidth) {
+      flushCurrent()
+      const chunks = splitLongWord(word)
+      // tutti i chunk tranne l'ultimo riempiono una riga; l'ultimo diventa "current"
+      for (let i = 0; i < chunks.length - 1; i++) lines.push(chunks[i])
+      current = chunks[chunks.length - 1]
+      continue
+    }
     const candidate = current ? `${current} ${word}` : word
     if (font.widthOfTextAtSize(candidate, fontSize) <= maxWidth) {
       current = candidate
     } else {
-      if (current) lines.push(current)
+      flushCurrent()
       current = word
     }
   }
-  if (current) lines.push(current)
+  flushCurrent()
   return lines
 }
 
@@ -292,7 +328,8 @@ export async function generateMenuPdf(payload: PdfPayload): Promise<GeneratedMen
         y -= 18
 
         if (dish.description) {
-          const descMaxWidth = PAGE_WIDTH - MARGIN_X * 2 - 8 // indent del paragrafo
+          // 10px di margine destro extra per non avvicinarsi troppo alla colonna prezzo
+          const descMaxWidth = PAGE_WIDTH - MARGIN_X * 2 - 8 - 10
           const allLines = wrapTextByWidth(sanitize(dish.description), fontRegular, 10, descMaxWidth)
           const MAX_LINES = 2
           const lines = allLines.slice(0, MAX_LINES)
