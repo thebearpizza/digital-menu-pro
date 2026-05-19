@@ -71,12 +71,15 @@ export default async function PublicMenuPage({
   // Pagina 1: scelta menu
   // Poi per ogni menu: copertina + categorie
   let pageNumber = 2 // Pagina 2 è la prima copertina menu
+  let totalPages = 1 // Pagina 1 è la scelta menu
   for (const menu of menus || []) {
     pageNumber++ // Copertina menu
+    totalPages++ // Copertina menu
     const categories = categoriesByMenu[menu.id] || []
     for (const category of categories) {
       pageNumberByCategory[`${menu.id}:${category}`] = pageNumber
-      pageNumber++ // Una pagina per categoria (semplificato, in realtà potrebbe essere più di una)
+      pageNumber++ // Una pagina per categoria (semplificato)
+      totalPages++ // Una pagina per categoria
     }
   }
 
@@ -90,6 +93,7 @@ export default async function PublicMenuPage({
       menus={menus || []}
       categoriesByMenu={categoriesByMenu}
       pageNumberByCategory={pageNumberByCategory}
+      totalPages={totalPages}
     />
   )
 }
