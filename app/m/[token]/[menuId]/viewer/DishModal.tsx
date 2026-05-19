@@ -1,7 +1,7 @@
 'use client'
 
 import { useAtom } from 'jotai'
-import { selectedDishAtom } from './menu-book-state'
+import { selectedDishAtom, type DishDetail } from './menu-book-state'
 
 const allergenEmoji: Record<string, string> = {
   glutine: '\U0001f33e', lattosio: '\U0001f95b', noci: '\U0001f95c', uova: '\U0001f95a',

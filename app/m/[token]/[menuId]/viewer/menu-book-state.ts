@@ -123,7 +123,18 @@ function toMenuPayload(menu: Menu): MenuPayload {
 
 export const selectedMenuAtom = atom<string>('pranzo')
 export const selectedCategoryAtom = atom<string>('antipasti')
-export const selectedDishAtom = atom<Dish | null>(null)
+
+export type DishDetail = {
+  id: string
+  name: string
+  description: string
+  price: number
+  allergens: string[]
+  image?: string
+  tags?: string[]
+}
+
+export const selectedDishAtom = atom<DishDetail | null>(null)
 
 export const externalMenuPayloadAtom = atom<MenuPayload | null>(null)
 
