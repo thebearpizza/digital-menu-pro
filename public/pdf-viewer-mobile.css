@@ -76,40 +76,8 @@ html {
   scrollbar-width: none;
 }
 
-/* Navigation arrows */
+/* Nascondi frecce overlay (integrate nel PDF) */
 .nav-arrow {
-  position: fixed;
-  bottom: 20px;
-  font-size: 30px;
-  color: #333;
-  background: rgba(255, 255, 255, 0.9);
-  border: 2px solid #333;
-  border-radius: 8px;
-  padding: 10px 15px;
-  cursor: pointer;
-  z-index: 1000;
-  user-select: none;
-}
-
-.nav-arrow:hover {
-  background: rgba(255, 255, 255, 1);
-  transform: scale(1.1);
-}
-
-.nav-arrow.prev {
-  left: 20px;
-}
-
-.nav-arrow.next {
-  right: 20px;
-}
-
-.nav-arrow.disabled {
-  opacity: 0.3;
-  cursor: not-allowed;
-}
-
-.nav-arrow.disabled:hover {
-  transform: none;
+  display: none !important;
 }
 

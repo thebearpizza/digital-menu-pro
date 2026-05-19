@@ -1,4 +1,4 @@
-import { PDFDocument, rgb, degrees } from 'pdf-lib'
+import { PDFDocument, rgb, PDFPage } from 'pdf-lib'
 import { createClient } from '@/lib/supabase/server'
 
 export async function GET(request: Request) {
@@ -73,9 +73,11 @@ export async function GET(request: Request) {
       categories.get(category)!.push(dish)
     }
 
+    let pageCount = 1
     // Pagine per categoria
     for (const [category, categoryDishes] of Array.from(categories)) {
       page = pdfDoc.addPage([595, 842])
+      pageCount++
       let yPosition = height - 50
 
       page.drawText(category, {
@@ -88,15 +90,20 @@ export async function GET(request: Request) {
       yPosition -= 50
 
       for (const dish of categoryDishes) {
-        if (yPosition < 100) {
+        // Controlla se c'è spazio per il piatto
+        if (yPosition < 80) {
+          addNavigationArrows(page, pageCount, width, height)
           page = pdfDoc.addPage([595, 842])
+          pageCount++
           yPosition = height - 50
         }
+
+        const nameY = yPosition
 
         // Nome e prezzo
         page.drawText(dish.name, {
           x: 50,
-          y: yPosition,
+          y: nameY,
           size: 16,
           color: rgb(0.16, 0.11, 0.09),
         })
@@ -104,13 +111,13 @@ export async function GET(request: Request) {
         if (dish.price) {
           page.drawText(`€ ${dish.price.toFixed(2)}`, {
             x: width - 100,
-            y: yPosition,
+            y: nameY,
             size: 14,
             color: rgb(0.55, 0.27, 0.07),
           })
         }
 
-        yPosition -= 25
+        yPosition -= 28
 
         // Descrizione (truncated preview)
         if (dish.description) {
@@ -129,12 +136,16 @@ export async function GET(request: Request) {
           })
         }
 
-        yPosition -= 10
+        yPosition -= 20
       }
+
+      // Aggiungi frecce al fondo della pagina
+      addNavigationArrows(page, pageCount, width, height)
     }
 
     // Retro copertina
     page = pdfDoc.addPage([595, 842])
+    pageCount++
     page.drawText('Grazie!', {
       x: 50,
       y: height - 100,
@@ -155,20 +166,32 @@ export async function GET(request: Request) {
   }
 }
 
-function wrapText(text: string, maxLength: number): string[] {
-  const words = text.split(' ')
-  const lines: string[] = []
-  let currentLine = ''
+function addNavigationArrows(page: PDFPage, pageNum: number, width: number, height: number) {
+  // Frecce di navigazione integrate nel PDF
+  const arrowSize = 12
+  const arrowY = 30
 
-  for (const word of words) {
-    if ((currentLine + word).length > maxLength) {
-      if (currentLine) lines.push(currentLine.trim())
-      currentLine = word
-    } else {
-      currentLine += (currentLine ? ' ' : '') + word
-    }
-  }
+  // Freccia sinistra
+  page.drawText('◀', {
+    x: 40,
+    y: arrowY,
+    size: arrowSize,
+    color: rgb(0.33, 0.33, 0.33),
+  })
 
-  if (currentLine) lines.push(currentLine.trim())
-  return lines
+  // Freccia destra
+  page.drawText('▶', {
+    x: width - 60,
+    y: arrowY,
+    size: arrowSize,
+    color: rgb(0.33, 0.33, 0.33),
+  })
+
+  // Numero pagina al centro
+  page.drawText(pageNum.toString(), {
+    x: width / 2 - 10,
+    y: arrowY,
+    size: 10,
+    color: rgb(0.5, 0.5, 0.5),
+  })
 }
