@@ -1,7 +1,7 @@
 'use client'
 
 import { useCursor } from '@react-three/drei'
-import { useFrame } from '@react-three/fiber'
+import { useFrame, useThree } from '@react-three/fiber'
 import { useAtom } from 'jotai'
 import { easing } from 'maath'
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -15,14 +15,16 @@ import {
   LinearFilter,
   MathUtils,
   MeshStandardMaterial,
+  Raycaster,
   Skeleton,
   SkinnedMesh,
   SRGBColorSpace,
   Uint16BufferAttribute,
+  Vector2,
   Vector3,
 } from 'three'
 import { degToRad } from 'three/src/math/MathUtils.js'
-import { pageAtom, viewerPagesAtom } from './menu-book-state'
+import { pageAtom, viewerPagesAtom, selectedDishAtom } from './menu-book-state'
 import type { ViewerPage } from './menu-to-pages'
 
 const easingFactor = 0.5
@@ -150,13 +152,22 @@ function drawWrappedAt(
   }
 }
 
-function createPageTexture(pageData: ViewerPage, side: 'front' | 'back') {
+type HitArea = {
+  id: string
+  name: string
+  minY: number
+  maxY: number
+}
+
+function createPageTexture(pageData: ViewerPage, side: 'front' | 'back'): { texture: CanvasTexture | null; hitAreas: HitArea[] } | null {
   const canvas = document.createElement('canvas')
   canvas.width = 1400
   canvas.height = 1900
 
   const ctx = canvas.getContext('2d')
   if (!ctx) return null
+
+  const hitAreas: HitArea[] = []
 
   const isCover = pageData.kind === 'cover'
   const isBack = pageData.kind === 'back'
@@ -289,6 +300,8 @@ function createPageTexture(pageData: ViewerPage, side: 'front' | 'back') {
     for (const item of pageData.items ?? []) {
       if (y > 1620) break
 
+      const itemStartY = y
+
       ctx.strokeStyle = border
       ctx.lineWidth = 2
       ctx.beginPath()
@@ -334,6 +347,14 @@ function createPageTexture(pageData: ViewerPage, side: 'front' | 'back') {
           y += 34
         }
       }
+
+      const itemEndY = y
+      hitAreas.push({
+        id: item.id,
+        name: item.name,
+        minY: itemStartY,
+        maxY: itemEndY,
+      })
 
       y += 28
     }
@@ -388,7 +409,7 @@ function createPageTexture(pageData: ViewerPage, side: 'front' | 'back') {
   texture.wrapS = ClampToEdgeWrapping
   texture.wrapT = ClampToEdgeWrapping
   texture.needsUpdate = true
-  return texture
+  return { texture, hitAreas }
 }
 
 type PageProps = {
@@ -398,23 +419,39 @@ type PageProps = {
   bookClosed: boolean
   pageData: ViewerPage
   totalPages: number
+  allDishes: Array<{
+    id: string
+    name: string
+    description?: string | null
+    price?: number | null
+    allergens?: string[] | null
+  }>
 }
 
-function Page({ number, page, opened, bookClosed, pageData, totalPages }: PageProps) {
+function Page({ number, page, opened, bookClosed, pageData, totalPages, allDishes }: PageProps) {
   const group = useRef<any>(null)
   const skinnedMeshRef = useRef<any>(null)
   const turnedAt = useRef(0)
   const lastOpened = useRef(opened)
 
   const [, setPage] = useAtom(pageAtom)
+  const [, setSelectedDish] = useAtom(selectedDishAtom)
   const [highlighted, setHighlighted] = useState(false)
+  const { raycaster, camera } = useThree()
   useCursor(highlighted)
 
   const isCover = number === 0
   const isBack = number === totalPages - 1
 
-  const frontTexture = useMemo(() => createPageTexture(pageData, 'front'), [pageData])
-  const backTexture = useMemo(() => createPageTexture(pageData, 'back'), [pageData])
+  const { frontTexture, frontHitAreas } = useMemo(() => {
+    const result = createPageTexture(pageData, 'front')
+    return { frontTexture: result?.texture ?? null, frontHitAreas: result?.hitAreas ?? [] }
+  }, [pageData])
+
+  const { backTexture, backHitAreas } = useMemo(() => {
+    const result = createPageTexture(pageData, 'back')
+    return { backTexture: result?.texture ?? null, backHitAreas: result?.hitAreas ?? [] }
+  }, [pageData])
 
   const manualSkinnedMesh = useMemo(() => {
     const bones: Bone[] = []
@@ -470,6 +507,13 @@ function Page({ number, page, opened, bookClosed, pageData, totalPages }: PagePr
       backTexture?.dispose()
     }
   }, [frontTexture, backTexture])
+
+  useEffect(() => {
+    return () => {
+      frontHitAreas.length = 0
+      backHitAreas.length = 0
+    }
+  }, [frontHitAreas, backHitAreas])
 
   useFrame((_, delta) => {
     if (!skinnedMeshRef.current || !group.current) return
@@ -539,6 +583,48 @@ function Page({ number, page, opened, bookClosed, pageData, totalPages }: PagePr
     }
   })
 
+  const handlePageClick = (e: any) => {
+    e.stopPropagation()
+
+    if (!e.intersections || e.intersections.length === 0) {
+      setPage(opened ? number : number + 1)
+      return
+    }
+
+    const intersection = e.intersections[0]
+    const uv = intersection.uv
+
+    if (!uv) {
+      setPage(opened ? number : number + 1)
+      return
+    }
+
+    const canvasX = uv.x * 1400
+    const canvasY = (1 - uv.y) * 1900
+
+    const hitAreas = opened ? frontHitAreas : backHitAreas
+    const clickedArea = hitAreas.find((area) => canvasY >= area.minY && canvasY <= area.maxY)
+
+    if (clickedArea) {
+      const dish = pageData.items?.find((item) => item.id === clickedArea.id)
+      if (dish) {
+        setSelectedDish({
+          id: dish.id,
+          name: dish.name,
+          description: dish.description || '',
+          price: dish.price || 0,
+          image: undefined,
+          allergens: (dish.allergens || []) as any[],
+          page: number,
+        })
+        return
+      }
+    }
+
+    setPage(opened ? number : number + 1)
+    setHighlighted(false)
+  }
+
   return (
     <group
       ref={group}
@@ -550,11 +636,7 @@ function Page({ number, page, opened, bookClosed, pageData, totalPages }: PagePr
         e.stopPropagation()
         setHighlighted(false)
       }}
-      onClick={(e) => {
-        e.stopPropagation()
-        setPage(opened ? number : number + 1)
-        setHighlighted(false)
-      }}
+      onClick={handlePageClick}
     >
       <primitive
         object={manualSkinnedMesh}
@@ -571,6 +653,14 @@ export function Book() {
   const [viewerPages] = useAtom(viewerPagesAtom)
   const [delayedPage, setDelayedPage] = useState(page)
   const [isMobile, setIsMobile] = useState(false)
+
+  const allDishes = useMemo(
+    () =>
+      viewerPages
+        .filter((p) => p.items)
+        .flatMap((p) => p.items || []),
+    [viewerPages]
+  )
 
   useEffect(() => {
     const onResize = () => setIsMobile(window.innerWidth < 768)
@@ -614,6 +704,7 @@ export function Book() {
           bookClosed={isMobile ? false : delayedPage === 0 || delayedPage === viewerPages.length}
           pageData={pageData}
           totalPages={viewerPages.length}
+          allDishes={allDishes}
         />
       ))}
     </group>

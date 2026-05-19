@@ -125,7 +125,14 @@ export const selectedMenuAtom = atom<string>('pranzo')
 export const selectedCategoryAtom = atom<string>('antipasti')
 export const selectedDishAtom = atom<Dish | null>(null)
 
+export const externalMenuPayloadAtom = atom<MenuPayload | null>(null)
+
 export const viewerPagesAtom = atom((get) => {
+  const externalPayload = get(externalMenuPayloadAtom)
+  if (externalPayload) {
+    return buildViewerPages(externalPayload)
+  }
+
   const selectedMenu = get(selectedMenuAtom)
   const menu = menus.find((m) => m.id === selectedMenu) ?? menus[0]
   return buildViewerPages(toMenuPayload(menu))

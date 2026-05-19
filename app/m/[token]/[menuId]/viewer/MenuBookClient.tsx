@@ -1,7 +1,19 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import PdfFlipbookViewer from './PdfFlipbookViewer'
+import dynamic from 'next/dynamic'
+
+const Canvas3D = dynamic(() => import('./Canvas3D'), {
+  ssr: false,
+  loading: () => (
+    <div className='flex items-center justify-center w-full h-full bg-stone-100'>
+      <div className='text-center'>
+        <div className='animate-spin rounded-full h-12 w-12 border-b-2 border-stone-900 mx-auto mb-4'></div>
+        <p className='text-stone-600'>Caricamento menu 3D...</p>
+      </div>
+    </div>
+  ),
+})
 
 type Dish = {
   id: string
@@ -64,15 +76,18 @@ function CategoryTabs({ categories }: { categories: Array<{ id: string; label: s
   )
 }
 
-export default function MenuBookClient({ menuId, menuData }: Props) {
+export default function MenuBookClient({ menuData }: Props) {
   const categories = useMemo(() => groupCategories(menuData.dishes), [menuData.dishes])
-  const pdfUrl = `/api/menus/${menuId}/pdf`
 
   return (
     <div className='min-h-[100dvh] w-full bg-[#efe4d4] pt-20 pb-6'>
       <CategoryTabs categories={categories} />
       <div className='px-3'>
-        <PdfFlipbookViewer pdfUrl={pdfUrl} />
+        <div className='mx-auto w-full max-w-5xl overflow-hidden rounded-[28px] border border-[#dbcdb8] bg-white shadow-[0_24px_80px_rgba(74,53,31,0.14)]'>
+          <div style={{ height: '78vh' }}>
+            <Canvas3D menuData={menuData} />
+          </div>
+        </div>
       </div>
     </div>
   )
