@@ -59,10 +59,10 @@ export function MenuViewerWithShortcuts({
     const pageNum = pageNumberByCategory[categoryKey]
 
     if (pageNum && iframeRef.current) {
+      setCurrentPage(pageNum)
       const currentUrl = iframeRef.current.src
       const baseUrl = currentUrl.split('#')[0]
       iframeRef.current.src = `${baseUrl}#page=${pageNum}`
-      setCurrentPage(pageNum)
     }
   }
 
@@ -75,6 +75,18 @@ export function MenuViewerWithShortcuts({
       iframeRef.current.src = `${baseUrl}#page=${page}`
     }
   }
+
+  // Ascolta gli eventi dal PDF viewer per sincronizzare la pagina corrente
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      if (event.data && event.data.type === 'pagechange') {
+        setCurrentPage(event.data.pageNumber || 1)
+      }
+    }
+
+    window.addEventListener('message', handleMessage)
+    return () => window.removeEventListener('message', handleMessage)
+  }, [])
 
   return (
     <div style={{ position: 'fixed', inset: 0, display: 'flex', flexDirection: 'column', background: '#525659' }}>
@@ -132,13 +144,13 @@ export function MenuViewerWithShortcuts({
         <div style={{ position: 'relative', width: '100%', maxWidth: '100%' }}>
           <iframe
             ref={iframeRef}
-            src={viewerUrl}
+            src={viewerUrl + '#zoom=page-width'}
             title={`Menu ${restaurantName}`}
             style={{ width: '100%', height: '100%', border: 0, display: 'block' }}
             allow="fullscreen"
             onLoad={() => {
               setIframeLoaded(true)
-              // Nasconde la toolbar tramite CSS injection
+              // Nasconde la toolbar tramite CSS injection e abilita message passing
               try {
                 const iframeDoc = iframeRef.current?.contentDocument
                 if (iframeDoc) {
@@ -149,6 +161,22 @@ export function MenuViewerWithShortcuts({
                     .toolbarButtonOpenFile { display: none !important; }
                   `
                   iframeDoc.head.appendChild(style)
+
+                  // Inietta codice per monitorare i cambi di pagina
+                  const script = iframeDoc.createElement('script')
+                  script.textContent = `
+                    (function() {
+                      let lastPage = PDFViewerApplication?.page || 1;
+                      setInterval(() => {
+                        const currentPage = PDFViewerApplication?.page || 1;
+                        if (currentPage !== lastPage) {
+                          lastPage = currentPage;
+                          window.parent.postMessage({ type: 'pagechange', pageNumber: currentPage }, '*');
+                        }
+                      }, 500);
+                    })();
+                  `
+                  iframeDoc.body.appendChild(script)
                 }
               } catch (e) {
                 // Ignore CORS errors
