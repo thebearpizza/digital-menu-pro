@@ -193,18 +193,18 @@ function addNavigationArrows(page: any, pageNum: number, width: number, height: 
   const arrowSize = 12
   const arrowY = 30
 
-  page.drawText('<', {
+  page.drawText('«', {
     x: 40,
     y: arrowY,
     size: arrowSize,
-    color: rgb(0.33, 0.33, 0.33),
+    color: rgb(0.55, 0.5, 0.45),
   })
 
-  page.drawText('>', {
-    x: width - 60,
+  page.drawText('»', {
+    x: width - 50,
     y: arrowY,
     size: arrowSize,
-    color: rgb(0.33, 0.33, 0.33),
+    color: rgb(0.55, 0.5, 0.45),
   })
 
   page.drawText(pageNum.toString(), {
