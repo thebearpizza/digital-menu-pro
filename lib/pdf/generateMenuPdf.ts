@@ -1,5 +1,19 @@
 import { PDFDocument, PDFFont, PDFName, PDFPage, StandardFonts, rgb } from 'pdf-lib'
 import type { PdfMenu, PdfPayload } from './types'
+import { allergenNumbers } from '@/lib/allergens'
+
+export type DishPosition = {
+  id: string
+  pageNumber: number
+  yTopPercent: number
+  yBottomPercent: number
+}
+
+export type GeneratedMenuPdf = {
+  bytes: Uint8Array
+  dishPositions: DishPosition[]
+  totalPages: number
+}
 
 const PAGE_WIDTH = 595
 const PAGE_HEIGHT = 842
@@ -39,6 +53,70 @@ function wrapText(text: string, maxChars: number): string[] {
   return lines
 }
 
+// Wrap basato sulla larghezza in pixel — più preciso del char count.
+// Spezza anche le "parole" troppo lunghe (es. testi senza spazi) carattere per carattere.
+function wrapTextByWidth(text: string, font: PDFFont, fontSize: number, maxWidth: number): string[] {
+  const words = text.split(/\s+/)
+  const lines: string[] = []
+  let current = ''
+
+  function flushCurrent() {
+    if (current) {
+      lines.push(current)
+      current = ''
+    }
+  }
+
+  function splitLongWord(word: string): string[] {
+    const chunks: string[] = []
+    let remaining = word
+    while (font.widthOfTextAtSize(remaining, fontSize) > maxWidth) {
+      let n = 1
+      while (
+        n < remaining.length &&
+        font.widthOfTextAtSize(remaining.slice(0, n + 1), fontSize) <= maxWidth
+      ) {
+        n++
+      }
+      chunks.push(remaining.slice(0, n))
+      remaining = remaining.slice(n)
+    }
+    if (remaining) chunks.push(remaining)
+    return chunks
+  }
+
+  for (const word of words) {
+    // Parola gigante: spezzala in chunk di larghezza maxWidth
+    if (font.widthOfTextAtSize(word, fontSize) > maxWidth) {
+      flushCurrent()
+      const chunks = splitLongWord(word)
+      // tutti i chunk tranne l'ultimo riempiono una riga; l'ultimo diventa "current"
+      for (let i = 0; i < chunks.length - 1; i++) lines.push(chunks[i])
+      current = chunks[chunks.length - 1]
+      continue
+    }
+    const candidate = current ? `${current} ${word}` : word
+    if (font.widthOfTextAtSize(candidate, fontSize) <= maxWidth) {
+      current = candidate
+    } else {
+      flushCurrent()
+      current = word
+    }
+  }
+  flushCurrent()
+  return lines
+}
+
+// Tronca una riga aggiungendo "…" se la larghezza supera maxWidth.
+function truncateToWidth(text: string, font: PDFFont, fontSize: number, maxWidth: number): string {
+  if (font.widthOfTextAtSize(text, fontSize) <= maxWidth) return text
+  let truncated = text
+  while (truncated.length > 0 && font.widthOfTextAtSize(truncated + '…', fontSize) > maxWidth) {
+    truncated = truncated.slice(0, -1)
+  }
+  return truncated.replace(/\s+$/, '') + '…'
+}
+
 function drawPageFooter(page: PDFPage, pageNum: number, font: PDFFont) {
   const y = 25
   const prevLabel = 'Prec.'
@@ -70,13 +148,17 @@ function groupByCategory(dishes: PdfMenu['dishes']) {
   }))
 }
 
-export async function generateMenuPdf(payload: PdfPayload): Promise<Uint8Array> {
+export async function generateMenuPdf(payload: PdfPayload): Promise<GeneratedMenuPdf> {
   const pdf = await PDFDocument.create()
   const fontRegular = await pdf.embedFont(StandardFonts.Helvetica)
   const fontBold = await pdf.embedFont(StandardFonts.HelveticaBold)
 
   // Tracciamo le pagine "copertina menu" per costruire link cliccabili dalla pagina di scelta.
   const menuCoverPages: PDFPage[] = []
+
+  // Posizioni dei piatti: pagina e Y top/bottom in percentuale (0 = top, 1 = bottom).
+  // Usate dal client per posizionare gli overlay HTML cliccabili sopra il PDF.
+  const dishPositions: DishPosition[] = []
 
   // ---- Pagina 1: copertina ristorante + scelta menu (accorpate) ----
   const choicePage = pdf.addPage([PAGE_WIDTH, PAGE_HEIGHT])
@@ -219,7 +301,11 @@ export async function generateMenuPdf(payload: PdfPayload): Promise<Uint8Array> 
           y -= 28
         }
 
-        page.drawText(sanitize(dish.name), {
+        // Y top del blocco piatto (per overlay hit-box). +14 = ascender approssimato del nome.
+        const dishYTop = y + 14
+
+        const dishName = sanitize(dish.name)
+        page.drawText(dishName, {
           x: MARGIN_X,
           y,
           size: 14,
@@ -242,7 +328,22 @@ export async function generateMenuPdf(payload: PdfPayload): Promise<Uint8Array> 
         y -= 18
 
         if (dish.description) {
-          const lines = wrapText(sanitize(dish.description), 80).slice(0, 2)
+          // La descrizione deve terminare 10px prima della colonna del prezzo
+          // (se c'è il prezzo, altrimenti usa il margine destro standard).
+          let descMaxWidth = PAGE_WIDTH - MARGIN_X * 2 - 8 - 10
+          if (dish.price != null) {
+            const priceLabel = `EUR ${dish.price.toFixed(2)}`
+            const priceWidth = fontBold.widthOfTextAtSize(priceLabel, 13)
+            const priceLeftX = PAGE_WIDTH - MARGIN_X - priceWidth
+            descMaxWidth = priceLeftX - 10 - (MARGIN_X + 8)
+          }
+          const allLines = wrapTextByWidth(sanitize(dish.description), fontRegular, 10, descMaxWidth)
+          const MAX_LINES = 2
+          const lines = allLines.slice(0, MAX_LINES)
+          // Se la descrizione era più lunga, aggiungi "…" alla fine dell'ultima riga visibile.
+          if (allLines.length > MAX_LINES && lines.length > 0) {
+            lines[lines.length - 1] = truncateToWidth(lines[lines.length - 1] + '…', fontRegular, 10, descMaxWidth)
+          }
           for (const line of lines) {
             page.drawText(line, {
               x: MARGIN_X + 8,
@@ -254,6 +355,29 @@ export async function generateMenuPdf(payload: PdfPayload): Promise<Uint8Array> 
             y -= 13
           }
         }
+
+        // Numeri allergeni sotto la descrizione (ordine UE 1-14).
+        const allergenNums = allergenNumbers(dish.allergens)
+        if (allergenNums.length > 0) {
+          page.drawText(allergenNums.join(', '), {
+            x: MARGIN_X + 8,
+            y,
+            size: 9,
+            font: fontRegular,
+            color: COLOR_SOFT,
+          })
+          y -= 11
+        }
+
+        // Y bottom del blocco piatto (prima del gap inferiore).
+        const dishYBottom = y + 6
+
+        dishPositions.push({
+          id: dish.id,
+          pageNumber: pageCounter,
+          yTopPercent: (PAGE_HEIGHT - dishYTop) / PAGE_HEIGHT,
+          yBottomPercent: (PAGE_HEIGHT - dishYBottom) / PAGE_HEIGHT,
+        })
 
         y -= 12
       }
@@ -285,5 +409,6 @@ export async function generateMenuPdf(payload: PdfPayload): Promise<Uint8Array> 
   }
   choicePage.node.set(PDFName.of('Annots'), annotsArray)
 
-  return pdf.save()
+  const bytes = await pdf.save()
+  return { bytes, dishPositions, totalPages: pageCounter }
 }

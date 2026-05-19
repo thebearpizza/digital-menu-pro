@@ -2,6 +2,8 @@ import { createClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
 import type { Metadata } from 'next'
 import { MenuViewerWithShortcuts } from './MenuViewerWithShortcuts'
+import { buildMenuPdfPayload } from '@/lib/pdf/buildPayload'
+import { ensureMenuPdfCached } from '@/lib/pdf/getMenuPdfData'
 
 // L'endpoint pubblico /m/[token] è il contratto stampato sui QR.
 // Vedi CLAUDE.md → "URL del QR code stabile per sempre".
@@ -27,59 +29,73 @@ export default async function PublicMenuPage({
 }) {
   const supabase = await createClient()
 
-  const { data: restaurant } = await supabase
-    .from('restaurants')
-    .select('id, name')
-    .eq('qr_public_token', params.token)
-    .single()
+  const result = await buildMenuPdfPayload(supabase, params.token)
+  if ('error' in result) {
+    notFound()
+  }
 
-  if (!restaurant) notFound()
+  const { payload, restaurantId, cacheKey, dishesById, menus, categoriesByMenu } = result
 
-  // Query categorie per i shortcut
-  const { data: menus } = await supabase
-    .from('menus')
-    .select('id, name')
-    .eq('restaurant_id', restaurant.id)
-    .eq('is_active', true)
-    .order('sort_order', { ascending: true })
+  // Garantisce PDF + posizioni in cache, le riusa se già esistenti.
+  // Fallback senza overlay/positions se l'env del service role manca (es. preview deploy).
+  let dishPositions: import('@/lib/pdf/generateMenuPdf').DishPosition[] = []
+  let totalPages = 1
+  try {
+    const cached = await ensureMenuPdfCached(payload, restaurantId, cacheKey)
+    dishPositions = cached.dishPositions
+    totalPages = cached.totalPages
+  } catch (err) {
+    console.error('[m/token] ensureMenuPdfCached failed:', err)
+    // Stima totalPages a priori: 1 (scelta) + ogni menu (copertina + categorie).
+    totalPages = 1
+    for (const menu of menus) {
+      totalPages += 1 + (categoriesByMenu[menu.id]?.length ?? 0)
+    }
+  }
 
-  const menuIds = menus?.map((m) => m.id) || []
-  const { data: dishes } = await supabase
-    .from('dishes')
-    .select('category, menu_id')
-    .in('menu_id', menuIds)
-    .order('sort_order', { ascending: true })
-
-  // Raggruppa categorie per menu e calcola numero di pagina
-  const categoriesByMenu: Record<string, string[]> = {}
+  // pageNumberByCategory: ricavato dalle posizioni reali del PDF (più preciso del calcolo a priori).
   const pageNumberByCategory: Record<string, number> = {}
+  for (const pos of dishPositions) {
+    const dish = dishesById[pos.id]
+    if (!dish || !dish.category) continue
+    const key = `${dish.menu_id}:${dish.category}`
+    if (!pageNumberByCategory[key] || pos.pageNumber < pageNumberByCategory[key]) {
+      pageNumberByCategory[key] = pos.pageNumber
+    }
+  }
 
-  if (dishes) {
-    for (const dish of dishes) {
-      if (dish.category) {
-        if (!categoriesByMenu[dish.menu_id]) {
-          categoriesByMenu[dish.menu_id] = []
-        }
-        if (!categoriesByMenu[dish.menu_id].includes(dish.category)) {
-          categoriesByMenu[dish.menu_id].push(dish.category)
-        }
+  // Fallback per pageNumberByCategory se non abbiamo posizioni dal PDF.
+  if (dishPositions.length === 0) {
+    let pageNum = 2
+    for (const menu of menus) {
+      pageNum++ // copertina menu
+      for (const category of categoriesByMenu[menu.id] ?? []) {
+        pageNumberByCategory[`${menu.id}:${category}`] = pageNum
+        pageNum++
       }
     }
   }
 
-  // Calcola numero di pagina per ogni categoria
-  // Pagina 1: scelta menu
-  // Poi per ogni menu: copertina + categorie
-  let pageNumber = 2 // Pagina 2 è la prima copertina menu
-  let totalPages = 1 // Pagina 1 è la scelta menu
-  for (const menu of menus || []) {
-    pageNumber++ // Copertina menu
-    totalPages++ // Copertina menu
-    const categories = categoriesByMenu[menu.id] || []
-    for (const category of categories) {
-      pageNumberByCategory[`${menu.id}:${category}`] = pageNumber
-      pageNumber++ // Una pagina per categoria (semplificato)
-      totalPages++ // Una pagina per categoria
+  // Info piatti per la card di dettaglio (id → dati completi).
+  const dishesInfo: Record<string, {
+    id: string
+    name: string
+    description: string | null
+    price: number | null
+    category: string | null
+    image_url: string | null
+    allergens: string[] | null
+  }> = {}
+  for (const id in dishesById) {
+    const d = dishesById[id]
+    dishesInfo[id] = {
+      id: d.id,
+      name: d.name,
+      description: d.description,
+      price: d.price,
+      category: d.category,
+      image_url: d.image_url,
+      allergens: d.allergens,
     }
   }
 
@@ -89,11 +105,14 @@ export default async function PublicMenuPage({
   return (
     <MenuViewerWithShortcuts
       viewerUrl={viewerUrl}
-      restaurantName={restaurant.name}
-      menus={menus || []}
+      restaurantName={payload.restaurant.name}
+      menus={menus}
       categoriesByMenu={categoriesByMenu}
       pageNumberByCategory={pageNumberByCategory}
       totalPages={totalPages}
+      dishPositions={dishPositions}
+      dishesInfo={dishesInfo}
     />
   )
 }
+
