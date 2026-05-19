@@ -60,15 +60,9 @@ export function MenuViewerWithShortcuts({
     // Aggiorna lo stato IMMEDIATAMENTE per istantaneo feedback UI
     setCurrentPage(page)
 
-    // Poi naviga nel PDF
-    if (iframeRef.current) {
-      const win = iframeRef.current.contentWindow as any
-      if (win?.PDFViewerApplication) {
-        win.PDFViewerApplication.page = page
-      } else {
-        const baseUrl = iframeRef.current.src.split('#')[0]
-        iframeRef.current.src = `${baseUrl}#page=${page}`
-      }
+    // Naviga nel PDF saltando l'animazione di turn.js
+    if (iframeRef.current?.contentWindow) {
+      iframeRef.current.contentWindow.postMessage({ type: 'jumpToPage', page }, '*')
     }
   }, [])
 
@@ -106,7 +100,7 @@ export function MenuViewerWithShortcuts({
       const iframeWin = iframeRef.current?.contentWindow as any
       if (!iframeDoc || !iframeWin) return
 
-      // Nasconde la toolbar
+      // Nasconde la toolbar e centra il PDF
       const style = iframeDoc.createElement('style')
       style.textContent = `
         #toolbarContainer { display: none !important; }
@@ -114,6 +108,10 @@ export function MenuViewerWithShortcuts({
         #toolbarSidebar { display: none !important; }
         #secondaryToolbar { display: none !important; }
         .toolbarButtonOpenFile { display: none !important; }
+        #viewerContainer { top: 0 !important; }
+        .pdfViewer .page { margin: 0 auto !important; }
+        #viewer { display: flex; flex-direction: column; align-items: center; }
+        body { background: #525659 !important; }
       `
       iframeDoc.head.appendChild(style)
 
@@ -140,6 +138,26 @@ export function MenuViewerWithShortcuts({
             // pagesloaded: tutte le pagine sono pronte
             eventBus.on('pagesloaded', () => {
               window.parent.postMessage({ type: 'pagesloaded' }, '*');
+            });
+
+            // Ascolta i messaggi dal parent per jump senza animazione
+            window.addEventListener('message', (event) => {
+              if (event.data && event.data.type === 'jumpToPage') {
+                const targetPage = event.data.page;
+
+                // Salta l'animazione di turn.js temporaneamente
+                if (window.$ && window.$('#viewer').data('turn')) {
+                  const turnInstance = window.$('#viewer').data('turn');
+                  const originalDuration = turnInstance.opts.duration;
+                  turnInstance.opts.duration = 0;
+                  window.PDFViewerApplication.page = targetPage;
+                  setTimeout(() => {
+                    if (turnInstance.opts) turnInstance.opts.duration = originalDuration;
+                  }, 50);
+                } else {
+                  window.PDFViewerApplication.page = targetPage;
+                }
+              }
             });
 
             // Se le pagine sono già caricate
