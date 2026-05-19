@@ -74,11 +74,6 @@ export async function generateMenuPdf(payload: PdfPayload): Promise<Uint8Array> 
 
   // Tracciamo le pagine "copertina menu" per costruire link cliccabili dalla pagina di scelta.
   const menuCoverPages: PDFPage[] = []
-  // Tracciamo le pagine delle categorie per shortcut di navigazione
-  const categoryPages: Map<string, PDFPage> = new Map()
-  // Tracciamo i link annotations per le categorie su ogni menu cover
-  type CategoryLink = { x1: number; y1: number; x2: number; y2: number; category: string }
-  const menuCoverCategoryLinks: CategoryLink[][] = []
 
   // ---- Pagina 1: copertina ristorante + scelta menu (accorpate) ----
   const choicePage = pdf.addPage([PAGE_WIDTH, PAGE_HEIGHT])
@@ -180,49 +175,10 @@ export async function generateMenuPdf(payload: PdfPayload): Promise<Uint8Array> 
       }
     }
 
+    drawPageFooter(menuCover, pageCounter, fontRegular)
+
     // Pagine piatti raggruppati per categoria
     const grouped = groupByCategory(menu.dishes)
-
-    // Aggiungi shortcut alle categorie sulla copertina
-    let shortcutY = PAGE_HEIGHT - 320
-    menuCover.drawText('Categorie:', {
-      x: MARGIN_X,
-      y: shortcutY,
-      size: 12,
-      font: fontBold,
-      color: COLOR_SOFT,
-    })
-    shortcutY -= 18
-
-    const categoryLinks: CategoryLink[] = []
-
-    for (const group of grouped) {
-      const catName = sanitize(group.category)
-      const categoryText = catName
-      const textWidth = fontRegular.widthOfTextAtSize(categoryText, 10)
-
-      menuCover.drawText(categoryText, {
-        x: MARGIN_X,
-        y: shortcutY,
-        size: 10,
-        font: fontRegular,
-        color: COLOR_ACCENT,
-      })
-
-      categoryLinks.push({
-        x1: MARGIN_X - 2,
-        y1: shortcutY - 2,
-        x2: MARGIN_X + textWidth + 2,
-        y2: shortcutY + 10,
-        category: `${menu.id}:${catName}`,
-      })
-
-      shortcutY -= 14
-    }
-
-    menuCoverCategoryLinks.push(categoryLinks)
-
-    drawPageFooter(menuCover, pageCounter, fontRegular)
     let page: PDFPage | null = null
     let y = 0
 
@@ -231,12 +187,6 @@ export async function generateMenuPdf(payload: PdfPayload): Promise<Uint8Array> 
       page = pdf.addPage([PAGE_WIDTH, PAGE_HEIGHT])
       pageCounter++
       y = PAGE_HEIGHT - 60
-
-      // Salva la pagina della categoria per i shortcut
-      const categoryKey = `${menu.id}:${sanitize(group.category)}`
-      if (!categoryPages.has(categoryKey)) {
-        categoryPages.set(categoryKey, page)
-      }
 
       page.drawText(sanitize(group.category), {
         x: MARGIN_X,
@@ -337,34 +287,6 @@ export async function generateMenuPdf(payload: PdfPayload): Promise<Uint8Array> 
     annotsArray.push(linkRef)
   }
   choicePage.node.set(PDFName.of('Annots'), annotsArray)
-
-  // ---- Link annotations per shortcut categorie su ogni menu cover ----
-  for (let i = 0; i < menuCoverPages.length; i++) {
-    const menuCoverPage = menuCoverPages[i]
-    const categoryLinks = menuCoverCategoryLinks[i] || []
-    const categoryAnnotRefs: any[] = []
-
-    for (const link of categoryLinks) {
-      const targetPage = categoryPages.get(link.category)
-      if (!targetPage) continue
-
-      const linkRef = pdf.context.register(
-        pdf.context.obj({
-          Type: 'Annot',
-          Subtype: 'Link',
-          Rect: [link.x1, link.y1, link.x2, link.y2],
-          Border: [0, 0, 0],
-          Dest: [targetPage.ref, 'Fit'],
-        })
-      )
-      categoryAnnotRefs.push(linkRef)
-    }
-
-    if (categoryAnnotRefs.length > 0) {
-      const categoryAnnots = pdf.context.obj(categoryAnnotRefs)
-      menuCoverPage.node.set(PDFName.of('Annots'), categoryAnnots)
-    }
-  }
 
   return pdf.save()
 }
