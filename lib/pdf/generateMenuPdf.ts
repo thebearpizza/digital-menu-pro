@@ -41,14 +41,14 @@ function wrapText(text: string, maxChars: number): string[] {
 
 function drawPageFooter(page: PDFPage, pageNum: number, font: PDFFont) {
   const y = 25
-  page.drawText('«', { x: 30, y, size: 14, font, color: COLOR_ARROW })
-  page.drawText('»', { x: PAGE_WIDTH - 40, y, size: 14, font, color: COLOR_ARROW })
+  page.drawText('«', { x: 30, y, size: 18, font, color: COLOR_ARROW })
+  page.drawText('»', { x: PAGE_WIDTH - 40, y, size: 18, font, color: COLOR_ARROW })
   const label = sanitize(String(pageNum))
-  const labelWidth = font.widthOfTextAtSize(label, 9)
+  const labelWidth = font.widthOfTextAtSize(label, 11)
   page.drawText(label, {
     x: (PAGE_WIDTH - labelWidth) / 2,
     y,
-    size: 9,
+    size: 11,
     font,
     color: COLOR_ARROW,
   })
@@ -142,7 +142,7 @@ export async function generateMenuPdf(payload: PdfPayload): Promise<Uint8Array> 
 
     if (menu.description) {
       const desc = sanitize(menu.description)
-      const truncated = desc.length > 70 ? desc.slice(0, 67) + '...' : desc
+      const truncated = desc.length > 90 ? desc.slice(0, 90) + '…' : desc
       choicePage.drawText(truncated, {
         x: cardX + 18,
         y: cardY + 14,
