@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, useState, useEffect, useCallback } from 'react'
+import { useRef, useState, useEffect, useCallback, useMemo } from 'react'
 import { DishCard } from './DishCard'
 import { ALLERGENS_EU } from '@/lib/allergens'
 import type { DishPosition } from '@/lib/pdf/generateMenuPdf'
@@ -40,40 +40,26 @@ export function MenuViewerWithShortcuts({
 }: MenuViewerWithShortcutsProps) {
   const iframeRef = useRef<HTMLIFrameElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
-  const [activeMenu, setActiveMenu] = useState(menus[0]?.id || '')
-  const [allCategories, setAllCategories] = useState<string[]>(categoriesByMenu[menus[0]?.id] || [])
   const [isLoading, setIsLoading] = useState(true)
   const [currentPage, setCurrentPage] = useState(1)
   const [totalPages] = useState(initialTotalPages)
   const [selectedDishId, setSelectedDishId] = useState<string | null>(null)
 
-  // Calcola il menu attivo basato sulla pagina corrente
-  const updateActiveMenu = useCallback((page: number) => {
-    let accumulatedPages = 1 // Pagina 1 = scelta menu
-
+  // Derivato direttamente da currentPage: evita catene di setState+useEffect.
+  const activeMenu = useMemo(() => {
+    let accumulatedPages = 1
     for (const menu of menus) {
-      const categories = categoriesByMenu[menu.id] || []
-      const menuPages = 1 + categories.length // Copertina + categorie
-
-      if (page <= accumulatedPages + menuPages) {
-        setActiveMenu(menu.id)
-        return
-      }
+      const menuPages = 1 + (categoriesByMenu[menu.id]?.length ?? 0)
+      if (currentPage <= accumulatedPages + menuPages) return menu.id
       accumulatedPages += menuPages
     }
-  }, [menus, categoriesByMenu])
+    return menus[0]?.id || ''
+  }, [currentPage, menus, categoriesByMenu])
 
-  // Aggiorna categorie quando cambia activeMenu
-  useEffect(() => {
-    if (activeMenu && categoriesByMenu[activeMenu]) {
-      setAllCategories(categoriesByMenu[activeMenu])
-    }
-  }, [activeMenu, categoriesByMenu])
-
-  // Aggiorna activeMenu quando cambia currentPage
-  useEffect(() => {
-    updateActiveMenu(currentPage)
-  }, [currentPage, updateActiveMenu])
+  const allCategories = useMemo(
+    () => categoriesByMenu[activeMenu] ?? [],
+    [activeMenu, categoriesByMenu]
+  )
 
   const navigateToPage = useCallback((page: number) => {
     // Aggiorna lo stato IMMEDIATAMENTE per istantaneo feedback UI
@@ -196,9 +182,12 @@ export function MenuViewerWithShortcuts({
     }
   }
 
-  // Overlay hit-box invisibili sopra i piatti (solo sulla pagina corrente)
-  const dishesOnCurrentPage = dishPositions.filter((pos) => pos.pageNumber === currentPage)
-  const overlayHeight = containerRef.current?.querySelector('[role="main"]')?.clientHeight || 1000
+  // Overlay hit-box invisibili sopra i piatti (solo sulla pagina corrente).
+  // Memo per evitare filter() ad ogni re-render su pagine senza piatti che cambiano.
+  const dishesOnCurrentPage = useMemo(
+    () => dishPositions.filter((pos) => pos.pageNumber === currentPage),
+    [dishPositions, currentPage]
+  )
 
   return (
     <div
