@@ -53,6 +53,34 @@ function wrapText(text: string, maxChars: number): string[] {
   return lines
 }
 
+// Wrap basato sulla larghezza in pixel — più preciso del char count.
+function wrapTextByWidth(text: string, font: PDFFont, fontSize: number, maxWidth: number): string[] {
+  const words = text.split(/\s+/)
+  const lines: string[] = []
+  let current = ''
+  for (const word of words) {
+    const candidate = current ? `${current} ${word}` : word
+    if (font.widthOfTextAtSize(candidate, fontSize) <= maxWidth) {
+      current = candidate
+    } else {
+      if (current) lines.push(current)
+      current = word
+    }
+  }
+  if (current) lines.push(current)
+  return lines
+}
+
+// Tronca una riga aggiungendo "…" se la larghezza supera maxWidth.
+function truncateToWidth(text: string, font: PDFFont, fontSize: number, maxWidth: number): string {
+  if (font.widthOfTextAtSize(text, fontSize) <= maxWidth) return text
+  let truncated = text
+  while (truncated.length > 0 && font.widthOfTextAtSize(truncated + '…', fontSize) > maxWidth) {
+    truncated = truncated.slice(0, -1)
+  }
+  return truncated.replace(/\s+$/, '') + '…'
+}
+
 function drawPageFooter(page: PDFPage, pageNum: number, font: PDFFont) {
   const y = 25
   const prevLabel = 'Prec.'
@@ -264,7 +292,14 @@ export async function generateMenuPdf(payload: PdfPayload): Promise<GeneratedMen
         y -= 18
 
         if (dish.description) {
-          const lines = wrapText(sanitize(dish.description), 80).slice(0, 2)
+          const descMaxWidth = PAGE_WIDTH - MARGIN_X * 2 - 8 // indent del paragrafo
+          const allLines = wrapTextByWidth(sanitize(dish.description), fontRegular, 10, descMaxWidth)
+          const MAX_LINES = 2
+          const lines = allLines.slice(0, MAX_LINES)
+          // Se la descrizione era più lunga, aggiungi "…" alla fine dell'ultima riga visibile.
+          if (allLines.length > MAX_LINES && lines.length > 0) {
+            lines[lines.length - 1] = truncateToWidth(lines[lines.length - 1] + '…', fontRegular, 10, descMaxWidth)
+          }
           for (const line of lines) {
             page.drawText(line, {
               x: MARGIN_X + 8,
