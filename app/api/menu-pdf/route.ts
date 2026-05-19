@@ -3,215 +3,163 @@ import { createClient } from '@/lib/supabase/server'
 
 export async function GET(request: Request) {
   try {
-    console.log('[PDF] Starting PDF generation')
+    console.log('[PDF] === START PDF GENERATION ===')
 
     const url = new URL(request.url)
     const menuId = url.searchParams.get('menuId')
     const token = url.searchParams.get('token')
 
-    console.log('[PDF] Params:', { menuId, token })
+    console.log('[PDF] Params received:', { menuId, token })
 
     if (!menuId || !token) {
+      console.error('[PDF] Missing params')
       return new Response('Missing menuId or token', { status: 400 })
     }
 
-    console.log('[PDF] Creating Supabase client')
-    const supabase = await createClient()
+    // Test: crea un PDF semplice per verificare il flusso
+    console.log('[PDF] Creating test PDF with menu data')
+    const pdfDoc = await PDFDocument.create()
+    const page = pdfDoc.addPage([595, 842])
+    const { height, width } = page.getSize()
 
-    console.log('[PDF] Fetching restaurant')
+    // Titolo
+    page.drawText('Menu', {
+      x: 50,
+      y: height - 100,
+      size: 48,
+      color: rgb(0.16, 0.11, 0.09),
+    })
+
+    // Sottotitolo
+    page.drawText(`Menu ID: ${menuId}`, {
+      x: 50,
+      y: height - 160,
+      size: 14,
+      color: rgb(0.36, 0.29, 0.22),
+    })
+
+    page.drawText('Caricamento piatti...', {
+      x: 50,
+      y: height - 200,
+      size: 12,
+      color: rgb(0.36, 0.29, 0.22),
+    })
+
+    // Tenta di caricare i dati
+    console.log('[PDF] Creating Supabase client...')
+    const supabase = await createClient()
+    console.log('[PDF] Supabase client created')
+
+    console.log('[PDF] Fetching restaurant with token:', token)
     const { data: restaurant, error: restaurantError } = await supabase
       .from('restaurants')
       .select('id,name')
       .eq('qr_public_token', token)
       .single()
 
-    if (restaurantError || !restaurant) {
+    if (restaurantError) {
       console.error('[PDF] Restaurant error:', restaurantError)
-      return new Response('Restaurant not found', { status: 404 })
-    }
-
-    console.log('[PDF] Fetching menu')
-    const { data: menu, error: menuError } = await supabase
-      .from('menus')
-      .select('id,name,description')
-      .eq('id', menuId)
-      .eq('restaurant_id', restaurant.id)
-      .single()
-
-    if (menuError || !menu) {
-      console.error('[PDF] Menu error:', menuError)
-      return new Response('Menu not found', { status: 404 })
-    }
-
-    console.log('[PDF] Fetching dishes')
-    const { data: dishesData, error: dishesError } = await supabase
-      .from('dishes')
-      .select('id,name,description,price,allergens,category,sort_order')
-      .eq('menu_id', menu.id)
-      .order('sort_order', { ascending: true })
-
-    if (dishesError) {
-      console.error('[PDF] Dishes error:', dishesError)
-    }
-
-    const dishes = dishesData || []
-    console.log('[PDF] Got dishes:', dishes.length)
-
-    // Crea il PDF
-    console.log('[PDF] Creating PDF document')
-    const pdfDoc = await PDFDocument.create()
-    console.log('[PDF] PDF document created')
-
-    // Copertina
-    let page = pdfDoc.addPage([595, 842]) // A4
-    const { height, width } = page.getSize()
-
-    page.drawText(menu.name, {
-      x: 50,
-      y: height - 100,
-      size: 48,
-      color: rgb(0.16, 0.11, 0.09),
-    })
-
-    page.drawText(restaurant.name, {
-      x: 50,
-      y: height - 160,
-      size: 24,
-      color: rgb(0.36, 0.29, 0.22),
-    })
-
-    // Raggruppa per categoria
-    const categories = new Map<string, typeof dishes>()
-    for (const dish of dishes) {
-      const category = dish.category?.trim() || 'Menu'
-      if (!categories.has(category)) {
-        categories.set(category, [])
-      }
-      categories.get(category)!.push(dish)
-    }
-
-    let pageCount = 1
-
-    // Pagine per categoria
-    for (const [category, categoryDishes] of Array.from(categories)) {
-      page = pdfDoc.addPage([595, 842])
-      pageCount++
-      let yPosition = height - 50
-
-      // Titolo categoria
-      page.drawText(category, {
+      page.drawText(`Errore ristorante: ${restaurantError.message}`, {
         x: 50,
-        y: yPosition,
-        size: 32,
+        y: height - 240,
+        size: 10,
+        color: rgb(1, 0, 0),
+      })
+    } else if (restaurant) {
+      console.log('[PDF] Restaurant found:', restaurant.name)
+      page.drawText(`Ristorante: ${restaurant.name}`, {
+        x: 50,
+        y: height - 240,
+        size: 12,
         color: rgb(0.16, 0.11, 0.09),
       })
 
-      yPosition -= 50
+      console.log('[PDF] Fetching menu:', menuId)
+      const { data: menu, error: menuError } = await supabase
+        .from('menus')
+        .select('id,name,description')
+        .eq('id', menuId)
+        .eq('restaurant_id', restaurant.id)
+        .single()
 
-      // Piatti della categoria
-      for (const dish of categoryDishes) {
-        // Controlla se c'è spazio per il piatto
-        if (yPosition < 80) {
-          addNavigationArrows(page, pageCount, width, height)
-          page = pdfDoc.addPage([595, 842])
-          pageCount++
-          yPosition = height - 50
-        }
-
-        const nameY = yPosition
-
-        // Nome piatto
-        page.drawText(dish.name, {
+      if (menuError) {
+        console.error('[PDF] Menu error:', menuError)
+        page.drawText(`Errore menu: ${menuError.message}`, {
           x: 50,
-          y: nameY,
-          size: 16,
+          y: height - 260,
+          size: 10,
+          color: rgb(1, 0, 0),
+        })
+      } else if (menu) {
+        console.log('[PDF] Menu found:', menu.name)
+        page.drawText(`Nome Menu: ${menu.name}`, {
+          x: 50,
+          y: height - 260,
+          size: 12,
           color: rgb(0.16, 0.11, 0.09),
         })
 
-        // Prezzo
-        if (dish.price) {
-          page.drawText(`€ ${dish.price.toFixed(2)}`, {
-            x: width - 100,
-            y: nameY,
-            size: 14,
-            color: rgb(0.55, 0.27, 0.07),
-          })
-        }
+        console.log('[PDF] Fetching dishes...')
+        const { data: dishes, error: dishesError } = await supabase
+          .from('dishes')
+          .select('id,name,description,price')
+          .eq('menu_id', menu.id)
+          .limit(5)
 
-        yPosition -= 28
-
-        // Descrizione (truncated)
-        if (dish.description) {
-          let displayDesc = dish.description.trim()
-          const maxChars = 70
-
-          if (displayDesc.length > maxChars) {
-            displayDesc = displayDesc.substring(0, maxChars - 3) + '...'
-          }
-
-          page.drawText(displayDesc, {
-            x: 70,
-            y: yPosition,
+        if (dishesError) {
+          console.error('[PDF] Dishes error:', dishesError)
+          page.drawText(`Errore piatti: ${dishesError.message}`, {
+            x: 50,
+            y: height - 280,
             size: 10,
-            color: rgb(0.36, 0.29, 0.22),
+            color: rgb(1, 0, 0),
           })
+        } else {
+          console.log('[PDF] Dishes found:', dishes?.length)
+          page.drawText(`Piatti trovati: ${dishes?.length || 0}`, {
+            x: 50,
+            y: height - 280,
+            size: 12,
+            color: rgb(0.16, 0.11, 0.09),
+          })
+
+          let yPos = height - 320
+          if (dishes && dishes.length > 0) {
+            for (const dish of dishes.slice(0, 3)) {
+              page.drawText(`- ${dish.name} (€${dish.price || 0})`, {
+                x: 70,
+                y: yPos,
+                size: 10,
+                color: rgb(0.36, 0.29, 0.22),
+              })
+              yPos -= 20
+            }
+          }
         }
-
-        yPosition -= 20
       }
-
-      // Aggiungi frecce al fondo della pagina
-      addNavigationArrows(page, pageCount, width, height)
     }
 
-    // Retro copertina
-    page = pdfDoc.addPage([595, 842])
-    pageCount++
-    page.drawText('Grazie!', {
-      x: 50,
-      y: height - 100,
-      size: 48,
-      color: rgb(0.16, 0.11, 0.09),
-    })
-
-    console.log('[PDF] Saving PDF')
+    console.log('[PDF] Saving PDF...')
     const pdfBytes = await pdfDoc.save()
-    console.log('[PDF] PDF saved, size:', pdfBytes.length)
+    console.log('[PDF] PDF saved, size:', pdfBytes.length, 'bytes')
 
     return new Response(pdfBytes, {
       headers: {
         'Content-Type': 'application/pdf',
-        'Content-Disposition': `inline; filename="${menu.name}.pdf"`,
+        'Content-Disposition': `inline; filename="menu.pdf"`,
       },
     })
   } catch (error) {
-    console.error('Error generating PDF:', error)
-    return new Response(JSON.stringify({ error: String(error) }), { status: 500 })
+    console.error('[PDF] CRITICAL ERROR:', error)
+    return new Response(
+      JSON.stringify({
+        error: String(error),
+        message: error instanceof Error ? error.message : 'Unknown error',
+      }),
+      {
+        status: 500,
+        headers: { 'Content-Type': 'application/json' },
+      }
+    )
   }
-}
-
-function addNavigationArrows(page: any, pageNum: number, width: number, height: number) {
-  const arrowSize = 12
-  const arrowY = 30
-
-  page.drawText('◀', {
-    x: 40,
-    y: arrowY,
-    size: arrowSize,
-    color: rgb(0.33, 0.33, 0.33),
-  })
-
-  page.drawText('▶', {
-    x: width - 60,
-    y: arrowY,
-    size: arrowSize,
-    color: rgb(0.33, 0.33, 0.33),
-  })
-
-  page.drawText(pageNum.toString(), {
-    x: width / 2 - 10,
-    y: arrowY,
-    size: 10,
-    color: rgb(0.5, 0.5, 0.5),
-  })
 }
