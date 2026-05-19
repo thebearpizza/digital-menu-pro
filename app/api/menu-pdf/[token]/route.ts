@@ -6,6 +6,10 @@ export const dynamic = 'force-dynamic'
 
 const BUCKET = 'menu-pdfs'
 
+// Bumpa questa versione quando cambia la logica di generazione del PDF
+// per invalidare la cache di tutti i ristoranti.
+const PDF_VERSION = 'v2'
+
 function adminClient() {
   return createSupabaseJsClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -95,7 +99,7 @@ export async function GET(
       ...menus.map((m) => m.updated_at),
       ...(dishes ?? []).map((d) => d.updated_at),
     ]
-    const cacheKey = cacheKeyFrom(allTimestamps)
+    const cacheKey = `${PDF_VERSION}-${cacheKeyFrom(allTimestamps)}`
     const path = `${restaurant.id}/${cacheKey}.pdf`
 
     // Verifica se il file esiste già su Storage
