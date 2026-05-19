@@ -1,6 +1,6 @@
 import { createClient as createSupabaseJsClient } from '@supabase/supabase-js'
 import { ensureMenuPdfCached } from '@/lib/pdf/getMenuPdfData'
-import { buildMenuPdfPayload, cacheKeyForMenu, PDF_VERSION } from '@/lib/pdf/buildPayload'
+import { buildMenuPdfPayload } from '@/lib/pdf/buildPayload'
 
 export const dynamic = 'force-dynamic'
 
@@ -38,6 +38,3 @@ export async function GET(
     )
   }
 }
-
-// Re-export per backward compatibility se servisse altrove
-export { PDF_VERSION }
