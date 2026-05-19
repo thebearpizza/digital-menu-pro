@@ -8,6 +8,9 @@ type Props = {
   restaurantName: string
 }
 
+// IMPORTANTE: il pattern URL `/m/${token}` è il contratto pubblico del QR code.
+// I QR vengono stampati e affissi nei ristoranti: questo path NON deve mai cambiare.
+// Vedi CLAUDE.md → "URL del QR code stabile per sempre".
 export function QRCodeCard({ token, restaurantName }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [copied, setCopied] = useState(false)
