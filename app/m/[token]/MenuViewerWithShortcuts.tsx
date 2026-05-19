@@ -9,6 +9,7 @@ interface MenuViewerWithShortcutsProps {
   restaurantName: string
   menus: Menu[]
   categoriesByMenu: Record<string, string[]>
+  pageNumberByCategory: Record<string, number>
 }
 
 export function MenuViewerWithShortcuts({
@@ -16,10 +17,12 @@ export function MenuViewerWithShortcuts({
   restaurantName,
   menus,
   categoriesByMenu,
+  pageNumberByCategory,
 }: MenuViewerWithShortcutsProps) {
   const iframeRef = useRef<HTMLIFrameElement>(null)
   const [activeMenu, setActiveMenu] = useState(menus[0]?.id || '')
   const [allCategories, setAllCategories] = useState<string[]>([])
+  const [iframeLoaded, setIframeLoaded] = useState(false)
 
   useEffect(() => {
     if (activeMenu && categoriesByMenu[activeMenu]) {
@@ -28,12 +31,14 @@ export function MenuViewerWithShortcuts({
   }, [activeMenu, categoriesByMenu])
 
   const handleCategoryClick = (categoryName: string) => {
-    if (iframeRef.current?.contentWindow) {
-      // Naviga al PDF viewer tramite postMessage
-      iframeRef.current.contentWindow.postMessage(
-        { action: 'search', query: categoryName },
-        '*'
-      )
+    const categoryKey = `${activeMenu}:${categoryName}`
+    const pageNum = pageNumberByCategory[categoryKey]
+
+    if (pageNum && iframeRef.current) {
+      // Naviga alla pagina usando l'URL hash
+      const currentUrl = iframeRef.current.src
+      const baseUrl = currentUrl.split('#')[0]
+      iframeRef.current.src = `${baseUrl}#page=${pageNum}`
     }
   }
 
@@ -96,22 +101,7 @@ export function MenuViewerWithShortcuts({
           title={`Menu ${restaurantName}`}
           style={{ width: '100%', height: '100%', border: 0, display: 'block' }}
           allow="fullscreen"
-          onLoad={() => {
-            // Nasconde toolbar via CSS quando il PDF è caricato
-            try {
-              const iframeDoc = iframeRef.current?.contentDocument
-              if (iframeDoc) {
-                const style = iframeDoc.createElement('style')
-                style.textContent = `
-                  #toolbarContainer { display: none !important; }
-                  .page { max-width: 100%; }
-                `
-                iframeDoc.head.appendChild(style)
-              }
-            } catch (e) {
-              // Cross-origin, non possiamo modificare il CSS
-            }
-          }}
+          onLoad={() => setIframeLoaded(true)}
         />
       </div>
     </div>

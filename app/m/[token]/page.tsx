@@ -50,8 +50,10 @@ export default async function PublicMenuPage({
     .in('menu_id', menuIds)
     .order('sort_order', { ascending: true })
 
-  // Raggruppa categorie per menu
+  // Raggruppa categorie per menu e calcola numero di pagina
   const categoriesByMenu: Record<string, string[]> = {}
+  const pageNumberByCategory: Record<string, number> = {}
+
   if (dishes) {
     for (const dish of dishes) {
       if (dish.category) {
@@ -65,6 +67,19 @@ export default async function PublicMenuPage({
     }
   }
 
+  // Calcola numero di pagina per ogni categoria
+  // Pagina 1: scelta menu
+  // Poi per ogni menu: copertina + categorie
+  let pageNumber = 2 // Pagina 2 è la prima copertina menu
+  for (const menu of menus || []) {
+    pageNumber++ // Copertina menu
+    const categories = categoriesByMenu[menu.id] || []
+    for (const category of categories) {
+      pageNumberByCategory[`${menu.id}:${category}`] = pageNumber
+      pageNumber++ // Una pagina per categoria (semplificato, in realtà potrebbe essere più di una)
+    }
+  }
+
   const pdfUrl = `/api/menu-pdf/${encodeURIComponent(params.token)}`
   const viewerUrl = `/pdf-viewer/external/pdfjs-2.1.266-dist/web/viewer.html?file=${encodeURIComponent(pdfUrl)}`
 
@@ -74,6 +89,7 @@ export default async function PublicMenuPage({
       restaurantName={restaurant.name}
       menus={menus || []}
       categoriesByMenu={categoriesByMenu}
+      pageNumberByCategory={pageNumberByCategory}
     />
   )
 }

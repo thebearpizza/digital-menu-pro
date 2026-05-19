@@ -105,6 +105,7 @@ var bookFlip = {
 			duration: 1500,
 			turnOnClick: false,
 			acceleration: true,
+			autoCenter: true,
 			width:  this._size(PDFViewerApplication.page,'width') * this._spreadMult(),
 			height: this._size(PDFViewerApplication.page,'height'),
 			page: PDFViewerApplication.page,
@@ -112,6 +113,10 @@ var bookFlip = {
 				turned: function(event, page) {
 					PDFViewerApplication.page = page;
 					viewer.update();
+				},
+				turning: function(event, page) {
+					// Allow smooth animation even for first page
+					return true;
 				}
 			},
 			display: this._spreadType()
