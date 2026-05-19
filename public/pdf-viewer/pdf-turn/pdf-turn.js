@@ -110,13 +110,15 @@ var bookFlip = {
 			height: this._size(PDFViewerApplication.page,'height'),
 			page: PDFViewerApplication.page,
 			when: {
+				turning: function(event, page) {
+					// Notifica il parent IMMEDIATAMENTE all'inizio dell'animazione
+					try {
+						window.parent.postMessage({ type: 'pagechanging', pageNumber: page }, '*');
+					} catch(e) {}
+				},
 				turned: function(event, page) {
 					PDFViewerApplication.page = page;
 					viewer.update();
-				},
-				turning: function(event, page) {
-					// Allow smooth animation even for first page
-					return true;
 				}
 			},
 			display: this._spreadType()

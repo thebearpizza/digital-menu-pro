@@ -108,9 +108,11 @@ export function MenuViewerWithShortcuts({
         #toolbarSidebar { display: none !important; }
         #secondaryToolbar { display: none !important; }
         .toolbarButtonOpenFile { display: none !important; }
-        #viewerContainer { top: 0 !important; }
+        #viewerContainer { top: 0 !important; left: 0 !important; right: 0 !important; }
+        #viewer { margin: 0 auto !important; }
+        #viewer.bookViewer { margin: 0 auto !important; position: relative !important; left: 0 !important; right: 0 !important; }
+        .pdfViewer { display: flex !important; flex-direction: column !important; align-items: center !important; }
         .pdfViewer .page { margin: 0 auto !important; }
-        #viewer { display: flex; flex-direction: column; align-items: center; }
         body { background: #525659 !important; }
       `
       iframeDoc.head.appendChild(style)
