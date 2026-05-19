@@ -74,44 +74,30 @@ export async function generateMenuPdf(payload: PdfPayload): Promise<Uint8Array> 
 
   // Tracciamo le pagine "copertina menu" per costruire link cliccabili dalla pagina di scelta.
   const menuCoverPages: PDFPage[] = []
+  // Tracciamo le pagine delle categorie per shortcut di navigazione
+  const categoryPages: Map<string, PDFPage> = new Map()
 
-  // ---- Pagina 1: copertina ristorante ----
-  const cover = pdf.addPage([PAGE_WIDTH, PAGE_HEIGHT])
-  cover.drawText(sanitize(payload.restaurant.name), {
+  // ---- Pagina 1: copertina ristorante + scelta menu (accorpate) ----
+  const choicePage = pdf.addPage([PAGE_WIDTH, PAGE_HEIGHT])
+  let choiceY = PAGE_HEIGHT - 60
+
+  choicePage.drawText(sanitize(payload.restaurant.name), {
     x: MARGIN_X,
-    y: PAGE_HEIGHT - 140,
-    size: 42,
+    y: choiceY,
+    size: 36,
     font: fontBold,
     color: COLOR_INK,
   })
-  cover.drawText('Menu digitale', {
-    x: MARGIN_X,
-    y: PAGE_HEIGHT - 180,
-    size: 16,
-    font: fontRegular,
-    color: COLOR_SOFT,
-  })
+  choiceY -= 50
 
-  // ---- Pagina 2: scelta menu (link annotations cliccabili) ----
-  // La creiamo SUBITO ma popoleremo gli annot dopo, quando avremo i ref delle copertine.
-  const choicePage = pdf.addPage([PAGE_WIDTH, PAGE_HEIGHT])
-  let choiceY = PAGE_HEIGHT - 100
   choicePage.drawText('Scegli il menu', {
     x: MARGIN_X,
     y: choiceY,
-    size: 28,
+    size: 20,
     font: fontBold,
     color: COLOR_INK,
   })
-  choiceY -= 18
-  choicePage.drawText('Tocca un menu per aprirlo', {
-    x: MARGIN_X,
-    y: choiceY,
-    size: 11,
-    font: fontRegular,
-    color: COLOR_SOFT,
-  })
-  choiceY -= 50
+  choiceY -= 30
 
   type ChoiceRect = { x1: number; y1: number; x2: number; y2: number }
   const choiceRects: ChoiceRect[] = []
@@ -167,7 +153,7 @@ export async function generateMenuPdf(payload: PdfPayload): Promise<Uint8Array> 
   }
 
   // ---- Pagine per ogni menu ----
-  let pageCounter = 2 // copertina + scelta = 2 finora
+  let pageCounter = 1 // solo la pagina di benvenuto/scelta
   for (const menu of payload.menus) {
     // Copertina menu
     const menuCover = pdf.addPage([PAGE_WIDTH, PAGE_HEIGHT])
@@ -203,6 +189,12 @@ export async function generateMenuPdf(payload: PdfPayload): Promise<Uint8Array> 
       page = pdf.addPage([PAGE_WIDTH, PAGE_HEIGHT])
       pageCounter++
       y = PAGE_HEIGHT - 60
+
+      // Salva la pagina della categoria per i shortcut
+      const categoryKey = `${menu.id}:${sanitize(group.category)}`
+      if (!categoryPages.has(categoryKey)) {
+        categoryPages.set(categoryKey, page)
+      }
 
       page.drawText(sanitize(group.category), {
         x: MARGIN_X,
