@@ -419,7 +419,13 @@ type PageProps = {
   bookClosed: boolean
   pageData: ViewerPage
   totalPages: number
-  allDishes: Array<{ id: string; name: string; description: string | null; price: number | null; allergens: string[] | null }>
+  allDishes: Array<{
+    id: string
+    name: string
+    description?: string | null
+    price?: number | null
+    allergens?: string[] | null
+  }>
 }
 
 function Page({ number, page, opened, bookClosed, pageData, totalPages, allDishes }: PageProps) {

@@ -11,7 +11,7 @@ export default async function MenuViewerPage({
 }) {
   const supabase = await createClient()
 
-  const {  restaurant } = await supabase
+  const { data: restaurant } = await supabase
     .from('restaurants')
     .select('id,name,qr_public_token')
     .eq('qr_public_token', params.token)
@@ -19,7 +19,7 @@ export default async function MenuViewerPage({
 
   if (!restaurant) notFound()
 
-  const {  menu } = await supabase
+  const { data: menu } = await supabase
     .from('menus')
     .select('id,name,description,restaurant_id')
     .eq('id', params.menuId)
@@ -28,7 +28,7 @@ export default async function MenuViewerPage({
 
   if (!menu) notFound()
 
-  const {  dishes } = await supabase
+  const { data: dishes } = await supabase
     .from('dishes')
     .select('id,name,description,price,allergens,category,sort_order')
     .eq('menu_id', menu.id)
