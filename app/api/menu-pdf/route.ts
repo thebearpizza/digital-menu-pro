@@ -1,6 +1,17 @@
 import { PDFDocument, rgb } from 'pdf-lib'
 import { createClient } from '@/lib/supabase/server'
 
+function sanitize(text: string | null | undefined): string {
+  if (!text) return ''
+  return text
+    .replace(/[‘’‚‛]/g, "'")
+    .replace(/[“”„‟]/g, '"')
+    .replace(/[–—―]/g, '-')
+    .replace(/…/g, '...')
+    .replace(/ /g, ' ')
+    .replace(/[^\x00-\xFF]/g, '')
+}
+
 export async function GET(request: Request) {
   try {
     const url = new URL(request.url)
@@ -48,14 +59,14 @@ export async function GET(request: Request) {
     let page = pdfDoc.addPage([595, 842])
     const { height, width } = page.getSize()
 
-    page.drawText(menu.name, {
+    page.drawText(sanitize(menu.name), {
       x: 50,
       y: height - 100,
       size: 48,
       color: rgb(0.16, 0.11, 0.09),
     })
 
-    page.drawText(restaurant.name, {
+    page.drawText(sanitize(restaurant.name), {
       x: 50,
       y: height - 160,
       size: 24,
@@ -91,7 +102,7 @@ export async function GET(request: Request) {
       let yPosition = height - 50
 
       // Titolo categoria
-      page.drawText(category, {
+      page.drawText(sanitize(category), {
         x: 50,
         y: yPosition,
         size: 32,
@@ -112,7 +123,7 @@ export async function GET(request: Request) {
         const nameY = yPosition
 
         // Nome piatto
-        page.drawText(dish.name, {
+        page.drawText(sanitize(dish.name), {
           x: 50,
           y: nameY,
           size: 16,
@@ -121,7 +132,7 @@ export async function GET(request: Request) {
 
         // Prezzo
         if (dish.price) {
-          page.drawText(`€ ${dish.price.toFixed(2)}`, {
+          page.drawText(`EUR ${dish.price.toFixed(2)}`, {
             x: width - 100,
             y: nameY,
             size: 14,
@@ -133,7 +144,7 @@ export async function GET(request: Request) {
 
         // Descrizione (truncated)
         if (dish.description) {
-          let displayDesc = dish.description.trim()
+          let displayDesc = sanitize(dish.description).trim()
           const maxChars = 70
 
           if (displayDesc.length > maxChars) {
@@ -182,14 +193,14 @@ function addNavigationArrows(page: any, pageNum: number, width: number, height: 
   const arrowSize = 12
   const arrowY = 30
 
-  page.drawText('◀', {
+  page.drawText('<', {
     x: 40,
     y: arrowY,
     size: arrowSize,
     color: rgb(0.33, 0.33, 0.33),
   })
 
-  page.drawText('▶', {
+  page.drawText('>', {
     x: width - 60,
     y: arrowY,
     size: arrowSize,
