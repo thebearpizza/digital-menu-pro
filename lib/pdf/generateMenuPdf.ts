@@ -142,7 +142,9 @@ export async function generateMenuPdf(payload: PdfPayload): Promise<Uint8Array> 
 
     if (menu.description) {
       const desc = sanitize(menu.description)
-      const truncated = desc.length > 65 ? desc.slice(0, 65) + '…' : desc
+      const lines = wrapText(desc, 50)
+      const text = lines.length > 0 ? lines[0] : ''
+      const truncated = text.length > 50 ? text.slice(0, 50) + '…' : text
       choicePage.drawText(truncated, {
         x: cardX + 18,
         y: cardY + 14,
