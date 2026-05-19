@@ -44,39 +44,41 @@ function CategoryPage({ page }: { page: ViewerPage }) {
 
 function ItemsPage({ page, onDishClick }: { page: ViewerPage; onDishClick: (item: any) => void }) {
   return (
-    <div className='h-full overflow-y-auto bg-white p-6'>
-      <h2 className='text-2xl font-bold mb-6 text-[#2a1d16] sticky top-0 bg-white py-2'>
+    <div className='h-full overflow-hidden bg-white flex flex-col'>
+      <h2 className='text-2xl font-bold text-[#2a1d16] py-3 px-6 flex-shrink-0 border-b border-[#e8d5b7]'>
         {page.title}
       </h2>
-      <div className='space-y-4'>
-        {page.items?.map((item) => (
-          <button
-            key={item.id}
-            onClick={() => onDishClick(item)}
-            className='w-full text-left p-4 rounded-lg hover:bg-[#f9f7f4] transition-colors border border-[#e8d5b7] cursor-pointer'
-          >
-            <div className='flex justify-between items-start gap-3 mb-2'>
-              <h3 className='text-lg font-semibold text-[#2a1d16] flex-1'>{item.name}</h3>
-              {item.price && item.price > 0 && (
-                <span className='text-lg font-bold text-[#8b4513] shrink-0'>€ {item.price.toFixed(2)}</span>
-              )}
-            </div>
-            {item.description && <p className='text-sm text-[#5c4a3a] mb-2'>{item.description}</p>}
-            {item.allergens && item.allergens.length > 0 && (
-              <div className='flex flex-wrap gap-1'>
-                {item.allergens.map((allergen) => (
-                  <span
-                    key={allergen}
-                    className='text-xs px-2 py-0.5 rounded bg-[#f0e8dc] text-[#6b4c2a]'
-                    title={allergen}
-                  >
-                    {allergenEmoji[allergen] ?? '⚠️'}
-                  </span>
-                ))}
+      <div className='flex-1 overflow-y-auto px-6 py-4'>
+        <div className='space-y-3'>
+          {page.items?.map((item) => (
+            <button
+              key={item.id}
+              onClick={() => onDishClick(item)}
+              className='w-full text-left p-3 rounded-lg hover:bg-[#f9f7f4] transition-colors border border-[#e8d5b7] cursor-pointer'
+            >
+              <div className='flex justify-between items-start gap-3 mb-1'>
+                <h3 className='text-base font-semibold text-[#2a1d16] flex-1'>{item.name}</h3>
+                {item.price && item.price > 0 && (
+                  <span className='text-base font-bold text-[#8b4513] shrink-0'>€ {item.price.toFixed(2)}</span>
+                )}
               </div>
-            )}
-          </button>
-        ))}
+              {item.description && <p className='text-xs text-[#5c4a3a] mb-1'>{item.description}</p>}
+              {item.allergens && item.allergens.length > 0 && (
+                <div className='flex flex-wrap gap-1'>
+                  {item.allergens.map((allergen) => (
+                    <span
+                      key={allergen}
+                      className='text-xs px-1.5 py-0.5 rounded bg-[#f0e8dc] text-[#6b4c2a]'
+                      title={allergen}
+                    >
+                      {allergenEmoji[allergen] ?? '⚠️'}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </button>
+          ))}
+        </div>
       </div>
     </div>
   )
