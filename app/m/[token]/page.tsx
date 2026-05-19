@@ -37,7 +37,21 @@ export default async function PublicMenuPage({
   const { payload, restaurantId, cacheKey, dishesById, menus, categoriesByMenu } = result
 
   // Garantisce PDF + posizioni in cache, le riusa se già esistenti.
-  const { dishPositions, totalPages } = await ensureMenuPdfCached(payload, restaurantId, cacheKey)
+  // Fallback senza overlay/positions se l'env del service role manca (es. preview deploy).
+  let dishPositions: import('@/lib/pdf/generateMenuPdf').DishPosition[] = []
+  let totalPages = 1
+  try {
+    const cached = await ensureMenuPdfCached(payload, restaurantId, cacheKey)
+    dishPositions = cached.dishPositions
+    totalPages = cached.totalPages
+  } catch (err) {
+    console.error('[m/token] ensureMenuPdfCached failed:', err)
+    // Stima totalPages a priori: 1 (scelta) + ogni menu (copertina + categorie).
+    totalPages = 1
+    for (const menu of menus) {
+      totalPages += 1 + (categoriesByMenu[menu.id]?.length ?? 0)
+    }
+  }
 
   // pageNumberByCategory: ricavato dalle posizioni reali del PDF (più preciso del calcolo a priori).
   const pageNumberByCategory: Record<string, number> = {}
@@ -47,6 +61,18 @@ export default async function PublicMenuPage({
     const key = `${dish.menu_id}:${dish.category}`
     if (!pageNumberByCategory[key] || pos.pageNumber < pageNumberByCategory[key]) {
       pageNumberByCategory[key] = pos.pageNumber
+    }
+  }
+
+  // Fallback per pageNumberByCategory se non abbiamo posizioni dal PDF.
+  if (dishPositions.length === 0) {
+    let pageNum = 2
+    for (const menu of menus) {
+      pageNum++ // copertina menu
+      for (const category of categoriesByMenu[menu.id] ?? []) {
+        pageNumberByCategory[`${menu.id}:${category}`] = pageNum
+        pageNum++
+      }
     }
   }
 
