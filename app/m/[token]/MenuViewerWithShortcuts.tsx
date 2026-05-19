@@ -92,10 +92,26 @@ export function MenuViewerWithShortcuts({
       <div style={{ flex: 1, position: 'relative' }}>
         <iframe
           ref={iframeRef}
-          src={viewerUrl + '#toolbar=0&navpanes=0'}
+          src={viewerUrl + '?toolbar=0'}
           title={`Menu ${restaurantName}`}
           style={{ width: '100%', height: '100%', border: 0, display: 'block' }}
           allow="fullscreen"
+          onLoad={() => {
+            // Nasconde toolbar via CSS quando il PDF è caricato
+            try {
+              const iframeDoc = iframeRef.current?.contentDocument
+              if (iframeDoc) {
+                const style = iframeDoc.createElement('style')
+                style.textContent = `
+                  #toolbarContainer { display: none !important; }
+                  .page { max-width: 100%; }
+                `
+                iframeDoc.head.appendChild(style)
+              }
+            } catch (e) {
+              // Cross-origin, non possiamo modificare il CSS
+            }
+          }}
         />
       </div>
     </div>
