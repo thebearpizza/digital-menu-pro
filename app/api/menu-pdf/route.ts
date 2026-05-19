@@ -1,4 +1,4 @@
-import { PDFDocument, rgb, PDFPage } from 'pdf-lib'
+import { PDFDocument, rgb } from 'pdf-lib'
 import { createClient } from '@/lib/supabase/server'
 
 export async function GET(request: Request) {
@@ -74,12 +74,14 @@ export async function GET(request: Request) {
     }
 
     let pageCount = 1
+
     // Pagine per categoria
     for (const [category, categoryDishes] of Array.from(categories)) {
       page = pdfDoc.addPage([595, 842])
       pageCount++
       let yPosition = height - 50
 
+      // Titolo categoria
       page.drawText(category, {
         x: 50,
         y: yPosition,
@@ -89,6 +91,7 @@ export async function GET(request: Request) {
 
       yPosition -= 50
 
+      // Piatti della categoria
       for (const dish of categoryDishes) {
         // Controlla se c'è spazio per il piatto
         if (yPosition < 80) {
@@ -100,7 +103,7 @@ export async function GET(request: Request) {
 
         const nameY = yPosition
 
-        // Nome e prezzo
+        // Nome piatto
         page.drawText(dish.name, {
           x: 50,
           y: nameY,
@@ -108,6 +111,7 @@ export async function GET(request: Request) {
           color: rgb(0.16, 0.11, 0.09),
         })
 
+        // Prezzo
         if (dish.price) {
           page.drawText(`€ ${dish.price.toFixed(2)}`, {
             x: width - 100,
@@ -119,7 +123,7 @@ export async function GET(request: Request) {
 
         yPosition -= 28
 
-        // Descrizione (truncated preview)
+        // Descrizione (truncated)
         if (dish.description) {
           let displayDesc = dish.description.trim()
           const maxChars = 70
@@ -162,16 +166,14 @@ export async function GET(request: Request) {
     })
   } catch (error) {
     console.error('Error generating PDF:', error)
-    return new Response('Error generating PDF', { status: 500 })
+    return new Response(JSON.stringify({ error: String(error) }), { status: 500 })
   }
 }
 
-function addNavigationArrows(page: PDFPage, pageNum: number, width: number, height: number) {
-  // Frecce di navigazione integrate nel PDF
+function addNavigationArrows(page: any, pageNum: number, width: number, height: number) {
   const arrowSize = 12
   const arrowY = 30
 
-  // Freccia sinistra
   page.drawText('◀', {
     x: 40,
     y: arrowY,
@@ -179,7 +181,6 @@ function addNavigationArrows(page: PDFPage, pageNum: number, width: number, heig
     color: rgb(0.33, 0.33, 0.33),
   })
 
-  // Freccia destra
   page.drawText('▶', {
     x: width - 60,
     y: arrowY,
@@ -187,7 +188,6 @@ function addNavigationArrows(page: PDFPage, pageNum: number, width: number, heig
     color: rgb(0.33, 0.33, 0.33),
   })
 
-  // Numero pagina al centro
   page.drawText(pageNum.toString(), {
     x: width / 2 - 10,
     y: arrowY,
