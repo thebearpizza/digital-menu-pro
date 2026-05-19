@@ -41,14 +41,17 @@ function wrapText(text: string, maxChars: number): string[] {
 
 function drawPageFooter(page: PDFPage, pageNum: number, font: PDFFont) {
   const y = 25
-  page.drawText('«', { x: 30, y, size: 21, font, color: COLOR_ARROW })
-  page.drawText('»', { x: PAGE_WIDTH - 40, y, size: 21, font, color: COLOR_ARROW })
+  const prevLabel = 'Prec.'
+  const nextLabel = 'Succ.'
+  const nextWidth = font.widthOfTextAtSize(nextLabel, 18)
+  page.drawText(prevLabel, { x: 30, y, size: 18, font, color: COLOR_ARROW })
+  page.drawText(nextLabel, { x: PAGE_WIDTH - 30 - nextWidth, y, size: 18, font, color: COLOR_ARROW })
   const label = sanitize(String(pageNum))
-  const labelWidth = font.widthOfTextAtSize(label, 14)
+  const labelWidth = font.widthOfTextAtSize(label, 18)
   page.drawText(label, {
     x: (PAGE_WIDTH - labelWidth) / 2,
     y,
-    size: 14,
+    size: 18,
     font,
     color: COLOR_ARROW,
   })
