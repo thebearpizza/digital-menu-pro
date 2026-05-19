@@ -102,11 +102,21 @@ var bookFlip = {
 		
 		$('#viewer').turn({
 			elevation: 50,
+			duration: 1500,
+			turnOnClick: false,
+			acceleration: true,
+			autoCenter: true,
 			width:  this._size(PDFViewerApplication.page,'width') * this._spreadMult(),
 			height: this._size(PDFViewerApplication.page,'height'),
 			page: PDFViewerApplication.page,
 			when: {
-				turned: function(event, page) { 
+				turning: function(event, page) {
+					// Notifica il parent IMMEDIATAMENTE all'inizio dell'animazione
+					try {
+						window.parent.postMessage({ type: 'pagechanging', pageNumber: page }, '*');
+					} catch(e) {}
+				},
+				turned: function(event, page) {
 					PDFViewerApplication.page = page;
 					viewer.update();
 				}
