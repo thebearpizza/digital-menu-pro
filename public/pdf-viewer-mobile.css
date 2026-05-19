@@ -6,11 +6,16 @@ body {
   overflow: hidden;
 }
 
+html {
+  overflow: hidden;
+}
+
 #outerContainer {
   display: flex;
   flex-direction: column;
   height: 100vh;
   width: 100vw;
+  overflow: hidden;
 }
 
 #sidebarContainer {
@@ -21,26 +26,34 @@ body {
   display: none !important;
 }
 
+#toolbarContainer {
+  display: none !important;
+}
+
+#secondaryToolbar {
+  display: none !important;
+}
+
+.findbar {
+  display: none !important;
+}
+
 #mainContainer {
   flex: 1;
   display: flex;
   flex-direction: column;
   overflow: hidden;
   width: 100%;
-}
-
-#toolbarContainer {
-  flex-shrink: 0;
-  max-height: 50px;
-  overflow-y: auto;
+  height: 100vh;
 }
 
 #viewerContainer {
   flex: 1;
-  overflow: auto;
+  overflow: hidden !important;
   display: flex;
   align-items: center;
   justify-content: center;
+  position: relative;
 }
 
 .page {
@@ -48,28 +61,55 @@ body {
   padding: 0;
 }
 
-/* Nascondere elementi inutili su mobile */
-#openFile,
-#print,
-#presentationMode,
-#openFileForm,
-#scaleSelectContainer,
-#pageNumberSpinner,
-#numPages {
+.page canvas {
+  max-height: 100vh;
+  height: auto;
+}
+
+/* Nascondi scroll */
+#viewerContainer::-webkit-scrollbar {
   display: none;
 }
 
-/* Ridurre toolbar su mobile */
-@media (max-width: 768px) {
-  #toolbarContainer {
-    max-height: 40px;
-  }
-
-  .toolbarButton span {
-    display: none;
-  }
-
-  .splitToolbarButton {
-    margin: 0 2px;
-  }
+#viewerContainer {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
 }
+
+/* Navigation arrows */
+.nav-arrow {
+  position: fixed;
+  bottom: 20px;
+  font-size: 30px;
+  color: #333;
+  background: rgba(255, 255, 255, 0.9);
+  border: 2px solid #333;
+  border-radius: 8px;
+  padding: 10px 15px;
+  cursor: pointer;
+  z-index: 1000;
+  user-select: none;
+}
+
+.nav-arrow:hover {
+  background: rgba(255, 255, 255, 1);
+  transform: scale(1.1);
+}
+
+.nav-arrow.prev {
+  left: 20px;
+}
+
+.nav-arrow.next {
+  right: 20px;
+}
+
+.nav-arrow.disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.nav-arrow.disabled:hover {
+  transform: none;
+}
+

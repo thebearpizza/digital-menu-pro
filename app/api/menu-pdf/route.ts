@@ -112,18 +112,21 @@ export async function GET(request: Request) {
 
         yPosition -= 25
 
-        // Descrizione
+        // Descrizione (truncated preview)
         if (dish.description) {
-          const descriptionLines = wrapText(dish.description, 80)
-          for (const line of descriptionLines) {
-            page.drawText(line, {
-              x: 70,
-              y: yPosition,
-              size: 10,
-              color: rgb(0.36, 0.29, 0.22),
-            })
-            yPosition -= 15
+          let displayDesc = dish.description.trim()
+          const maxChars = 70
+
+          if (displayDesc.length > maxChars) {
+            displayDesc = displayDesc.substring(0, maxChars - 3) + '...'
           }
+
+          page.drawText(displayDesc, {
+            x: 70,
+            y: yPosition,
+            size: 10,
+            color: rgb(0.36, 0.29, 0.22),
+          })
         }
 
         yPosition -= 10
