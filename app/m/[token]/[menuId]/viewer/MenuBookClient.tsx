@@ -77,7 +77,7 @@ export default function MenuBookClient({ menuId, menuData }: Props) {
       <div className='px-3'>
         <div className='mx-auto w-full max-w-5xl overflow-hidden rounded-[28px] border border-[#dbcdb8] bg-white shadow-[0_24px_80px_rgba(74,53,31,0.14)]'>
           <div style={{ height: '78vh' }}>
-            <Canvas3D />
+            <Canvas3D menuData={menuData} />
           </div>
         </div>
       </div>
