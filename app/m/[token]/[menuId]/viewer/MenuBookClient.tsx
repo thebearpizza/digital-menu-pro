@@ -1,19 +1,11 @@
 'use client'
 
-import { useMemo, useState } from 'react'
-import dynamic from 'next/dynamic'
-
-const Canvas3D = dynamic(() => import('./Canvas3D'), {
-  ssr: false,
-  loading: () => (
-    <div className='flex items-center justify-center w-full h-full bg-stone-100'>
-      <div className='text-center'>
-        <div className='animate-spin rounded-full h-12 w-12 border-b-2 border-stone-900 mx-auto mb-4'></div>
-        <p className='text-stone-600'>Caricamento menu 3D...</p>
-      </div>
-    </div>
-  ),
-})
+import { useEffect } from 'react'
+import { useAtom } from 'jotai'
+import { externalMenuPayloadAtom, viewerPagesAtom } from './menu-book-state'
+import PageViewer from './PageViewer'
+import DishModal from './DishModal'
+import { buildViewerPages, type MenuPayload } from './menu-to-pages'
 
 type Dish = {
   id: string
@@ -36,57 +28,62 @@ type Props = {
   }
 }
 
-function groupCategories(dishes: Dish[]) {
-  const map = new Map<string, Dish[]>()
+function MenuViewerContent({ menuData }: { menuData: Props['menuData'] }) {
+  const [, setExternalPayload] = useAtom(externalMenuPayloadAtom)
+  const [pages] = useAtom(viewerPagesAtom)
 
-  for (const dish of dishes) {
-    const key = dish.category?.trim() || 'Menu'
-    if (!map.has(key)) map.set(key, [])
-    map.get(key)!.push(dish)
-  }
-
-  return Array.from(map.entries()).map(([label, items]) => ({
-    id: label.toLowerCase().replace(/[^a-z0-9]+/gi, '-'),
-    label,
-    items: [...items].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0)),
-  }))
-}
-
-function CategoryTabs({ categories }: { categories: Array<{ id: string; label: string }> }) {
-  const [activeCategory, setActiveCategory] = useState(categories[0]?.id ?? '')
+  useEffect(() => {
+    const payload: MenuPayload = {
+      id: menuData.id,
+      name: menuData.name,
+      description: menuData.description,
+      viewer_settings: {
+        layout: {
+          productsPerPage: 6,
+          showCategoryCover: true,
+          paginateByCategory: true,
+          showCategoryName: true,
+          showDescription: true,
+          showPrice: true,
+          showAllergens: true,
+          showImage: false,
+        },
+        viewer: {
+          fixedFrontal: false,
+          showBottomTabs: false,
+        },
+      },
+      restaurant: {
+        id: 'default',
+        name: 'Restaurant',
+      },
+      dishes: menuData.dishes.map((dish) => ({
+        id: dish.id,
+        name: dish.name,
+        description: dish.description,
+        price: dish.price,
+        allergens: dish.allergens || [],
+        category: dish.category || 'Menu',
+        sort_order: dish.sort_order ?? null,
+      })),
+    }
+    setExternalPayload(payload)
+  }, [menuData, setExternalPayload])
 
   return (
-    <div className='fixed inset-x-0 top-0 z-30 px-3 pt-3'>
-      <div className='mx-auto flex w-full max-w-lg gap-2 overflow-x-auto rounded-full bg-[#faf8f3]/88 px-2 py-2 shadow-[0_10px_35px_rgba(0,0,0,0.12)] backdrop-blur-md'>
-        {categories.map((category) => (
-          <button
-            key={category.id}
-            onClick={() => setActiveCategory(category.id)}
-            className={
-              category.id === activeCategory
-                ? 'shrink-0 rounded-full bg-[#2a1d16] px-4 py-2 text-sm font-medium text-white'
-                : 'shrink-0 rounded-full bg-white px-4 py-2 text-sm font-medium text-[#5e4a38]'
-            }
-          >
-            {category.label}
-          </button>
-        ))}
-      </div>
-    </div>
+    <>
+      <PageViewer pages={pages} />
+      <DishModal />
+    </>
   )
 }
 
 export default function MenuBookClient({ menuData }: Props) {
-  const categories = useMemo(() => groupCategories(menuData.dishes), [menuData.dishes])
-
   return (
-    <div className='min-h-[100dvh] w-full bg-[#efe4d4] pt-20 pb-6'>
-      <CategoryTabs categories={categories} />
-      <div className='px-3'>
-        <div className='mx-auto w-full max-w-5xl overflow-hidden rounded-[28px] border border-[#dbcdb8] bg-white shadow-[0_24px_80px_rgba(74,53,31,0.14)]'>
-          <div style={{ height: '78vh' }}>
-            <Canvas3D menuData={menuData} />
-          </div>
+    <div className='min-h-[100dvh] w-full bg-[#efe4d4] p-4 sm:p-6 flex items-center justify-center'>
+      <div className='w-full max-w-2xl'>
+        <div className='aspect-[9/16] sm:aspect-auto sm:h-[80vh] flex flex-col gap-4'>
+          <MenuViewerContent menuData={menuData} />
         </div>
       </div>
     </div>
