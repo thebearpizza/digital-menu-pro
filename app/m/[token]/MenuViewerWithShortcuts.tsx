@@ -23,7 +23,7 @@ export function MenuViewerWithShortcuts({
 }: MenuViewerWithShortcutsProps) {
   const iframeRef = useRef<HTMLIFrameElement>(null)
   const [activeMenu, setActiveMenu] = useState(menus[0]?.id || '')
-  const [allCategories, setAllCategories] = useState<string[]>([])
+  const [allCategories, setAllCategories] = useState<string[]>(categoriesByMenu[menus[0]?.id] || [])
   const [isLoading, setIsLoading] = useState(true)
   const [currentPage, setCurrentPage] = useState(1)
   const [totalPages] = useState(initialTotalPages)
@@ -207,7 +207,7 @@ export function MenuViewerWithShortcuts({
       )}
 
       {/* Barra sticky con shortcut categorie */}
-      {!isLoading && allCategories.length > 0 && (
+      {allCategories.length > 0 && (
         <div
           style={{
             position: 'sticky',
@@ -215,95 +215,152 @@ export function MenuViewerWithShortcuts({
             zIndex: 100,
             background: 'rgba(45, 45, 45, 0.95)',
             backdropFilter: 'blur(4px)',
-            padding: '10px 16px',
+            padding: '12px 16px',
             overflowX: 'auto',
             display: 'flex',
-            gap: '10px',
+            gap: '8px',
             alignItems: 'center',
             borderBottom: '1px solid rgba(119, 119, 119, 0.3)',
           }}
         >
-          {allCategories.map((category) => (
-            <button
-              key={category}
-              onClick={() => handleCategoryClick(category)}
+          {allCategories.map((category) => {
+            const categoryKey = `${activeMenu}:${category}`
+            const categoryPageNum = pageNumberByCategory[categoryKey]
+            const isActive = categoryPageNum === currentPage
+
+            return (
+              <button
+                key={category}
+                onClick={() => handleCategoryClick(category)}
+                style={{
+                  padding: '8px 14px',
+                  background: isActive
+                    ? 'linear-gradient(135deg, #8b6f47 0%, #a0825c 100%)'
+                    : 'linear-gradient(135deg, #5a4a3a 0%, #6b5a4a 100%)',
+                  color: isActive ? '#fff' : '#e8dcc8',
+                  border: isActive ? '1px solid #c9a961' : '1px solid #8b7355',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  fontSize: '13px',
+                  fontWeight: isActive ? '600' : '500',
+                  whiteSpace: 'nowrap',
+                  transition: 'all 0.2s ease',
+                  boxShadow: isActive
+                    ? '0 0 12px rgba(201, 169, 97, 0.4), 0 2px 6px rgba(0, 0, 0, 0.3)'
+                    : '0 2px 4px rgba(0, 0, 0, 0.2)',
+                }}
+              >
+                {category}
+              </button>
+            )
+          })}
+        </div>
+      )}
+
+      {/* PDF viewer + Slider container */}
+      <div style={{ flex: 1, position: 'relative', display: 'flex', flexDirection: 'column', justifyContent: 'center', overflow: 'hidden' }}>
+        {/* PDF viewer */}
+        <div style={{ flex: 1, position: 'relative', display: 'flex', justifyContent: 'center', overflow: 'hidden' }}>
+          <div style={{ position: 'relative', width: '100%', height: '100%', maxWidth: 'calc(100% - 4px)', margin: '0 2px' }}>
+            <iframe
+              ref={iframeRef}
+              src={viewerUrl + '#zoom=page-width&pagemode=none'}
+              title={`Menu ${restaurantName}`}
               style={{
-                padding: '8px 14px',
-                background: 'linear-gradient(135deg, #5a4a3a 0%, #6b5a4a 100%)',
-                color: '#e8dcc8',
-                border: '1px solid #8b7355',
-                borderRadius: '6px',
-                cursor: 'pointer',
-                fontSize: '13px',
-                fontWeight: '500',
-                whiteSpace: 'nowrap',
-                transition: 'all 0.2s ease',
-                boxShadow: '0 2px 4px rgba(0, 0, 0, 0.2)',
+                width: '100%',
+                height: '100%',
+                border: 0,
+                display: 'block',
+                opacity: isLoading ? 0 : 1,
+                transition: 'opacity 0.3s ease',
               }}
-            >
-              {category}
-            </button>
-          ))}
+              allow="fullscreen"
+              onLoad={handleIframeLoad}
+            />
+          </div>
         </div>
-      )}
 
-      {/* PDF viewer */}
-      <div style={{ flex: 1, position: 'relative', display: 'flex', justifyContent: 'center', overflow: 'hidden' }}>
-        <div style={{ position: 'relative', width: '100%', height: '100%', maxWidth: 'calc(100% - 4px)', margin: '0 2px' }}>
-          <iframe
-            ref={iframeRef}
-            src={viewerUrl + '#zoom=page-width&pagemode=none'}
-            title={`Menu ${restaurantName}`}
+        {/* Barra scorrevole pagine - modernizzata */}
+        {!isLoading && (
+          <div
             style={{
-              width: '100%',
-              height: '100%',
-              border: 0,
-              display: 'block',
-              opacity: isLoading ? 0 : 1,
-              transition: 'opacity 0.3s ease',
+              background: 'rgba(45, 45, 45, 0.95)',
+              borderTop: '1px solid rgba(119, 119, 119, 0.3)',
+              padding: '14px 16px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '12px',
             }}
-            allow="fullscreen"
-            onLoad={handleIframeLoad}
-          />
-        </div>
+          >
+            <span style={{ color: '#999', fontSize: '11px', minWidth: '32px', fontWeight: '500' }}>
+              {currentPage}
+            </span>
+            <input
+              type="range"
+              min="1"
+              max={totalPages}
+              value={currentPage}
+              onChange={handlePageChange}
+              style={{
+                flex: 1,
+                height: '5px',
+                background: 'linear-gradient(to right, #555 0%, #666 50%, #555 100%)',
+                borderRadius: '3px',
+                outline: 'none',
+                WebkitAppearance: 'none',
+                appearance: 'none',
+                cursor: 'pointer',
+                WebkitSliderThumb: {
+                  WebkitAppearance: 'none',
+                  appearance: 'none',
+                  width: '14px',
+                  height: '14px',
+                  borderRadius: '50%',
+                  background: 'linear-gradient(135deg, #c9a961 0%, #d4b896 100%)',
+                  cursor: 'pointer',
+                  boxShadow: '0 2px 6px rgba(201, 169, 97, 0.5)',
+                  border: 'none',
+                },
+              } as any}
+            />
+            <style>{`
+              input[type="range"]::-webkit-slider-thumb {
+                -webkit-appearance: none;
+                appearance: none;
+                width: 14px;
+                height: 14px;
+                border-radius: 50%;
+                background: linear-gradient(135deg, #c9a961 0%, #d4b896 100%);
+                cursor: pointer;
+                box-shadow: 0 2px 6px rgba(201, 169, 97, 0.5);
+                border: none;
+                transition: all 0.2s ease;
+              }
+              input[type="range"]::-webkit-slider-thumb:hover {
+                transform: scale(1.2);
+                box-shadow: 0 0 12px rgba(201, 169, 97, 0.7);
+              }
+              input[type="range"]::-moz-range-thumb {
+                width: 14px;
+                height: 14px;
+                border-radius: 50%;
+                background: linear-gradient(135deg, #c9a961 0%, #d4b896 100%);
+                cursor: pointer;
+                box-shadow: 0 2px 6px rgba(201, 169, 97, 0.5);
+                border: none;
+                transition: all 0.2s ease;
+              }
+              input[type="range"]::-moz-range-thumb:hover {
+                transform: scale(1.2);
+                box-shadow: 0 0 12px rgba(201, 169, 97, 0.7);
+              }
+            `}</style>
+            <span style={{ color: '#999', fontSize: '11px', minWidth: '32px', textAlign: 'right', fontWeight: '500' }}>
+              {totalPages}
+            </span>
+          </div>
+        )}
       </div>
-
-      {/* Barra scorrevole pagine */}
-      {!isLoading && (
-        <div
-          style={{
-            background: 'rgba(45, 45, 45, 0.95)',
-            borderTop: '1px solid rgba(119, 119, 119, 0.3)',
-            padding: '8px 16px',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '10px',
-          }}
-        >
-          <span style={{ color: '#aaa', fontSize: '12px', minWidth: '40px' }}>
-            {currentPage}
-          </span>
-          <input
-            type="range"
-            min="1"
-            max={totalPages}
-            value={currentPage}
-            onChange={handlePageChange}
-            style={{
-              flex: 1,
-              height: '4px',
-              background: '#555',
-              borderRadius: '2px',
-              outline: 'none',
-              WebkitAppearance: 'slider-horizontal',
-              cursor: 'pointer',
-            }}
-          />
-          <span style={{ color: '#aaa', fontSize: '12px', minWidth: '40px', textAlign: 'right' }}>
-            {totalPages}
-          </span>
-        </div>
-      )}
     </div>
   )
 }
