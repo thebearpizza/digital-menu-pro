@@ -3,47 +3,64 @@ import { createClient } from '@/lib/supabase/server'
 
 export async function GET(request: Request) {
   try {
-    const { searchParams } = new URL(request.url)
-    const menuId = searchParams.get('menuId')
-    const token = searchParams.get('token')
+    console.log('[PDF] Starting PDF generation')
+
+    const url = new URL(request.url)
+    const menuId = url.searchParams.get('menuId')
+    const token = url.searchParams.get('token')
+
+    console.log('[PDF] Params:', { menuId, token })
 
     if (!menuId || !token) {
       return new Response('Missing menuId or token', { status: 400 })
     }
 
+    console.log('[PDF] Creating Supabase client')
     const supabase = await createClient()
 
-    const { data: restaurant } = await supabase
+    console.log('[PDF] Fetching restaurant')
+    const { data: restaurant, error: restaurantError } = await supabase
       .from('restaurants')
       .select('id,name')
       .eq('qr_public_token', token)
       .single()
 
-    if (!restaurant) {
+    if (restaurantError || !restaurant) {
+      console.error('[PDF] Restaurant error:', restaurantError)
       return new Response('Restaurant not found', { status: 404 })
     }
 
-    const { data: menu } = await supabase
+    console.log('[PDF] Fetching menu')
+    const { data: menu, error: menuError } = await supabase
       .from('menus')
       .select('id,name,description')
       .eq('id', menuId)
       .eq('restaurant_id', restaurant.id)
       .single()
 
-    if (!menu) {
+    if (menuError || !menu) {
+      console.error('[PDF] Menu error:', menuError)
       return new Response('Menu not found', { status: 404 })
     }
 
-    const { data: dishesData } = await supabase
+    console.log('[PDF] Fetching dishes')
+    const { data: dishesData, error: dishesError } = await supabase
       .from('dishes')
       .select('id,name,description,price,allergens,category,sort_order')
       .eq('menu_id', menu.id)
       .order('sort_order', { ascending: true })
 
+    if (dishesError) {
+      console.error('[PDF] Dishes error:', dishesError)
+    }
+
     const dishes = dishesData || []
+    console.log('[PDF] Got dishes:', dishes.length)
 
     // Crea il PDF
+    console.log('[PDF] Creating PDF document')
     const pdfDoc = await PDFDocument.create()
+    console.log('[PDF] PDF document created')
 
     // Copertina
     let page = pdfDoc.addPage([595, 842]) // A4
@@ -157,7 +174,10 @@ export async function GET(request: Request) {
       color: rgb(0.16, 0.11, 0.09),
     })
 
+    console.log('[PDF] Saving PDF')
     const pdfBytes = await pdfDoc.save()
+    console.log('[PDF] PDF saved, size:', pdfBytes.length)
+
     return new Response(pdfBytes, {
       headers: {
         'Content-Type': 'application/pdf',
