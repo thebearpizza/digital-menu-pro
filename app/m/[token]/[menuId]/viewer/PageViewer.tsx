@@ -140,7 +140,7 @@ export default function PageViewer({ pages }: Props) {
 
   return (
     <div
-      className='flex flex-col h-full bg-[#efe4d4]'
+      className='flex flex-col h-full w-full bg-[#efe4d4] p-4 sm:p-6 gap-4'
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
     >
@@ -153,7 +153,7 @@ export default function PageViewer({ pages }: Props) {
         </div>
       </div>
 
-      <div className='flex items-center justify-between gap-4 mt-6 px-4'>
+      <div className='flex items-center justify-between gap-4 px-4'>
         <button
           onClick={goToPrevious}
           disabled={isFirstPage}

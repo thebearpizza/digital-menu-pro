@@ -80,11 +80,9 @@ function MenuViewerContent({ menuData }: { menuData: Props['menuData'] }) {
 
 export default function MenuBookClient({ menuData }: Props) {
   return (
-    <div className='min-h-[100dvh] w-full bg-[#efe4d4] p-4 sm:p-6 flex items-center justify-center'>
-      <div className='w-full max-w-2xl'>
-        <div className='aspect-[9/16] sm:aspect-auto sm:h-[80vh] flex flex-col gap-4'>
-          <MenuViewerContent menuData={menuData} />
-        </div>
+    <div className='h-screen w-screen bg-[#efe4d4] flex flex-col overflow-hidden'>
+      <div className='flex-1 flex flex-col'>
+        <MenuViewerContent menuData={menuData} />
       </div>
     </div>
   )
