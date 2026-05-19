@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
 import type { Metadata } from 'next'
+import { MenuViewerWithShortcuts } from './MenuViewerWithShortcuts'
 
 // L'endpoint pubblico /m/[token] è il contratto stampato sui QR.
 // Vedi CLAUDE.md → "URL del QR code stabile per sempre".
@@ -34,17 +35,45 @@ export default async function PublicMenuPage({
 
   if (!restaurant) notFound()
 
+  // Query categorie per i shortcut
+  const { data: menus } = await supabase
+    .from('menus')
+    .select('id, name')
+    .eq('restaurant_id', restaurant.id)
+    .eq('is_active', true)
+    .order('sort_order', { ascending: true })
+
+  const menuIds = menus?.map((m) => m.id) || []
+  const { data: dishes } = await supabase
+    .from('dishes')
+    .select('category, menu_id')
+    .in('menu_id', menuIds)
+    .order('sort_order', { ascending: true })
+
+  // Raggruppa categorie per menu
+  const categoriesByMenu: Record<string, string[]> = {}
+  if (dishes) {
+    for (const dish of dishes) {
+      if (dish.category) {
+        if (!categoriesByMenu[dish.menu_id]) {
+          categoriesByMenu[dish.menu_id] = []
+        }
+        if (!categoriesByMenu[dish.menu_id].includes(dish.category)) {
+          categoriesByMenu[dish.menu_id].push(dish.category)
+        }
+      }
+    }
+  }
+
   const pdfUrl = `/api/menu-pdf/${encodeURIComponent(params.token)}`
   const viewerUrl = `/pdf-viewer/external/pdfjs-2.1.266-dist/web/viewer.html?file=${encodeURIComponent(pdfUrl)}`
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: '#525659' }}>
-      <iframe
-        src={viewerUrl}
-        title={`Menu ${restaurant.name}`}
-        style={{ width: '100%', height: '100%', border: 0, display: 'block' }}
-        allow="fullscreen"
-      />
-    </div>
+    <MenuViewerWithShortcuts
+      viewerUrl={viewerUrl}
+      restaurantName={restaurant.name}
+      menus={menus || []}
+      categoriesByMenu={categoriesByMenu}
+    />
   )
 }
