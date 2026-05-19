@@ -23,12 +23,16 @@ export default function PDFViewer({ token, menuId }: Props) {
   }, [menuId, token])
 
   return (
-    <div className='w-full h-full'>
-      <iframe
-        ref={iframeRef}
-        className='w-full h-full border-0'
-        title='Menu PDF Viewer'
-      />
-    </div>
+    <iframe
+      ref={iframeRef}
+      style={{
+        width: '100vw',
+        height: '100vh',
+        border: 'none',
+        margin: 0,
+        padding: 0,
+      }}
+      title='Menu PDF Viewer'
+    />
   )
 }

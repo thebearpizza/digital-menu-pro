@@ -35,10 +35,7 @@ export default async function MenuViewerPage({
     .order('sort_order', { ascending: true })
 
   return (
-    <div data-debug-route='MENU_ROUTE_OK' style={{ minHeight: '100vh' }}>
-      <div style={{ position: 'fixed', top: 12, right: 12, zIndex: 99999, background: '#111', color: '#fff', padding: '8px 12px', borderRadius: 12 }}>
-        ROUTE FILE ATTIVA
-      </div>
+    <div data-debug-route='MENU_ROUTE_OK' style={{ height: '100vh', width: '100vw', overflow: 'hidden', margin: 0, padding: 0 }}>
       <MenuBookClient
         token={params.token}
         menuId={params.menuId}

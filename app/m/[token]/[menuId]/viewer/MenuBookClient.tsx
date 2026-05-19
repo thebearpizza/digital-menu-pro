@@ -15,7 +15,7 @@ type Props = {
 
 export default function MenuBookClient({ token, menuId }: Props) {
   return (
-    <div className='min-h-[100dvh] w-full bg-white'>
+    <div style={{ height: '100vh', width: '100vw', overflow: 'hidden' }}>
       <PDFViewer token={token} menuId={menuId} />
     </div>
   )

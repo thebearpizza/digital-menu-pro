@@ -1,0 +1,75 @@
+/* Mobile optimization for PDF viewer */
+
+body {
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+#outerContainer {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  width: 100vw;
+}
+
+#sidebarContainer {
+  display: none !important;
+}
+
+#sidebarResizer {
+  display: none !important;
+}
+
+#mainContainer {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  width: 100%;
+}
+
+#toolbarContainer {
+  flex-shrink: 0;
+  max-height: 50px;
+  overflow-y: auto;
+}
+
+#viewerContainer {
+  flex: 1;
+  overflow: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.page {
+  margin: 0;
+  padding: 0;
+}
+
+/* Nascondere elementi inutili su mobile */
+#openFile,
+#print,
+#presentationMode,
+#openFileForm,
+#scaleSelectContainer,
+#pageNumberSpinner,
+#numPages {
+  display: none;
+}
+
+/* Ridurre toolbar su mobile */
+@media (max-width: 768px) {
+  #toolbarContainer {
+    max-height: 40px;
+  }
+
+  .toolbarButton span {
+    display: none;
+  }
+
+  .splitToolbarButton {
+    margin: 0 2px;
+  }
+}
