@@ -4,7 +4,17 @@ import { useMemo, useState } from 'react'
 import dynamic from 'next/dynamic'
 import PdfFlipbookViewer from './PdfFlipbookViewer'
 
-const Canvas3D = dynamic(() => import('./Canvas3D'), { ssr: false })
+const Canvas3D = dynamic(() => import('./Canvas3D'), {
+  ssr: false,
+  loading: () => (
+    <div className='flex items-center justify-center w-full h-full bg-stone-100'>
+      <div className='text-center'>
+        <div className='animate-spin rounded-full h-12 w-12 border-b-2 border-stone-900 mx-auto mb-4'></div>
+        <p className='text-stone-600'>Caricamento menu 3D...</p>
+      </div>
+    </div>
+  ),
+})
 
 type Dish = {
   id: string
