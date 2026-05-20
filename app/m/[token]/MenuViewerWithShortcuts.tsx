@@ -274,11 +274,9 @@ export function MenuViewerWithShortcuts({
 
       {/* PDF viewer + Slider container */}
       <div style={{ flex: 1, position: 'relative', display: 'flex', flexDirection: 'column', justifyContent: 'center', overflow: 'hidden' }}>
-        {/* PDF viewer container con overlay hit-box.
-            aspect-ratio fissa l'area al rapporto della pagina A4 (595x842) così che
-            gli overlay HTML in % corrispondano alle posizioni effettive nel PDF. */}
-        <div style={{ flex: 1, position: 'relative', display: 'flex', justifyContent: 'center', alignItems: 'center', overflow: 'hidden' }} role="main">
-          <div style={{ position: 'relative', height: '100%', aspectRatio: '595 / 842', maxWidth: '100%' }}>
+        {/* PDF viewer container con overlay hit-box */}
+        <div style={{ flex: 1, position: 'relative', display: 'flex', justifyContent: 'center', overflow: 'hidden' }} role="main">
+          <div style={{ position: 'relative', width: '100%', height: '100%', maxWidth: 'calc(100% - 4px)', margin: '0 2px' }}>
             <iframe
               ref={iframeRef}
               src={viewerUrl + '#zoom=page-width&pagemode=none'}
@@ -296,14 +294,25 @@ export function MenuViewerWithShortcuts({
             />
 
             {/* Corner blocks: disabilita il tap di turn.js sui due angoli SUPERIORI
-                (mantiene solo i corner inferiori per girare pagina). */}
+                (mantiene solo i corner inferiori per girare pagina).
+                WebkitTapHighlightColor: rimuove il flash grigio iOS al tap. */}
             <div
               onClick={(e) => { e.stopPropagation(); e.preventDefault() }}
-              style={{ position: 'absolute', top: 0, left: 0, width: '25%', height: '12%', zIndex: 5, cursor: 'default' }}
+              style={{
+                position: 'absolute', top: 0, left: 0, width: '25%', height: '12%',
+                zIndex: 5, cursor: 'default',
+                WebkitTapHighlightColor: 'transparent',
+                userSelect: 'none',
+              }}
             />
             <div
               onClick={(e) => { e.stopPropagation(); e.preventDefault() }}
-              style={{ position: 'absolute', top: 0, right: 0, width: '25%', height: '12%', zIndex: 5, cursor: 'default' }}
+              style={{
+                position: 'absolute', top: 0, right: 0, width: '25%', height: '12%',
+                zIndex: 5, cursor: 'default',
+                WebkitTapHighlightColor: 'transparent',
+                userSelect: 'none',
+              }}
             />
 
             {/* Overlay hit-box invisibili sopra i piatti.
@@ -331,6 +340,7 @@ export function MenuViewerWithShortcuts({
                     cursor: 'pointer',
                     padding: 0,
                     zIndex: 10,
+                    WebkitTapHighlightColor: 'transparent',
                   }}
                   aria-label={`View details for ${dish.name}`}
                 />
