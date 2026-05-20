@@ -434,9 +434,9 @@ export async function generateMenuPdf(payload: PdfPayload): Promise<GeneratedMen
   choicePage.node.set(PDFName.of('Annots'), annotsArray)
 
   // Applica le link annotations dei piatti a ciascuna pagina contenente piatti.
-  for (const [page, refs] of dishAnnotsByPage.entries()) {
+  dishAnnotsByPage.forEach((refs, page) => {
     page.node.set(PDFName.of('Annots'), pdf.context.obj(refs))
-  }
+  })
 
   const bytes = await pdf.save()
   return { bytes, dishPositions, totalPages: pageCounter }
