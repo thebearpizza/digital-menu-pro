@@ -1,4 +1,4 @@
-import { PDFDocument, PDFFont, PDFName, PDFPage, PDFString, StandardFonts, rgb } from 'pdf-lib'
+import { PDFDocument, PDFFont, PDFName, PDFPage, StandardFonts, rgb } from 'pdf-lib'
 import type { PdfMenu, PdfPayload } from './types'
 import { allergenNumbers } from '@/lib/allergens'
 
@@ -157,12 +157,9 @@ export async function generateMenuPdf(payload: PdfPayload): Promise<GeneratedMen
   const menuCoverPages: PDFPage[] = []
 
   // Posizioni dei piatti: pagina e Y top/bottom in percentuale (0 = top, 1 = bottom).
-  // Usate dal client per ricavare pageNumberByCategory.
+  // Usate dal client per piazzare hit-area HTML cliccabili sopra ogni piatto
+  // e per ricavare pageNumberByCategory.
   const dishPositions: DishPosition[] = []
-
-  // Annotation Link da aggiungere a ciascuna pagina piatti. Le mappe ref→array
-  // permettono di accumulare i link e impostarli sul nodo della pagina alla fine.
-  const dishAnnotsByPage = new Map<PDFPage, ReturnType<typeof pdf.context.register>[]>()
 
   // ---- Pagina 1: copertina ristorante + scelta menu (accorpate) ----
   const choicePage = pdf.addPage([PAGE_WIDTH, PAGE_HEIGHT])
@@ -383,28 +380,6 @@ export async function generateMenuPdf(payload: PdfPayload): Promise<GeneratedMen
           yBottomPercent: (PAGE_HEIGHT - dishYBottom) / PAGE_HEIGHT,
         })
 
-        // Link annotation cliccabile sul rettangolo del piatto. URI custom
-        // 'dish:<id>' intercettato dal client per aprire la card di dettaglio.
-        // Coordinate in punti PDF (origine in basso-sinistra).
-        // NOTA: usare PDFName.of() per i valori nome — pdf-lib converte le
-        // stringhe JS a PDFHexString, non a PDFName, e PDF.js non le riconosce.
-        const dishLinkRef = pdf.context.register(
-          pdf.context.obj({
-            Type: PDFName.of('Annot'),
-            Subtype: PDFName.of('Link'),
-            Rect: [MARGIN_X, dishYBottom, PAGE_WIDTH - MARGIN_X, dishYTop],
-            Border: [0, 0, 0],
-            A: pdf.context.obj({
-              Type: PDFName.of('Action'),
-              S: PDFName.of('URI'),
-              URI: PDFString.of(`dish:${dish.id}`),
-            }),
-          })
-        )
-        const existing = dishAnnotsByPage.get(page) ?? []
-        existing.push(dishLinkRef)
-        dishAnnotsByPage.set(page, existing)
-
         y -= 12
       }
 
@@ -424,21 +399,16 @@ export async function generateMenuPdf(payload: PdfPayload): Promise<GeneratedMen
 
     const linkRef = pdf.context.register(
       pdf.context.obj({
-        Type: PDFName.of('Annot'),
-        Subtype: PDFName.of('Link'),
+        Type: 'Annot',
+        Subtype: 'Link',
         Rect: [rect.x1, rect.y1, rect.x2, rect.y2],
         Border: [0, 0, 0],
-        Dest: [target.ref, PDFName.of('Fit')],
+        Dest: [target.ref, 'Fit'],
       })
     )
     annotsArray.push(linkRef)
   }
   choicePage.node.set(PDFName.of('Annots'), annotsArray)
-
-  // Applica le link annotations dei piatti a ciascuna pagina contenente piatti.
-  dishAnnotsByPage.forEach((refs, page) => {
-    page.node.set(PDFName.of('Annots'), pdf.context.obj(refs))
-  })
 
   const bytes = await pdf.save()
   return { bytes, dishPositions, totalPages: pageCounter }

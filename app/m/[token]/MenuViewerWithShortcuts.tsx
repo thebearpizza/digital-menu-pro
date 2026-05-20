@@ -16,6 +16,13 @@ interface DishInfo {
   allergens: string[] | null
 }
 
+interface DishPosition {
+  id: string
+  pageNumber: number
+  yTopPercent: number
+  yBottomPercent: number
+}
+
 interface MenuViewerWithShortcutsProps {
   viewerUrl: string
   restaurantName: string
@@ -24,6 +31,7 @@ interface MenuViewerWithShortcutsProps {
   pageNumberByCategory: Record<string, number>
   totalPages: number
   dishesInfo: Record<string, DishInfo>
+  dishPositions: DishPosition[]
 }
 
 export function MenuViewerWithShortcuts({
@@ -34,6 +42,7 @@ export function MenuViewerWithShortcuts({
   pageNumberByCategory,
   totalPages: initialTotalPages,
   dishesInfo,
+  dishPositions,
 }: MenuViewerWithShortcutsProps) {
   const iframeRef = useRef<HTMLIFrameElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -128,66 +137,55 @@ export function MenuViewerWithShortcuts({
       `
       iframeDoc.head.appendChild(style)
 
-      // Inietta script che ascolta eventi di PDF.js DIRETTAMENTE (no polling)
+      // Inietta script che ascolta eventi di PDF.js DIRETTAMENTE (no polling).
+      // Le hit-area cliccabili dei piatti sono div HTML iniettati DENTRO l'elemento
+      // .page di PDF.js: questa div ha la dimensione esatta della pagina PDF, quindi
+      // le percentuali in dishPositions corrispondono alla posizione reale dei piatti.
+      const dishPositionsJson = JSON.stringify(dishPositions)
       const script = iframeDoc.createElement('script')
       script.textContent = `
         (function() {
-          // Intercetta window.open: PDF.js può chiamarlo per URI esterni (dish:...)
-          // prima che venga reso qualsiasi elemento <a> cliccabile.
-          var _origOpen = window.open;
-          window.open = function(url) {
-            var s = url ? String(url) : '';
-            if (s.indexOf('dish:') !== -1) {
-              var m = s.match(/dish:([^&#?]+)/);
-              if (m) {
-                window.parent.postMessage({ type: 'dishClick', dishId: m[1] }, '*');
-                return null;
-              }
-            }
-            return _origOpen.apply(window, arguments);
-          };
-
-          function sendDishClick(href) {
-            var idx = href.indexOf('dish:');
-            if (idx === -1) return false;
-            var dishId = href.slice(idx + 5);
-            window.parent.postMessage({ type: 'dishClick', dishId: dishId }, '*');
-            return true;
+          var DISH_POSITIONS = ${dishPositionsJson};
+          // Indicizza per pageNumber per lookup veloce
+          var byPage = {};
+          for (var i = 0; i < DISH_POSITIONS.length; i++) {
+            var dp = DISH_POSITIONS[i];
+            if (!byPage[dp.pageNumber]) byPage[dp.pageNumber] = [];
+            byPage[dp.pageNumber].push(dp);
           }
 
-          // Intercetta click sulle link annotation con schema 'dish:'.
-          // Cammina l'albero DOM a partire da e.target per gestire
-          // sia il caso in cui e.target sia l'<a> sia quello in cui
-          // sia un nodo figlio (o la <section> stessa).
-          document.addEventListener('click', function(e) {
-            var el = e.target;
-            // Percorre fino a 8 livelli verso l'alto per trovare un <a> o una .linkAnnotation
-            for (var i = 0; i < 8 && el && el.tagName; i++) {
-              if (el.tagName === 'A') {
-                var href = el.getAttribute('href') || el.href || '';
-                if (href.indexOf('dish:') !== -1) {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  sendDishClick(href);
-                  return;
-                }
-              }
-              // Sezione .linkAnnotation: cerca l'<a> figlia
-              if (el.className && el.className.indexOf && el.className.indexOf('linkAnnotation') !== -1) {
-                var a = el.querySelector ? el.querySelector('a') : null;
-                if (a) {
-                  var aHref = a.getAttribute('href') || a.href || '';
-                  if (aHref.indexOf('dish:') !== -1) {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    sendDishClick(aHref);
-                    return;
-                  }
-                }
-              }
-              el = el.parentElement;
+          function addOverlaysToPage(pageEl, pageNumber) {
+            if (!pageEl) return;
+            var dishes = byPage[pageNumber];
+            if (!dishes || dishes.length === 0) return;
+
+            // Evita doppi inserimenti se pagerendered viene rifirato
+            var existing = pageEl.querySelectorAll('.dish-hit-area');
+            for (var k = 0; k < existing.length; k++) existing[k].remove();
+
+            // Assicura position:relative sulla .page (è già impostato da PDF.js)
+            for (var j = 0; j < dishes.length; j++) {
+              var d = dishes[j];
+              var overlay = document.createElement('div');
+              overlay.className = 'dish-hit-area';
+              overlay.setAttribute('data-dish-id', d.id);
+              overlay.style.position = 'absolute';
+              overlay.style.left = '0';
+              overlay.style.right = '0';
+              overlay.style.top = (d.yTopPercent * 100) + '%';
+              overlay.style.height = ((d.yBottomPercent - d.yTopPercent) * 100) + '%';
+              overlay.style.cursor = 'pointer';
+              overlay.style.zIndex = '50';
+              overlay.style.background = 'transparent';
+              overlay.addEventListener('click', function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                var id = this.getAttribute('data-dish-id');
+                window.parent.postMessage({ type: 'dishClick', dishId: id }, '*');
+              });
+              pageEl.appendChild(overlay);
             }
-          }, true);
+          }
 
           function attachListeners() {
             if (!window.PDFViewerApplication || !window.PDFViewerApplication.eventBus) {
@@ -208,6 +206,19 @@ export function MenuViewerWithShortcuts({
             // pagesloaded: tutte le pagine sono pronte
             eventBus.on('pagesloaded', function() {
               window.parent.postMessage({ type: 'pagesloaded' }, '*');
+            });
+
+            // pagerendered: ogni volta che una pagina è renderizzata,
+            // aggiungiamo gli overlay cliccabili sui piatti di quella pagina.
+            eventBus.on('pagerendered', function(evt) {
+              var pageNumber = evt.pageNumber;
+              var pageEl = document.querySelector('.pdfViewer .page[data-page-number="' + pageNumber + '"]');
+              if (!pageEl) {
+                // Fallback: prendi tutte le .page e scegli per indice
+                var allPages = document.querySelectorAll('.pdfViewer .page');
+                pageEl = allPages[pageNumber - 1];
+              }
+              addOverlaysToPage(pageEl, pageNumber);
             });
 
             // Ascolta i messaggi dal parent per jump senza animazione
@@ -233,6 +244,12 @@ export function MenuViewerWithShortcuts({
             // Se le pagine sono già caricate
             if (window.PDFViewerApplication.pdfDocument) {
               window.parent.postMessage({ type: 'pagesloaded' }, '*');
+              // Aggiungi overlay alle pagine già renderizzate
+              var renderedPages = document.querySelectorAll('.pdfViewer .page[data-loaded="true"]');
+              for (var p = 0; p < renderedPages.length; p++) {
+                var pn = parseInt(renderedPages[p].getAttribute('data-page-number'), 10);
+                if (pn) addOverlaysToPage(renderedPages[p], pn);
+              }
             }
           }
           attachListeners();

@@ -3,7 +3,7 @@ import type { PdfMenu, PdfPayload } from './types'
 
 // Bumpa questa versione quando cambia la logica di generazione del PDF
 // per invalidare la cache di tutti i ristoranti.
-export const PDF_VERSION = 'v9'
+export const PDF_VERSION = 'v10'
 
 // cache_key = max(updated_at) tra restaurants, menus, dishes per quel ristorante.
 // Quando qualcosa cambia nel menu, l'updated_at sale, il path file cambia,
