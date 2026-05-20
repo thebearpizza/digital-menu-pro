@@ -293,6 +293,11 @@ export function MenuViewerWithShortcuts({
               onLoad={handleIframeLoad}
             />
 
+            {/* Angolo in alto a sinistra — blocca turn.js sul corner */}
+            <div style={{ position: 'absolute', top: 0, left: 0, width: '22%', height: '22%', zIndex: 5 }} />
+            {/* Angolo in alto a destra — blocca turn.js sul corner */}
+            <div style={{ position: 'absolute', top: 0, right: 0, width: '22%', height: '22%', zIndex: 5 }} />
+
             {/* Overlay hit-box invisibili sopra i piatti */}
             {dishesOnCurrentPage.map((pos) => {
               const dish = dishesInfo[pos.id]
