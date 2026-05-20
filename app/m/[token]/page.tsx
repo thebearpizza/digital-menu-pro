@@ -3,7 +3,8 @@ import { notFound } from 'next/navigation'
 import type { Metadata } from 'next'
 import { MenuViewerWithShortcuts } from './MenuViewerWithShortcuts'
 import { buildMenuPdfPayload } from '@/lib/pdf/buildPayload'
-import { ensureMenuPdfCached } from '@/lib/pdf/getMenuPdfData'
+import { ensureMenuPdfCached, hasStorageCredentials } from '@/lib/pdf/getMenuPdfData'
+import { generateMenuPdf } from '@/lib/pdf/generateMenuPdf'
 
 // L'endpoint pubblico /m/[token] è il contratto stampato sui QR.
 // Vedi CLAUDE.md → "URL del QR code stabile per sempre".
@@ -36,17 +37,23 @@ export default async function PublicMenuPage({
 
   const { payload, restaurantId, cacheKey, dishesById, menus, categoriesByMenu } = result
 
-  // Garantisce PDF + posizioni in cache, le riusa se già esistenti.
-  // Fallback senza overlay/positions se l'env del service role manca (es. preview deploy).
+  // Production (service role disponibile): usa cache su Supabase Storage.
+  // Preview/dev senza service role: genera inline ad ogni request per ottenere
+  // dishPositions comunque (più lento ma garantisce overlay funzionanti ovunque).
   let dishPositions: import('@/lib/pdf/generateMenuPdf').DishPosition[] = []
   let totalPages = 1
   try {
-    const cached = await ensureMenuPdfCached(payload, restaurantId, cacheKey)
-    dishPositions = cached.dishPositions
-    totalPages = cached.totalPages
+    if (hasStorageCredentials()) {
+      const cached = await ensureMenuPdfCached(payload, restaurantId, cacheKey)
+      dishPositions = cached.dishPositions
+      totalPages = cached.totalPages
+    } else {
+      const inline = await generateMenuPdf(payload)
+      dishPositions = inline.dishPositions
+      totalPages = inline.totalPages
+    }
   } catch (err) {
-    console.error('[m/token] ensureMenuPdfCached failed:', err)
-    // Stima totalPages a priori: 1 (scelta) + ogni menu (copertina + categorie).
+    console.error('[m/token] PDF positions generation failed:', err)
     totalPages = 1
     for (const menu of menus) {
       totalPages += 1 + (categoriesByMenu[menu.id]?.length ?? 0)
