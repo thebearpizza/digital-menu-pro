@@ -293,28 +293,6 @@ export function MenuViewerWithShortcuts({
               onLoad={handleIframeLoad}
             />
 
-            {/* Corner blocks: disabilita il tap di turn.js sui due angoli SUPERIORI
-                (mantiene solo i corner inferiori per girare pagina).
-                WebkitTapHighlightColor: rimuove il flash grigio iOS al tap. */}
-            <div
-              onClick={(e) => { e.stopPropagation(); e.preventDefault() }}
-              style={{
-                position: 'absolute', top: 0, left: 0, width: '25%', height: '12%',
-                zIndex: 5, cursor: 'default',
-                WebkitTapHighlightColor: 'transparent',
-                userSelect: 'none',
-              }}
-            />
-            <div
-              onClick={(e) => { e.stopPropagation(); e.preventDefault() }}
-              style={{
-                position: 'absolute', top: 0, right: 0, width: '25%', height: '12%',
-                zIndex: 5, cursor: 'default',
-                WebkitTapHighlightColor: 'transparent',
-                userSelect: 'none',
-              }}
-            />
-
             {/* Overlay hit-box invisibili sopra i piatti.
                 Larghezza: tutta la pagina (no banda morta laterale per il turn). */}
             {dishesOnCurrentPage.map((pos) => {
