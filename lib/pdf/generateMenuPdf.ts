@@ -369,8 +369,9 @@ export async function generateMenuPdf(payload: PdfPayload): Promise<GeneratedMen
           y -= 11
         }
 
-        // Y bottom del blocco piatto (prima del gap inferiore).
-        const dishYBottom = y + 6
+        // Y bottom: stretto all'ultima riga di testo, no gap inferiore
+        // (evita sovrapposizione click con il piatto successivo).
+        const dishYBottom = y + 2
 
         dishPositions.push({
           id: dish.id,

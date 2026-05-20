@@ -75,64 +75,57 @@ export function DishCard({ dish, allergensList, onClose }: DishCardProps) {
         }}
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Barra drag/close */}
-        <div
-          style={{
-            padding: '16px',
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            background: 'linear-gradient(135deg, #f8f6f3 0%, #ede9e4 100%)',
-            borderBottom: '1px solid #e5ddd5',
-          }}
-        >
-          <div
-            style={{
-              width: '40px',
-              height: '4px',
-              background: '#ccc',
-              borderRadius: '2px',
-              alignSelf: 'center',
-              margin: '0 auto',
-            }}
-          />
-          <button
-            onClick={handleClose}
-            style={{
-              background: 'none',
-              border: 'none',
-              fontSize: '24px',
-              cursor: 'pointer',
-              color: '#999',
-              padding: '4px 8px',
-              marginLeft: 'auto',
-            }}
-            aria-label="Close"
-          >
-            ×
-          </button>
-        </div>
-
-        {/* Contenuto scrollabile */}
+        {/* Contenuto scrollabile - X galleggiante in alto a destra */}
         <div
           style={{
             flex: 1,
             overflowY: 'auto',
             padding: '24px',
+            paddingTop: '20px',
             display: 'flex',
             flexDirection: 'column',
             gap: '16px',
+            position: 'relative',
           }}
         >
-          {/* Foto */}
+          {/* Close button galleggiante sulla parte bianca */}
+          <button
+            onClick={handleClose}
+            style={{
+              position: 'absolute',
+              top: '12px',
+              right: '12px',
+              width: '32px',
+              height: '32px',
+              background: 'rgba(255, 255, 255, 0.9)',
+              border: '1px solid #e5ddd5',
+              borderRadius: '50%',
+              fontSize: '20px',
+              lineHeight: '1',
+              cursor: 'pointer',
+              color: '#555',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: 0,
+              zIndex: 2,
+              boxShadow: '0 2px 6px rgba(0, 0, 0, 0.08)',
+            }}
+            aria-label="Close"
+          >
+            ×
+          </button>
+
+          {/* Foto - aspect ratio originale (no crop) */}
           {dish.image_url && (
             <img
               src={dish.image_url}
               alt={dish.name}
               style={{
                 width: '100%',
-                height: '240px',
-                objectFit: 'cover',
+                height: 'auto',
+                maxHeight: '60vh',
+                objectFit: 'contain',
                 borderRadius: '12px',
                 background: '#f0f0f0',
               }}
