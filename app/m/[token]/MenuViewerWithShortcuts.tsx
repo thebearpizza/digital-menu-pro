@@ -40,10 +40,28 @@ export function MenuViewerWithShortcuts({
 }: MenuViewerWithShortcutsProps) {
   const iframeRef = useRef<HTMLIFrameElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
+  const pdfWrapperRef = useRef<HTMLDivElement>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [currentPage, setCurrentPage] = useState(1)
   const [totalPages] = useState(initialTotalPages)
   const [selectedDishId, setSelectedDishId] = useState<string | null>(null)
+  // Dimensioni effettive del PDF reso (zoom=page-width: altezza = width * 842/595).
+  // Usate per posizionare gli overlay in pixel assoluti invece che in % del wrapper.
+  const [pdfArea, setPdfArea] = useState<{ width: number; height: number }>({ width: 0, height: 0 })
+
+  useEffect(() => {
+    function measure() {
+      const el = pdfWrapperRef.current
+      if (!el) return
+      const w = el.clientWidth
+      const pdfHeight = w * 842 / 595
+      const h = Math.min(pdfHeight, el.clientHeight)
+      setPdfArea({ width: w, height: h })
+    }
+    measure()
+    window.addEventListener('resize', measure)
+    return () => window.removeEventListener('resize', measure)
+  }, [])
 
   // Derivato direttamente da currentPage: evita catene di setState+useEffect.
   const activeMenu = useMemo(() => {
@@ -276,7 +294,7 @@ export function MenuViewerWithShortcuts({
       <div style={{ flex: 1, position: 'relative', display: 'flex', flexDirection: 'column', justifyContent: 'center', overflow: 'hidden' }}>
         {/* PDF viewer container con overlay hit-box */}
         <div style={{ flex: 1, position: 'relative', display: 'flex', justifyContent: 'center', overflow: 'hidden' }} role="main">
-          <div style={{ position: 'relative', width: '100%', height: '100%', maxWidth: 'calc(100% - 4px)', margin: '0 2px' }}>
+          <div ref={pdfWrapperRef} style={{ position: 'relative', width: '100%', height: '100%', maxWidth: 'calc(100% - 4px)', margin: '0 2px' }}>
             <iframe
               ref={iframeRef}
               src={viewerUrl + '#zoom=page-width&pagemode=none'}
@@ -293,15 +311,45 @@ export function MenuViewerWithShortcuts({
               onLoad={handleIframeLoad}
             />
 
-            {/* Overlay hit-box invisibili sopra i piatti.
-                Larghezza: tutta la pagina (no banda morta laterale per il turn). */}
-            {dishesOnCurrentPage.map((pos) => {
+            {/* Corner blocks: disabilitano il tap del turn.js sui due angoli SUPERIORI.
+                Dimensioni piccole (15% × 5%) per non coprire i piatti.
+                In pixel rispetto a pdfArea, non in % del wrapper. */}
+            {pdfArea.height > 0 && (
+              <>
+                <div
+                  onClick={(e) => { e.stopPropagation(); e.preventDefault() }}
+                  style={{
+                    position: 'absolute', top: 0, left: 0,
+                    width: `${pdfArea.width * 0.15}px`,
+                    height: `${pdfArea.height * 0.05}px`,
+                    zIndex: 5, cursor: 'default',
+                    WebkitTapHighlightColor: 'transparent',
+                    userSelect: 'none',
+                  }}
+                />
+                <div
+                  onClick={(e) => { e.stopPropagation(); e.preventDefault() }}
+                  style={{
+                    position: 'absolute', top: 0, right: 0,
+                    width: `${pdfArea.width * 0.15}px`,
+                    height: `${pdfArea.height * 0.05}px`,
+                    zIndex: 5, cursor: 'default',
+                    WebkitTapHighlightColor: 'transparent',
+                    userSelect: 'none',
+                  }}
+                />
+              </>
+            )}
+
+            {/* Overlay hit-box sui piatti — in pixel assoluti relativi all'altezza
+                effettiva del PDF (non al wrapper) per allineamento esatto. */}
+            {pdfArea.height > 0 && dishesOnCurrentPage.map((pos) => {
               const dish = dishesInfo[pos.id]
               if (!dish) return null
 
-              const yTop = pos.yTopPercent * 100
-              const yBottom = pos.yBottomPercent * 100
-              const height = yBottom - yTop
+              const top = pos.yTopPercent * pdfArea.height
+              const bottom = pos.yBottomPercent * pdfArea.height
+              const height = bottom - top
 
               return (
                 <button
@@ -309,16 +357,17 @@ export function MenuViewerWithShortcuts({
                   onClick={() => setSelectedDishId(pos.id)}
                   style={{
                     position: 'absolute',
-                    top: `${yTop}%`,
-                    left: '0',
-                    right: '0',
-                    height: `${height}%`,
+                    top: `${top}px`,
+                    left: 0,
+                    right: 0,
+                    height: `${height}px`,
                     background: 'transparent',
                     border: 'none',
                     cursor: 'pointer',
                     padding: 0,
                     zIndex: 10,
                     WebkitTapHighlightColor: 'transparent',
+                    touchAction: 'manipulation',
                   }}
                   aria-label={`View details for ${dish.name}`}
                 />
