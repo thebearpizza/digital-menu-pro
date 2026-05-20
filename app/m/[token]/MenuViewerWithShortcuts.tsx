@@ -3,7 +3,6 @@
 import { useRef, useState, useEffect, useCallback, useMemo } from 'react'
 import { DishCard } from './DishCard'
 import { ALLERGENS_EU } from '@/lib/allergens'
-import type { DishPosition } from '@/lib/pdf/generateMenuPdf'
 
 type Menu = { id: string; name: string }
 
@@ -24,7 +23,6 @@ interface MenuViewerWithShortcutsProps {
   categoriesByMenu: Record<string, string[]>
   pageNumberByCategory: Record<string, number>
   totalPages: number
-  dishPositions: DishPosition[]
   dishesInfo: Record<string, DishInfo>
 }
 
@@ -35,7 +33,6 @@ export function MenuViewerWithShortcuts({
   categoriesByMenu,
   pageNumberByCategory,
   totalPages: initialTotalPages,
-  dishPositions,
   dishesInfo,
 }: MenuViewerWithShortcutsProps) {
   const iframeRef = useRef<HTMLIFrameElement>(null)
@@ -44,12 +41,6 @@ export function MenuViewerWithShortcuts({
   const [currentPage, setCurrentPage] = useState(1)
   const [totalPages] = useState(initialTotalPages)
   const [selectedDishId, setSelectedDishId] = useState<string | null>(null)
-  // Geometria reale della pagina PDF dentro l'iframe (pixel). Riempita dal
-  // postMessage 'pageLayout' inviato dallo script iniettato. Serve a scalare
-  // gli hit-box dei piatti, le cui posizioni sono % della pagina PDF non del
-  // wrapper (il wrapper è spesso più alto della pagina renderizzata).
-  const [pageLayout, setPageLayout] = useState({ pageTop: 0, pageHeight: 0 })
-  const [debugInfo, setDebugInfo] = useState('')
 
   // Derivato direttamente da currentPage: evita catene di setState+useEffect.
   const activeMenu = useMemo(() => {
@@ -98,14 +89,9 @@ export function MenuViewerWithShortcuts({
       } else if (event.data.type === 'pagesloaded') {
         // PDF.js ha finito di caricare le pagine
         setIsLoading(false)
-      } else if (event.data.type === 'pageLayout') {
-        setPageLayout({
-          pageTop: event.data.pageTop,
-          pageHeight: event.data.pageHeight,
-        })
-        setDebugInfo(`OK cls=${(event.data.found || '').slice(0, 20)}`)
-      } else if (event.data.type === 'pageLayoutFail') {
-        setDebugInfo(`FAIL hasEl=${event.data.hasPageEl} cls=${(event.data.className || 'null').slice(0, 20)} rH=${event.data.rectHeight}`)
+      } else if (event.data.type === 'dishClick') {
+        // Click su una link annotation 'dish:<id>' intercettato dall'iframe.
+        setSelectedDishId(event.data.dishId)
       }
     }
 
@@ -133,6 +119,12 @@ export function MenuViewerWithShortcuts({
         .pdfViewer { display: flex !important; flex-direction: column !important; align-items: center !important; }
         .pdfViewer .page { margin: 0 auto !important; }
         body { background: #525659 !important; }
+        /* Link annotation invisibili ma cliccabili (sono le hit-area sui piatti) */
+        .linkAnnotation, .linkAnnotation a, .annotationLayer .linkAnnotation > a {
+          border: none !important;
+          background: transparent !important;
+          -webkit-tap-highlight-color: transparent !important;
+        }
       `
       iframeDoc.head.appendChild(style)
 
@@ -148,41 +140,6 @@ export function MenuViewerWithShortcuts({
 
             const eventBus = window.PDFViewerApplication.eventBus;
 
-            // Misura la geometria reale della pagina PDF visibile e la
-            // comunica al parent (per posizionare correttamente gli overlay
-            // piatti). Prova selettori multipli; ritenta finché rect ha height.
-            function findPageEl() {
-              return document.querySelector('.pdfViewer .page')
-                || document.querySelector('#viewer .page')
-                || document.querySelector('.page[data-page-number]')
-                || document.querySelector('.page');
-            }
-            function sendPageLayout(retriesLeft) {
-              const pageEl = findPageEl();
-              const rect = pageEl ? pageEl.getBoundingClientRect() : null;
-              if (rect && rect.height > 0) {
-                window.parent.postMessage({
-                  type: 'pageLayout',
-                  pageTop: rect.top,
-                  pageHeight: rect.height,
-                  found: pageEl.className,
-                }, '*');
-                return;
-              }
-              if (retriesLeft > 0) {
-                setTimeout(() => sendPageLayout(retriesLeft - 1), 150);
-              } else {
-                // Diagnostica: invia comunque per capire cosa abbiamo trovato
-                window.parent.postMessage({
-                  type: 'pageLayoutFail',
-                  hasPageEl: Boolean(pageEl),
-                  className: pageEl ? pageEl.className : null,
-                  rectHeight: rect ? rect.height : null,
-                  bodyHTML: document.body ? document.body.innerHTML.length : 0,
-                }, '*');
-              }
-            }
-
             // pagechanging: sparato all'INIZIO del cambio pagina (istantaneo)
             eventBus.on('pagechanging', (evt) => {
               window.parent.postMessage({
@@ -194,24 +151,25 @@ export function MenuViewerWithShortcuts({
             // pagesloaded: tutte le pagine sono pronte
             eventBus.on('pagesloaded', () => {
               window.parent.postMessage({ type: 'pagesloaded' }, '*');
-              sendPageLayout(20);
             });
 
-            // pagerendered: una pagina specifica è renderizzata
-            eventBus.on('pagerendered', () => {
-              sendPageLayout(5);
-            });
-
-            // textlayerrendered: layout di testo stabile
-            eventBus.on('textlayerrendered', () => {
-              sendPageLayout(5);
-            });
-
-            // resize della finestra: rimisura
-            window.addEventListener('resize', () => sendPageLayout(5));
-
-            // Tentativo iniziale anche se gli eventi non scattano
-            sendPageLayout(30);
+            // Intercetta i click sulle link annotation con scheme 'dish:'.
+            // PDF.js renderizza i Link annotation come <a href="dish:<id>">.
+            // Usiamo capture phase per intercettare PRIMA che il browser tenti
+            // di navigare verso l'URI custom.
+            document.addEventListener('click', (e) => {
+              const anchor = e.target && e.target.closest ? e.target.closest('.linkAnnotation a, .annotationLayer a') : null;
+              if (!anchor) return;
+              const href = anchor.getAttribute('href') || anchor.dataset.dish || '';
+              if (href.indexOf('dish:') === 0) {
+                e.preventDefault();
+                e.stopPropagation();
+                window.parent.postMessage({
+                  type: 'dishClick',
+                  dishId: href.slice(5),
+                }, '*');
+              }
+            }, true);
 
             // Ascolta i messaggi dal parent per jump senza animazione
             window.addEventListener('message', (event) => {
@@ -247,13 +205,6 @@ export function MenuViewerWithShortcuts({
       setTimeout(() => setIsLoading(false), 2000)
     }
   }
-
-  // Overlay hit-box invisibili sopra i piatti (solo sulla pagina corrente).
-  // Memo per evitare filter() ad ogni re-render su pagine senza piatti che cambiano.
-  const dishesOnCurrentPage = useMemo(
-    () => dishPositions.filter((pos) => pos.pageNumber === currentPage),
-    [dishPositions, currentPage]
-  )
 
   return (
     <div
@@ -363,43 +314,6 @@ export function MenuViewerWithShortcuts({
             <div style={{ position: 'absolute', top: 0, left: 0, width: '30%', height: '30%', zIndex: 5 }} />
             {/* Angolo in alto a destra — blocca turn.js sul corner */}
             <div style={{ position: 'absolute', top: 0, right: 0, width: '30%', height: '30%', zIndex: 5 }} />
-
-            {/* DEBUG: contatore dishPositions + geometria pagina PDF */}
-            <div style={{ position: 'absolute', top: 4, left: '50%', transform: 'translateX(-50%)', zIndex: 50, background: 'rgba(255,0,0,0.85)', color: 'white', padding: '4px 8px', fontSize: '9px', borderRadius: '4px', fontFamily: 'monospace', pointerEvents: 'none', whiteSpace: 'nowrap', maxWidth: '95%', overflow: 'hidden' }}>
-              t={dishPositions.length} p={dishesOnCurrentPage.length} pg={currentPage} top={Math.round(pageLayout.pageTop)} h={Math.round(pageLayout.pageHeight)} {debugInfo}
-            </div>
-
-            {/* Overlay hit-box piatti (DEBUG: visibili in azzurro).
-                Posizionati in pixel rispetto al wrapper, usando la geometria
-                reale della pagina PDF (pageTop/pageHeight) inviata dall'iframe. */}
-            {pageLayout.pageHeight > 0 && dishesOnCurrentPage.map((pos) => {
-              const dish = dishesInfo[pos.id]
-              if (!dish) return null
-
-              const topPx = pageLayout.pageTop + pos.yTopPercent * pageLayout.pageHeight
-              const bottomPx = pageLayout.pageTop + pos.yBottomPercent * pageLayout.pageHeight
-              const heightPx = bottomPx - topPx
-
-              return (
-                <button
-                  key={pos.id}
-                  onClick={() => setSelectedDishId(pos.id)}
-                  style={{
-                    position: 'absolute',
-                    top: `${topPx}px`,
-                    left: '5%',
-                    right: '5%',
-                    height: `${heightPx}px`,
-                    background: 'rgba(0, 200, 255, 0.25)',
-                    border: '2px dashed rgba(0, 200, 255, 0.9)',
-                    cursor: 'pointer',
-                    padding: 0,
-                    zIndex: 10,
-                  }}
-                  aria-label={`View details for ${dish.name}`}
-                />
-              )
-            })}
           </div>
         </div>
 

@@ -117,7 +117,6 @@ export default async function PublicMenuPage({
       categoriesByMenu={categoriesByMenu}
       pageNumberByCategory={pageNumberByCategory}
       totalPages={totalPages}
-      dishPositions={dishPositions}
       dishesInfo={dishesInfo}
     />
   )
