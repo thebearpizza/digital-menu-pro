@@ -386,15 +386,17 @@ export async function generateMenuPdf(payload: PdfPayload): Promise<GeneratedMen
         // Link annotation cliccabile sul rettangolo del piatto. URI custom
         // 'dish:<id>' intercettato dal client per aprire la card di dettaglio.
         // Coordinate in punti PDF (origine in basso-sinistra).
+        // NOTA: usare PDFName.of() per i valori nome — pdf-lib converte le
+        // stringhe JS a PDFHexString, non a PDFName, e PDF.js non le riconosce.
         const dishLinkRef = pdf.context.register(
           pdf.context.obj({
-            Type: 'Annot',
-            Subtype: 'Link',
+            Type: PDFName.of('Annot'),
+            Subtype: PDFName.of('Link'),
             Rect: [MARGIN_X, dishYBottom, PAGE_WIDTH - MARGIN_X, dishYTop],
             Border: [0, 0, 0],
             A: pdf.context.obj({
-              Type: 'Action',
-              S: 'URI',
+              Type: PDFName.of('Action'),
+              S: PDFName.of('URI'),
               URI: PDFString.of(`dish:${dish.id}`),
             }),
           })
@@ -422,11 +424,11 @@ export async function generateMenuPdf(payload: PdfPayload): Promise<GeneratedMen
 
     const linkRef = pdf.context.register(
       pdf.context.obj({
-        Type: 'Annot',
-        Subtype: 'Link',
+        Type: PDFName.of('Annot'),
+        Subtype: PDFName.of('Link'),
         Rect: [rect.x1, rect.y1, rect.x2, rect.y2],
         Border: [0, 0, 0],
-        Dest: [target.ref, 'Fit'],
+        Dest: [target.ref, PDFName.of('Fit')],
       })
     )
     annotsArray.push(linkRef)

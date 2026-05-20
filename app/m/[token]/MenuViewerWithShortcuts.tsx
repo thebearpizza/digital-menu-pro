@@ -132,16 +132,73 @@ export function MenuViewerWithShortcuts({
       const script = iframeDoc.createElement('script')
       script.textContent = `
         (function() {
+          // Intercetta window.open: PDF.js può chiamarlo per URI esterni (dish:...)
+          // prima che venga reso qualsiasi elemento <a> cliccabile.
+          var _origOpen = window.open;
+          window.open = function(url) {
+            var s = url ? String(url) : '';
+            if (s.indexOf('dish:') !== -1) {
+              var m = s.match(/dish:([^&#?]+)/);
+              if (m) {
+                window.parent.postMessage({ type: 'dishClick', dishId: m[1] }, '*');
+                return null;
+              }
+            }
+            return _origOpen.apply(window, arguments);
+          };
+
+          function sendDishClick(href) {
+            var idx = href.indexOf('dish:');
+            if (idx === -1) return false;
+            var dishId = href.slice(idx + 5);
+            window.parent.postMessage({ type: 'dishClick', dishId: dishId }, '*');
+            return true;
+          }
+
+          // Intercetta click sulle link annotation con schema 'dish:'.
+          // Cammina l'albero DOM a partire da e.target per gestire
+          // sia il caso in cui e.target sia l'<a> sia quello in cui
+          // sia un nodo figlio (o la <section> stessa).
+          document.addEventListener('click', function(e) {
+            var el = e.target;
+            // Percorre fino a 8 livelli verso l'alto per trovare un <a> o una .linkAnnotation
+            for (var i = 0; i < 8 && el && el.tagName; i++) {
+              if (el.tagName === 'A') {
+                var href = el.getAttribute('href') || el.href || '';
+                if (href.indexOf('dish:') !== -1) {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  sendDishClick(href);
+                  return;
+                }
+              }
+              // Sezione .linkAnnotation: cerca l'<a> figlia
+              if (el.className && el.className.indexOf && el.className.indexOf('linkAnnotation') !== -1) {
+                var a = el.querySelector ? el.querySelector('a') : null;
+                if (a) {
+                  var aHref = a.getAttribute('href') || a.href || '';
+                  if (aHref.indexOf('dish:') !== -1) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    sendDishClick(aHref);
+                    return;
+                  }
+                }
+              }
+              el = el.parentElement;
+            }
+          }, true);
+
           function attachListeners() {
             if (!window.PDFViewerApplication || !window.PDFViewerApplication.eventBus) {
               setTimeout(attachListeners, 50);
               return;
             }
 
-            const eventBus = window.PDFViewerApplication.eventBus;
+            var eventBus = window.PDFViewerApplication.eventBus;
 
             // pagechanging: sparato all'INIZIO del cambio pagina (istantaneo)
-            eventBus.on('pagechanging', (evt) => {
+            eventBus.on('pagechanging', function(evt) {
               window.parent.postMessage({
                 type: 'pagechanging',
                 pageNumber: evt.pageNumber
@@ -149,40 +206,22 @@ export function MenuViewerWithShortcuts({
             });
 
             // pagesloaded: tutte le pagine sono pronte
-            eventBus.on('pagesloaded', () => {
+            eventBus.on('pagesloaded', function() {
               window.parent.postMessage({ type: 'pagesloaded' }, '*');
             });
 
-            // Intercetta i click sulle link annotation con scheme 'dish:'.
-            // PDF.js renderizza i Link annotation come <a href="dish:<id>">.
-            // Usiamo capture phase per intercettare PRIMA che il browser tenti
-            // di navigare verso l'URI custom.
-            document.addEventListener('click', (e) => {
-              const anchor = e.target && e.target.closest ? e.target.closest('.linkAnnotation a, .annotationLayer a') : null;
-              if (!anchor) return;
-              const href = anchor.getAttribute('href') || anchor.dataset.dish || '';
-              if (href.indexOf('dish:') === 0) {
-                e.preventDefault();
-                e.stopPropagation();
-                window.parent.postMessage({
-                  type: 'dishClick',
-                  dishId: href.slice(5),
-                }, '*');
-              }
-            }, true);
-
             // Ascolta i messaggi dal parent per jump senza animazione
-            window.addEventListener('message', (event) => {
+            window.addEventListener('message', function(event) {
               if (event.data && event.data.type === 'jumpToPage') {
-                const targetPage = event.data.page;
+                var targetPage = event.data.page;
 
                 // Salta l'animazione di turn.js temporaneamente
                 if (window.$ && window.$('#viewer').data('turn')) {
-                  const turnInstance = window.$('#viewer').data('turn');
-                  const originalDuration = turnInstance.opts.duration;
+                  var turnInstance = window.$('#viewer').data('turn');
+                  var originalDuration = turnInstance.opts.duration;
                   turnInstance.opts.duration = 0;
                   window.PDFViewerApplication.page = targetPage;
-                  setTimeout(() => {
+                  setTimeout(function() {
                     if (turnInstance.opts) turnInstance.opts.duration = originalDuration;
                   }, 50);
                 } else {
