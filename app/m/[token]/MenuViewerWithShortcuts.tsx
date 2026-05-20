@@ -294,11 +294,16 @@ export function MenuViewerWithShortcuts({
             />
 
             {/* Angolo in alto a sinistra — blocca turn.js sul corner */}
-            <div style={{ position: 'absolute', top: 0, left: 0, width: '22%', height: '22%', zIndex: 5 }} />
+            <div style={{ position: 'absolute', top: 0, left: 0, width: '30%', height: '30%', zIndex: 5 }} />
             {/* Angolo in alto a destra — blocca turn.js sul corner */}
-            <div style={{ position: 'absolute', top: 0, right: 0, width: '22%', height: '22%', zIndex: 5 }} />
+            <div style={{ position: 'absolute', top: 0, right: 0, width: '30%', height: '30%', zIndex: 5 }} />
 
-            {/* Overlay hit-box invisibili sopra i piatti */}
+            {/* DEBUG: contatore dishPositions ricevute */}
+            <div style={{ position: 'absolute', top: 4, left: '50%', transform: 'translateX(-50%)', zIndex: 50, background: 'rgba(255,0,0,0.85)', color: 'white', padding: '4px 8px', fontSize: '11px', borderRadius: '4px', fontFamily: 'monospace', pointerEvents: 'none' }}>
+              DEBUG total={dishPositions.length} onPage={dishesOnCurrentPage.length} page={currentPage}
+            </div>
+
+            {/* Overlay hit-box piatti (DEBUG: visibili in azzurro) */}
             {dishesOnCurrentPage.map((pos) => {
               const dish = dishesInfo[pos.id]
               if (!dish) return null
@@ -317,8 +322,8 @@ export function MenuViewerWithShortcuts({
                     left: '5%',
                     right: '5%',
                     height: `${height}%`,
-                    background: 'transparent',
-                    border: 'none',
+                    background: 'rgba(0, 200, 255, 0.25)',
+                    border: '2px dashed rgba(0, 200, 255, 0.9)',
                     cursor: 'pointer',
                     padding: 0,
                     zIndex: 10,
