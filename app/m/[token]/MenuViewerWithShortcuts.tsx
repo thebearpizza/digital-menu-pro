@@ -49,6 +49,7 @@ export function MenuViewerWithShortcuts({
   // gli hit-box dei piatti, le cui posizioni sono % della pagina PDF non del
   // wrapper (il wrapper è spesso più alto della pagina renderizzata).
   const [pageLayout, setPageLayout] = useState({ pageTop: 0, pageHeight: 0 })
+  const [debugInfo, setDebugInfo] = useState('')
 
   // Derivato direttamente da currentPage: evita catene di setState+useEffect.
   const activeMenu = useMemo(() => {
@@ -102,6 +103,9 @@ export function MenuViewerWithShortcuts({
           pageTop: event.data.pageTop,
           pageHeight: event.data.pageHeight,
         })
+        setDebugInfo(`OK cls=${(event.data.found || '').slice(0, 20)}`)
+      } else if (event.data.type === 'pageLayoutFail') {
+        setDebugInfo(`FAIL hasEl=${event.data.hasPageEl} cls=${(event.data.className || 'null').slice(0, 20)} rH=${event.data.rectHeight}`)
       }
     }
 
@@ -144,18 +148,39 @@ export function MenuViewerWithShortcuts({
 
             const eventBus = window.PDFViewerApplication.eventBus;
 
-            // Misura la geometria reale della pagina PDF visibile nel viewer e
-            // la comunica al parent: serve per posizionare gli overlay piatti
-            // (le cui coordinate sono % della pagina PDF, non del wrapper).
-            function sendPageLayout() {
-              const pageEl = document.querySelector('.pdfViewer .page');
-              if (!pageEl) return;
-              const rect = pageEl.getBoundingClientRect();
-              window.parent.postMessage({
-                type: 'pageLayout',
-                pageTop: rect.top,
-                pageHeight: rect.height,
-              }, '*');
+            // Misura la geometria reale della pagina PDF visibile e la
+            // comunica al parent (per posizionare correttamente gli overlay
+            // piatti). Prova selettori multipli; ritenta finché rect ha height.
+            function findPageEl() {
+              return document.querySelector('.pdfViewer .page')
+                || document.querySelector('#viewer .page')
+                || document.querySelector('.page[data-page-number]')
+                || document.querySelector('.page');
+            }
+            function sendPageLayout(retriesLeft) {
+              const pageEl = findPageEl();
+              const rect = pageEl ? pageEl.getBoundingClientRect() : null;
+              if (rect && rect.height > 0) {
+                window.parent.postMessage({
+                  type: 'pageLayout',
+                  pageTop: rect.top,
+                  pageHeight: rect.height,
+                  found: pageEl.className,
+                }, '*');
+                return;
+              }
+              if (retriesLeft > 0) {
+                setTimeout(() => sendPageLayout(retriesLeft - 1), 150);
+              } else {
+                // Diagnostica: invia comunque per capire cosa abbiamo trovato
+                window.parent.postMessage({
+                  type: 'pageLayoutFail',
+                  hasPageEl: Boolean(pageEl),
+                  className: pageEl ? pageEl.className : null,
+                  rectHeight: rect ? rect.height : null,
+                  bodyHTML: document.body ? document.body.innerHTML.length : 0,
+                }, '*');
+              }
             }
 
             // pagechanging: sparato all'INIZIO del cambio pagina (istantaneo)
@@ -169,16 +194,24 @@ export function MenuViewerWithShortcuts({
             // pagesloaded: tutte le pagine sono pronte
             eventBus.on('pagesloaded', () => {
               window.parent.postMessage({ type: 'pagesloaded' }, '*');
-              setTimeout(sendPageLayout, 50);
+              sendPageLayout(20);
             });
 
-            // textlayerrendered: una pagina specifica è renderizzata, layout stabile
+            // pagerendered: una pagina specifica è renderizzata
+            eventBus.on('pagerendered', () => {
+              sendPageLayout(5);
+            });
+
+            // textlayerrendered: layout di testo stabile
             eventBus.on('textlayerrendered', () => {
-              sendPageLayout();
+              sendPageLayout(5);
             });
 
-            // resize della finestra (rotazione, viewport change): rimisura
-            window.addEventListener('resize', () => setTimeout(sendPageLayout, 100));
+            // resize della finestra: rimisura
+            window.addEventListener('resize', () => sendPageLayout(5));
+
+            // Tentativo iniziale anche se gli eventi non scattano
+            sendPageLayout(30);
 
             // Ascolta i messaggi dal parent per jump senza animazione
             window.addEventListener('message', (event) => {
@@ -332,8 +365,8 @@ export function MenuViewerWithShortcuts({
             <div style={{ position: 'absolute', top: 0, right: 0, width: '30%', height: '30%', zIndex: 5 }} />
 
             {/* DEBUG: contatore dishPositions + geometria pagina PDF */}
-            <div style={{ position: 'absolute', top: 4, left: '50%', transform: 'translateX(-50%)', zIndex: 50, background: 'rgba(255,0,0,0.85)', color: 'white', padding: '4px 8px', fontSize: '10px', borderRadius: '4px', fontFamily: 'monospace', pointerEvents: 'none', whiteSpace: 'nowrap' }}>
-              t={dishPositions.length} p={dishesOnCurrentPage.length} pg={currentPage} top={Math.round(pageLayout.pageTop)} h={Math.round(pageLayout.pageHeight)}
+            <div style={{ position: 'absolute', top: 4, left: '50%', transform: 'translateX(-50%)', zIndex: 50, background: 'rgba(255,0,0,0.85)', color: 'white', padding: '4px 8px', fontSize: '9px', borderRadius: '4px', fontFamily: 'monospace', pointerEvents: 'none', whiteSpace: 'nowrap', maxWidth: '95%', overflow: 'hidden' }}>
+              t={dishPositions.length} p={dishesOnCurrentPage.length} pg={currentPage} top={Math.round(pageLayout.pageTop)} h={Math.round(pageLayout.pageHeight)} {debugInfo}
             </div>
 
             {/* Overlay hit-box piatti (DEBUG: visibili in azzurro).
