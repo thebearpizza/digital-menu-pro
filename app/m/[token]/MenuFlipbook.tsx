@@ -1,272 +1,240 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useRef, useState, forwardRef, useCallback } from 'react'
+import dynamic from 'next/dynamic'
 import DishModal from './DishModal'
+import { allergenName } from '@/lib/allergens'
 
-interface MenuItem {
+const HTMLFlipBook = dynamic(() => import('react-pageflip'), { ssr: false }) as any
+
+interface Dish {
   id: string
   name: string
   description: string | null
   price: number | null
   category: string
-  photo_url: string | null
+  image_url: string | null
+  allergens: number[]
+  pairing_dish_id: string | null
+  pairing_label: string | null
 }
 
 interface Props {
+  menuName: string
   restaurantName: string
-  restaurantDescription: string | null
-  items: MenuItem[]
+  items: Dish[]
+  infoTitle?: string | null
+  infoContent?: string | null
+  onBack: () => void
 }
 
-type Spread =
-  | { type: 'cover' }
-  | { type: 'category'; name: string; items: MenuItem[] }
+const Page = forwardRef<HTMLDivElement, {
+  children?: React.ReactNode
+  className?: string
+  style?: React.CSSProperties
+}>(({ children, className = '', style }, ref) => (
+  <div
+    ref={ref}
+    className={`flipbook-page overflow-hidden ${className}`}
+    style={{ width: '100%', height: '100%', ...style }}
+  >
+    {children}
+  </div>
+))
+Page.displayName = 'Page'
 
-type AnimPhase = 'idle' | 'exit-fwd' | 'enter-fwd' | 'exit-bwd' | 'enter-bwd'
+export default function MenuFlipbook({ menuName, restaurantName, items, infoTitle, infoContent, onBack }: Props) {
+  const bookRef = useRef<any>(null)
+  const [currentPage, setCurrentPage] = useState(0)
+  const [selectedDish, setSelectedDish] = useState<Dish | null>(null)
 
-export default function MenuFlipbook({ restaurantName, restaurantDescription, items }: Props) {
-  const [displayIndex, setDisplayIndex] = useState(0)
-  const [targetIndex, setTargetIndex]   = useState(0)
-  const [phase, setPhase]               = useState<AnimPhase>('idle')
-  const [selectedItem, setSelectedItem] = useState<MenuItem | null>(null)
-
-  // Build spreads: cover + one spread per category
   const categories = Array.from(new Set(items.map(i => i.category)))
-  const spreads: Spread[] = [
-    { type: 'cover' },
-    ...categories.map(cat => ({
-      type:  'category' as const,
-      name:  cat,
-      items: items.filter(i => i.category === cat),
-    })),
-  ]
-  const total = spreads.length
+  const catData = categories.map(cat => ({
+    name: cat,
+    items: items.filter(i => i.category === cat),
+  }))
 
-  const navigate = useCallback(
-    (dir: 'fwd' | 'bwd') => {
-      if (phase !== 'idle') return
-      const next = dir === 'fwd' ? displayIndex + 1 : displayIndex - 1
-      if (next < 0 || next >= total) return
-      setTargetIndex(next)
-      setPhase(`exit-${dir}`)
-    },
-    [phase, displayIndex, total]
-  )
+  const totalPages = 2 + catData.length * 2 + 2
+  const hasInfo = !!(infoContent || infoTitle)
 
-  // Animation state machine
-  useEffect(() => {
-    if (phase === 'idle') return
-
-    if (phase === 'exit-fwd' || phase === 'exit-bwd') {
-      const nextPhase: AnimPhase = phase === 'exit-fwd' ? 'enter-fwd' : 'enter-bwd'
-      const t = setTimeout(() => {
-        setDisplayIndex(targetIndex)
-        setPhase(nextPhase)
-      }, 200)
-      return () => clearTimeout(t)
-    }
-
-    if (phase === 'enter-fwd' || phase === 'enter-bwd') {
-      const t = setTimeout(() => setPhase('idle'), 300)
-      return () => clearTimeout(t)
-    }
-  }, [phase, targetIndex])
+  const goNext = useCallback(() => bookRef.current?.pageFlip()?.flipNext(), [])
+  const goPrev = useCallback(() => bookRef.current?.pageFlip()?.flipPrev(), [])
 
   // Keyboard navigation
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'ArrowRight' || e.key === 'PageDown') navigate('fwd')
-      if (e.key === 'ArrowLeft'  || e.key === 'PageUp'  ) navigate('bwd')
+  useState(() => {
+    if (typeof window === 'undefined') return
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowRight' || e.key === 'PageDown') goNext()
+      if (e.key === 'ArrowLeft'  || e.key === 'PageUp')   goPrev()
     }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [navigate])
-
-  // Swipe gesture
-  const touchX = useRef(0)
-  const onTouchStart = (e: React.TouchEvent) => { touchX.current = e.touches[0].clientX }
-  const onTouchEnd   = (e: React.TouchEvent) => {
-    const dx = e.changedTouches[0].clientX - touchX.current
-    if (Math.abs(dx) > 55) navigate(dx < 0 ? 'fwd' : 'bwd')
-  }
-
-  const animClass: Record<AnimPhase, string> = {
-    'idle':      '',
-    'exit-fwd':  'fb-exit-fwd',
-    'enter-fwd': 'fb-enter-fwd',
-    'exit-bwd':  'fb-exit-bwd',
-    'enter-bwd': 'fb-enter-bwd',
-  }
-
-  const spread     = spreads[displayIndex]
-  const canGoBack  = displayIndex > 0
-  const canGoFwd   = displayIndex < total - 1
-  const isAnimating = phase !== 'idle'
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  })
 
   return (
-    <div className="min-h-screen bg-zinc-900 flex flex-col items-center justify-center py-8 px-4 select-none">
-      {/* Restaurant title */}
-      <div className="mb-5 text-center">
-        <h1 className="text-base font-semibold text-white tracking-wide">{restaurantName}</h1>
-        {displayIndex > 0 && spread.type === 'category' && (
-          <p className="text-xs text-zinc-400 mt-1">
-            {spread.name}&nbsp;&middot;&nbsp;{displayIndex}&nbsp;/&nbsp;{total - 1}
-          </p>
-        )}
+    <div className="min-h-screen bg-zinc-900 flex flex-col items-center justify-center py-6 px-2 select-none">
+      {/* Header */}
+      <div className="flex items-center gap-4 mb-5 w-full max-w-4xl px-4">
+        <button onClick={onBack} className="text-xs text-zinc-400 hover:text-white transition-colors">
+          ← Torna
+        </button>
+        <div className="flex-1 text-center">
+          <p className="text-base font-light text-white tracking-wide">{restaurantName}</p>
+          {menuName !== restaurantName && (
+            <p className="text-xs text-zinc-500 mt-0.5">{menuName}</p>
+          )}
+        </div>
+        <div className="w-10" />
       </div>
 
-      {/* Book container */}
-      <div
-        className={`w-full max-w-4xl shadow-2xl ${animClass[phase]}`}
-        style={{ minHeight: 480 }}
-        onTouchStart={onTouchStart}
-        onTouchEnd={onTouchEnd}
-      >
-        <div className="grid md:grid-cols-2">
-
-          {/* ── LEFT PAGE ──────────────────────────────── */}
-          {spread.type === 'cover' ? (
-            <div
-              className="hidden md:flex bg-zinc-800 border-r border-zinc-700 items-center justify-center"
-              style={{ minHeight: 480 }}
-            >
-              <div className="text-center">
-                <div className="w-px h-14 bg-zinc-600 mx-auto mb-4" />
-                <p className="text-[10px] uppercase tracking-[0.3em] text-zinc-500">benvenuto</p>
-                <div className="w-px h-14 bg-zinc-600 mx-auto mt-4" />
-              </div>
+      {/* Flipbook */}
+      <div className="w-full flex justify-center">
+        <HTMLFlipBook
+          ref={bookRef}
+          width={360}
+          height={520}
+          size="fixed"
+          drawShadow
+          flippingTime={700}
+          usePortrait
+          maxShadowOpacity={0.4}
+          showCover={false}
+          mobileScrollSupport={false}
+          clickEventForward
+          useMouseEvents
+          swipeDistance={40}
+          showPageCorners
+          disableFlipByClick={false}
+          onFlip={(e: any) => setCurrentPage(e.data)}
+        >
+          {/* Page 0: Cover left */}
+          <Page className="bg-zinc-800 border-r border-zinc-700 flex items-center justify-center">
+            <div className="text-center">
+              <div className="w-px h-16 bg-zinc-600 mx-auto mb-4" />
+              <p className="text-[9px] uppercase tracking-[0.35em] text-zinc-500">benvenuto</p>
+              <div className="w-px h-16 bg-zinc-600 mx-auto mt-4" />
             </div>
-          ) : (
-            <div
-              className="hidden md:flex flex-col items-center justify-center border-r border-zinc-700"
-              style={{
-                minHeight: 480,
-                background: 'linear-gradient(160deg, #18181b 0%, #27272a 100%)',
-              }}
+          </Page>
+
+          {/* Page 1: Cover right */}
+          <Page className="bg-stone-50 flex flex-col items-center justify-center p-10 text-center">
+            <div className="text-[10px] uppercase tracking-[0.3em] text-stone-400 mb-3">il nostro menu</div>
+            <h1 className="text-2xl font-light text-stone-800 leading-snug">{restaurantName}</h1>
+            {menuName !== restaurantName && (
+              <p className="mt-2 text-sm text-stone-400 italic">{menuName}</p>
+            )}
+            {catData.length > 0 && (
+              <p className="mt-8 text-xs text-stone-400">
+                {catData.length} {catData.length === 1 ? 'categoria' : 'categorie'}
+                &nbsp;·&nbsp;frecce per sfogliare
+              </p>
+            )}
+            <div className="mt-4 text-[9px] font-mono text-stone-300">1</div>
+          </Page>
+
+          {/* Category page pairs */}
+          {catData.flatMap((cat, i) => [
+            /* Left: category title */
+            <Page
+              key={`cl-${cat.name}`}
+              className="flex flex-col border-r border-zinc-700"
+              style={{ background: 'linear-gradient(160deg,#18181b 0%,#27272a 100%)' }}
             >
-              <div className="text-center px-10 flex-1 flex flex-col items-center justify-center">
+              <div className="flex-1 flex flex-col items-center justify-center px-10 text-center">
                 <div className="w-8 h-px bg-zinc-500 mx-auto mb-6" />
-                <h2 className="text-2xl font-light uppercase tracking-[0.18em] text-white">
-                  {spread.name}
-                </h2>
+                <h2 className="text-xl font-light uppercase tracking-[0.18em] text-white">{cat.name}</h2>
+                <p className="mt-3 text-xs text-zinc-500">{cat.items.length} piatti</p>
                 <div className="w-8 h-px bg-zinc-500 mx-auto mt-6" />
               </div>
-              <div className="pb-4 text-[10px] text-zinc-600 font-mono self-end pr-4">
-                {displayIndex * 2 - 1}
-              </div>
-            </div>
-          )}
+              <div className="pb-3 pr-4 text-[9px] font-mono text-zinc-600 self-end">{(i + 1) * 2}</div>
+            </Page>,
 
-          {/* ── RIGHT PAGE ─────────────────────────────── */}
-          <div className="bg-stone-50 flex flex-col" style={{ minHeight: 480 }}>
-            {spread.type === 'cover' ? (
-              /* Cover page */
-              <div className="flex-1 flex flex-col items-center justify-center p-10 text-center">
-                <div className="text-[10px] uppercase tracking-[0.28em] text-stone-400 mb-3">
-                  il nostro menu
-                </div>
-                <h2 className="text-2xl font-light text-stone-800">{restaurantName}</h2>
-                {restaurantDescription && (
-                  <p className="mt-4 text-sm text-stone-500 max-w-xs leading-relaxed">
-                    {restaurantDescription}
-                  </p>
-                )}
-                {total > 1 && (
-                  <p className="mt-8 text-xs text-stone-400">
-                    {total - 1}&nbsp;{total - 1 === 1 ? 'sezione' : 'sezioni'}
-                    &nbsp;&middot;&nbsp;usa le frecce per sfogliare
-                  </p>
-                )}
-                {total === 1 && (
-                  <p className="mt-8 text-xs text-stone-400">Menu in aggiornamento</p>
-                )}
+            /* Right: dish list */
+            <Page key={`cr-${cat.name}`} className="bg-stone-50 flex flex-col">
+              <div className="md:hidden px-5 pt-4 pb-2 border-b border-stone-200">
+                <h3 className="text-sm font-light uppercase tracking-widest text-stone-600">{cat.name}</h3>
               </div>
-            ) : (
-              /* Category items page */
-              <div className="flex-1 flex flex-col overflow-hidden">
-                {/* Mobile category header */}
-                <div className="md:hidden px-6 pt-5 pb-3 border-b border-stone-200">
-                  <div className="text-[10px] uppercase tracking-[0.2em] text-stone-400 mb-0.5">
-                    {displayIndex}&nbsp;/&nbsp;{total - 1}
-                  </div>
-                  <h2 className="text-lg font-light uppercase tracking-widest text-stone-700">
-                    {spread.name}
-                  </h2>
-                </div>
-
-                {/* Items list */}
-                <ul className="flex-1 overflow-y-auto divide-y divide-stone-100 px-6 py-2">
-                  {spread.items.map((item: MenuItem) => (
-                    <li key={item.id}>
-                      <button
-                        onClick={() => setSelectedItem(item)}
-                        className="w-full text-left py-3.5 group"
-                      >
-                        <div className="flex items-baseline justify-between gap-4">
-                          <span className="text-sm font-medium text-stone-800 group-hover:text-stone-500 group-hover:underline underline-offset-2 transition-colors">
-                            {item.name}
+              <ul className="flex-1 overflow-y-auto divide-y divide-stone-100 px-5 py-1.5">
+                {cat.items.map(dish => (
+                  <li key={dish.id}>
+                    <button
+                      onClick={() => setSelectedDish(dish)}
+                      className="w-full text-left py-2.5 group"
+                    >
+                      <div className="flex items-baseline justify-between gap-3">
+                        <span className="text-[13px] font-medium text-stone-800 group-hover:text-stone-500 group-hover:underline underline-offset-2 transition-colors leading-snug">
+                          {dish.name}
+                        </span>
+                        {dish.price != null && (
+                          <span className="text-[12px] text-stone-500 shrink-0 tabular-nums whitespace-nowrap">
+                            €&nbsp;{Number(dish.price).toFixed(2)}
                           </span>
-                          {item.price != null && (
-                            <span className="text-sm text-stone-500 shrink-0 whitespace-nowrap tabular-nums">
-                              &euro;&nbsp;{Number(item.price).toFixed(2)}
-                            </span>
-                          )}
-                        </div>
-                        {item.description && (
-                          <p className="text-xs text-stone-400 mt-0.5 line-clamp-1 text-left">
-                            {item.description}
-                          </p>
                         )}
-                      </button>
-                    </li>
-                  ))}
-                </ul>
+                      </div>
+                      {dish.description && (
+                        <p className="text-[11px] text-stone-400 mt-0.5 line-clamp-1 text-left leading-snug">
+                          {dish.description}
+                        </p>
+                      )}
+                      {dish.allergens?.length > 0 && (
+                        <span className="text-[9px] text-stone-300 tabular-nums">
+                          [{dish.allergens.join(', ')}]
+                        </span>
+                      )}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+              <div className="px-5 py-1.5 border-t border-stone-200 text-right">
+                <span className="text-[9px] font-mono text-stone-400">{(i + 1) * 2 + 1}</span>
               </div>
+            </Page>,
+          ])}
+
+          {/* Back left: Info */}
+          <Page className="bg-stone-100 flex flex-col items-center justify-center p-8 text-center">
+            {hasInfo ? (
+              <>
+                <div className="w-6 h-px bg-stone-400 mb-4" />
+                <h3 className="text-sm font-semibold uppercase tracking-widest text-stone-700 mb-3">
+                  {infoTitle ?? 'Informazioni'}
+                </h3>
+                <p className="text-xs text-stone-600 leading-relaxed whitespace-pre-line max-w-xs">
+                  {infoContent}
+                </p>
+                <div className="w-6 h-px bg-stone-400 mt-4" />
+              </>
+            ) : (
+              <div className="text-xs text-stone-400">—</div>
             )}
+          </Page>
 
-            {/* Page number footer */}
-            <div className="px-6 py-2 border-t border-stone-200">
-              <span className="text-[10px] font-mono text-stone-400 float-right">
-                {displayIndex === 0 ? '1' : String(displayIndex * 2)}
-              </span>
-            </div>
-          </div>
-
-        </div>
+          {/* Back right: Thank you */}
+          <Page className="bg-zinc-800 flex flex-col items-center justify-center p-10 text-center">
+            <div className="w-px h-12 bg-zinc-600 mx-auto mb-4" />
+            <p className="text-[10px] uppercase tracking-[0.35em] text-zinc-500">grazie</p>
+            <h2 className="text-xl font-light text-white mt-3">{restaurantName}</h2>
+            <div className="w-px h-12 bg-zinc-600 mx-auto mt-4" />
+          </Page>
+        </HTMLFlipBook>
       </div>
 
       {/* Navigation */}
       <div className="flex items-center gap-5 mt-6">
         <button
-          onClick={() => navigate('bwd')}
-          disabled={!canGoBack || isAnimating}
+          onClick={goPrev}
+          disabled={currentPage === 0}
           aria-label="Pagina precedente"
           className="w-9 h-9 flex items-center justify-center text-lg text-zinc-400 hover:text-white border border-zinc-700 hover:border-zinc-500 disabled:opacity-20 transition-colors"
         >
           &#8249;
         </button>
-
-        {/* Spread indicators */}
-        <div className="flex gap-1.5">
-          {spreads.map((_, i) => (
-            <button
-              key={i}
-              onClick={() => {
-                if (i === displayIndex || isAnimating) return
-                setTargetIndex(i)
-                setPhase(i > displayIndex ? 'exit-fwd' : 'exit-bwd')
-              }}
-              aria-label={`Sezione ${i + 1}`}
-              className={`w-1.5 h-1.5 rounded-full transition-colors ${
-                i === displayIndex ? 'bg-white' : 'bg-zinc-600 hover:bg-zinc-400'
-              }`}
-            />
-          ))}
-        </div>
-
+        <span className="text-xs text-zinc-500 tabular-nums">
+          {currentPage + 1} / {totalPages}
+        </span>
         <button
-          onClick={() => navigate('fwd')}
-          disabled={!canGoFwd || isAnimating}
+          onClick={goNext}
+          disabled={currentPage >= totalPages - 1}
           aria-label="Pagina successiva"
           className="w-9 h-9 flex items-center justify-center text-lg text-zinc-400 hover:text-white border border-zinc-700 hover:border-zinc-500 disabled:opacity-20 transition-colors"
         >
@@ -274,9 +242,13 @@ export default function MenuFlipbook({ restaurantName, restaurantDescription, it
         </button>
       </div>
 
-      {/* Dish detail modal */}
-      {selectedItem && (
-        <DishModal item={selectedItem} onClose={() => setSelectedItem(null)} />
+      {selectedDish && (
+        <DishModal
+          item={selectedDish}
+          allDishes={items}
+          onClose={() => setSelectedDish(null)}
+          onOpenDish={dish => setSelectedDish(dish)}
+        />
       )}
     </div>
   )
