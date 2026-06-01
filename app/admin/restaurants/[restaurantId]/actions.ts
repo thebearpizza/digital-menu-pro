@@ -1,18 +1,11 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
+import { revalidatePath } from 'next/cache'
 
 export async function updateRestaurant(
   restaurantId: string,
-  form: {
-    name: string
-    description: string
-    instagram_url: string
-    facebook_url: string
-    website_url: string
-    tripadvisor_url: string
-    google_maps_url: string
-  }
+  form: { name: string; description: string }
 ) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -23,16 +16,12 @@ export async function updateRestaurant(
     .update({
       name: form.name.trim(),
       description: form.description.trim() || null,
-      instagram_url: form.instagram_url.trim() || null,
-      facebook_url: form.facebook_url.trim() || null,
-      website_url: form.website_url.trim() || null,
-      tripadvisor_url: form.tripadvisor_url.trim() || null,
-      google_maps_url: form.google_maps_url.trim() || null,
     })
     .eq('id', restaurantId)
     .eq('owner_id', user.id)
 
   if (error) return { error: error.message }
+  revalidatePath(`/admin/restaurants/${restaurantId}`)
   return { success: true }
 }
 
@@ -48,5 +37,6 @@ export async function deleteRestaurant(restaurantId: string) {
     .eq('owner_id', user.id)
 
   if (error) return { error: error.message }
+  revalidatePath('/admin/restaurants')
   return { success: true }
 }
