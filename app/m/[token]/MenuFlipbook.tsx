@@ -48,7 +48,8 @@ export default function MenuFlipbook({ menuName, restaurantName, items, infoTitl
   // flipInst holds the native StPageFlip object, populated by onInit.
   // Using a separate ref avoids relying on bookRef.current.pageFlip() which
   // can return null when the dynamic-import component hasn't fully resolved.
-  const flipInst   = useRef<any>(null)
+  const flipInst       = useRef<any>(null)
+  const currentPageRef = useRef(0)          // mirrors currentPage for stale-closure-safe reads
   const [currentPage, setCurrentPage] = useState(0)
   const [selectedDish, setSelectedDish] = useState<Dish | null>(null)
   const [dims, setDims] = useState<{ w: number; h: number } | null>(null)
@@ -62,38 +63,26 @@ export default function MenuFlipbook({ menuName, restaurantName, items, infoTitl
   const totalPages = 2 + catData.length * 2 + 2
   const hasInfo    = !!(infoContent || infoTitle)
 
-  // ── Flip helpers ─────────────────────────────────────────────────────────────
-  // 500 ms debounce prevents double-flip when button and swipe both fire for
-  // the same gesture (e.g. touch lands on button area while swiping).
-  const lastFlipMs = useRef(0)
-
+  // ── Flip helpers — turnToPage bypass ────────────────────────────────────────
+  // flipPrev()/flipNext() lose internal page-index tracking in portrait/mobile
+  // mode (StPageFlip bug). Workaround: manage the index ourselves via
+  // currentPageRef (always in sync with onFlip) and call the absolute-jump
+  // method turnToPage() so the library can never desync.
   const goNext = useCallback(() => {
     const inst = flipInst.current
-    if (!inst) {
-      console.warn('[Flipbook] goNext: instance not ready yet')
-      return
-    }
-    const now = Date.now()
-    if (now - lastFlipMs.current < 500) return
-    lastFlipMs.current = now
-    console.log('[Flipbook] goNext →', inst)
-    inst.flipNext()
+    if (!inst) { console.warn('[Flipbook] goNext: no instance'); return }
+    const target = currentPageRef.current + 1
+    console.log('Forzato salto avanti a pagina:', target, 'Istanza:', inst)
+    inst.turnToPage(target)
   }, [])
 
   const goPrev = useCallback(() => {
     const inst = flipInst.current
-    if (!inst) {
-      console.warn('[Flipbook] goPrev: instance not ready yet')
-      return
-    }
-    const now = Date.now()
-    if (now - lastFlipMs.current < 500) {
-      console.warn('[Flipbook] goPrev: debounce active, skip')
-      return
-    }
-    lastFlipMs.current = now
-    console.log('[Flipbook] goPrev — Prev cliccato')
-    inst.flipPrev()
+    if (!inst) { console.warn('[Flipbook] goPrev: no instance'); return }
+    if (currentPageRef.current <= 0) return
+    const target = currentPageRef.current - 1
+    console.log('Forzato salto indietro a pagina:', target, 'Istanza:', inst)
+    inst.turnToPage(target)
   }, [])
 
   // ── Native capture-phase swipe listeners ─────────────────────────────────────
@@ -132,11 +121,11 @@ export default function MenuFlipbook({ menuName, restaurantName, items, infoTitl
       // > 40 px horizontal, diagonal tolerance ≤ 45°
       if (adx <= 40 || ady > adx) return
       if (dx < 0) {
-        console.log('[Swipe] Comando SWIPE AVANTI inviato. Delta:', dx, 'Istanza:', flipInst.current)
-        flipInst.current?.flipNext()
+        console.log('[Swipe] Comando SWIPE AVANTI inviato. Delta:', dx)
+        goNext()
       } else {
-        console.log('[Swipe] Comando SWIPE INDIETRO inviato. Delta:', dx, 'Istanza:', flipInst.current)
-        flipInst.current?.flipPrev()
+        console.log('[Swipe] Comando SWIPE INDIETRO inviato. Delta:', dx)
+        goPrev()
       }
     }
 
@@ -153,8 +142,7 @@ export default function MenuFlipbook({ menuName, restaurantName, items, infoTitl
   // Without dims, the effect runs at mount (dims=null, el=null) and returns
   // early — listeners are never attached.  Adding dims ensures the effect
   // re-fires after the div renders and swipeRef.current is populated.
-  // flipInst is a ref (not state), so it's not a dep — it's read at call time.
-  }, [dims])
+  }, [goNext, goPrev, dims])
 
   // ── Body scroll-lock ─────────────────────────────────────────────────────────
   useEffect(() => {
@@ -263,10 +251,7 @@ export default function MenuFlipbook({ menuName, restaurantName, items, infoTitl
                   console.log('[Flipbook] onInit — instance ready:', e.object)
                 }}
                 onFlip={(e: any) => {
-                  // Do NOT update lastFlipMs here.
-                  // The debounce is set by goNext/goPrev themselves.
-                  // Setting it here would block prec. for 500 ms AFTER the
-                  // animation completes, right when the button becomes visible.
+                  currentPageRef.current = e.data
                   setCurrentPage(e.data)
                 }}
               >
@@ -394,10 +379,7 @@ export default function MenuFlipbook({ menuName, restaurantName, items, infoTitl
             >
               <button
                 type="button"
-                onClick={() => {
-                  console.log('Comando PREC. inviato. Istanza:', flipInst.current)
-                  flipInst.current?.flipPrev()
-                }}
+                onClick={goPrev}
                 aria-label="Pagina precedente"
                 className={`px-3 py-3 text-[11px] uppercase tracking-[0.18em] text-zinc-400 hover:text-zinc-200 cursor-pointer transition-all ${atStart ? 'opacity-0' : 'opacity-100'}`}
               >
@@ -410,10 +392,7 @@ export default function MenuFlipbook({ menuName, restaurantName, items, infoTitl
 
               <button
                 type="button"
-                onClick={() => {
-                  console.log('Comando SUCC. inviato. Istanza:', flipInst.current)
-                  flipInst.current?.flipNext()
-                }}
+                onClick={goNext}
                 aria-label="Pagina successiva"
                 className={`px-3 py-3 text-[11px] uppercase tracking-[0.18em] text-zinc-400 hover:text-zinc-200 cursor-pointer transition-all ${atEnd ? 'opacity-0' : 'opacity-100'}`}
               >
