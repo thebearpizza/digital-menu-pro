@@ -3,8 +3,6 @@
 @tailwind utilities;
 
 /* ─── Global scroll lock (customer menu) ────────────────── */
-/* The public menu must never body-scroll: the flipbook auto-sizes
-   to the viewport and all scrolling happens inside the dish modal. */
 html.menu-locked,
 body.menu-locked {
   overflow: hidden;
@@ -29,39 +27,3 @@ body.menu-locked {
 @keyframes bannerFadeOut { from { opacity: 1; } to { opacity: 0; } }
 .banner-in  { animation: bannerFadeIn  0.6s ease-out both; }
 .banner-out { animation: bannerFadeOut 0.4s ease-in  both; }
-
-/* ─── react-pageflip page defaults ─────────────────────── */
-.flipbook-page {
-  overflow: hidden;
-  box-sizing: border-box;
-  /* Opaque base prevents see-through during 3D rotation.
-     Individual pages override this with their own bg color. */
-  background-color: #fafaf9;
-  opacity: 1;
-  /* Kill iOS/Android flickering during the 3D flip. */
-  -webkit-backface-visibility: hidden;
-  backface-visibility: hidden;
-  -webkit-transform: translateZ(0);
-  transform: translateZ(0);
-  will-change: transform;
-}
-
-/* StPageFlip internal wrappers: force an opaque base so a page in
-   transition can never render see-through (the intermittent
-   "transparent page" bug on forward flips). */
-.stf__parent {
-  -webkit-backface-visibility: hidden;
-  backface-visibility: hidden;
-  -webkit-perspective: 2000px;
-  perspective: 2000px;
-  touch-action: pan-y;
-}
-.stf__wrapper,
-.stf__block,
-.stf__item {
-  background-color: #fafaf9; /* stone-50 opaque fallback */
-}
-.stf__item {
-  -webkit-backface-visibility: hidden;
-  backface-visibility: hidden;
-}

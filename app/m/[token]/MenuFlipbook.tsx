@@ -1,10 +1,7 @@
 'use client'
 
-import { useRef, useState, useEffect, forwardRef, useCallback } from 'react'
-import dynamic from 'next/dynamic'
+import { useEffect, useRef, useState, useCallback, memo } from 'react'
 import DishModal from './DishModal'
-
-const HTMLFlipBook = dynamic(() => import('react-pageflip'), { ssr: false }) as any
 
 interface Dish {
   id: string
@@ -22,152 +19,238 @@ interface Props {
   menuName: string
   restaurantName: string
   items: Dish[]
+  pdfUrl?: string | null   // reserved for future PDF-based rendering
   infoTitle?: string | null
   infoContent?: string | null
   onBack: () => void
 }
 
-const Page = forwardRef<HTMLDivElement, {
-  children?: React.ReactNode
-  className?: string
-  style?: React.CSSProperties
-}>(({ children, className = '', style }, ref) => (
-  <div
-    ref={ref}
-    className={`flipbook-page opacity-100 ${className}`}
-    style={{ width: '100%', height: '100%', ...style }}
-  >
-    {children}
-  </div>
-))
-Page.displayName = 'Page'
+declare global {
+  interface Window { jQuery: any; $: any }
+}
 
-export default function MenuFlipbook({ menuName, restaurantName, items, infoTitle, infoContent, onBack }: Props) {
-  const bookRef    = useRef<any>(null)
-  const swipeRef   = useRef<HTMLDivElement>(null)  // target for native touch listeners
-  // flipInst holds the native StPageFlip object, populated by onInit.
-  // Using a separate ref avoids relying on bookRef.current.pageFlip() which
-  // can return null when the dynamic-import component hasn't fully resolved.
-  const flipInst       = useRef<any>(null)
-  const currentPageRef = useRef(0)          // mirrors currentPage for stale-closure-safe reads
-  const [currentPage, setCurrentPage] = useState(0)
-  const [selectedDish, setSelectedDish] = useState<Dish | null>(null)
-  const [dims, setDims] = useState<{ w: number; h: number } | null>(null)
+// ── Script loader (deduped) ───────────────────────────────────────────────────
+const _loaded = new Set<string>()
+function requireScript(src: string): Promise<void> {
+  if (_loaded.has(src)) return Promise.resolve()
+  return new Promise((res, rej) => {
+    if (document.querySelector(`script[src="${src}"]`)) { _loaded.add(src); res(); return }
+    const s = document.createElement('script')
+    s.src = src
+    s.onload  = () => { _loaded.add(src); res() }
+    s.onerror = () => rej(new Error(`Script load failed: ${src}`))
+    document.head.appendChild(s)
+  })
+}
 
-  const categories = Array.from(new Set(items.map(i => i.category)))
-  const catData = categories.map(cat => ({
-    name: cat,
-    items: items.filter(i => i.category === cat),
-  }))
+// ── Static page block ─────────────────────────────────────────────────────────
+// turn.js restructures the DOM after initialisation — it wraps, moves and
+// absolutely-positions every child element.  React must never diff those nodes
+// again or it will fight the library and corrupt the layout.
+//
+// Solution: memo(() => true) is a permanent bail-out from re-rendering.
+// The outer component uses `key` to remount this component whenever dims change,
+// which is the only time a fresh turn.js init is needed.
+interface BookProps {
+  dims:           { w: number; h: number }
+  catData:        { name: string; items: Dish[] }[]
+  restaurantName: string
+  menuName:       string
+  hasInfo:        boolean
+  infoTitle?:     string | null
+  infoContent?:   string | null
+  onDishClick:    (dish: Dish) => void
+}
 
-  const totalPages = 2 + catData.length * 2 + 2
-  const hasInfo    = !!(infoContent || infoTitle)
+const TurnBook = memo(function TurnBook({
+  dims, catData, restaurantName, menuName, hasInfo, infoTitle, infoContent, onDishClick,
+}: BookProps) {
+  const bookRef = useRef<HTMLDivElement>(null)
 
-  // ── Flip helpers ─────────────────────────────────────────────────────────────
-  // Both handlers read getCurrentPageIndex() / getPageCount() directly from the
-  // library engine — no React state involved — so the index can never desync.
-  const goNext = useCallback(() => {
-    const inst = flipInst.current
-    if (!inst) return
-    const currentIndex = inst.getCurrentPageIndex()
-    const pageCount    = inst.getPageCount()
-    if (currentIndex < pageCount - 1) {
-      inst.turnToPage(currentIndex + 1)
-      console.log('Navigazione avanti a pagina:', currentIndex + 1)
-    }
-  }, [])
-
-  const goPrev = useCallback(() => {
-    const inst = flipInst.current
-    if (!inst) return
-    const currentIndex = inst.getCurrentPageIndex()
-    if (currentIndex > 0) {
-      inst.turnToPage(currentIndex - 1)
-      console.log('Navigazione indietro a pagina:', currentIndex - 1)
-    }
-  }, [])
-
-  // ── Native capture-phase swipe listeners ─────────────────────────────────────
-  // WHY NATIVE instead of React synthetic props (onTouchStart / onTouchEnd):
-  //   React 18 delegates ALL synthetic events to the document root.
-  //   StPageFlip attaches its own native listeners to its internal container.
-  //   If StPageFlip calls e.stopPropagation() in the bubble phase, the event
-  //   never reaches the document root → React never fires our handlers → swipe
-  //   silently broken.
-  //
-  // WHY CAPTURE PHASE ({ capture: true }):
-  //   Capture runs top-down (document → our wrapper → StPageFlip children)
-  //   BEFORE any bubble-phase handler. stopPropagation in a child's bubble
-  //   handler can never stop a parent's capture listener. We are guaranteed
-  //   to see every touch on the book surface.
-  //
-  // WHY changedTouches[0] in touchend:
-  //   At touchend, e.touches[] is already empty (finger is up).
-  //   e.changedTouches[] contains the just-lifted touch — always populated.
   useEffect(() => {
-    const el = swipeRef.current
-    if (!el) return
+    let alive = true
 
-    let x0 = 0, y0 = 0
+    requireScript('https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js')
+      .then(() => requireScript('https://cdn.jsdelivr.net/npm/turn.js/turn.min.js'))
+      .then(() => {
+        const el = bookRef.current
+        if (!alive || !el || !window.jQuery?.fn?.turn) return
+        window.$(el).turn({
+          width:        dims.w,
+          height:       dims.h,
+          autoCenter:   false,   // outer flex already centres the book
+          display:      'single',
+          duration:     800,
+          gradients:    true,
+          acceleration: true,
+        })
+        console.log('[MenuFlipbook] turn.js ready', dims)
+      })
+      .catch(err => console.error('[MenuFlipbook]', err))
 
-    const onStart = (e: TouchEvent) => {
-      x0 = e.touches[0].clientX
-      y0 = e.touches[0].clientY
-    }
-
-    const onEnd = (e: TouchEvent) => {
-      const dx  = e.changedTouches[0].clientX - x0   // changedTouches — always populated at touchend
-      const adx = Math.abs(dx)
-      const ady = Math.abs(e.changedTouches[0].clientY - y0)
-      console.log('[Swipe] touchend dx=', dx, 'adx=', adx, 'ady=', ady)
-      // > 40 px horizontal, diagonal tolerance ≤ 45°
-      if (adx <= 40 || ady > adx) return
-      if (dx < 0) {
-        console.log('[Swipe] Comando SWIPE AVANTI inviato. Delta:', dx)
-        goNext()
-      } else {
-        console.log('[Swipe] Comando SWIPE INDIETRO inviato. Delta:', dx)
-        goPrev()
+    return () => {
+      alive = false
+      const el = bookRef.current
+      if (el && window.$?.fn?.turn) {
+        try { window.$(el).turn('destroy') } catch (_) {}
       }
     }
+  }, []) // intentionally empty — one init per mount; key drives remount on resize
 
-    // passive: true → we never call preventDefault, so browser gets the hint early
-    // capture: true → fires BEFORE StPageFlip's bubble-phase handlers
-    el.addEventListener('touchstart', onStart, { passive: true, capture: true })
-    el.addEventListener('touchend',   onEnd,   { passive: true, capture: true })
+  const p = 'overflow-hidden'  // every page needs overflow:hidden for turn.js
 
-    return () => {
-      el.removeEventListener('touchstart', onStart, { capture: true })
-      el.removeEventListener('touchend',   onEnd,   { capture: true })
-    }
-  // dims is a dep: the swipeRef div only exists when dims is non-null.
-  // Without dims, the effect runs at mount (dims=null, el=null) and returns
-  // early — listeners are never attached.  Adding dims ensures the effect
-  // re-fires after the div renders and swipeRef.current is populated.
-  }, [goNext, goPrev, dims])
+  return (
+    <div ref={bookRef} style={{ width: dims.w, height: dims.h }}>
 
-  // ── Body scroll-lock ─────────────────────────────────────────────────────────
+      {/* 0 ── cover left */}
+      <div className={`${p} bg-zinc-800 w-full h-full flex items-center justify-center`}>
+        <div className="text-center">
+          <div className="w-px h-16 bg-zinc-600 mx-auto mb-4" />
+          <p className="text-[9px] uppercase tracking-[0.35em] text-zinc-500">benvenuto</p>
+          <div className="w-px h-16 bg-zinc-600 mx-auto mt-4" />
+        </div>
+      </div>
+
+      {/* 1 ── cover right */}
+      <div className={`${p} bg-stone-50 w-full h-full flex flex-col items-center justify-center p-10 text-center`}>
+        <div className="text-[10px] uppercase tracking-[0.3em] text-stone-400 mb-3">il nostro menu</div>
+        <h1 className="text-2xl font-light text-stone-800 leading-snug">{restaurantName}</h1>
+        {menuName !== restaurantName && (
+          <p className="mt-2 text-sm text-stone-400 italic">{menuName}</p>
+        )}
+        {catData.length > 0 && (
+          <p className="mt-8 text-xs text-stone-400">
+            {catData.length} {catData.length === 1 ? 'categoria' : 'categorie'}
+            &nbsp;·&nbsp;sfoglia per scoprire
+          </p>
+        )}
+        <div className="mt-4 text-[9px] font-mono text-stone-300">1</div>
+      </div>
+
+      {/* category page pairs */}
+      {catData.flatMap((cat, i) => [
+
+        /* category left — title */
+        <div
+          key={`cl-${cat.name}`}
+          className={`${p} w-full h-full flex flex-col`}
+          style={{ background: 'linear-gradient(160deg,#18181b 0%,#27272a 100%)' }}
+        >
+          <div className="flex-1 flex flex-col items-center justify-center px-10 text-center">
+            <div className="w-8 h-px bg-zinc-500 mx-auto mb-6" />
+            <h2 className="text-xl font-light uppercase tracking-[0.18em] text-white">{cat.name}</h2>
+            <p className="mt-3 text-xs text-zinc-500">{cat.items.length} piatti</p>
+            <div className="w-8 h-px bg-zinc-500 mx-auto mt-6" />
+          </div>
+          <div className="pb-3 pr-4 text-[9px] font-mono text-zinc-600 self-end">{(i + 1) * 2}</div>
+        </div>,
+
+        /* category right — dish list */
+        <div key={`cr-${cat.name}`} className={`${p} bg-stone-50 w-full h-full flex flex-col`}>
+          <div className="px-5 pt-4 pb-2 border-b border-stone-200 shrink-0">
+            <h3 className="text-sm font-light uppercase tracking-widest text-stone-600 truncate">{cat.name}</h3>
+          </div>
+          <ul className="flex-1 overflow-hidden divide-y divide-stone-100 px-5 py-1.5">
+            {cat.items.map(dish => (
+              <li key={dish.id}>
+                <button
+                  type="button"
+                  onClick={() => onDishClick(dish)}
+                  className="w-full text-left py-2.5 group cursor-pointer"
+                >
+                  <div className="flex items-baseline justify-between gap-3">
+                    <span className="text-[13px] font-medium text-stone-800 group-hover:text-stone-500 group-hover:underline underline-offset-2 transition-colors leading-snug line-clamp-1">
+                      {dish.name}
+                    </span>
+                    {dish.price != null && (
+                      <span className="text-[12px] text-stone-500 shrink-0 tabular-nums whitespace-nowrap">
+                        €&nbsp;{Number(dish.price).toFixed(2)}
+                      </span>
+                    )}
+                  </div>
+                  {dish.description && (
+                    <p className="text-[11px] text-stone-400 mt-0.5 line-clamp-1 text-left leading-snug">
+                      {dish.description}
+                    </p>
+                  )}
+                  {dish.allergens?.length > 0 && (
+                    <span className="text-[9px] text-stone-300 tabular-nums">
+                      [{dish.allergens.join(', ')}]
+                    </span>
+                  )}
+                </button>
+              </li>
+            ))}
+          </ul>
+          <div className="px-5 py-1.5 border-t border-stone-200 text-right shrink-0">
+            <span className="text-[9px] font-mono text-stone-400">{(i + 1) * 2 + 1}</span>
+          </div>
+        </div>,
+      ])}
+
+      {/* back left ── info */}
+      <div className={`${p} bg-stone-100 w-full h-full flex flex-col items-center justify-center p-8 text-center`}>
+        {hasInfo ? (
+          <>
+            <div className="w-6 h-px bg-stone-400 mb-4" />
+            <h3 className="text-sm font-semibold uppercase tracking-widest text-stone-700 mb-3">
+              {infoTitle ?? 'Informazioni'}
+            </h3>
+            <p className="text-xs text-stone-600 leading-relaxed whitespace-pre-line max-w-xs overflow-hidden">
+              {infoContent}
+            </p>
+            <div className="w-6 h-px bg-stone-400 mt-4" />
+          </>
+        ) : (
+          <div className="text-xs text-stone-400">—</div>
+        )}
+      </div>
+
+      {/* back right ── thank you */}
+      <div className={`${p} bg-zinc-800 w-full h-full flex flex-col items-center justify-center p-10 text-center`}>
+        <div className="w-px h-12 bg-zinc-600 mx-auto mb-4" />
+        <p className="text-[10px] uppercase tracking-[0.35em] text-zinc-500">grazie</p>
+        <h2 className="text-xl font-light text-white mt-3">{restaurantName}</h2>
+        <div className="w-px h-12 bg-zinc-600 mx-auto mt-4" />
+      </div>
+
+    </div>
+  )
+}, () => true) // permanent bail — turn.js owns this DOM subtree after init
+
+
+// ── Public component ──────────────────────────────────────────────────────────
+export default function MenuFlipbook({
+  menuName, restaurantName, items, infoTitle, infoContent, onBack,
+}: Props) {
+  const [selectedDish, setSelectedDish] = useState<Dish | null>(null)
+  const [dims, setDims]                 = useState<{ w: number; h: number } | null>(null)
+
+  const catData = Array.from(new Set(items.map(i => i.category))).map(cat => ({
+    name:  cat,
+    items: items.filter(i => i.category === cat),
+  }))
+  const hasInfo = !!(infoContent || infoTitle)
+
+  const handleDishClick = useCallback((dish: Dish) => setSelectedDish(dish), [])
+
+  // body scroll-lock
   useEffect(() => {
-    const root = document.documentElement
-    const body = document.body
-    root.classList.add('menu-locked')
-    body.classList.add('menu-locked')
+    document.documentElement.classList.add('menu-locked')
+    document.body.classList.add('menu-locked')
     return () => {
-      root.classList.remove('menu-locked')
-      body.classList.remove('menu-locked')
+      document.documentElement.classList.remove('menu-locked')
+      document.body.classList.remove('menu-locked')
     }
   }, [])
 
-  // ── Viewport-aware sizing ─────────────────────────────────────────────────────
+  // viewport-aware sizing — same aspect ratio as before
   useEffect(() => {
     const RATIO = 360 / 520
     const calc = () => {
-      const vw = Math.min(window.innerWidth, 460)
-      const vh = window.innerHeight
-      const availW = vw - 24
-      const availH = vh - 120
-      let w = availW
-      let h = w / RATIO
+      const vw = Math.min(window.innerWidth, 460), vh = window.innerHeight
+      const availW = vw - 24, availH = vh - 120
+      let w = availW, h = w / RATIO
       if (h > availH) { h = availH; w = h * RATIO }
       setDims({ w: Math.max(240, Math.round(w)), h: Math.max(340, Math.round(h)) })
     }
@@ -180,23 +263,10 @@ export default function MenuFlipbook({ menuName, restaurantName, items, infoTitl
     }
   }, [])
 
-  // ── Keyboard navigation ───────────────────────────────────────────────────────
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === 'ArrowRight' || e.key === 'PageDown') goNext()
-      if (e.key === 'ArrowLeft'  || e.key === 'PageUp')   goPrev()
-    }
-    window.addEventListener('keydown', handler)
-    return () => window.removeEventListener('keydown', handler)
-  }, [goNext, goPrev])
-
-  const atStart = currentPage === 0
-  const atEnd   = currentPage >= totalPages - 1
-
   return (
     <div className="fixed inset-0 h-[100dvh] bg-zinc-900 flex flex-col items-center overflow-hidden select-none">
 
-      {/* ── Header ─────────────────────────────────────────────────────────── */}
+      {/* header */}
       <div className="shrink-0 flex items-center gap-4 w-full max-w-4xl px-4 py-3">
         <button onClick={onBack} className="text-xs text-zinc-400 hover:text-white transition-colors">
           ← Torna
@@ -210,203 +280,38 @@ export default function MenuFlipbook({ menuName, restaurantName, items, infoTitl
         <div className="w-10 shrink-0" />
       </div>
 
-      {/* ── Flipbook area ───────────────────────────────────────────────────────
-          DOM order:
-            [1] swipeRef div  — receives native touch listeners, contains flipbook
-            [2] nav bar div   — DOM-sibling of [1], z-[100], pointer-events:auto
-          Being a sibling (not a child) of [1], the nav bar is never inside
-          StPageFlip's event subtree. Its onClick handlers can never be
-          intercepted by the library's internal touch machinery. */}
-      <div className="flex-1 w-full flex items-center justify-center min-h-0 relative">
+      {/* book area */}
+      <div className="flex-1 w-full flex items-center justify-center min-h-0">
         {dims && (
-          <>
-            {/* [1] Swipe surface ───────────────────────────────────────────── */}
-            {/* touch-action:none → browser never treats horizontal movement
-                as a scroll candidate, so touchend always fires even on a fast
-                flick. Native listeners attached via useEffect above. */}
-            <div
-              ref={swipeRef}
-              style={{ width: dims.w, height: dims.h, touchAction: 'none' }}
-            >
-              <HTMLFlipBook
-                ref={bookRef}
-                width={350}
-                height={600}
-                size="stretch"
-                minWidth={315}
-                maxWidth={1000}
-                minHeight={420}
-                maxHeight={1350}
-                drawShadow
-                flippingTime={600}
-                usePortrait
-                startZIndex={0}
-                maxShadowOpacity={0.4}
-                showCover={false}
-                mobileScrollSupport={false}
-                clickEventForward
-                useMouseEvents={false}
-                swipeDistance={9999}
-                showPageCorners={false}
-                disableFlipByClick
-                onInit={(e: any) => {
-                  // e.object is the native StPageFlip instance — capture it here
-                  // rather than relying on bookRef.current.pageFlip() which is
-                  // a React-component bridge that may not be ready on first render.
-                  flipInst.current = e.object
-                  console.log('[Flipbook] onInit — instance ready:', e.object)
-                }}
-                onFlip={(e: any) => {
-                  currentPageRef.current = e.data
-                  setCurrentPage(e.data)
-                }}
-              >
-                {/* Page 0: Cover left */}
-                <Page className="bg-zinc-800 border-r border-zinc-700 flex items-center justify-center">
-                  <div className="text-center">
-                    <div className="w-px h-16 bg-zinc-600 mx-auto mb-4" />
-                    <p className="text-[9px] uppercase tracking-[0.35em] text-zinc-500">benvenuto</p>
-                    <div className="w-px h-16 bg-zinc-600 mx-auto mt-4" />
-                  </div>
-                </Page>
+          <div style={{ position: 'relative', width: dims.w, height: dims.h }}>
 
-                {/* Page 1: Cover right */}
-                <Page className="bg-stone-50 flex flex-col items-center justify-center p-10 text-center">
-                  <div className="text-[10px] uppercase tracking-[0.3em] text-stone-400 mb-3">il nostro menu</div>
-                  <h1 className="text-2xl font-light text-stone-800 leading-snug">{restaurantName}</h1>
-                  {menuName !== restaurantName && (
-                    <p className="mt-2 text-sm text-stone-400 italic">{menuName}</p>
-                  )}
-                  {catData.length > 0 && (
-                    <p className="mt-8 text-xs text-stone-400">
-                      {catData.length} {catData.length === 1 ? 'categoria' : 'categorie'}
-                      &nbsp;·&nbsp;sfoglia per scoprire
-                    </p>
-                  )}
-                  <div className="mt-4 text-[9px] font-mono text-stone-300">1</div>
-                </Page>
+            {/* key forces a clean remount — and therefore a fresh turn.js init —
+                whenever the viewport dimensions change.                           */}
+            <TurnBook
+              key={`book-${dims.w}-${dims.h}`}
+              dims={dims}
+              catData={catData}
+              restaurantName={restaurantName}
+              menuName={menuName}
+              hasInfo={hasInfo}
+              infoTitle={infoTitle}
+              infoContent={infoContent}
+              onDishClick={handleDishClick}
+            />
 
-                {/* Category page pairs */}
-                {catData.flatMap((cat, i) => [
-                  <Page
-                    key={`cl-${cat.name}`}
-                    className="flex flex-col border-r border-zinc-700"
-                    style={{ background: 'linear-gradient(160deg,#18181b 0%,#27272a 100%)' }}
-                  >
-                    <div className="flex-1 flex flex-col items-center justify-center px-10 text-center">
-                      <div className="w-8 h-px bg-zinc-500 mx-auto mb-6" />
-                      <h2 className="text-xl font-light uppercase tracking-[0.18em] text-white">{cat.name}</h2>
-                      <p className="mt-3 text-xs text-zinc-500">{cat.items.length} piatti</p>
-                      <div className="w-8 h-px bg-zinc-500 mx-auto mt-6" />
-                    </div>
-                    <div className="pb-3 pr-4 text-[9px] font-mono text-zinc-600 self-end">{(i + 1) * 2}</div>
-                  </Page>,
-
-                  <Page key={`cr-${cat.name}`} className="bg-stone-50 flex flex-col">
-                    <div className="px-5 pt-4 pb-2 border-b border-stone-200 shrink-0">
-                      <h3 className="text-sm font-light uppercase tracking-widest text-stone-600 truncate">{cat.name}</h3>
-                    </div>
-                    <ul className="flex-1 overflow-hidden divide-y divide-stone-100 px-5 py-1.5">
-                      {cat.items.map(dish => (
-                        <li key={dish.id}>
-                          <button
-                            type="button"
-                            onClick={() => setSelectedDish(dish)}
-                            className="w-full text-left py-2.5 group cursor-pointer"
-                          >
-                            <div className="flex items-baseline justify-between gap-3">
-                              <span className="text-[13px] font-medium text-stone-800 group-hover:text-stone-500 group-hover:underline underline-offset-2 transition-colors leading-snug line-clamp-1">
-                                {dish.name}
-                              </span>
-                              {dish.price != null && (
-                                <span className="text-[12px] text-stone-500 shrink-0 tabular-nums whitespace-nowrap">
-                                  €&nbsp;{Number(dish.price).toFixed(2)}
-                                </span>
-                              )}
-                            </div>
-                            {dish.description && (
-                              <p className="text-[11px] text-stone-400 mt-0.5 line-clamp-1 text-left leading-snug">
-                                {dish.description}
-                              </p>
-                            )}
-                            {dish.allergens?.length > 0 && (
-                              <span className="text-[9px] text-stone-300 tabular-nums">
-                                [{dish.allergens.join(', ')}]
-                              </span>
-                            )}
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                    <div className="px-5 py-1.5 border-t border-stone-200 text-right shrink-0">
-                      <span className="text-[9px] font-mono text-stone-400">{(i + 1) * 2 + 1}</span>
-                    </div>
-                  </Page>,
-                ])}
-
-                {/* Back left: Info */}
-                <Page className="bg-stone-100 flex flex-col items-center justify-center p-8 text-center">
-                  {hasInfo ? (
-                    <>
-                      <div className="w-6 h-px bg-stone-400 mb-4" />
-                      <h3 className="text-sm font-semibold uppercase tracking-widest text-stone-700 mb-3">
-                        {infoTitle ?? 'Informazioni'}
-                      </h3>
-                      <p className="text-xs text-stone-600 leading-relaxed whitespace-pre-line max-w-xs overflow-hidden">
-                        {infoContent}
-                      </p>
-                      <div className="w-6 h-px bg-stone-400 mt-4" />
-                    </>
-                  ) : (
-                    <div className="text-xs text-stone-400">—</div>
-                  )}
-                </Page>
-
-                {/* Back right: Thank you */}
-                <Page className="bg-zinc-800 flex flex-col items-center justify-center p-10 text-center">
-                  <div className="w-px h-12 bg-zinc-600 mx-auto mb-4" />
-                  <p className="text-[10px] uppercase tracking-[0.35em] text-zinc-500">grazie</p>
-                  <h2 className="text-xl font-light text-white mt-3">{restaurantName}</h2>
-                  <div className="w-px h-12 bg-zinc-600 mx-auto mt-4" />
-                </Page>
-              </HTMLFlipBook>
-            </div>
-
-            {/* [2] Navigation bar ──────────────────────────────────────────────
-                Hidden when a dish modal is open: the modal has z-50 and the
-                nav bar has z-[100], so without conditional rendering the bar
-                punches through the overlay.
-                onClick (not onPointerUp): the browser only emits a click for a
-                stationary tap, never at the end of a swipe → no accidental flip. */}
+            {/* visual nav hints — turn.js handles tapping the page corners natively */}
             {!selectedDish && (
-            <div
-              className="absolute bottom-3 left-1/2 -translate-x-1/2 z-[100] flex items-center gap-5"
-              style={{ touchAction: 'manipulation', pointerEvents: 'auto' }}
-            >
-              <button
-                type="button"
-                onClick={goPrev}
-                aria-label="Pagina precedente"
-                className={`px-3 py-3 text-[11px] uppercase tracking-[0.18em] text-zinc-400 hover:text-zinc-200 cursor-pointer transition-all ${atStart ? 'opacity-0' : 'opacity-100'}`}
-              >
-                ‹ prec.
-              </button>
-
-              <span className="text-[9px] text-zinc-600 tabular-nums select-none pointer-events-none">
-                {currentPage + 1} / {totalPages}
-              </span>
-
-              <button
-                type="button"
-                onClick={goNext}
-                aria-label="Pagina successiva"
-                className={`px-3 py-3 text-[11px] uppercase tracking-[0.18em] text-zinc-400 hover:text-zinc-200 cursor-pointer transition-all ${atEnd ? 'opacity-0' : 'opacity-100'}`}
-              >
-                succ. ›
-              </button>
-            </div>
+              <>
+                <span className="pointer-events-none absolute bottom-4 left-3 z-10 text-[11px] uppercase tracking-[0.18em] text-zinc-500 select-none">
+                  ‹ prec.
+                </span>
+                <span className="pointer-events-none absolute bottom-4 right-3 z-10 text-[11px] uppercase tracking-[0.18em] text-zinc-500 select-none">
+                  succ. ›
+                </span>
+              </>
             )}
-          </>
+
+          </div>
         )}
       </div>
 
