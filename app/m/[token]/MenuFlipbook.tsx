@@ -58,11 +58,8 @@ export default function MenuFlipbook({ menuName, restaurantName, items, infoTitl
   const hasInfo = !!(infoContent || infoTitle)
 
   // ── Flip helpers ───────────────────────────────────────────────────────────
-  // lastFlipMs gates our custom swipe handler; stfIsFlipping tracks when
-  // StPageFlip itself is mid-animation (corner drag or programmatic flip).
-  // The two together prevent any double-flip scenario.
-  const lastFlipMs    = useRef(0)
-  const stfIsFlipping = useRef(false)
+  // Debounce (500 ms) prevents double-flip when buttons and swipe both fire.
+  const lastFlipMs = useRef(0)
 
   const goNext = useCallback(() => {
     const now = Date.now()
@@ -78,43 +75,27 @@ export default function MenuFlipbook({ menuName, restaurantName, items, infoTitl
     bookRef.current?.pageFlip()?.flipPrev()
   }, [])
 
-  // ── Full-width swipe detection ─────────────────────────────────────────────
-  // StPageFlip's drag-to-flip only triggers near corners. These handlers catch
-  // any horizontal swipe on the whole book surface.
-  //
-  // Strategy: fire on onTouchMove (early, at ~20 px) rather than waiting for
-  // the finger to lift — this makes the response feel instant, not "rigid".
-  // swipeHandled prevents move + end both triggering on the same gesture.
-  // When StPageFlip is already handling a corner drag (stfIsFlipping = true)
-  // we skip entirely so we never fight its animation.
-  const swipeSX      = useRef(0)
-  const swipeSY      = useRef(0)
-  const swipeHandled = useRef(false)
+  // ── Swipe-as-command ────────────────────────────────────────────────────────
+  // The library's native drag simulation is fully disabled (useMouseEvents={false},
+  // swipeDistance={9999}). These two handlers implement a pure "command" model:
+  //   1. touchStart  → record finger position
+  //   2. touchEnd    → measure ΔX; if |ΔX| > 40 px and mostly horizontal → flip
+  // No intermediate physics, no page chasing the finger, no onTouchMove.
+  // clickEventForward is still active so taps on dish names pass through.
+  const touchStartX = useRef(0)
+  const touchStartY = useRef(0)
 
   const handleTouchStart = useCallback((e: React.TouchEvent) => {
-    swipeSX.current      = e.touches[0].clientX
-    swipeSY.current      = e.touches[0].clientY
-    swipeHandled.current = false
+    touchStartX.current = e.touches[0].clientX
+    touchStartY.current = e.touches[0].clientY
   }, [])
 
-  const handleTouchMove = useCallback((e: React.TouchEvent) => {
-    if (swipeHandled.current || stfIsFlipping.current) return
-    const dx  = e.touches[0].clientX - swipeSX.current
-    const adx = Math.abs(dx)
-    const ady = Math.abs(e.touches[0].clientY - swipeSY.current)
-    // 20 px horizontal, clearly more H than V → fire immediately
-    if (adx < 20 || ady > adx) return
-    swipeHandled.current = true
-    if (dx < 0) goNext(); else goPrev()
-  }, [goNext, goPrev])
-
   const handleTouchEnd = useCallback((e: React.TouchEvent) => {
-    // Fallback for slow / short gestures that didn't cross 20 px during move
-    if (swipeHandled.current || stfIsFlipping.current) return
-    const dx  = e.changedTouches[0].clientX - swipeSX.current
+    const dx  = e.changedTouches[0].clientX - touchStartX.current
     const adx = Math.abs(dx)
-    const ady = Math.abs(e.changedTouches[0].clientY - swipeSY.current)
-    if (adx < 30 || ady > adx) return
+    const ady = Math.abs(e.changedTouches[0].clientY - touchStartY.current)
+    // Require > 40 px horizontal and clearly more H than V (45° tolerance)
+    if (adx <= 40 || ady > adx) return
     if (dx < 0) goNext(); else goPrev()
   }, [goNext, goPrev])
 
@@ -191,13 +172,13 @@ export default function MenuFlipbook({ menuName, restaurantName, items, infoTitl
       <div className="flex-1 w-full flex items-center justify-center min-h-0 relative">
         {dims && (
           <>
-            {/* Flipbook wrapper: touch-action:none here (not on the whole page)
-                so the browser doesn't scroll while the user drags pages.
-                The custom swipe handler also lives here for full-width coverage. */}
+            {/* Swipe wrapper: touch-action:none stops the browser from treating
+                horizontal movement as a scroll-candidate, so touchend always
+                fires even if the gesture was fast. No onTouchMove — we do not
+                track the finger continuously; the flip is a command on release. */}
             <div
-              style={{ width: dims.w, height: dims.h, touchAction: 'pan-y' }}
+              style={{ width: dims.w, height: dims.h, touchAction: 'none' }}
               onTouchStart={handleTouchStart}
-              onTouchMove={handleTouchMove}
               onTouchEnd={handleTouchEnd}
             >
               <HTMLFlipBook
@@ -206,20 +187,17 @@ export default function MenuFlipbook({ menuName, restaurantName, items, infoTitl
                 height={dims.h}
                 size="fixed"
                 drawShadow
-                flippingTime={600}
+                flippingTime={550}
                 usePortrait
                 startZIndex={10}
-                maxShadowOpacity={0.5}
+                maxShadowOpacity={0.45}
                 showCover={false}
                 mobileScrollSupport={false}
                 clickEventForward
-                useMouseEvents
-                swipeDistance={10}
-                showPageCorners
+                useMouseEvents={false}
+                swipeDistance={9999}
+                showPageCorners={false}
                 disableFlipByClick
-                onChangeState={(e: any) => {
-                  stfIsFlipping.current = e.data !== 'read'
-                }}
                 onFlip={(e: any) => {
                   setCurrentPage(e.data)
                   lastFlipMs.current = Date.now()
