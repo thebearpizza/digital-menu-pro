@@ -35,12 +35,10 @@ export default function DishModal({ item, allDishes, onClose, onOpenDish }: Prop
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
-      {/* Backdrop: pan disabled (touch-none) so the page underneath can't move */}
+      {/* Backdrop: touch-none prevents any pan of the page behind the modal */}
       <div className="absolute inset-0 bg-black/60 modal-backdrop touch-none" onClick={onClose} />
 
-      {/* Card: fixed in the viewport, never taller than the screen.
-          It is a flex column so the image + footer stay put while only
-          the middle content area scrolls when a description is long. */}
+      {/* Card: flex column so image and footer are fixed, content scrolls */}
       <div className="relative bg-white w-full sm:max-w-md sm:shadow-2xl modal-card flex flex-col max-h-[90dvh]">
 
         {item.image_url && (
@@ -49,28 +47,39 @@ export default function DishModal({ item, allDishes, onClose, onOpenDish }: Prop
           </div>
         )}
 
-        <button onClick={onClose} aria-label="Chiudi"
-          className="absolute top-3 right-3 z-10 w-7 h-7 flex items-center justify-center bg-black/30 text-white text-xl leading-none hover:bg-black/50 transition-colors">
+        <button
+          onClick={onClose}
+          aria-label="Chiudi"
+          className="absolute top-3 right-3 z-10 w-7 h-7 flex items-center justify-center bg-black/30 text-white text-xl leading-none hover:bg-black/50 transition-colors"
+        >
           &times;
         </button>
 
-        {/* Scrollable content — vertical scroll only, contained (no pan, no
-            scroll-chaining to the body). */}
+        {/* Scrollable body: vertical scroll only, no scroll-chaining, no pan */}
         <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-6 [touch-action:pan-y]">
+
           <div className="text-[10px] uppercase tracking-widest text-stone-400 mb-2">{item.category}</div>
 
-          <div className="flex items-baseline justify-between gap-4 mb-3">
-            <h2 className="text-xl font-semibold text-stone-900">{item.name}</h2>
+          {/* ── Name + description + price ─────────────────────────────────────
+              Grid layout: left column [1fr] holds the dish name AND description;
+              right column [auto] holds the price.
+              This forces the description to wrap at the exact horizontal position
+              where the price starts — never wider than the name column. */}
+          <div className="grid grid-cols-[1fr_auto] items-start gap-x-4 mb-4">
+            <div className="min-w-0">
+              <h2 className="text-xl font-semibold text-stone-900 leading-snug break-words">{item.name}</h2>
+              {item.description && (
+                <p className="text-sm text-stone-600 leading-relaxed mt-2 break-words whitespace-normal">
+                  {item.description}
+                </p>
+              )}
+            </div>
             {item.price != null && (
-              <span className="text-xl font-semibold text-stone-700 shrink-0 tabular-nums">
+              <span className="text-xl font-semibold text-stone-700 tabular-nums whitespace-nowrap pt-0.5">
                 &euro;&nbsp;{Number(item.price).toFixed(2)}
               </span>
             )}
           </div>
-
-          {item.description && (
-            <p className="text-sm text-stone-600 leading-relaxed mb-4 whitespace-pre-line">{item.description}</p>
-          )}
 
           {item.allergens?.length > 0 && (
             <div className="mb-4 p-3 bg-amber-50 border border-amber-100">
@@ -106,10 +115,12 @@ export default function DishModal({ item, allDishes, onClose, onOpenDish }: Prop
           )}
         </div>
 
-        {/* Footer stays fixed at the bottom of the card */}
+        {/* Footer pinned at the bottom of the card */}
         <div className="shrink-0 px-6 py-4 border-t border-stone-100">
-          <button onClick={onClose}
-            className="w-full py-2 text-sm font-medium text-stone-600 border border-stone-300 hover:bg-stone-50 transition-colors">
+          <button
+            onClick={onClose}
+            className="w-full py-2 text-sm font-medium text-stone-600 border border-stone-300 hover:bg-stone-50 transition-colors"
+          >
             Chiudi
           </button>
         </div>
