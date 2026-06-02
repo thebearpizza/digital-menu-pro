@@ -230,14 +230,18 @@ export default function MenuFlipbook({ menuName, restaurantName, items, infoTitl
             >
               <HTMLFlipBook
                 ref={bookRef}
-                width={dims.w}
-                height={dims.h}
-                size="fixed"
+                width={350}
+                height={600}
+                size="stretch"
+                minWidth={315}
+                maxWidth={1000}
+                minHeight={420}
+                maxHeight={1350}
                 drawShadow
-                flippingTime={700}
+                flippingTime={600}
                 usePortrait
                 startZIndex={0}
-                maxShadowOpacity={0.5}
+                maxShadowOpacity={0.4}
                 showCover={false}
                 mobileScrollSupport={false}
                 clickEventForward
