@@ -44,7 +44,11 @@ Page.displayName = 'Page'
 
 export default function MenuFlipbook({ menuName, restaurantName, items, infoTitle, infoContent, onBack }: Props) {
   const bookRef    = useRef<any>(null)
-  const swipeRef   = useRef<HTMLDivElement>(null)   // target for native touch listeners
+  const swipeRef   = useRef<HTMLDivElement>(null)  // target for native touch listeners
+  // flipInst holds the native StPageFlip object, populated by onInit.
+  // Using a separate ref avoids relying on bookRef.current.pageFlip() which
+  // can return null when the dynamic-import component hasn't fully resolved.
+  const flipInst   = useRef<any>(null)
   const [currentPage, setCurrentPage] = useState(0)
   const [selectedDish, setSelectedDish] = useState<Dish | null>(null)
   const [dims, setDims] = useState<{ w: number; h: number } | null>(null)
@@ -64,17 +68,29 @@ export default function MenuFlipbook({ menuName, restaurantName, items, infoTitl
   const lastFlipMs = useRef(0)
 
   const goNext = useCallback(() => {
+    const inst = flipInst.current
+    if (!inst) {
+      console.warn('[Flipbook] goNext: instance not ready yet')
+      return
+    }
     const now = Date.now()
     if (now - lastFlipMs.current < 500) return
     lastFlipMs.current = now
-    bookRef.current?.pageFlip()?.flipNext()
+    console.log('[Flipbook] goNext →', inst)
+    inst.flipNext()
   }, [])
 
   const goPrev = useCallback(() => {
+    const inst = flipInst.current
+    if (!inst) {
+      console.warn('[Flipbook] goPrev: instance not ready yet')
+      return
+    }
     const now = Date.now()
     if (now - lastFlipMs.current < 500) return
     lastFlipMs.current = now
-    bookRef.current?.pageFlip()?.flipPrev()
+    console.log('[Flipbook] goPrev →', inst)
+    inst.flipPrev()
   }, [])
 
   // ── Native capture-phase swipe listeners ─────────────────────────────────────
@@ -224,6 +240,13 @@ export default function MenuFlipbook({ menuName, restaurantName, items, infoTitl
                 swipeDistance={9999}
                 showPageCorners={false}
                 disableFlipByClick
+                onInit={(e: any) => {
+                  // e.object is the native StPageFlip instance — capture it here
+                  // rather than relying on bookRef.current.pageFlip() which is
+                  // a React-component bridge that may not be ready on first render.
+                  flipInst.current = e.object
+                  console.log('[Flipbook] onInit — instance ready:', e.object)
+                }}
                 onFlip={(e: any) => {
                   setCurrentPage(e.data)
                   lastFlipMs.current = Date.now()
