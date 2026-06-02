@@ -131,8 +131,13 @@ export default function MenuFlipbook({ menuName, restaurantName, items, infoTitl
       console.log('[Swipe] touchend dx=', dx, 'adx=', adx, 'ady=', ady)
       // > 40 px horizontal, diagonal tolerance ≤ 45°
       if (adx <= 40 || ady > adx) return
-      if (dx < 0) { console.log('[Swipe] → goNext'); goNext() }
-      else         { console.log('[Swipe] → goPrev'); goPrev() }
+      if (dx < 0) {
+        console.log('[Swipe] Comando SWIPE AVANTI inviato. Delta:', dx, 'Istanza:', flipInst.current)
+        flipInst.current?.flipNext()
+      } else {
+        console.log('[Swipe] Comando SWIPE INDIETRO inviato. Delta:', dx, 'Istanza:', flipInst.current)
+        flipInst.current?.flipPrev()
+      }
     }
 
     // passive: true → we never call preventDefault, so browser gets the hint early
@@ -148,7 +153,8 @@ export default function MenuFlipbook({ menuName, restaurantName, items, infoTitl
   // Without dims, the effect runs at mount (dims=null, el=null) and returns
   // early — listeners are never attached.  Adding dims ensures the effect
   // re-fires after the div renders and swipeRef.current is populated.
-  }, [goNext, goPrev, dims])
+  // flipInst is a ref (not state), so it's not a dep — it's read at call time.
+  }, [dims])
 
   // ── Body scroll-lock ─────────────────────────────────────────────────────────
   useEffect(() => {
@@ -388,10 +394,12 @@ export default function MenuFlipbook({ menuName, restaurantName, items, infoTitl
             >
               <button
                 type="button"
-                onClick={() => goPrev()}
-                disabled={atStart}
+                onClick={() => {
+                  console.log('Comando PREC. inviato. Istanza:', flipInst.current)
+                  flipInst.current?.flipPrev()
+                }}
                 aria-label="Pagina precedente"
-                className="px-3 py-3 text-[11px] uppercase tracking-[0.18em] text-zinc-400 hover:text-zinc-200 disabled:opacity-0 disabled:pointer-events-none cursor-pointer transition-colors"
+                className={`px-3 py-3 text-[11px] uppercase tracking-[0.18em] text-zinc-400 hover:text-zinc-200 cursor-pointer transition-all ${atStart ? 'opacity-0' : 'opacity-100'}`}
               >
                 ‹ prec.
               </button>
@@ -402,10 +410,12 @@ export default function MenuFlipbook({ menuName, restaurantName, items, infoTitl
 
               <button
                 type="button"
-                onClick={() => goNext()}
-                disabled={atEnd}
+                onClick={() => {
+                  console.log('Comando SUCC. inviato. Istanza:', flipInst.current)
+                  flipInst.current?.flipNext()
+                }}
                 aria-label="Pagina successiva"
-                className="px-3 py-3 text-[11px] uppercase tracking-[0.18em] text-zinc-400 hover:text-zinc-200 disabled:opacity-0 disabled:pointer-events-none cursor-pointer transition-colors"
+                className={`px-3 py-3 text-[11px] uppercase tracking-[0.18em] text-zinc-400 hover:text-zinc-200 cursor-pointer transition-all ${atEnd ? 'opacity-0' : 'opacity-100'}`}
               >
                 succ. ›
               </button>
