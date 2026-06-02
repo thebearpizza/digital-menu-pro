@@ -43,7 +43,8 @@ const Page = forwardRef<HTMLDivElement, {
 Page.displayName = 'Page'
 
 export default function MenuFlipbook({ menuName, restaurantName, items, infoTitle, infoContent, onBack }: Props) {
-  const bookRef = useRef<any>(null)
+  const bookRef    = useRef<any>(null)
+  const swipeRef   = useRef<HTMLDivElement>(null)   // target for native touch listeners
   const [currentPage, setCurrentPage] = useState(0)
   const [selectedDish, setSelectedDish] = useState<Dish | null>(null)
   const [dims, setDims] = useState<{ w: number; h: number } | null>(null)
@@ -55,10 +56,11 @@ export default function MenuFlipbook({ menuName, restaurantName, items, infoTitl
   }))
 
   const totalPages = 2 + catData.length * 2 + 2
-  const hasInfo = !!(infoContent || infoTitle)
+  const hasInfo    = !!(infoContent || infoTitle)
 
-  // ── Flip helpers ───────────────────────────────────────────────────────────
-  // Debounce (500 ms) prevents double-flip when buttons and swipe both fire.
+  // ── Flip helpers ─────────────────────────────────────────────────────────────
+  // 500 ms debounce prevents double-flip when button and swipe both fire for
+  // the same gesture (e.g. touch lands on button area while swiping).
   const lastFlipMs = useRef(0)
 
   const goNext = useCallback(() => {
@@ -75,31 +77,55 @@ export default function MenuFlipbook({ menuName, restaurantName, items, infoTitl
     bookRef.current?.pageFlip()?.flipPrev()
   }, [])
 
-  // ── Swipe-as-command ────────────────────────────────────────────────────────
-  // The library's native drag simulation is fully disabled (useMouseEvents={false},
-  // swipeDistance={9999}). These two handlers implement a pure "command" model:
-  //   1. touchStart  → record finger position
-  //   2. touchEnd    → measure ΔX; if |ΔX| > 40 px and mostly horizontal → flip
-  // No intermediate physics, no page chasing the finger, no onTouchMove.
-  // clickEventForward is still active so taps on dish names pass through.
-  const touchStartX = useRef(0)
-  const touchStartY = useRef(0)
+  // ── Native capture-phase swipe listeners ─────────────────────────────────────
+  // WHY NATIVE instead of React synthetic props (onTouchStart / onTouchEnd):
+  //   React 18 delegates ALL synthetic events to the document root.
+  //   StPageFlip attaches its own native listeners to its internal container.
+  //   If StPageFlip calls e.stopPropagation() in the bubble phase, the event
+  //   never reaches the document root → React never fires our handlers → swipe
+  //   silently broken.
+  //
+  // WHY CAPTURE PHASE ({ capture: true }):
+  //   Capture runs top-down (document → our wrapper → StPageFlip children)
+  //   BEFORE any bubble-phase handler. stopPropagation in a child's bubble
+  //   handler can never stop a parent's capture listener. We are guaranteed
+  //   to see every touch on the book surface.
+  //
+  // WHY changedTouches[0] in touchend:
+  //   At touchend, e.touches[] is already empty (finger is up).
+  //   e.changedTouches[] contains the just-lifted touch — always populated.
+  useEffect(() => {
+    const el = swipeRef.current
+    if (!el) return
 
-  const handleTouchStart = useCallback((e: React.TouchEvent) => {
-    touchStartX.current = e.touches[0].clientX
-    touchStartY.current = e.touches[0].clientY
-  }, [])
+    let x0 = 0, y0 = 0
 
-  const handleTouchEnd = useCallback((e: React.TouchEvent) => {
-    const dx  = e.changedTouches[0].clientX - touchStartX.current
-    const adx = Math.abs(dx)
-    const ady = Math.abs(e.changedTouches[0].clientY - touchStartY.current)
-    // Require > 40 px horizontal and clearly more H than V (45° tolerance)
-    if (adx <= 40 || ady > adx) return
-    if (dx < 0) goNext(); else goPrev()
-  }, [goNext, goPrev])
+    const onStart = (e: TouchEvent) => {
+      x0 = e.touches[0].clientX
+      y0 = e.touches[0].clientY
+    }
 
-  // ── Body scroll-lock ───────────────────────────────────────────────────────
+    const onEnd = (e: TouchEvent) => {
+      const dx  = e.changedTouches[0].clientX - x0   // ← changedTouches, never touches
+      const adx = Math.abs(dx)
+      const ady = Math.abs(e.changedTouches[0].clientY - y0)
+      // > 40 px horizontal, diagonal tolerance ≤ 45°
+      if (adx <= 40 || ady > adx) return
+      if (dx < 0) goNext(); else goPrev()
+    }
+
+    // passive: true → we never call preventDefault, so browser gets the hint early
+    // capture: true → fires BEFORE StPageFlip's bubble-phase handlers
+    el.addEventListener('touchstart', onStart, { passive: true, capture: true })
+    el.addEventListener('touchend',   onEnd,   { passive: true, capture: true })
+
+    return () => {
+      el.removeEventListener('touchstart', onStart, { capture: true })
+      el.removeEventListener('touchend',   onEnd,   { capture: true })
+    }
+  }, [goNext, goPrev]) // goNext / goPrev are stable (useCallback [])
+
+  // ── Body scroll-lock ─────────────────────────────────────────────────────────
   useEffect(() => {
     const root = document.documentElement
     const body = document.body
@@ -111,14 +137,14 @@ export default function MenuFlipbook({ menuName, restaurantName, items, infoTitl
     }
   }, [])
 
-  // ── Viewport-aware sizing ──────────────────────────────────────────────────
+  // ── Viewport-aware sizing ─────────────────────────────────────────────────────
   useEffect(() => {
     const RATIO = 360 / 520
     const calc = () => {
       const vw = Math.min(window.innerWidth, 460)
       const vh = window.innerHeight
-      const availW = vw - 24       // side padding
-      const availH = vh - 120      // header + indicator chrome
+      const availW = vw - 24
+      const availH = vh - 120
       let w = availW
       let h = w / RATIO
       if (h > availH) { h = availH; w = h * RATIO }
@@ -133,7 +159,7 @@ export default function MenuFlipbook({ menuName, restaurantName, items, infoTitl
     }
   }, [])
 
-  // ── Keyboard navigation ────────────────────────────────────────────────────
+  // ── Keyboard navigation ───────────────────────────────────────────────────────
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key === 'ArrowRight' || e.key === 'PageDown') goNext()
@@ -147,8 +173,6 @@ export default function MenuFlipbook({ menuName, restaurantName, items, infoTitl
   const atEnd   = currentPage >= totalPages - 1
 
   return (
-    // Outer shell: overflow locked, NO touch-none here — it would prevent
-    // StPageFlip's own touch listeners from receiving events.
     <div className="fixed inset-0 h-[100dvh] bg-zinc-900 flex flex-col items-center overflow-hidden select-none">
 
       {/* ── Header ─────────────────────────────────────────────────────────── */}
@@ -165,21 +189,23 @@ export default function MenuFlipbook({ menuName, restaurantName, items, infoTitl
         <div className="w-10 shrink-0" />
       </div>
 
-      {/* ── Flipbook area ──────────────────────────────────────────────────── */}
-      {/* This div is `relative` so nav buttons can be positioned here as
-          SIBLINGS of the flipbook div (not inside it). Being siblings means
-          StPageFlip's internal event handlers cannot intercept their taps. */}
+      {/* ── Flipbook area ───────────────────────────────────────────────────────
+          DOM order:
+            [1] swipeRef div  — receives native touch listeners, contains flipbook
+            [2] nav bar div   — DOM-sibling of [1], z-[100], pointer-events:auto
+          Being a sibling (not a child) of [1], the nav bar is never inside
+          StPageFlip's event subtree. Its onClick handlers can never be
+          intercepted by the library's internal touch machinery. */}
       <div className="flex-1 w-full flex items-center justify-center min-h-0 relative">
         {dims && (
           <>
-            {/* Swipe wrapper: touch-action:none stops the browser from treating
-                horizontal movement as a scroll-candidate, so touchend always
-                fires even if the gesture was fast. No onTouchMove — we do not
-                track the finger continuously; the flip is a command on release. */}
+            {/* [1] Swipe surface ───────────────────────────────────────────── */}
+            {/* touch-action:none → browser never treats horizontal movement
+                as a scroll candidate, so touchend always fires even on a fast
+                flick. Native listeners attached via useEffect above. */}
             <div
+              ref={swipeRef}
               style={{ width: dims.w, height: dims.h, touchAction: 'none' }}
-              onTouchStart={handleTouchStart}
-              onTouchEnd={handleTouchEnd}
             >
               <HTMLFlipBook
                 ref={bookRef}
@@ -230,7 +256,6 @@ export default function MenuFlipbook({ menuName, restaurantName, items, infoTitl
 
                 {/* Category page pairs */}
                 {catData.flatMap((cat, i) => [
-                  /* Left: category title */
                   <Page
                     key={`cl-${cat.name}`}
                     className="flex flex-col border-r border-zinc-700"
@@ -245,7 +270,6 @@ export default function MenuFlipbook({ menuName, restaurantName, items, infoTitl
                     <div className="pb-3 pr-4 text-[9px] font-mono text-zinc-600 self-end">{(i + 1) * 2}</div>
                   </Page>,
 
-                  /* Right: dish list — no scroll, text truncated per spec */
                   <Page key={`cr-${cat.name}`} className="bg-stone-50 flex flex-col">
                     <div className="px-5 pt-4 pb-2 border-b border-stone-200 shrink-0">
                       <h3 className="text-sm font-light uppercase tracking-widest text-stone-600 truncate">{cat.name}</h3>
@@ -316,36 +340,38 @@ export default function MenuFlipbook({ menuName, restaurantName, items, infoTitl
               </HTMLFlipBook>
             </div>
 
-            {/* ── Bottom-center navigation bar ────────────────────────────────
-                Sibling of the flipbook div (never inside it) → StPageFlip's
-                handlers cannot intercept taps here.
-                onPointerUp + touch-action:manipulation = zero tap delay on iOS.
-                The bar merges prev / counter / next in one centred row so the
-                user has a clear, always-visible target at the bottom. */}
+            {/* [2] Navigation bar ──────────────────────────────────────────────
+                DOM sibling of [1] — physically AFTER the flipbook in the tree.
+                z-[100] beats StPageFlip's startZIndex=10 by a wide margin.
+                pointerEvents:'auto' is explicit: no ancestor can shadow it.
+                touch-action:manipulation removes the 300 ms iOS tap delay.
+                onClick (not onPointerUp) is used: the browser issues a click
+                only when the finger stays still (tap), never on a swipe —
+                so swiping through this area can never accidentally flip twice. */}
             <div
-              className="absolute bottom-3 left-1/2 -translate-x-1/2 z-50 flex items-center gap-5"
-              style={{ touchAction: 'manipulation' }}
+              className="absolute bottom-3 left-1/2 -translate-x-1/2 z-[100] flex items-center gap-5"
+              style={{ touchAction: 'manipulation', pointerEvents: 'auto' }}
             >
               <button
                 type="button"
-                onPointerUp={(e) => { e.stopPropagation(); goPrev() }}
+                onClick={() => goPrev()}
                 disabled={atStart}
                 aria-label="Pagina precedente"
-                className="text-[11px] uppercase tracking-[0.18em] text-zinc-400 hover:text-zinc-200 disabled:opacity-0 cursor-pointer px-2 py-2 transition-colors"
+                className="px-3 py-3 text-[11px] uppercase tracking-[0.18em] text-zinc-400 hover:text-zinc-200 disabled:opacity-0 disabled:pointer-events-none cursor-pointer transition-colors"
               >
                 ‹ prec.
               </button>
 
-              <span className="text-[9px] text-zinc-600 tabular-nums select-none">
+              <span className="text-[9px] text-zinc-600 tabular-nums select-none pointer-events-none">
                 {currentPage + 1} / {totalPages}
               </span>
 
               <button
                 type="button"
-                onPointerUp={(e) => { e.stopPropagation(); goNext() }}
+                onClick={() => goNext()}
                 disabled={atEnd}
                 aria-label="Pagina successiva"
-                className="text-[11px] uppercase tracking-[0.18em] text-zinc-400 hover:text-zinc-200 disabled:opacity-0 cursor-pointer px-2 py-2 transition-colors"
+                className="px-3 py-3 text-[11px] uppercase tracking-[0.18em] text-zinc-400 hover:text-zinc-200 disabled:opacity-0 disabled:pointer-events-none cursor-pointer transition-colors"
               >
                 succ. ›
               </button>
