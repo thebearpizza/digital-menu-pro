@@ -35,21 +35,28 @@ export default function DishModal({ item, allDishes, onClose, onOpenDish }: Prop
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
-      <div className="absolute inset-0 bg-black/60 modal-backdrop" onClick={onClose} />
-      <div className="relative bg-white w-full sm:max-w-md sm:shadow-2xl modal-card max-h-[92vh] overflow-y-auto">
+      {/* Backdrop: pan disabled (touch-none) so the page underneath can't move */}
+      <div className="absolute inset-0 bg-black/60 modal-backdrop touch-none" onClick={onClose} />
+
+      {/* Card: fixed in the viewport, never taller than the screen.
+          It is a flex column so the image + footer stay put while only
+          the middle content area scrolls when a description is long. */}
+      <div className="relative bg-white w-full sm:max-w-md sm:shadow-2xl modal-card flex flex-col max-h-[90dvh]">
 
         {item.image_url && (
-          <div className="relative h-56 overflow-hidden bg-stone-100">
+          <div className="relative h-56 shrink-0 overflow-hidden bg-stone-100">
             <img src={item.image_url} alt={item.name} className="w-full h-full object-cover" />
           </div>
         )}
 
         <button onClick={onClose} aria-label="Chiudi"
-          className="absolute top-3 right-3 w-7 h-7 flex items-center justify-center bg-black/30 text-white text-xl leading-none hover:bg-black/50 transition-colors">
+          className="absolute top-3 right-3 z-10 w-7 h-7 flex items-center justify-center bg-black/30 text-white text-xl leading-none hover:bg-black/50 transition-colors">
           &times;
         </button>
 
-        <div className="p-6">
+        {/* Scrollable content — vertical scroll only, contained (no pan, no
+            scroll-chaining to the body). */}
+        <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-6 [touch-action:pan-y]">
           <div className="text-[10px] uppercase tracking-widest text-stone-400 mb-2">{item.category}</div>
 
           <div className="flex items-baseline justify-between gap-4 mb-3">
@@ -62,7 +69,7 @@ export default function DishModal({ item, allDishes, onClose, onOpenDish }: Prop
           </div>
 
           {item.description && (
-            <p className="text-sm text-stone-600 leading-relaxed mb-4">{item.description}</p>
+            <p className="text-sm text-stone-600 leading-relaxed mb-4 whitespace-pre-line">{item.description}</p>
           )}
 
           {item.allergens?.length > 0 && (
@@ -84,6 +91,7 @@ export default function DishModal({ item, allDishes, onClose, onOpenDish }: Prop
                 {item.pairing_label ?? 'Abbinamento consigliato'}
               </p>
               <button
+                type="button"
                 onClick={() => onOpenDish(pairing)}
                 className="text-sm font-medium text-stone-800 hover:text-stone-500 hover:underline transition-colors text-left"
               >
@@ -98,7 +106,8 @@ export default function DishModal({ item, allDishes, onClose, onOpenDish }: Prop
           )}
         </div>
 
-        <div className="px-6 pb-6">
+        {/* Footer stays fixed at the bottom of the card */}
+        <div className="shrink-0 px-6 py-4 border-t border-stone-100">
           <button onClick={onClose}
             className="w-full py-2 text-sm font-medium text-stone-600 border border-stone-300 hover:bg-stone-50 transition-colors">
             Chiudi
