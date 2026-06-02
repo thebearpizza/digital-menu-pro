@@ -87,9 +87,12 @@ export default function MenuFlipbook({ menuName, restaurantName, items, infoTitl
       return
     }
     const now = Date.now()
-    if (now - lastFlipMs.current < 500) return
+    if (now - lastFlipMs.current < 500) {
+      console.warn('[Flipbook] goPrev: debounce active, skip')
+      return
+    }
     lastFlipMs.current = now
-    console.log('[Flipbook] goPrev →', inst)
+    console.log('[Flipbook] goPrev — Prev cliccato')
     inst.flipPrev()
   }, [])
 
@@ -122,12 +125,14 @@ export default function MenuFlipbook({ menuName, restaurantName, items, infoTitl
     }
 
     const onEnd = (e: TouchEvent) => {
-      const dx  = e.changedTouches[0].clientX - x0   // ← changedTouches, never touches
+      const dx  = e.changedTouches[0].clientX - x0   // changedTouches — always populated at touchend
       const adx = Math.abs(dx)
       const ady = Math.abs(e.changedTouches[0].clientY - y0)
+      console.log('[Swipe] touchend dx=', dx, 'adx=', adx, 'ady=', ady)
       // > 40 px horizontal, diagonal tolerance ≤ 45°
       if (adx <= 40 || ady > adx) return
-      if (dx < 0) goNext(); else goPrev()
+      if (dx < 0) { console.log('[Swipe] → goNext'); goNext() }
+      else         { console.log('[Swipe] → goPrev'); goPrev() }
     }
 
     // passive: true → we never call preventDefault, so browser gets the hint early
@@ -139,7 +144,11 @@ export default function MenuFlipbook({ menuName, restaurantName, items, infoTitl
       el.removeEventListener('touchstart', onStart, { capture: true })
       el.removeEventListener('touchend',   onEnd,   { capture: true })
     }
-  }, [goNext, goPrev]) // goNext / goPrev are stable (useCallback [])
+  // dims is a dep: the swipeRef div only exists when dims is non-null.
+  // Without dims, the effect runs at mount (dims=null, el=null) and returns
+  // early — listeners are never attached.  Adding dims ensures the effect
+  // re-fires after the div renders and swipeRef.current is populated.
+  }, [goNext, goPrev, dims])
 
   // ── Body scroll-lock ─────────────────────────────────────────────────────────
   useEffect(() => {
@@ -248,8 +257,11 @@ export default function MenuFlipbook({ menuName, restaurantName, items, infoTitl
                   console.log('[Flipbook] onInit — instance ready:', e.object)
                 }}
                 onFlip={(e: any) => {
+                  // Do NOT update lastFlipMs here.
+                  // The debounce is set by goNext/goPrev themselves.
+                  // Setting it here would block prec. for 500 ms AFTER the
+                  // animation completes, right when the button becomes visible.
                   setCurrentPage(e.data)
-                  lastFlipMs.current = Date.now()
                 }}
               >
                 {/* Page 0: Cover left */}
@@ -364,13 +376,12 @@ export default function MenuFlipbook({ menuName, restaurantName, items, infoTitl
             </div>
 
             {/* [2] Navigation bar ──────────────────────────────────────────────
-                DOM sibling of [1] — physically AFTER the flipbook in the tree.
-                z-[100] beats StPageFlip's startZIndex=10 by a wide margin.
-                pointerEvents:'auto' is explicit: no ancestor can shadow it.
-                touch-action:manipulation removes the 300 ms iOS tap delay.
-                onClick (not onPointerUp) is used: the browser issues a click
-                only when the finger stays still (tap), never on a swipe —
-                so swiping through this area can never accidentally flip twice. */}
+                Hidden when a dish modal is open: the modal has z-50 and the
+                nav bar has z-[100], so without conditional rendering the bar
+                punches through the overlay.
+                onClick (not onPointerUp): the browser only emits a click for a
+                stationary tap, never at the end of a swipe → no accidental flip. */}
+            {!selectedDish && (
             <div
               className="absolute bottom-3 left-1/2 -translate-x-1/2 z-[100] flex items-center gap-5"
               style={{ touchAction: 'manipulation', pointerEvents: 'auto' }}
@@ -399,6 +410,7 @@ export default function MenuFlipbook({ menuName, restaurantName, items, infoTitl
                 succ. ›
               </button>
             </div>
+            )}
           </>
         )}
       </div>
