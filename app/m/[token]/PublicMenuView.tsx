@@ -13,6 +13,15 @@ const MenuFlipbook = dynamic(() => import('./MenuFlipbook'), {
   ),
 })
 
+const PDFFlipBook = dynamic(() => import('./PDFFlipBook'), {
+  ssr: false,
+  loading: () => (
+    <div className="min-h-screen bg-zinc-900 flex items-center justify-center">
+      <p className="text-zinc-500 text-sm">Caricamento menu…</p>
+    </div>
+  ),
+})
+
 interface Dish {
   id: string
   name: string
@@ -61,12 +70,28 @@ interface Props {
   banners: Banner[]
   info: Info | null
   defaultMenuId?: string | null
+  /** When provided, shows a PDF flipbook instead of (or in addition to) the HTML menu. */
+  pdfUrl?: string | null
 }
 
-export default function PublicMenuView({ restaurant, menus, banners, info, defaultMenuId }: Props) {
+export default function PublicMenuView({ restaurant, menus, banners, info, defaultMenuId, pdfUrl }: Props) {
   const [selectedMenuId, setSelectedMenuId] = useState<string | null>(defaultMenuId ?? null)
+  // showPdf defaults to true so the PDF opens immediately when a URL is provided
+  const [showPdf, setShowPdf] = useState(!!pdfUrl)
 
   const selectedMenu = selectedMenuId ? menus.find(m => m.id === selectedMenuId) : null
+
+  // PDF mode — shown when a pdfUrl is configured and the user hasn't navigated away
+  if (pdfUrl && showPdf) {
+    return (
+      <PDFFlipBook
+        pdfUrl={pdfUrl}
+        restaurantName={restaurant.name}
+        menuName={menus[0]?.name}
+        onBack={() => setShowPdf(false)}
+      />
+    )
+  }
 
   if (selectedMenu) {
     return (
