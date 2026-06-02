@@ -63,17 +63,19 @@ export default function MenuFlipbook({ menuName, restaurantName, items, infoTitl
   const totalPages = 2 + catData.length * 2 + 2
   const hasInfo    = !!(infoContent || infoTitle)
 
-  // ── Flip helpers — turnToPage bypass ────────────────────────────────────────
-  // flipPrev()/flipNext() lose internal page-index tracking in portrait/mobile
-  // mode (StPageFlip bug). Workaround: manage the index ourselves via
-  // currentPageRef (always in sync with onFlip) and call the absolute-jump
-  // method turnToPage() so the library can never desync.
+  // ── Flip helpers ─────────────────────────────────────────────────────────────
+  // flipPrev()/flipNext() lose internal spread tracking in StPageFlip portrait
+  // mode. We own the index via currentPageRef and call the ANIMATED absolute-
+  // jump method flip(n) — NOT turnToPage(n) which is instant/no-animation.
+  // Optimistic state update keeps the counter in sync without waiting for onFlip.
   const goNext = useCallback(() => {
     const inst = flipInst.current
     if (!inst) { console.warn('[Flipbook] goNext: no instance'); return }
     const target = currentPageRef.current + 1
-    console.log('Forzato salto avanti a pagina:', target, 'Istanza:', inst)
-    inst.turnToPage(target)
+    console.log('Flip animato avanti a pagina:', target, 'Istanza:', inst)
+    currentPageRef.current = target
+    setCurrentPage(target)
+    inst.flip(target)
   }, [])
 
   const goPrev = useCallback(() => {
@@ -81,8 +83,10 @@ export default function MenuFlipbook({ menuName, restaurantName, items, infoTitl
     if (!inst) { console.warn('[Flipbook] goPrev: no instance'); return }
     if (currentPageRef.current <= 0) return
     const target = currentPageRef.current - 1
-    console.log('Forzato salto indietro a pagina:', target, 'Istanza:', inst)
-    inst.turnToPage(target)
+    console.log('Flip animato indietro a pagina:', target, 'Istanza:', inst)
+    currentPageRef.current = target
+    setCurrentPage(target)
+    inst.flip(target)
   }, [])
 
   // ── Native capture-phase swipe listeners ─────────────────────────────────────
@@ -232,7 +236,7 @@ export default function MenuFlipbook({ menuName, restaurantName, items, infoTitl
                 height={dims.h}
                 size="fixed"
                 drawShadow
-                flippingTime={550}
+                flippingTime={600}
                 usePortrait
                 startZIndex={10}
                 maxShadowOpacity={0.45}
