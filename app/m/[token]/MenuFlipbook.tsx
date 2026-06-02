@@ -57,43 +57,63 @@ export default function MenuFlipbook({ menuName, restaurantName, items, infoTitl
   const totalPages = 2 + catData.length * 2 + 2
   const hasInfo = !!(infoContent || infoTitle)
 
-  // ── Debounced flip helpers ──────────────────────────────────────────────────
-  // A single ref gates both the buttons and the custom swipe handler so that
-  // StPageFlip's own corner-drag and our full-width swipe handler can never
-  // both fire for the same gesture.
-  const lastFlipMs = useRef(0)
+  // ── Flip helpers ───────────────────────────────────────────────────────────
+  // lastFlipMs gates our custom swipe handler; stfIsFlipping tracks when
+  // StPageFlip itself is mid-animation (corner drag or programmatic flip).
+  // The two together prevent any double-flip scenario.
+  const lastFlipMs    = useRef(0)
+  const stfIsFlipping = useRef(false)
 
   const goNext = useCallback(() => {
     const now = Date.now()
-    if (now - lastFlipMs.current < 700) return
+    if (now - lastFlipMs.current < 500) return
     lastFlipMs.current = now
     bookRef.current?.pageFlip()?.flipNext()
   }, [])
 
   const goPrev = useCallback(() => {
     const now = Date.now()
-    if (now - lastFlipMs.current < 700) return
+    if (now - lastFlipMs.current < 500) return
     lastFlipMs.current = now
     bookRef.current?.pageFlip()?.flipPrev()
   }, [])
 
   // ── Full-width swipe detection ─────────────────────────────────────────────
-  // StPageFlip's own drag-to-flip only triggers when the touch *starts* near
-  // a corner. This overlay catches any horizontal swipe across the whole page,
-  // so the user doesn't need to aim at the edge.
-  const swipeSX = useRef(0)
-  const swipeSY = useRef(0)
+  // StPageFlip's drag-to-flip only triggers near corners. These handlers catch
+  // any horizontal swipe on the whole book surface.
+  //
+  // Strategy: fire on onTouchMove (early, at ~20 px) rather than waiting for
+  // the finger to lift — this makes the response feel instant, not "rigid".
+  // swipeHandled prevents move + end both triggering on the same gesture.
+  // When StPageFlip is already handling a corner drag (stfIsFlipping = true)
+  // we skip entirely so we never fight its animation.
+  const swipeSX      = useRef(0)
+  const swipeSY      = useRef(0)
+  const swipeHandled = useRef(false)
 
   const handleTouchStart = useCallback((e: React.TouchEvent) => {
-    swipeSX.current = e.touches[0].clientX
-    swipeSY.current = e.touches[0].clientY
+    swipeSX.current      = e.touches[0].clientX
+    swipeSY.current      = e.touches[0].clientY
+    swipeHandled.current = false
   }, [])
 
+  const handleTouchMove = useCallback((e: React.TouchEvent) => {
+    if (swipeHandled.current || stfIsFlipping.current) return
+    const dx  = e.touches[0].clientX - swipeSX.current
+    const adx = Math.abs(dx)
+    const ady = Math.abs(e.touches[0].clientY - swipeSY.current)
+    // 20 px horizontal, clearly more H than V → fire immediately
+    if (adx < 20 || ady > adx) return
+    swipeHandled.current = true
+    if (dx < 0) goNext(); else goPrev()
+  }, [goNext, goPrev])
+
   const handleTouchEnd = useCallback((e: React.TouchEvent) => {
+    // Fallback for slow / short gestures that didn't cross 20 px during move
+    if (swipeHandled.current || stfIsFlipping.current) return
     const dx  = e.changedTouches[0].clientX - swipeSX.current
     const adx = Math.abs(dx)
     const ady = Math.abs(e.changedTouches[0].clientY - swipeSY.current)
-    // Require at least 30px horizontal movement, and more horizontal than vertical.
     if (adx < 30 || ady > adx) return
     if (dx < 0) goNext(); else goPrev()
   }, [goNext, goPrev])
@@ -175,8 +195,9 @@ export default function MenuFlipbook({ menuName, restaurantName, items, infoTitl
                 so the browser doesn't scroll while the user drags pages.
                 The custom swipe handler also lives here for full-width coverage. */}
             <div
-              style={{ width: dims.w, height: dims.h, touchAction: 'none' }}
+              style={{ width: dims.w, height: dims.h, touchAction: 'pan-y' }}
               onTouchStart={handleTouchStart}
+              onTouchMove={handleTouchMove}
               onTouchEnd={handleTouchEnd}
             >
               <HTMLFlipBook
@@ -185,7 +206,7 @@ export default function MenuFlipbook({ menuName, restaurantName, items, infoTitl
                 height={dims.h}
                 size="fixed"
                 drawShadow
-                flippingTime={650}
+                flippingTime={600}
                 usePortrait
                 startZIndex={10}
                 maxShadowOpacity={0.5}
@@ -196,7 +217,13 @@ export default function MenuFlipbook({ menuName, restaurantName, items, infoTitl
                 swipeDistance={10}
                 showPageCorners
                 disableFlipByClick
-                onFlip={(e: any) => setCurrentPage(e.data)}
+                onChangeState={(e: any) => {
+                  stfIsFlipping.current = e.data !== 'read'
+                }}
+                onFlip={(e: any) => {
+                  setCurrentPage(e.data)
+                  lastFlipMs.current = Date.now()
+                }}
               >
                 {/* Page 0: Cover left */}
                 <Page className="bg-zinc-800 border-r border-zinc-700 flex items-center justify-center">
@@ -311,43 +338,42 @@ export default function MenuFlipbook({ menuName, restaurantName, items, infoTitl
               </HTMLFlipBook>
             </div>
 
-            {/* ── In-page navigation buttons ──────────────────────────────────
-                Siblings of the flipbook div → StPageFlip's event listeners
-                cannot intercept these taps. z-50 > StPageFlip's startZIndex=10.
-                onPointerUp fires reliably on both mouse and touch without the
-                300ms tap-delay, and stopPropagation prevents any stray bubbling.
-                touch-action:manipulation removes the iOS double-tap delay. */}
-            {!atStart && (
+            {/* ── Bottom-center navigation bar ────────────────────────────────
+                Sibling of the flipbook div (never inside it) → StPageFlip's
+                handlers cannot intercept taps here.
+                onPointerUp + touch-action:manipulation = zero tap delay on iOS.
+                The bar merges prev / counter / next in one centred row so the
+                user has a clear, always-visible target at the bottom. */}
+            <div
+              className="absolute bottom-3 left-1/2 -translate-x-1/2 z-50 flex items-center gap-5"
+              style={{ touchAction: 'manipulation' }}
+            >
               <button
                 type="button"
                 onPointerUp={(e) => { e.stopPropagation(); goPrev() }}
+                disabled={atStart}
                 aria-label="Pagina precedente"
-                className="absolute left-0 top-1/2 -translate-y-1/2 z-50 flex flex-col items-center justify-center w-8 h-20 cursor-pointer"
-                style={{ touchAction: 'manipulation' }}
+                className="text-[11px] uppercase tracking-[0.18em] text-zinc-400 hover:text-zinc-200 disabled:opacity-0 cursor-pointer px-2 py-2 transition-colors"
               >
-                <span className="text-base text-zinc-400 leading-none">‹</span>
-                <span className="text-[9px] uppercase tracking-[0.15em] text-zinc-500 mt-1">prec.</span>
+                ‹ prec.
               </button>
-            )}
-            {!atEnd && (
+
+              <span className="text-[9px] text-zinc-600 tabular-nums select-none">
+                {currentPage + 1} / {totalPages}
+              </span>
+
               <button
                 type="button"
                 onPointerUp={(e) => { e.stopPropagation(); goNext() }}
+                disabled={atEnd}
                 aria-label="Pagina successiva"
-                className="absolute right-0 top-1/2 -translate-y-1/2 z-50 flex flex-col items-center justify-center w-8 h-20 cursor-pointer"
-                style={{ touchAction: 'manipulation' }}
+                className="text-[11px] uppercase tracking-[0.18em] text-zinc-400 hover:text-zinc-200 disabled:opacity-0 cursor-pointer px-2 py-2 transition-colors"
               >
-                <span className="text-base text-zinc-400 leading-none">›</span>
-                <span className="text-[9px] uppercase tracking-[0.15em] text-zinc-500 mt-1">succ.</span>
+                succ. ›
               </button>
-            )}
+            </div>
           </>
         )}
-      </div>
-
-      {/* ── Page indicator ─────────────────────────────────────────────────── */}
-      <div className="shrink-0 py-2 text-[10px] text-zinc-600 tabular-nums">
-        {currentPage + 1} / {totalPages}
       </div>
 
       {selectedDish && (
