@@ -234,10 +234,10 @@ export default function MenuFlipbook({ menuName, restaurantName, items, infoTitl
                 height={dims.h}
                 size="fixed"
                 drawShadow
-                flippingTime={600}
+                flippingTime={700}
                 usePortrait
-                startZIndex={10}
-                maxShadowOpacity={0.45}
+                startZIndex={0}
+                maxShadowOpacity={0.5}
                 showCover={false}
                 mobileScrollSupport={false}
                 clickEventForward
