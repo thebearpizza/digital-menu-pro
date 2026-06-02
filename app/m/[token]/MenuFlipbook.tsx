@@ -64,34 +64,27 @@ export default function MenuFlipbook({ menuName, restaurantName, items, infoTitl
   const hasInfo    = !!(infoContent || infoTitle)
 
   // ── Flip helpers ─────────────────────────────────────────────────────────────
-  // We call inst.flip(n) — the ANIMATED absolute jump. turnToPage() is instant.
-  //
-  // Index source of truth: inst.getCurrentPageIndex() reads the library's own
-  // internal cursor, bypassing any desync with our React state. If the method
-  // is unavailable (older build), currentPageRef is the fallback.
-  // We do NOT write optimistically to currentPageRef here — onFlip is the sole
-  // place that syncs the ref, so we can never poison it with a stale target.
+  // Both handlers read getCurrentPageIndex() / getPageCount() directly from the
+  // library engine — no React state involved — so the index can never desync.
   const goNext = useCallback(() => {
     const inst = flipInst.current
-    if (!inst) { console.warn('[Flipbook] goNext: no instance'); return }
-    const cur = typeof inst.getCurrentPageIndex === 'function'
-      ? inst.getCurrentPageIndex()
-      : currentPageRef.current
-    const target = cur + 1
-    console.log('Flip animato avanti:', cur, '→', target)
-    inst.flip(target)
+    if (!inst) return
+    const currentIndex = inst.getCurrentPageIndex()
+    const pageCount    = inst.getPageCount()
+    if (currentIndex < pageCount - 1) {
+      inst.turnToPage(currentIndex + 1)
+      console.log('Navigazione avanti a pagina:', currentIndex + 1)
+    }
   }, [])
 
   const goPrev = useCallback(() => {
     const inst = flipInst.current
-    if (!inst) { console.warn('[Flipbook] goPrev: no instance'); return }
-    const cur = typeof inst.getCurrentPageIndex === 'function'
-      ? inst.getCurrentPageIndex()
-      : currentPageRef.current
-    if (cur <= 0) return
-    const target = cur - 1
-    console.log('Flip animato indietro:', cur, '→', target)
-    inst.flip(target)
+    if (!inst) return
+    const currentIndex = inst.getCurrentPageIndex()
+    if (currentIndex > 0) {
+      inst.turnToPage(currentIndex - 1)
+      console.log('Navigazione indietro a pagina:', currentIndex - 1)
+    }
   }, [])
 
   // ── Native capture-phase swipe listeners ─────────────────────────────────────
