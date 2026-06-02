@@ -34,7 +34,7 @@ const Page = forwardRef<HTMLDivElement, {
 }>(({ children, className = '', style }, ref) => (
   <div
     ref={ref}
-    className={`flipbook-page ${className}`}
+    className={`flipbook-page opacity-100 ${className}`}
     style={{ width: '100%', height: '100%', ...style }}
   >
     {children}
@@ -64,28 +64,33 @@ export default function MenuFlipbook({ menuName, restaurantName, items, infoTitl
   const hasInfo    = !!(infoContent || infoTitle)
 
   // ── Flip helpers ─────────────────────────────────────────────────────────────
-  // flipPrev()/flipNext() lose internal spread tracking in StPageFlip portrait
-  // mode. We own the index via currentPageRef and call the ANIMATED absolute-
-  // jump method flip(n) — NOT turnToPage(n) which is instant/no-animation.
-  // Optimistic state update keeps the counter in sync without waiting for onFlip.
+  // We call inst.flip(n) — the ANIMATED absolute jump. turnToPage() is instant.
+  //
+  // Index source of truth: inst.getCurrentPageIndex() reads the library's own
+  // internal cursor, bypassing any desync with our React state. If the method
+  // is unavailable (older build), currentPageRef is the fallback.
+  // We do NOT write optimistically to currentPageRef here — onFlip is the sole
+  // place that syncs the ref, so we can never poison it with a stale target.
   const goNext = useCallback(() => {
     const inst = flipInst.current
     if (!inst) { console.warn('[Flipbook] goNext: no instance'); return }
-    const target = currentPageRef.current + 1
-    console.log('Flip animato avanti a pagina:', target, 'Istanza:', inst)
-    currentPageRef.current = target
-    setCurrentPage(target)
+    const cur = typeof inst.getCurrentPageIndex === 'function'
+      ? inst.getCurrentPageIndex()
+      : currentPageRef.current
+    const target = cur + 1
+    console.log('Flip animato avanti:', cur, '→', target)
     inst.flip(target)
   }, [])
 
   const goPrev = useCallback(() => {
     const inst = flipInst.current
     if (!inst) { console.warn('[Flipbook] goPrev: no instance'); return }
-    if (currentPageRef.current <= 0) return
-    const target = currentPageRef.current - 1
-    console.log('Flip animato indietro a pagina:', target, 'Istanza:', inst)
-    currentPageRef.current = target
-    setCurrentPage(target)
+    const cur = typeof inst.getCurrentPageIndex === 'function'
+      ? inst.getCurrentPageIndex()
+      : currentPageRef.current
+    if (cur <= 0) return
+    const target = cur - 1
+    console.log('Flip animato indietro:', cur, '→', target)
     inst.flip(target)
   }, [])
 

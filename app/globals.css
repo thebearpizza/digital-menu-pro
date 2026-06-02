@@ -34,8 +34,11 @@ body.menu-locked {
 .flipbook-page {
   overflow: hidden;
   box-sizing: border-box;
-  /* Kill iOS/Android flickering during the 3D flip and prevent the
-     transient transparency that exposes the pages underneath. */
+  /* Opaque base prevents see-through during 3D rotation.
+     Individual pages override this with their own bg color. */
+  background-color: #fafaf9;
+  opacity: 1;
+  /* Kill iOS/Android flickering during the 3D flip. */
   -webkit-backface-visibility: hidden;
   backface-visibility: hidden;
   -webkit-transform: translateZ(0);
