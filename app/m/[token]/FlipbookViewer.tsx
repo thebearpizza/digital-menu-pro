@@ -178,7 +178,7 @@ export default function FlipbookViewer({
 
     // Ritrova il canvas di una pagina tramite data-page (stabile post-DOM-reorg)
     function findCanvas(pageNum: number): HTMLCanvasElement | null {
-      return el.querySelector(`canvas[data-page="${pageNum}"]`) as HTMLCanvasElement | null
+      return el!.querySelector(`canvas[data-page="${pageNum}"]`) as HTMLCanvasElement | null
     }
 
     // Renderizza una singola pagina sul suo canvas in situ
