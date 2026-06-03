@@ -295,26 +295,14 @@ export default function FlipbookViewer({
         // Turn.js riorganizza il DOM liberamente: le <img> sopravvivono a
         // qualsiasi spostamento (a differenza dei <canvas>). Nessun restore.
         //
-        // NOTA p-temporal: in display:'single', turn.js crea un div vuoto
-        // (.p-temporal) usato come sfondo della piega di animazione. Senza
-        // intervento, questo div è bianco → pagina di destinazione apparente
-        // bianca durante il flip. Fix: iniettare il contenuto della pagina
-        // di destinazione come background-image prima di ogni animazione.
-
-        // Inietta il contenuto di `pageNum` nel p-temporal come background.
-        // Chiamata PRIMA che _moveFoldingPage sposti p-temporal in fpage,
-        // così l'animazione mostra subito il contenuto corretto.
-        const stampPTemporal = (pageNum: number): void => {
-          const pTemporal = el!.querySelector('.p-temporal') as HTMLElement | null
-          if (!pTemporal) return
-          const src = (el!.querySelector(`img[data-page="${pageNum}"]`) as HTMLImageElement | null)?.src
-          if (src) {
-            pTemporal.style.backgroundImage    = `url("${src}")`
-            pTemporal.style.backgroundSize     = '100% 100%'
-            pTemporal.style.backgroundRepeat   = 'no-repeat'
-            pTemporal.style.backgroundPosition = '0 0'
-          }
-        }
+        // FIX "revealed area": durante il flip, turn.js applica una CSS
+        // transform al `wrapper` (div interno a pageWrap[currentPage]).
+        // Man mano che wrapper si allontana visivamente, l'area scoperta
+        // mostra il background del pageWrap stesso (strato statico sotto).
+        // Impostando background-image su pageWrap[currentPage] = contenuto
+        // della pagina di destinazione, quella zona mostra il contenuto
+        // corretto invece del bianco. p-temporal resta bianco (è il retro
+        // della piega, non la zona rivelata).
 
         window.$(el).turn({
           width:        dims.w,
@@ -326,22 +314,37 @@ export default function FlipbookViewer({
           acceleration: true,
           elevation:    flipbook.elevation,
           when: {
-            // `turning` si attiva PRIMA che turn.js sposti p-temporal in fpage
-            // (per navigazione programmatica/tasto). Aggiorna il contenuto qui.
             turning(_evt: Event, page: number) {
-              stampPTemporal(page)
+              try {
+                const data     = window.$(el!).turn('data') as any
+                const currPage = data?.page as number
+                const pageWrap = data?.pageWrap?.[currPage]
+                const destSrc  = (el!.querySelector(
+                  `img[data-page="${page}"]`
+                ) as HTMLImageElement | null)?.src
+                if (pageWrap && destSrc) {
+                  window.$(pageWrap).css({
+                    backgroundImage:    `url("${destSrc}")`,
+                    backgroundSize:     '100% 100%',
+                    backgroundRepeat:   'no-repeat',
+                    backgroundPosition: '0 0',
+                  })
+                }
+              } catch (_) {}
             },
             turned(_evt: Event, page: number) {
               setCurrentPage(page)
-              // Pre-warm per il prossimo flip (tipicamente in avanti):
-              // così il drag mostra già il contenuto corretto fin dall'inizio.
-              stampPTemporal(page + 1)
+              try {
+                const data = window.$(el!).turn('data') as any
+                if (data?.pageWrap) {
+                  Object.values(data.pageWrap).forEach((wrap: any) => {
+                    window.$(wrap).css({ backgroundImage: '' })
+                  })
+                }
+              } catch (_) {}
             },
           },
         })
-
-        // Pre-warm iniziale: pagina 2 è la destinazione più probabile dalla 1.
-        stampPTemporal(2)
 
         setCurrentPage(1)
         setTotalPages(numPages)
