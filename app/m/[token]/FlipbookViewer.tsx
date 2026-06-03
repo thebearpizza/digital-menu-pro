@@ -116,6 +116,8 @@ export default function FlipbookViewer({
   const [landingFading, setLandingFading]= useState(false)
   // FIX 3: categoria attiva come state diretto — aggiornata immediatamente al click
   const [activeCatIdx,  setActiveCatIdx] = useState(0)
+  // Blocco hard: diventa true SOLO dopo Promise.all + turn.js init + Phase 3.5
+  const [pagesReady,    setPagesReady]   = useState(false)
 
   const { theme, categories, flipbook } = menuConfig
 
@@ -171,6 +173,7 @@ export default function FlipbookViewer({
 
     let cancelled = false
     setLoadPhase('loading')
+    setPagesReady(false)
 
     const pdfPageObjects: any[] = []
     const renderTasks   = new Map<number, { cancel(): void }>()
@@ -353,6 +356,7 @@ export default function FlipbookViewer({
 
         setCurrentPage(1)
         setTotalPages(numPages)
+        setPagesReady(true)   // sblocca UI solo quando cache è completo e turn.js è pronto
         setLoadPhase('ready')
         console.log('[FlipbookViewer] pronto —', numPages, 'pagine', dims)
       } catch (err) {
@@ -373,9 +377,20 @@ export default function FlipbookViewer({
 
   // ── Callbacks ────────────────────────────────────────────────────────────────
 
-  /** Attiva il flipbook: fade-out landing (Bug 1 — durata configurabile in menuConfig) */
+  /** Attiva il flipbook: fade-out landing + reset alla copertina (safety net) */
   const enterFlipbook = useCallback(() => {
     setLandingFading(true)
+    // Reset alla pagina 1 mentre la landing copre il libro (nessun flash visibile).
+    // Necessario per il caso in cui l'utente ritorni dopo aver sfogliato.
+    const el = bookRef.current
+    if (el && window.$?.fn?.turn) {
+      try {
+        window.$(el).turn('stop')
+        window.$(el).turn('page', 1)
+        setCurrentPage(1)
+        setActiveCatIdx(0)
+      } catch (_) {}
+    }
     setTimeout(() => setShowLanding(false), flipbook.landingFadeDuration)
   }, [flipbook.landingFadeDuration])
 
@@ -516,8 +531,9 @@ export default function FlipbookViewer({
             )}
 
             {/* ── Hint angolari — z-50 per stare sopra il libro, pointer-events-none
-                 perché i click/swipe devono raggiungere gli angoli nativi di turn.js */}
-            {loadPhase === 'ready' && (
+                 perché i click/swipe devono raggiungere gli angoli nativi di turn.js.
+                 Nascosti sulla landing (showLanding) e finché le pagine non sono pronte. */}
+            {!showLanding && pagesReady && (
               <>
                 <span
                   className="pointer-events-none absolute bottom-3 left-2 z-50 text-[10px] uppercase tracking-[0.2em] select-none"
