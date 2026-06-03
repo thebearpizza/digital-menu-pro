@@ -269,8 +269,9 @@ export default function FlipbookViewer({
         }
 
         // ── FASE 3: init turn.js — riorganizza il DOM ───────────────────────
-        // Dopo questo punto i canvas hanno perso il contenuto, ma sono
-        // ancora identificabili tramite canvas[data-page="N"].
+        // Dopo questo punto i canvas hanno perso il contenuto (Chrome/Safari
+        // azzerano il canvas al re-parenting), ma restano identificabili
+        // tramite canvas[data-page="N"].
         window.$(el).turn({
           width:        dims.w,
           height:       dims.h,
@@ -281,35 +282,29 @@ export default function FlipbookViewer({
           acceleration: true,
           elevation:    flipbook.elevation,
           when: {
-            // `turning` si innesca all'INIZIO del flip: pre-render la destinazione
-            // prima che l'animazione finisca (fire-and-forget, non blocca JS)
             turning(_evt: Event, page: number) {
+              // Ridipinge l'intorno come safety-net (di norma già tutto rendered).
               preRender(page, numPages)
             },
             turned(_evt: Event, page: number) {
               setCurrentPage(page)
-              preRender(page, numPages) // assicura le prossime per il flip seguente
             },
           },
         })
 
-        // ── FASE 4: RE-RENDER nel DOM stabile ──────────────────────────────
-        // Pagine 1-3: render bloccante — garantisce contenuti prima del primo swipe
-        await preRender(1, numPages)
+        // ── FASE 4: RE-RENDER totale — NESSUNA race condition ──────────────
+        // Promise.all garantisce che OGNI canvas sia dipinto prima che il libro
+        // diventi visibile. Con menu a poche pagine (<20) il costo è trascurabile
+        // rispetto al beneficio: l'utente non vedrà mai una pagina bianca.
+        await Promise.all(
+          Array.from({ length: numPages }, (_, i) => renderPage(i + 1))
+        )
         if (cancelled) return
 
         setCurrentPage(1)
         setTotalPages(numPages)
         setLoadPhase('ready')
-        console.log('[FlipbookViewer] pronto —', numPages, 'pagine', dims)
-
-        // Restanti: render in background (non blocca l'UI)
-        ;(async () => {
-          for (let i = 1; i <= numPages; i++) {
-            if (cancelled) return
-            if (!rendered.has(i)) await renderPage(i)
-          }
-        })()
+        console.log('[FlipbookViewer] pronto —', numPages, 'pagine dipinte', dims)
       } catch (err) {
         console.error('[FlipbookViewer] init fallito:', err)
         if (!cancelled) setLoadPhase('error')
@@ -433,12 +428,7 @@ export default function FlipbookViewer({
             <div
               ref={bookRef}
               className="fv-book"
-              style={{
-                width:  dims?.w ?? 0,
-                height: dims?.h ?? 0,
-                // Espone la variabile CSS ai wrapper dinamici .turn-page/.turn-page-wrapper
-                ['--page-bg' as string]: flipbook.pageBackground,
-              }}
+              style={{ width: dims?.w ?? 0, height: dims?.h ?? 0 }}
             />
 
             {/* Overlay caricamento */}
