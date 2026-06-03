@@ -294,6 +294,28 @@ export default function FlipbookViewer({
         // ── FASE 3: init turn.js ─────────────────────────────────────────────
         // Turn.js riorganizza il DOM liberamente: le <img> sopravvivono a
         // qualsiasi spostamento (a differenza dei <canvas>). Nessun restore.
+        //
+        // NOTA p-temporal: in display:'single', turn.js crea un div vuoto
+        // (.p-temporal) usato come sfondo della piega di animazione. Senza
+        // intervento, questo div è bianco → pagina di destinazione apparente
+        // bianca durante il flip. Fix: iniettare il contenuto della pagina
+        // di destinazione come background-image prima di ogni animazione.
+
+        // Inietta il contenuto di `pageNum` nel p-temporal come background.
+        // Chiamata PRIMA che _moveFoldingPage sposti p-temporal in fpage,
+        // così l'animazione mostra subito il contenuto corretto.
+        const stampPTemporal = (pageNum: number): void => {
+          const pTemporal = el!.querySelector('.p-temporal') as HTMLElement | null
+          if (!pTemporal) return
+          const src = (el!.querySelector(`img[data-page="${pageNum}"]`) as HTMLImageElement | null)?.src
+          if (src) {
+            pTemporal.style.backgroundImage    = `url("${src}")`
+            pTemporal.style.backgroundSize     = '100% 100%'
+            pTemporal.style.backgroundRepeat   = 'no-repeat'
+            pTemporal.style.backgroundPosition = '0 0'
+          }
+        }
+
         window.$(el).turn({
           width:        dims.w,
           height:       dims.h,
@@ -304,11 +326,22 @@ export default function FlipbookViewer({
           acceleration: true,
           elevation:    flipbook.elevation,
           when: {
+            // `turning` si attiva PRIMA che turn.js sposti p-temporal in fpage
+            // (per navigazione programmatica/tasto). Aggiorna il contenuto qui.
+            turning(_evt: Event, page: number) {
+              stampPTemporal(page)
+            },
             turned(_evt: Event, page: number) {
               setCurrentPage(page)
+              // Pre-warm per il prossimo flip (tipicamente in avanti):
+              // così il drag mostra già il contenuto corretto fin dall'inizio.
+              stampPTemporal(page + 1)
             },
           },
         })
+
+        // Pre-warm iniziale: pagina 2 è la destinazione più probabile dalla 1.
+        stampPTemporal(2)
 
         setCurrentPage(1)
         setTotalPages(numPages)
