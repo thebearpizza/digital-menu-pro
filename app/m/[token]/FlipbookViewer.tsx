@@ -335,6 +335,10 @@ export default function FlipbookViewer({
    * FIX 2 — "← torna": ritorna alla landing con fade-in animato.
    * Usa rAF doppio per assicurarsi che il div sia nel DOM prima di triggerare
    * la transizione CSS (altrimenti l'opacity parte già a 1, niente animazione).
+   *
+   * RESET STATO: turn.js conserva l'ultima pagina visitata nella sua istanza
+   * jQuery. Riportiamo il libro alla pagina 1 mentre la landing lo copre, così
+   * al rientro l'utente trova sempre la copertina (nessuna memoria residua).
    */
   const goToLanding = useCallback(() => {
     setLandingFading(true)   // opacity: 0 — landing parte invisibile
@@ -342,6 +346,16 @@ export default function FlipbookViewer({
     requestAnimationFrame(() =>
       requestAnimationFrame(() => setLandingFading(false)) // trigger fade-in
     )
+    // Reset del flipbook alla copertina, nascosto dietro la landing.
+    const el = bookRef.current
+    if (el && window.$?.fn?.turn) {
+      try {
+        window.$(el).turn('stop')      // interrompe eventuali animazioni in corso
+        window.$(el).turn('page', 1)   // torna alla pagina 1
+        setCurrentPage(1)
+        setActiveCatIdx(0)
+      } catch (_) {}
+    }
   }, [])
 
   /**
