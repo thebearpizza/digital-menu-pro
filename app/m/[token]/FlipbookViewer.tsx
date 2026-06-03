@@ -151,8 +151,19 @@ export default function FlipbookViewer({
   }, [])
 
   // ── PDF.js + turn.js init ─────────────────────────────────────────────────────
-  // Si attiva appena `dims` è disponibile — il PDF si carica in background
-  // anche mentre la landing page è visibile (l'utente non aspetta al click).
+  // Carica in background mentre la landing è visibile.
+  //
+  // PROBLEMA RADICE: turn.js riorganizza il DOM dopo .turn() (re-parenting).
+  // Quando un <canvas> viene spostato in un nuovo nodo padre, Chrome/Safari
+  // ne azzerano il contenuto. Soluzione in 4 fasi:
+  //
+  //  FASE 1 — carica tutti gli oggetti pagina PDF in memoria (nessun render)
+  //  FASE 2 — crea placeholder <div>+<canvas> già dimensionati, con data-page
+  //  FASE 3 — inizializza turn.js (il DOM viene riorganizzato; i canvas si
+  //            svuotano ma restano identificabili tramite data-page)
+  //  FASE 4 — RE-RENDER dopo turn.js: le pagine 1-3 subito (bloccante,
+  //            per garantire i contenuti prima del primo click), poi tutte
+  //            le restanti in background (non blocca il loader)
   useEffect(() => {
     if (!dims) return
     const el = bookRef.current
@@ -161,9 +172,42 @@ export default function FlipbookViewer({
     let cancelled = false
     setLoadPhase('loading')
 
+    const pdfPageObjects: any[] = []
+    const rendered = new Set<number>()
+    let   scale = 1
+
+    // Ritrova il canvas di una pagina tramite data-page (stabile post-DOM-reorg)
+    function findCanvas(pageNum: number): HTMLCanvasElement | null {
+      return el.querySelector(`canvas[data-page="${pageNum}"]`) as HTMLCanvasElement | null
+    }
+
+    // Renderizza una singola pagina sul suo canvas in situ
+    async function renderPage(pageNum: number): Promise<void> {
+      if (rendered.has(pageNum) || cancelled) return
+      const canvas = findCanvas(pageNum)
+      if (!canvas) return
+      const pdfPage = pdfPageObjects[pageNum - 1]
+      if (!pdfPage) return
+      const viewport = pdfPage.getViewport({ scale })
+      const ctx = canvas.getContext('2d')!
+      // sfondo bianco opaco prima del render PDF
+      ctx.fillStyle = flipbook.pageBackground
+      ctx.fillRect(0, 0, canvas.width, canvas.height)
+      await pdfPage.render({ canvasContext: ctx, viewport }).promise
+      if (!cancelled) rendered.add(pageNum)
+    }
+
+    // Pre-renderizza le pagine nell'intorno di center (usato da turning/turned)
+    async function preRender(center: number, total: number): Promise<void> {
+      const candidates = [center - 1, center, center + 1, center + 2]
+        .filter(p => p >= 1 && p <= total)
+      for (const p of candidates) {
+        if (!rendered.has(p)) await renderPage(p)
+      }
+    }
+
     ;(async () => {
       try {
-        // Carica: jQuery → turn.js (richiede jQuery) → PDF.js (indipendente)
         await requireScript('/jquery.min.js')
         await requireScript('/turn.min.js')
         await requireScript(PDFJS_SRC)
@@ -178,43 +222,43 @@ export default function FlipbookViewer({
 
         const numPages: number = pdf.numPages
 
-        // La geometria della prima pagina detta la scala reale del PDF
-        const firstPage = await pdf.getPage(1)
-        const naturalVP = firstPage.getViewport({ scale: 1 })
-        const scale     = Math.min(
-          dims.w / naturalVP.width,
-          dims.h / naturalVP.height,
-        )
-
-        el.innerHTML = '' // reset: rimuove pagine di render precedenti
-
-        // Render di tutte le pagine su <canvas> — identico al metodo del repo
+        // ── FASE 1: carica oggetti pagina in memoria ────────────────────────
         for (let i = 1; i <= numPages; i++) {
           if (cancelled) return
-          const page     = await pdf.getPage(i)
-          const viewport = page.getViewport({ scale })
+          pdfPageObjects.push(await pdf.getPage(i))
+        }
 
-          const canvas   = document.createElement('canvas')
-          canvas.width   = Math.round(viewport.width)
-          canvas.height  = Math.round(viewport.height)
-          canvas.style.cssText = 'display:block;'
+        // Scala calcolata dalla prima pagina (A4: stesso aspect ratio per tutte)
+        const naturalVP = pdfPageObjects[0].getViewport({ scale: 1 })
+        scale = Math.min(dims.w / naturalVP.width, dims.h / naturalVP.height)
+        const vp0 = pdfPageObjects[0].getViewport({ scale })
+        const cw  = Math.round(vp0.width)
+        const ch  = Math.round(vp0.height)
 
-          // FIX 4: prefill sfondo bianco opaco PRIMA del render PDF.
-          // Senza questo, i canvas hanno background trasparente e le pagine
-          // mostrano il nero dello schermo durante la rotazione 3D di turn.js.
-          const ctx = canvas.getContext('2d')!
-          ctx.fillStyle = flipbook.pageBackground
-          ctx.fillRect(0, 0, canvas.width, canvas.height)
-
-          await page.render({ canvasContext: ctx, viewport }).promise
-          if (cancelled) return
-
+        // ── FASE 2: placeholder div+canvas dimensionati, identificati da data-page
+        el.innerHTML = ''
+        for (let i = 1; i <= numPages; i++) {
           const pageDiv = document.createElement('div')
-          // FIX 4: backface-visibility:hidden elimina il ghosting 3D durante lo sfoglio
           pageDiv.style.cssText =
             `width:${dims.w}px;height:${dims.h}px;overflow:hidden;` +
             `background:${flipbook.pageBackground};` +
             `backface-visibility:hidden;-webkit-backface-visibility:hidden;`
+
+          const canvas = document.createElement('canvas')
+          canvas.width  = cw
+          canvas.height = ch
+          canvas.dataset.page = String(i)     // identificatore stabile post-DOM-reorg
+          canvas.style.cssText =
+            'display:block;' +
+            'transform:translateZ(0);' +      // forza GPU compositing
+            'will-change:transform;'
+
+          // Pre-fill bianco: anche se turn.js svuota il canvas, almeno
+          // non mostrerà nero trasparente prima del re-render
+          const ctx = canvas.getContext('2d')!
+          ctx.fillStyle = flipbook.pageBackground
+          ctx.fillRect(0, 0, cw, ch)
+
           pageDiv.appendChild(canvas)
           el.appendChild(pageDiv)
         }
@@ -224,27 +268,48 @@ export default function FlipbookViewer({
           throw new Error('turn.js non disponibile — controlla /public/turn.min.js')
         }
 
-        // Inizializzazione turn.js — speculare alla config del repo di riferimento
+        // ── FASE 3: init turn.js — riorganizza il DOM ───────────────────────
+        // Dopo questo punto i canvas hanno perso il contenuto, ma sono
+        // ancora identificabili tramite canvas[data-page="N"].
         window.$(el).turn({
           width:        dims.w,
           height:       dims.h,
           autoCenter:   false,
-          display:      'single',           // portrait: una pagina alla volta
+          display:      'single',
           duration:     flipbook.duration,
           gradients:    true,
           acceleration: true,
           elevation:    flipbook.elevation,
           when: {
+            // `turning` si innesca all'INIZIO del flip: pre-render la destinazione
+            // prima che l'animazione finisca (fire-and-forget, non blocca JS)
+            turning(_evt: Event, page: number) {
+              preRender(page, numPages)
+            },
             turned(_evt: Event, page: number) {
               setCurrentPage(page)
+              preRender(page, numPages) // assicura le prossime per il flip seguente
             },
           },
         })
+
+        // ── FASE 4: RE-RENDER nel DOM stabile ──────────────────────────────
+        // Pagine 1-3: render bloccante — garantisce contenuti prima del primo swipe
+        await preRender(1, numPages)
+        if (cancelled) return
 
         setCurrentPage(1)
         setTotalPages(numPages)
         setLoadPhase('ready')
         console.log('[FlipbookViewer] pronto —', numPages, 'pagine', dims)
+
+        // Restanti: render in background (non blocca l'UI)
+        ;(async () => {
+          for (let i = 1; i <= numPages; i++) {
+            if (cancelled) return
+            if (!rendered.has(i)) await renderPage(i)
+          }
+        })()
       } catch (err) {
         console.error('[FlipbookViewer] init fallito:', err)
         if (!cancelled) setLoadPhase('error')
