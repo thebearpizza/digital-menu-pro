@@ -419,7 +419,12 @@ export default function FlipbookViewer({
             <div
               ref={bookRef}
               className="fv-book"
-              style={{ width: dims?.w ?? 0, height: dims?.h ?? 0 }}
+              style={{
+                width:  dims?.w ?? 0,
+                height: dims?.h ?? 0,
+                // Espone la variabile CSS ai wrapper dinamici .turn-page/.turn-page-wrapper
+                ['--page-bg' as string]: flipbook.pageBackground,
+              }}
             />
 
             {/* Overlay caricamento */}

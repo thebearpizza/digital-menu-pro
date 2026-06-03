@@ -29,11 +29,21 @@ body.menu-locked {
 .banner-out { animation: bannerFadeOut 0.4s ease-in  both; }
 
 /* ─── FlipbookViewer — fix trasparenza pagine turn.js ───── */
-/* turn.js avvolge ogni pageDiv in un wrapper div. Senza sfondo
-   esplicito e backface-visibility:hidden, durante la rotazione 3D
-   si vede il nero dello schermo attraverso la pagina. */
+/* Wrapper statici: i figli diretti di .fv-book (i pageDiv originali). */
 .fv-book > div {
   background: #fff;
   backface-visibility: hidden;
   -webkit-backface-visibility: hidden;
+}
+
+/* Wrapper dinamici: turn.js crea .turn-page e .turn-page-wrapper a runtime
+   durante l'animazione. Senza sfondo esplicito, la pagina trascinata è
+   trasparente e mostra il nero dello schermo. Questi selettori coprono
+   tutti gli elementi generati dal motore di flip. */
+.turn-page,
+.turn-page-wrapper {
+  background-color: var(--page-bg, #ffffff) !important;
+  backface-visibility: hidden !important;
+  -webkit-backface-visibility: hidden !important;
+  transform-style: preserve-3d !important;
 }
