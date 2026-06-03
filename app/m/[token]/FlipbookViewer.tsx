@@ -155,17 +155,20 @@ export default function FlipbookViewer({
   // ── PDF.js + turn.js init ─────────────────────────────────────────────────────
   // Carica in background mentre la landing è visibile.
   //
-  // PROBLEMA RADICE: turn.js riorganizza il DOM dopo .turn() (re-parenting).
-  // Quando un <canvas> viene spostato in un nuovo nodo padre, Chrome/Safari
-  // ne azzerano il contenuto. Soluzione in 4 fasi:
+  // CAUSA RADICE DEFINITIVA: turn.js riparenta i div delle pagine non solo
+  // all'init, ma AD OGNI FLIP (aggiunge wrapper .turn-page dinamici per
+  // l'animazione). Il canvas viene azzerato dal browser ad ogni spostamento
+  // nel DOM — il restore nel 'turning' event arriva troppo presto, prima
+  // che turn.js completi il reparenting per l'animazione corrente.
   //
-  //  FASE 1 — carica tutti gli oggetti pagina PDF in memoria (nessun render)
-  //  FASE 2 — crea placeholder <div>+<canvas> già dimensionati, con data-page
-  //  FASE 3 — inizializza turn.js (il DOM viene riorganizzato; i canvas si
-  //            svuotano ma restano identificabili tramite data-page)
-  //  FASE 4 — RE-RENDER dopo turn.js: le pagine 1-3 subito (bloccante,
-  //            per garantire i contenuti prima del primo click), poi tutte
-  //            le restanti in background (non blocca il loader)
+  // SOLUZIONE: usare <img> invece di <canvas> come elemento di visualizzazione.
+  // Un <img> NON perde il suo src/contenuto quando viene spostato nel DOM.
+  // La pipeline diventa:
+  //   FASE 1 — carica oggetti pagina PDF in memoria
+  //   FASE 2 — crea div+img placeholder (src vuoto = sfondo bianco)
+  //   FASE 2.5 — render offscreen (canvas mai nel DOM) → PNG data URL → img.src
+  //              + attende img.onload per garantire decode prima di turn.js
+  //   FASE 3 — init turn.js: sposta liberamente i div, le img restano intatte
   useEffect(() => {
     if (!dims) return
     const el = bookRef.current
@@ -176,65 +179,46 @@ export default function FlipbookViewer({
     setPagesReady(false)
 
     const pdfPageObjects: any[] = []
-    const renderTasks   = new Map<number, { cancel(): void }>()
-    // Doppio cache: ImageBitmap (GPU, browser moderni) + canvas offscreen
-    // (fallback universale). Entrambi sopravvivono a qualsiasi DOM manipulation
-    // di turn.js (reparenting, display toggle, rimozione temporanea).
-    const bitmapCache   = new Map<number, ImageBitmap>()
-    const offscreenCache = new Map<number, HTMLCanvasElement>()
+    const renderTasks = new Map<number, { cancel(): void }>()
     let scale = 1
+    let cw = 0
+    let ch = 0
 
-    function findCanvas(pageNum: number): HTMLCanvasElement | null {
-      return el!.querySelector(`canvas[data-page="${pageNum}"]`) as HTMLCanvasElement | null
-    }
-
-    // Restore sincrono dal cache (drawImage = GPU blit, <1ms).
-    // Funziona anche se il canvas è appena stato aggiunto al DOM da turn.js
-    // (canvas vergine): il draw sovrascrive prima che l'utente lo veda.
-    function restoreFromCache(pageNum: number): boolean {
-      const canvas = findCanvas(pageNum)
-      if (!canvas) return false
-      try {
-        const bitmap = bitmapCache.get(pageNum)
-        if (bitmap) { canvas.getContext('2d')!.drawImage(bitmap, 0, 0); return true }
-        const offscreen = offscreenCache.get(pageNum)
-        if (offscreen) { canvas.getContext('2d')!.drawImage(offscreen, 0, 0); return true }
-      } catch (_) {}
-      return false
-    }
-
-    // Renderizza una pagina via PDF.js e aggiorna entrambi i cache.
-    async function renderPage(pageNum: number): Promise<void> {
+    // Render una pagina PDF su un canvas offscreen (mai nel DOM),
+    // converte in PNG data URL e lo assegna all'<img> corrispondente.
+    // L'img non viene mai azzerata da turn.js — nessun restore necessario.
+    async function renderPageToImg(pageNum: number): Promise<void> {
       if (cancelled) return
-      const canvas = findCanvas(pageNum)
-      if (!canvas) return
       const pdfPage = pdfPageObjects[pageNum - 1]
       if (!pdfPage) return
 
       try { renderTasks.get(pageNum)?.cancel() } catch (_) {}
 
-      const viewport = pdfPage.getViewport({ scale })
-      const ctx      = canvas.getContext('2d')!
-      canvas.style.backgroundColor = flipbook.pageBackground
-      ctx.fillStyle  = flipbook.pageBackground
-      ctx.fillRect(0, 0, canvas.width, canvas.height)
+      const viewport  = pdfPage.getViewport({ scale })
+      const offscreen = document.createElement('canvas')
+      offscreen.width  = cw
+      offscreen.height = ch
+      const ctx = offscreen.getContext('2d')!
+      ctx.fillStyle = flipbook.pageBackground
+      ctx.fillRect(0, 0, cw, ch)
 
       const task = pdfPage.render({ canvasContext: ctx, viewport })
       renderTasks.set(pageNum, task)
       try {
         await task.promise
         if (cancelled) return
-        // Aggiorna cache GPU (o offscreen canvas come fallback)
-        if (typeof createImageBitmap !== 'undefined') {
-          const bitmap = await createImageBitmap(canvas)
-          bitmapCache.set(pageNum, bitmap)
-        } else {
-          const offscreen    = document.createElement('canvas')
-          offscreen.width    = canvas.width
-          offscreen.height   = canvas.height
-          offscreen.getContext('2d')!.drawImage(canvas, 0, 0)
-          offscreenCache.set(pageNum, offscreen)
-        }
+
+        const dataURL = offscreen.toDataURL('image/png')
+        const img = el!.querySelector(`img[data-page="${pageNum}"]`) as HTMLImageElement | null
+        if (!img || cancelled) return
+
+        await new Promise<void>((resolve) => {
+          img.onload  = () => resolve()
+          img.onerror = () => resolve()
+          img.src = dataURL
+          // Se il browser ha già decodificato (data URL sincrono su alcuni engine)
+          if (img.complete && img.naturalWidth > 0) resolve()
+        })
       } catch (err: any) {
         if (err?.name !== 'RenderingCancelledException') {
           console.warn('[FlipbookViewer] render p.' + pageNum + ':', err)
@@ -269,10 +253,10 @@ export default function FlipbookViewer({
         const naturalVP = pdfPageObjects[0].getViewport({ scale: 1 })
         scale = Math.min(dims.w / naturalVP.width, dims.h / naturalVP.height)
         const vp0 = pdfPageObjects[0].getViewport({ scale })
-        const cw  = Math.round(vp0.width)
-        const ch  = Math.round(vp0.height)
+        cw = Math.round(vp0.width)
+        ch = Math.round(vp0.height)
 
-        // ── FASE 2: placeholder div+canvas dimensionati, con data-page ──────
+        // ── FASE 2: div + <img> placeholder (src vuoto = sfondo bianco) ─────
         el.innerHTML = ''
         for (let i = 1; i <= numPages; i++) {
           const pageDiv = document.createElement('div')
@@ -281,32 +265,25 @@ export default function FlipbookViewer({
             `background:${flipbook.pageBackground};` +
             `backface-visibility:hidden;-webkit-backface-visibility:hidden;`
 
-          const canvas = document.createElement('canvas')
-          canvas.width  = cw
-          canvas.height = ch
-          canvas.dataset.page = String(i)
-          canvas.style.cssText =
+          const img = document.createElement('img')
+          img.width        = cw
+          img.height       = ch
+          img.dataset.page = String(i)
+          img.style.cssText =
             `display:block;` +
-            `background-color:${flipbook.pageBackground};` +
-            `transform:translateZ(0);will-change:transform;`
+            `background-color:${flipbook.pageBackground};`
 
-          const ctx = canvas.getContext('2d')!
-          ctx.fillStyle = flipbook.pageBackground
-          ctx.fillRect(0, 0, cw, ch)
-
-          pageDiv.appendChild(canvas)
+          pageDiv.appendChild(img)
           el.appendChild(pageDiv)
         }
         if (cancelled) return
 
-        // ── FASE 2.5: RENDER-THEN-INIT — Promise.all prima di turn.js ───────
-        // Tutti i canvas vengono dipinti da PDF.js e salvati in cache PRIMA
-        // che turn.js tocchi il DOM. La pipeline è rigorosa:
-        //   PDF.js renders → cache GPU → turn.js init
-        // In questo modo il cache esiste anche se turn.js rimuove temporaneamente
-        // dal DOM elementi che non sono la pagina corrente.
+        // ── FASE 2.5: render → PNG → img.src (attende decode) ───────────────
+        // Promise.all parallelizza i render PDF.js; ogni renderPageToImg
+        // attende img.onload prima di procedere → turn.js inizia SOLO quando
+        // tutte le img sono già decodificate e pronte nel browser.
         await Promise.all(
-          Array.from({ length: numPages }, (_, i) => renderPage(i + 1))
+          Array.from({ length: numPages }, (_, i) => renderPageToImg(i + 1))
         )
         if (cancelled) return
 
@@ -314,10 +291,9 @@ export default function FlipbookViewer({
           throw new Error('turn.js non disponibile — controlla /public/turn.min.js')
         }
 
-        // ── FASE 3: init turn.js — riorganizza il DOM ───────────────────────
-        // Avviene DOPO il Promise.all: il cache è già completo.
-        // Il reparenting dei canvas da parte di turn.js li azzera, ma
-        // Fase 3.5 li ripristina immediatamente prima dello sblocco UI.
+        // ── FASE 3: init turn.js ─────────────────────────────────────────────
+        // Turn.js riorganizza il DOM liberamente: le <img> sopravvivono a
+        // qualsiasi spostamento (a differenza dei <canvas>). Nessun restore.
         window.$(el).turn({
           width:        dims.w,
           height:       dims.h,
@@ -328,35 +304,15 @@ export default function FlipbookViewer({
           acceleration: true,
           elevation:    flipbook.elevation,
           when: {
-            // All'inizio di ogni flip: restore sincrono dal cache GPU.
-            // Se turn.js ha rimosso/ricreato un elemento (display single),
-            // il canvas appare vergine → restore istantaneo, nessun flash.
-            turning(_evt: Event, page: number) {
-              ;[page - 1, page, page + 1, page + 2]
-                .filter(p => p >= 1 && p <= numPages)
-                .forEach(p => restoreFromCache(p))
-            },
             turned(_evt: Event, page: number) {
               setCurrentPage(page)
-              ;[page, page + 1, page + 2]
-                .filter(p => p >= 1 && p <= numPages)
-                .forEach(p => restoreFromCache(p))
             },
           },
         })
 
-        // ── FASE 3.5: restore immediato post-init ───────────────────────────
-        // turn.js ha appena azzerato i canvas (reparenting). Li ridipingiamo
-        // tutti in <10ms totali via drawImage dal cache GPU, prima di
-        // sbloccare l'UI. L'utente non vede mai una pagina bianca.
-        for (let i = 1; i <= numPages; i++) {
-          restoreFromCache(i)
-        }
-        if (cancelled) return
-
         setCurrentPage(1)
         setTotalPages(numPages)
-        setPagesReady(true)   // sblocca UI solo quando cache è completo e turn.js è pronto
+        setPagesReady(true)
         setLoadPhase('ready')
         console.log('[FlipbookViewer] pronto —', numPages, 'pagine', dims)
       } catch (err) {
@@ -368,8 +324,6 @@ export default function FlipbookViewer({
     return () => {
       cancelled = true
       renderTasks.forEach(t => { try { t.cancel() } catch (_) {} })
-      bitmapCache.forEach(b => { try { b.close() } catch (_) {} })
-      offscreenCache.clear()
       try { if (el && window.$?.fn?.turn) window.$(el).turn('destroy') } catch (_) {}
       if (el) el.innerHTML = ''
     }
