@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import WelcomeView from './WelcomeView'
 import dynamic from 'next/dynamic'
-import ReferenceViewer from './ReferenceViewer'
+import FlipbookViewer from './FlipbookViewer'
 
 const MenuFlipbook = dynamic(() => import('./MenuFlipbook'), {
   ssr: false,
@@ -81,12 +81,20 @@ export default function PublicMenuView({ restaurant, menus, banners, info, defau
 
   const selectedMenu = selectedMenuId ? menus.find(m => m.id === selectedMenuId) : null
 
-  // ── FASE 1: reference engine test ────────────────────────────────────────────
-  // Renders the RaffaeleMorganti/pdf-viewer 1:1 clone.
-  // When pdfUrl is provided it shows that PDF; otherwise it shows the built-in
-  // pdfjs sample so the turn.js flip animation can be verified.
-  // To restore the HTML flipbook, remove the line below.
-  return <ReferenceViewer pdfUrl={pdfUrl} />
+  // ── Vista primaria: FlipbookViewer ───────────────────────────────────────────
+  // pdfUrl viene da props (backend) oppure fallback al PDF di sample già in /public/.
+  // Per passare un PDF reale: aggiungi pdf_menu_url alla SELECT in page.tsx e
+  // passalo come pdfUrl={restaurant.pdf_menu_url} in PublicMenuView.
+  // Per ora usa: /pdfviewer/compressed.tracemonkey-pldi-09.pdf come test.
+  const effectivePdfUrl = pdfUrl ?? '/pdfviewer/compressed.tracemonkey-pldi-09.pdf'
+  return (
+    <FlipbookViewer
+      pdfUrl={effectivePdfUrl}
+      restaurantName={restaurant.name}
+      restaurantLogo={restaurant.logo_url}
+      onBack={() => setSelectedMenuId(null)}
+    />
+  )
   // ─────────────────────────────────────────────────────────────────────────────
 
   /* eslint-disable no-unreachable */
