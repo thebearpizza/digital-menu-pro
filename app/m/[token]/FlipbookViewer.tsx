@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // ⚙️  MENU CONFIG
@@ -29,11 +29,13 @@ const menuConfig = {
 
   // ── 📖 Flipbook ───────────────────────────────────────────────────────────────
   flipbook: {
-    duration:      600,        // ms animazione turn.js
-    elevation:     50,         // shadow depth — identico al repo di riferimento
-    pageRatio:     210 / 297,  // A4 portrait (width / height)
-    marginX:       12,         // px margine laterale minimo per lato
-    marginY:       108,        // px area riservata a header + category bar
+    duration:            600,        // ms animazione sfoglio turn.js
+    elevation:           50,         // shadow depth — identico al repo di riferimento
+    pageRatio:           210 / 297,  // A4 portrait (width / height)
+    marginX:             12,         // px margine laterale minimo per lato
+    marginY:             108,        // px area riservata a header + category bar
+    landingFadeDuration: 850,        // ms fade landing → flipbook (e viceversa)
+    pageBackground:      '#ffffff',  // sfondo pagine — usato anche come prefill canvas
   },
 
   // ── 📂 Categorie ──────────────────────────────────────────────────────────────
@@ -105,23 +107,25 @@ export default function FlipbookViewer({
 }: Props) {
   const bookRef = useRef<HTMLDivElement>(null)
 
-  const [dims,         setDims]         = useState<{ w: number; h: number } | null>(null)
-  const [loadPhase,    setLoadPhase]    = useState<'loading' | 'ready' | 'error'>('loading')
-  const [currentPage,  setCurrentPage]  = useState(1)
-  const [totalPages,   setTotalPages]   = useState(0)
+  const [dims,          setDims]         = useState<{ w: number; h: number } | null>(null)
+  const [loadPhase,     setLoadPhase]    = useState<'loading' | 'ready' | 'error'>('loading')
+  const [currentPage,   setCurrentPage]  = useState(1)
+  const [totalPages,    setTotalPages]   = useState(0)
   // Landing overlay
-  const [showLanding,  setShowLanding]  = useState(true)
-  const [landingFading,setLandingFading]= useState(false)
+  const [showLanding,   setShowLanding]  = useState(true)
+  const [landingFading, setLandingFading]= useState(false)
+  // FIX 3: categoria attiva come state diretto — aggiornata immediatamente al click
+  const [activeCatIdx,  setActiveCatIdx] = useState(0)
 
   const { theme, categories, flipbook } = menuConfig
 
-  // ── Categoria attiva (derivata dalla pagina corrente) ────────────────────────
-  const activeCatIdx = useMemo(() => {
+  // FIX 3: sincronizza activeCatIdx quando currentPage cambia (sfoglio manuale)
+  useEffect(() => {
     let idx = 0
     for (let i = 0; i < categories.length; i++) {
       if (currentPage >= categories[i].targetPage) idx = i
     }
-    return idx
+    setActiveCatIdx(idx)
   }, [currentPage]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Scroll-lock (disabilita scroll e overscroll su tutto il documento) ────────
@@ -195,12 +199,22 @@ export default function FlipbookViewer({
           canvas.height  = Math.round(viewport.height)
           canvas.style.cssText = 'display:block;'
 
-          await page.render({ canvasContext: canvas.getContext('2d')!, viewport }).promise
+          // FIX 4: prefill sfondo bianco opaco PRIMA del render PDF.
+          // Senza questo, i canvas hanno background trasparente e le pagine
+          // mostrano il nero dello schermo durante la rotazione 3D di turn.js.
+          const ctx = canvas.getContext('2d')!
+          ctx.fillStyle = flipbook.pageBackground
+          ctx.fillRect(0, 0, canvas.width, canvas.height)
+
+          await page.render({ canvasContext: ctx, viewport }).promise
           if (cancelled) return
 
           const pageDiv = document.createElement('div')
+          // FIX 4: backface-visibility:hidden elimina il ghosting 3D durante lo sfoglio
           pageDiv.style.cssText =
-            `width:${dims.w}px;height:${dims.h}px;overflow:hidden;background:#fff;`
+            `width:${dims.w}px;height:${dims.h}px;overflow:hidden;` +
+            `background:${flipbook.pageBackground};` +
+            `backface-visibility:hidden;-webkit-backface-visibility:hidden;`
           pageDiv.appendChild(canvas)
           el.appendChild(pageDiv)
         }
@@ -246,17 +260,31 @@ export default function FlipbookViewer({
 
   // ── Callbacks ────────────────────────────────────────────────────────────────
 
-  /** Attiva il flipbook: dissolvenza landing → reveal libro */
+  /** Attiva il flipbook: fade-out landing (Bug 1 — durata configurabile in menuConfig) */
   const enterFlipbook = useCallback(() => {
     setLandingFading(true)
-    setTimeout(() => setShowLanding(false), 420)
+    setTimeout(() => setShowLanding(false), flipbook.landingFadeDuration)
+  }, [flipbook.landingFadeDuration])
+
+  /**
+   * FIX 2 — "← torna": ritorna alla landing con fade-in animato.
+   * Usa rAF doppio per assicurarsi che il div sia nel DOM prima di triggerare
+   * la transizione CSS (altrimenti l'opacity parte già a 1, niente animazione).
+   */
+  const goToLanding = useCallback(() => {
+    setLandingFading(true)   // opacity: 0 — landing parte invisibile
+    setShowLanding(true)     // monta il div
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => setLandingFading(false)) // trigger fade-in
+    )
   }, [])
 
   /**
-   * Salta a una pagina target — callback predisposto per la navigazione a categorie.
-   * Collega qui qualsiasi logica custom (es. pagina calcolata dalla struttura del PDF).
+   * FIX 3 — Salta a una categoria: aggiorna activeCatIdx IMMEDIATAMENTE (visual
+   * feedback istantaneo), poi ordina a turn.js di girare alla pagina target.
    */
-  const handleCategoryClick = useCallback((targetPage: number) => {
+  const handleCategoryClick = useCallback((targetPage: number, catIdx: number) => {
+    setActiveCatIdx(catIdx)   // risposta visiva immediata, non aspetta l'evento turned
     const el = bookRef.current
     if (!el || !window.$?.fn?.turn) return
     window.$(el).turn('page', targetPage)
@@ -290,8 +318,9 @@ export default function FlipbookViewer({
           className="shrink-0 flex items-center justify-between px-4 py-3"
           style={{ background: theme.pageBg }}
         >
+          {/* FIX 2: torna alla landing con fade-in, non esce dal viewer */}
           <button
-            onClick={onBack}
+            onClick={goToLanding}
             className="text-xs transition-opacity duration-200 hover:opacity-50"
             style={{ color: theme.textMuted }}
           >
@@ -321,8 +350,12 @@ export default function FlipbookViewer({
               visibility: dims ? 'visible' : 'hidden',
             }}
           >
-            {/* turn.js mount target — always in DOM */}
-            <div ref={bookRef} style={{ width: dims?.w ?? 0, height: dims?.h ?? 0 }} />
+            {/* turn.js mount target — always in DOM, fv-book per CSS targeting */}
+            <div
+              ref={bookRef}
+              className="fv-book"
+              style={{ width: dims?.w ?? 0, height: dims?.h ?? 0 }}
+            />
 
             {/* Overlay caricamento */}
             {loadPhase === 'loading' && dims && (
@@ -399,7 +432,7 @@ export default function FlipbookViewer({
           {categories.map((cat, idx) => (
             <button
               key={cat.label}
-              onClick={() => handleCategoryClick(cat.targetPage)}
+              onClick={() => handleCategoryClick(cat.targetPage, idx)}
               className="shrink-0 px-5 py-3 text-[10px] uppercase tracking-[0.22em] transition-all duration-200"
               style={{
                 color:        idx === activeCatIdx ? theme.navActive : theme.navInactive,
@@ -425,7 +458,8 @@ export default function FlipbookViewer({
           style={{
             background:    theme.landingBg,
             opacity:       landingFading ? 0 : 1,
-            transition:    'opacity 0.42s ease-out',
+            // FIX 1: transizione lenta e raffinata — valore da menuConfig.flipbook.landingFadeDuration
+            transition:    `opacity ${flipbook.landingFadeDuration}ms cubic-bezier(0.4, 0, 0.2, 1)`,
             pointerEvents: landingFading ? 'none' : 'auto',
           }}
         >

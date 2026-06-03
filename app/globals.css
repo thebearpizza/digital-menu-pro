@@ -27,3 +27,13 @@ body.menu-locked {
 @keyframes bannerFadeOut { from { opacity: 1; } to { opacity: 0; } }
 .banner-in  { animation: bannerFadeIn  0.6s ease-out both; }
 .banner-out { animation: bannerFadeOut 0.4s ease-in  both; }
+
+/* ─── FlipbookViewer — fix trasparenza pagine turn.js ───── */
+/* turn.js avvolge ogni pageDiv in un wrapper div. Senza sfondo
+   esplicito e backface-visibility:hidden, durante la rotazione 3D
+   si vede il nero dello schermo attraverso la pagina. */
+.fv-book > div {
+  background: #fff;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
