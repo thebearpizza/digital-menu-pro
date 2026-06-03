@@ -173,22 +173,34 @@ export default function FlipbookViewer({
     setLoadPhase('loading')
 
     const pdfPageObjects: any[] = []
-    // Map pageNum → renderTask attivo: consente di cancellare render sovrapposti
-    // e di NON avere un "cache" che impedisce il re-render dopo che turn.js
-    // azzera il canvas (Chrome/Safari azzerano il canvas a ogni re-parenting).
-    const renderTasks = new Map<number, { cancel(): void }>()
+    const renderTasks  = new Map<number, { cancel(): void }>()
+    // Cache GPU delle pagine già renderizzate: drawImage è sincrono e <1ms,
+    // quindi possiamo ripristinare un canvas azzerato PRIMA che l'animazione
+    // lo mostri all'utente, senza il flash bianco causato da fillRect+async.
+    const bitmapCache  = new Map<number, ImageBitmap>()
     let scale = 1
 
-    // Ritrova il canvas di una pagina tramite data-page (stabile post-DOM-reorg)
     function findCanvas(pageNum: number): HTMLCanvasElement | null {
       return el!.querySelector(`canvas[data-page="${pageNum}"]`) as HTMLCanvasElement | null
     }
 
-    // Renderizza una singola pagina sul suo canvas.
-    // - Se è già in corso un render per quella pagina, lo cancella prima di
-    //   iniziarne uno nuovo (evita che due task scrivano sullo stesso canvas).
-    // - NON ha un "già renderizzato" cache: ogni chiamata ridipinge sempre,
-    //   necessario perché turn.js può azzerare un canvas in qualsiasi momento.
+    // Ridipinge un canvas dal cache GPU (sincrono, <1ms).
+    // Ritorna true se il cache hit c'era, false altrimenti.
+    function restoreFromCache(pageNum: number): boolean {
+      const canvas = findCanvas(pageNum)
+      const bitmap = bitmapCache.get(pageNum)
+      if (!canvas || !bitmap) return false
+      try {
+        const ctx = canvas.getContext('2d')!
+        ctx.drawImage(bitmap, 0, 0)
+        return true
+      } catch (_) {
+        return false
+      }
+    }
+
+    // Renderizza una pagina via PDF.js e aggiorna il cache GPU.
+    // Usato SOLO per il caricamento iniziale (Phase 4).
     async function renderPage(pageNum: number): Promise<void> {
       if (cancelled) return
       const canvas = findCanvas(pageNum)
@@ -196,26 +208,26 @@ export default function FlipbookViewer({
       const pdfPage = pdfPageObjects[pageNum - 1]
       if (!pdfPage) return
 
-      // Cancella il task precedente per questa pagina (se ancora in corso)
       try { renderTasks.get(pageNum)?.cancel() } catch (_) {}
 
       const viewport = pdfPage.getViewport({ scale })
       const ctx      = canvas.getContext('2d')!
-
-      // FIX GHOSTING livello CSS: background-color sull'elemento canvas stesso.
-      // ctx.fillRect copre il bitmap interno; il CSS background copre le zone
-      // che il browser compositor vede come trasparenti durante le trasformazioni
-      // GPU (il due insieme eliminano il "foglio di vetro" durante il flip).
       canvas.style.backgroundColor = flipbook.pageBackground
-      ctx.fillStyle = flipbook.pageBackground
+      ctx.fillStyle  = flipbook.pageBackground
       ctx.fillRect(0, 0, canvas.width, canvas.height)
 
       const task = pdfPage.render({ canvasContext: ctx, viewport })
       renderTasks.set(pageNum, task)
       try {
         await task.promise
+        if (!cancelled) {
+          // Cache GPU aggiornata dopo ogni render riuscito
+          if (typeof createImageBitmap !== 'undefined') {
+            const bitmap = await createImageBitmap(canvas)
+            bitmapCache.set(pageNum, bitmap)
+          }
+        }
       } catch (err: any) {
-        // RenderingCancelledException è normale quando sovrascriviamo un task
         if (err?.name !== 'RenderingCancelledException') {
           console.warn('[FlipbookViewer] render p.' + pageNum + ':', err)
         }
@@ -246,7 +258,6 @@ export default function FlipbookViewer({
           pdfPageObjects.push(await pdf.getPage(i))
         }
 
-        // Scala dalla prima pagina (A4: stesso aspect ratio per tutte)
         const naturalVP = pdfPageObjects[0].getViewport({ scale: 1 })
         scale = Math.min(dims.w / naturalVP.width, dims.h / naturalVP.height)
         const vp0 = pdfPageObjects[0].getViewport({ scale })
@@ -266,15 +277,12 @@ export default function FlipbookViewer({
           canvas.width  = cw
           canvas.height = ch
           canvas.dataset.page = String(i)
-          // FIX GHOSTING: background-color CSS rende l'elemento canvas opaco
-          // prima ancora che il bitmap sia dipinto (coprendo il compositor GPU)
           canvas.style.cssText =
             `display:block;` +
             `background-color:${flipbook.pageBackground};` +
             `transform:translateZ(0);` +
             `will-change:transform;`
 
-          // Pre-fill bitmap: bianco opaco prima del render PDF
           const ctx = canvas.getContext('2d')!
           ctx.fillStyle = flipbook.pageBackground
           ctx.fillRect(0, 0, cw, ch)
@@ -289,8 +297,6 @@ export default function FlipbookViewer({
         }
 
         // ── FASE 3: init turn.js — riorganizza il DOM ───────────────────────
-        // I canvas vengono azzerati dal browser al re-parenting.
-        // Il `turning` event li ridipinge in tempo prima che la pagina si sveli.
         window.$(el).turn({
           width:        dims.w,
           height:       dims.h,
@@ -301,28 +307,30 @@ export default function FlipbookViewer({
           acceleration: true,
           elevation:    flipbook.elevation,
           when: {
-            // FIX RACE CONDITION: all'inizio di ogni flip ridipingi la pagina
-            // di destinazione e le adiacenti. Non usa cache: se turn.js ha
-            // azzerato un canvas, viene ridipinto prima che l'utente lo veda.
+            // PRE-RENDERING PROATTIVO: all'inizio di ogni flip ripristina
+            // i canvas adiacenti dal cache GPU (drawImage sincrono, <1ms, nessun
+            // flash bianco). Se un canvas è stato azzerato da turn.js o dal
+            // browser (display:none→block su iOS Safari), viene riportato al suo
+            // stato renderizzato PRIMA che l'animazione lo sveli.
             turning(_evt: Event, page: number) {
               ;[page - 1, page, page + 1, page + 2]
                 .filter(p => p >= 1 && p <= numPages)
-                .forEach(p => renderPage(p))   // fire-and-forget, cancella il precedente
+                .forEach(p => restoreFromCache(p))
             },
             turned(_evt: Event, page: number) {
               setCurrentPage(page)
-              // Ridipinge la nuova pagina corrente e le successive come safety-net
+              // Safety-net: ripristina anche dopo l'animazione (cache sempre aggiornata)
               ;[page, page + 1, page + 2]
                 .filter(p => p >= 1 && p <= numPages)
-                .forEach(p => renderPage(p))
+                .forEach(p => restoreFromCache(p))
             },
           },
         })
 
-        // ── FASE 4: RE-RENDER sequenziale — tutti i canvas prima del ready ──
-        // Sequenziale (non Promise.all) per evitare competizione sul worker
-        // PDF.js. Ogni pagina è completamente dipinta prima di passare alla
-        // successiva → nessuna race condition al primo sfoglio.
+        // ── FASE 4: PRE-RENDERING AGGRESSIVO — tutti i canvas prima del ready
+        // Sequenziale per evitare competizione sul worker PDF.js.
+        // Ogni renderPage aggiorna anche il bitmapCache → turning può ripristinare
+        // immediatamente qualsiasi pagina senza async render.
         for (let i = 1; i <= numPages; i++) {
           if (cancelled) return
           await renderPage(i)
@@ -332,7 +340,7 @@ export default function FlipbookViewer({
         setCurrentPage(1)
         setTotalPages(numPages)
         setLoadPhase('ready')
-        console.log('[FlipbookViewer] pronto —', numPages, 'pagine', dims)
+        console.log('[FlipbookViewer] pronto —', numPages, 'pagine cached', dims)
       } catch (err) {
         console.error('[FlipbookViewer] init fallito:', err)
         if (!cancelled) setLoadPhase('error')
@@ -342,6 +350,7 @@ export default function FlipbookViewer({
     return () => {
       cancelled = true
       renderTasks.forEach(t => { try { t.cancel() } catch (_) {} })
+      bitmapCache.forEach(b => { try { b.close() } catch (_) {} })
       try { if (el && window.$?.fn?.turn) window.$(el).turn('destroy') } catch (_) {}
       if (el) el.innerHTML = ''
     }
@@ -491,11 +500,12 @@ export default function FlipbookViewer({
               </div>
             )}
 
-            {/* ── Hint angolari — pointer-events-none, solo indicatori visivi ── */}
+            {/* ── Hint angolari — z-50 per stare sopra il libro, pointer-events-none
+                 perché i click/swipe devono raggiungere gli angoli nativi di turn.js */}
             {loadPhase === 'ready' && (
               <>
                 <span
-                  className="pointer-events-none absolute bottom-3 left-2 text-[10px] uppercase tracking-[0.2em] select-none"
+                  className="pointer-events-none absolute bottom-3 left-2 z-50 text-[10px] uppercase tracking-[0.2em] select-none"
                   style={{
                     color:      theme.textMuted,
                     opacity:    atFirst ? 0 : 0.6,
@@ -506,7 +516,7 @@ export default function FlipbookViewer({
                   ‹ prec.
                 </span>
                 <span
-                  className="pointer-events-none absolute bottom-3 right-2 text-[10px] uppercase tracking-[0.2em] select-none"
+                  className="pointer-events-none absolute bottom-3 right-2 z-50 text-[10px] uppercase tracking-[0.2em] select-none"
                   style={{
                     color:      theme.textMuted,
                     opacity:    atLast ? 0 : 0.6,
