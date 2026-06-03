@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import WelcomeView from './WelcomeView'
 import dynamic from 'next/dynamic'
+import ReferenceViewer from './ReferenceViewer'
 
 const MenuFlipbook = dynamic(() => import('./MenuFlipbook'), {
   ssr: false,
@@ -76,16 +77,23 @@ interface Props {
 
 export default function PublicMenuView({ restaurant, menus, banners, info, defaultMenuId, pdfUrl }: Props) {
   const [selectedMenuId, setSelectedMenuId] = useState<string | null>(defaultMenuId ?? null)
-  // showPdf defaults to true so the PDF opens immediately when a URL is provided
   const [showPdf, setShowPdf] = useState(!!pdfUrl)
 
   const selectedMenu = selectedMenuId ? menus.find(m => m.id === selectedMenuId) : null
 
-  // PDF mode — shown when a pdfUrl is configured and the user hasn't navigated away
+  // ── FASE 1: reference engine test ────────────────────────────────────────────
+  // Renders the RaffaeleMorganti/pdf-viewer 1:1 clone.
+  // When pdfUrl is provided it shows that PDF; otherwise it shows the built-in
+  // pdfjs sample so the turn.js flip animation can be verified.
+  // To restore the HTML flipbook, remove the line below.
+  return <ReferenceViewer pdfUrl={pdfUrl} />
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  /* eslint-disable no-unreachable */
   if (pdfUrl && showPdf) {
     return (
       <PDFFlipBook
-        pdfUrl={pdfUrl}
+        pdfUrl={pdfUrl!}
         restaurantName={restaurant.name}
         menuName={menus[0]?.name}
         onBack={() => setShowPdf(false)}
@@ -96,9 +104,9 @@ export default function PublicMenuView({ restaurant, menus, banners, info, defau
   if (selectedMenu) {
     return (
       <MenuFlipbook
-        menuName={selectedMenu.name}
+        menuName={selectedMenu!.name}
         restaurantName={restaurant.name}
-        items={selectedMenu.dishes}
+        items={selectedMenu!.dishes}
         infoTitle={info?.title}
         infoContent={info?.content}
         onBack={() => setSelectedMenuId(null)}
@@ -114,4 +122,5 @@ export default function PublicMenuView({ restaurant, menus, banners, info, defau
       onSelectMenu={id => setSelectedMenuId(id)}
     />
   )
+  /* eslint-enable no-unreachable */
 }
