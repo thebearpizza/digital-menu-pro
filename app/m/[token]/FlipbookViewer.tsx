@@ -153,22 +153,12 @@ export default function FlipbookViewer({
   }, [])
 
   // ── PDF.js + turn.js init ─────────────────────────────────────────────────────
-  // Carica in background mentre la landing è visibile.
-  //
-  // CAUSA RADICE DEFINITIVA: turn.js riparenta i div delle pagine non solo
-  // all'init, ma AD OGNI FLIP (aggiunge wrapper .turn-page dinamici per
-  // l'animazione). Il canvas viene azzerato dal browser ad ogni spostamento
-  // nel DOM — il restore nel 'turning' event arriva troppo presto, prima
-  // che turn.js completi il reparenting per l'animazione corrente.
-  //
-  // SOLUZIONE: usare <img> invece di <canvas> come elemento di visualizzazione.
-  // Un <img> NON perde il suo src/contenuto quando viene spostato nel DOM.
-  // La pipeline diventa:
-  //   FASE 1 — carica oggetti pagina PDF in memoria
-  //   FASE 2 — crea div+img placeholder (src vuoto = sfondo bianco)
-  //   FASE 2.5 — render offscreen (canvas mai nel DOM) → PNG data URL → img.src
-  //              + attende img.onload per garantire decode prima di turn.js
-  //   FASE 3 — init turn.js: sposta liberamente i div, le img restano intatte
+  // Architettura: Static Pre-rendering & Hand-off
+  //   FASE 1   — carica oggetti pagina PDF in memoria
+  //   FASE 2   — crea div+canvas nel DOM (attr width/height fissi, mai resettati)
+  //   FASE 2.5 — render tutte le pagine in parallelo su canvas con scala dpr-aware;
+  //              data URL pre-computata una volta per il trick "revealed area"
+  //   FASE 3   — init turn.js: canvas già dipinti, turn.js scala via CSS transform
   useEffect(() => {
     if (!dims) return
     const el = bookRef.current
@@ -179,26 +169,28 @@ export default function FlipbookViewer({
     setPagesReady(false)
 
     const pdfPageObjects: any[] = []
-    const renderTasks = new Map<number, { cancel(): void }>()
+    const renderTasks  = new Map<number, { cancel(): void }>()
+    const pageDataUrls = new Map<number, string>()
+
+    // devicePixelRatio: buffer fisicamente grande → testo nitido su retina.
+    // Cappato a 3 per evitare allocazioni eccessive su display ultra-HiDPI.
+    const dpr = Math.min(window.devicePixelRatio || 1, 3)
     let scale = 1
     let cw = 0
     let ch = 0
 
-    // Render una pagina PDF su un canvas offscreen (mai nel DOM),
-    // converte in PNG data URL e lo assegna all'<img> corrispondente.
-    // L'img non viene mai azzerata da turn.js — nessun restore necessario.
-    async function renderPageToImg(pageNum: number): Promise<void> {
+    async function renderPageToCanvas(pageNum: number): Promise<void> {
       if (cancelled) return
       const pdfPage = pdfPageObjects[pageNum - 1]
       if (!pdfPage) return
 
       try { renderTasks.get(pageNum)?.cancel() } catch (_) {}
 
-      const viewport  = pdfPage.getViewport({ scale })
-      const offscreen = document.createElement('canvas')
-      offscreen.width  = cw
-      offscreen.height = ch
-      const ctx = offscreen.getContext('2d')!
+      const viewport = pdfPage.getViewport({ scale })
+      const canvas = el!.querySelector(`canvas[data-page="${pageNum}"]`) as HTMLCanvasElement | null
+      if (!canvas || cancelled) return
+
+      const ctx = canvas.getContext('2d')!
       ctx.fillStyle = flipbook.pageBackground
       ctx.fillRect(0, 0, cw, ch)
 
@@ -207,18 +199,9 @@ export default function FlipbookViewer({
       try {
         await task.promise
         if (cancelled) return
-
-        const dataURL = offscreen.toDataURL('image/png')
-        const img = el!.querySelector(`img[data-page="${pageNum}"]`) as HTMLImageElement | null
-        if (!img || cancelled) return
-
-        await new Promise<void>((resolve) => {
-          img.onload  = () => resolve()
-          img.onerror = () => resolve()
-          img.src = dataURL
-          // Se il browser ha già decodificato (data URL sincrono su alcuni engine)
-          if (img.complete && img.naturalWidth > 0) resolve()
-        })
+        // Pre-computa data URL per il background "revealed area" di turn.js.
+        // Fatto qui una volta — mai chiamato di nuovo durante la navigazione.
+        pageDataUrls.set(pageNum, canvas.toDataURL('image/png'))
       } catch (err: any) {
         if (err?.name !== 'RenderingCancelledException') {
           console.warn('[FlipbookViewer] render p.' + pageNum + ':', err)
@@ -251,12 +234,15 @@ export default function FlipbookViewer({
         }
 
         const naturalVP = pdfPageObjects[0].getViewport({ scale: 1 })
-        scale = Math.min(dims.w / naturalVP.width, dims.h / naturalVP.height)
+        scale = Math.min(dims.w / naturalVP.width, dims.h / naturalVP.height) * dpr
         const vp0 = pdfPageObjects[0].getViewport({ scale })
         cw = Math.round(vp0.width)
         ch = Math.round(vp0.height)
 
-        // ── FASE 2: div + <img> placeholder (src vuoto = sfondo bianco) ─────
+        // ── FASE 2: div + canvas nel DOM ─────────────────────────────────────
+        // canvas.width / canvas.height = dimensioni pixel FISSE (mai cambiate).
+        // canvas CSS width:100%;height:100% → turn.js scala via transform CSS,
+        // senza mai toccare gli attributi → il context 2D non viene mai resettato.
         el.innerHTML = ''
         for (let i = 1; i <= numPages; i++) {
           const pageDiv = document.createElement('div')
@@ -265,25 +251,21 @@ export default function FlipbookViewer({
             `background:${flipbook.pageBackground};` +
             `backface-visibility:hidden;-webkit-backface-visibility:hidden;`
 
-          const img = document.createElement('img')
-          img.width        = cw
-          img.height       = ch
-          img.dataset.page = String(i)
-          img.style.cssText =
-            `display:block;` +
-            `background-color:${flipbook.pageBackground};`
+          const canvas = document.createElement('canvas')
+          canvas.width        = cw
+          canvas.height       = ch
+          canvas.dataset.page = String(i)
+          canvas.style.cssText = `display:block;width:100%;height:100%;`
 
-          pageDiv.appendChild(img)
+          pageDiv.appendChild(canvas)
           el.appendChild(pageDiv)
         }
         if (cancelled) return
 
-        // ── FASE 2.5: render → PNG → img.src (attende decode) ───────────────
-        // Promise.all parallelizza i render PDF.js; ogni renderPageToImg
-        // attende img.onload prima di procedere → turn.js inizia SOLO quando
-        // tutte le img sono già decodificate e pronte nel browser.
+        // ── FASE 2.5: render tutte le pagine in parallelo ────────────────────
+        // Ogni canvas viene dipinto una volta sola e non viene mai più toccato.
         await Promise.all(
-          Array.from({ length: numPages }, (_, i) => renderPageToImg(i + 1))
+          Array.from({ length: numPages }, (_, i) => renderPageToCanvas(i + 1))
         )
         if (cancelled) return
 
@@ -292,18 +274,13 @@ export default function FlipbookViewer({
         }
 
         // ── FASE 3: init turn.js ─────────────────────────────────────────────
-        // Turn.js riorganizza il DOM liberamente: le <img> sopravvivono a
-        // qualsiasi spostamento (a differenza dei <canvas>). Nessun restore.
+        // I canvas sono già fisicamente dipinti nel DOM prima che turn.js li
+        // avvolga nei suoi wrapper. Durante lo swipe, turn.js applica solo
+        // CSS transform ai wrapper — il buffer del canvas non viene mai toccato.
         //
-        // FIX "revealed area": durante il flip, turn.js applica una CSS
-        // transform al `wrapper` (div interno a pageWrap[currentPage]).
-        // Man mano che wrapper si allontana visivamente, l'area scoperta
-        // mostra il background del pageWrap stesso (strato statico sotto).
-        // Impostando background-image su pageWrap[currentPage] = contenuto
-        // della pagina di destinazione, quella zona mostra il contenuto
-        // corretto invece del bianco. p-temporal resta bianco (è il retro
-        // della piega, non la zona rivelata).
-
+        // Il trick "revealed area": pageWrap[currentPage].backgroundImage =
+        // data URL della pagina di destinazione (pre-computata in FASE 2.5),
+        // così la zona "scoperta" dalla piega mostra subito il contenuto corretto.
         window.$(el).turn({
           width:        dims.w,
           height:       dims.h,
@@ -319,9 +296,7 @@ export default function FlipbookViewer({
                 const data     = window.$(el!).turn('data') as any
                 const currPage = data?.page as number
                 const pageWrap = data?.pageWrap?.[currPage]
-                const destSrc  = (el!.querySelector(
-                  `img[data-page="${page}"]`
-                ) as HTMLImageElement | null)?.src
+                const destSrc  = pageDataUrls.get(page)
                 if (pageWrap && destSrc) {
                   window.$(pageWrap).css({
                     backgroundImage:    `url("${destSrc}")`,
@@ -350,7 +325,6 @@ export default function FlipbookViewer({
         setTotalPages(numPages)
         setPagesReady(true)
         setLoadPhase('ready')
-        console.log('[FlipbookViewer] pronto —', numPages, 'pagine', dims)
       } catch (err) {
         console.error('[FlipbookViewer] init fallito:', err)
         if (!cancelled) setLoadPhase('error')
