@@ -142,7 +142,6 @@ export function useMenuPDF(
         if (cancelled) return
 
         // ── Generate PDF blob ──────────────────────────────────────────────────
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const blob = await (pdf as any)(
           createElement(MenuPDFDocument, { restaurant, menu })
         ).toBlob()
