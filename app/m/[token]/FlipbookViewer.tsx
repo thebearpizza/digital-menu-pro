@@ -67,6 +67,10 @@ function requireScript(src: string): Promise<void> {
 
 declare global { interface Window { $: any; jQuery: any; pdfjsLib: any } }
 
+// Array vuoto con riferimento stabile — usato come fallback di categories per
+// evitare ri-render infiniti nell'effect che dipende da [currentPage, categories].
+const EMPTY_CATEGORIES: Array<{ label: string; targetPage: number }> = []
+
 const PDFJS_SRC    = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js'
 const PDFJS_WORKER = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'
 
@@ -120,18 +124,21 @@ export default function FlipbookViewer({
   // Blocco hard: diventa true SOLO dopo Promise.all + turn.js init
   const [pagesReady,    setPagesReady]   = useState(false)
 
-  const { theme, categories: defaultCategories, flipbook } = menuConfig
-  // categoriesProp (from useMenuPDF) takes precedence over the hardcoded config.
-  const categories = categoriesProp ?? defaultCategories
+  const { theme, flipbook } = menuConfig
+  // Le categorie vengono ESCLUSIVAMENTE dal menu selezionato tramite useMenuPDF.
+  // Nessun fallback hardcoded — ogni menu ha le sue categorie dinamiche.
+  const categories = categoriesProp ?? EMPTY_CATEGORIES
 
-  // FIX 3: sincronizza activeCatIdx quando currentPage cambia (sfoglio manuale)
+  // Sincronizza activeCatIdx quando currentPage cambia (sfoglio manuale)
+  // o quando le categorie cambiano (cambio menu).
   useEffect(() => {
+    if (!categories.length) return
     let idx = 0
     for (let i = 0; i < categories.length; i++) {
       if (currentPage >= categories[i].targetPage) idx = i
     }
     setActiveCatIdx(idx)
-  }, [currentPage]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [currentPage, categories])
 
   // ── Scroll-lock (disabilita scroll e overscroll su tutto il documento) ────────
   useEffect(() => {

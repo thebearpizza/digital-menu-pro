@@ -92,8 +92,12 @@ async function detectCategoryPages(
       const pg = pageMap.get(name)
       if (pg !== undefined) result.push({ label: name, targetPage: pg })
     }
-    // Return fallback for any categories not found in the text scan
-    return result.length > 0 ? result : fallback
+    // Produci sempre una lista completa: pagina reale se trovata, sequenziale se mancante.
+    // Restituire result parziale (es. 1 su N categorie) nasconde le tab rimanenti.
+    return categoryNames.map((name, i) => ({
+      label:      name,
+      targetPage: pageMap.get(name) ?? fallback[i].targetPage,
+    }))
   } catch {
     return fallback
   }
