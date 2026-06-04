@@ -94,6 +94,9 @@ interface Props {
   restaurantLogo?: string | null
   /** Callback "esci dal viewer" (es. torna alla WelcomeView) */
   onBack:          () => void
+  /** Sovrascrive le categorie di navigazione hardcoded in menuConfig.
+   *  Passato da useMenuPDF con i targetPage reali estratti dal PDF generato. */
+  categories?: Array<{ label: string; targetPage: number }>
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -104,6 +107,7 @@ export default function FlipbookViewer({
   restaurantName,
   restaurantLogo,
   onBack,
+  categories: categoriesProp,
 }: Props) {
   const bookRef = useRef<HTMLDivElement>(null)
 
@@ -119,7 +123,9 @@ export default function FlipbookViewer({
   // Blocco hard: diventa true SOLO dopo Promise.all + turn.js init + Phase 3.5
   const [pagesReady,    setPagesReady]   = useState(false)
 
-  const { theme, categories, flipbook } = menuConfig
+  const { theme, categories: defaultCategories, flipbook } = menuConfig
+  // categoriesProp (from useMenuPDF) takes precedence over the hardcoded config.
+  const categories = categoriesProp ?? defaultCategories
 
   // FIX 3: sincronizza activeCatIdx quando currentPage cambia (sfoglio manuale)
   useEffect(() => {
