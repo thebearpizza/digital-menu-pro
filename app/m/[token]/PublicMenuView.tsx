@@ -3,7 +3,7 @@
 // PublicMenuView — client wrapper for the public /m/[token] page.
 //
 // Flow:
-//   1. No menu selected → WelcomeView (restaurant intro + menu picker).
+//   1. No menu selected → dark landing with one button per menu.
 //   2. Menu selected    → useMenuPDF generates a PDF blob in the background.
 //   3. PDF ready        → FlipbookViewer with the blob URL + real category pages.
 //
@@ -11,9 +11,12 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useState } from 'react'
-import WelcomeView     from './WelcomeView'
 import FlipbookViewer  from './FlipbookViewer'
 import { useMenuPDF }  from './useMenuPDF'
+
+const ACCENT     = '#c9a96e'
+const FONT_SERIF = "'Cormorant Garamond', 'Georgia', 'Times New Roman', serif"
+const FONT_SANS  = "'DM Sans', 'Inter', system-ui, sans-serif"
 
 // ── Types (mirror the shape returned by page.tsx) ─────────────────────────────
 
@@ -72,7 +75,6 @@ interface Props {
 export default function PublicMenuView({
   restaurant,
   menus,
-  banners,
   defaultMenuId,
 }: Props) {
   const [selectedMenuId, setSelectedMenuId] = useState<string | null>(
@@ -103,15 +105,95 @@ export default function PublicMenuView({
       : null
   )
 
-  // ── 1. No menu selected → welcome / selection screen ─────────────────────
+  // ── 1. No menu selected → dark landing with per-menu buttons ────────────
   if (!selectedMenuId || !selectedMenu) {
     return (
-      <WelcomeView
-        restaurant={restaurant}
-        menus={menus.map(m => ({ id: m.id, name: m.name }))}
-        banners={banners}
-        onSelectMenu={id => setSelectedMenuId(id)}
-      />
+      <div
+        className="fixed inset-0 h-[100dvh] flex flex-col items-center justify-center"
+        style={{ background: 'linear-gradient(155deg, #0d0d0d 0%, #131313 60%, #0f0e0e 100%)' }}
+      >
+        {/* Top accent line */}
+        <div
+          className="absolute top-0 inset-x-0 h-px"
+          style={{ background: `linear-gradient(90deg, transparent, ${ACCENT}55, transparent)` }}
+        />
+
+        <div className="flex flex-col items-center text-center px-10 w-full max-w-xs">
+          {restaurant.logo_url ? (
+            <img
+              src={restaurant.logo_url}
+              alt={restaurant.name}
+              className="h-14 mb-10 object-contain"
+              style={{ opacity: 0.88 }}
+            />
+          ) : (
+            <>
+              <div className="w-10 h-px mb-7" style={{ background: ACCENT }} />
+              <h1
+                className="font-light uppercase leading-none"
+                style={{
+                  color:         '#ede8e0',
+                  fontFamily:    FONT_SERIF,
+                  fontSize:      'clamp(1.6rem, 5vw, 2.4rem)',
+                  letterSpacing: '0.22em',
+                }}
+              >
+                {restaurant.name}
+              </h1>
+              <div className="w-10 h-px mt-7" style={{ background: ACCENT }} />
+            </>
+          )}
+
+          {/* One button per menu */}
+          <div className="mt-10 flex flex-col gap-3 w-full">
+            {menus.length === 0 ? (
+              <p
+                className="text-[10px] uppercase tracking-[0.25em]"
+                style={{ color: '#4f4f4f' }}
+              >
+                Menu in aggiornamento.
+              </p>
+            ) : (
+              menus.map(m => (
+                <button
+                  key={m.id}
+                  onClick={() => setSelectedMenuId(m.id)}
+                  className="group relative px-10 py-3 overflow-hidden"
+                  style={{
+                    color:         '#ede8e0',
+                    border:        `1px solid ${ACCENT}50`,
+                    fontFamily:    FONT_SANS,
+                    fontSize:      '0.625rem',
+                    letterSpacing: '0.28em',
+                    textTransform: 'uppercase',
+                  }}
+                >
+                  <span
+                    className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
+                    style={{ background: `${ACCENT}14` }}
+                  />
+                  <span className="relative">
+                    {`Sfoglia il menu ${m.name}`}
+                  </span>
+                </button>
+              ))
+            )}
+          </div>
+        </div>
+
+        <p
+          className="absolute bottom-6 text-[8px] uppercase tracking-[0.35em]"
+          style={{ color: '#4f4f4f' }}
+        >
+          menu digitale
+        </p>
+
+        {/* Bottom accent line */}
+        <div
+          className="absolute bottom-0 inset-x-0 h-px"
+          style={{ background: `linear-gradient(90deg, transparent, ${ACCENT}55, transparent)` }}
+        />
+      </div>
     )
   }
 

@@ -73,8 +73,8 @@ async function detectCategoryPages(
     const pageMap  = new Map<string, number>()
     const pending  = new Set(categoryNames)
 
-    // Scan from page 2 (skip cover) forward — stop early once all found.
-    for (let p = 2; p <= numPages && pending.size > 0; p++) {
+    // Scan from page 1 forward — stop early once all found.
+    for (let p = 1; p <= numPages && pending.size > 0; p++) {
       const page   = await pdfDoc.getPage(p)
       const tc     = await page.getTextContent()
       const text   = (tc.items as any[]).map(i => i.str).join(' ').toLowerCase()
@@ -152,9 +152,9 @@ export function useMenuPDF(
 
         // ── Detect exact category page numbers ─────────────────────────────────
         const categoryNames = groupByCategory(menu.dishes).map(c => c.name)
-        // Sequential fallback: cover=1, cat1=2, cat2=3, …
+        // Sequential fallback: cat1=1, cat2=2, …
         const fallback: CategoryNav[] = categoryNames.map((name, i) => ({
-          label: name, targetPage: i + 2,
+          label: name, targetPage: i + 1,
         }))
 
         const categories = await detectCategoryPages(newUrl, categoryNames, fallback)

@@ -115,12 +115,9 @@ export default function FlipbookViewer({
   const [loadPhase,     setLoadPhase]    = useState<'loading' | 'ready' | 'error'>('loading')
   const [currentPage,   setCurrentPage]  = useState(1)
   const [totalPages,    setTotalPages]   = useState(0)
-  // Landing overlay
-  const [showLanding,   setShowLanding]  = useState(true)
-  const [landingFading, setLandingFading]= useState(false)
-  // FIX 3: categoria attiva come state diretto — aggiornata immediatamente al click
+  // categoria attiva come state diretto — aggiornata immediatamente al click
   const [activeCatIdx,  setActiveCatIdx] = useState(0)
-  // Blocco hard: diventa true SOLO dopo Promise.all + turn.js init + Phase 3.5
+  // Blocco hard: diventa true SOLO dopo Promise.all + turn.js init
   const [pagesReady,    setPagesReady]   = useState(false)
 
   const { theme, categories: defaultCategories, flipbook } = menuConfig
@@ -376,49 +373,6 @@ export default function FlipbookViewer({
 
   // ── Callbacks ────────────────────────────────────────────────────────────────
 
-  /** Attiva il flipbook: fade-out landing + reset alla copertina (safety net) */
-  const enterFlipbook = useCallback(() => {
-    setLandingFading(true)
-    // Reset alla pagina 1 mentre la landing copre il libro (nessun flash visibile).
-    // Necessario per il caso in cui l'utente ritorni dopo aver sfogliato.
-    const el = bookRef.current
-    if (el && window.$?.fn?.turn) {
-      try {
-        window.$(el).turn('stop')
-        window.$(el).turn('page', 1)
-        setCurrentPage(1)
-        setActiveCatIdx(0)
-      } catch (_) {}
-    }
-    setTimeout(() => setShowLanding(false), flipbook.landingFadeDuration)
-  }, [flipbook.landingFadeDuration])
-
-  /**
-   * FIX 2 — "← torna": ritorna alla landing con fade-in animato.
-   * Usa rAF doppio per assicurarsi che il div sia nel DOM prima di triggerare
-   * la transizione CSS (altrimenti l'opacity parte già a 1, niente animazione).
-   *
-   * RESET STATO: turn.js conserva l'ultima pagina visitata nella sua istanza
-   * jQuery. Riportiamo il libro alla pagina 1 mentre la landing lo copre, così
-   * al rientro l'utente trova sempre la copertina (nessuna memoria residua).
-   */
-  const goToLanding = useCallback(() => {
-    setLandingFading(true)   // opacity: 0 — landing parte invisibile
-    setShowLanding(true)     // monta il div
-    requestAnimationFrame(() =>
-      requestAnimationFrame(() => setLandingFading(false)) // trigger fade-in
-    )
-    // Reset del flipbook alla copertina, nascosto dietro la landing.
-    const el = bookRef.current
-    if (el && window.$?.fn?.turn) {
-      try {
-        window.$(el).turn('stop')      // interrompe eventuali animazioni in corso
-        window.$(el).turn('page', 1)   // torna alla pagina 1
-        setCurrentPage(1)
-        setActiveCatIdx(0)
-      } catch (_) {}
-    }
-  }, [])
 
   /**
    * FIX 3 — Salta a una categoria: aggiorna activeCatIdx IMMEDIATAMENTE (visual
@@ -459,9 +413,8 @@ export default function FlipbookViewer({
           className="shrink-0 flex items-center justify-between px-4 py-3"
           style={{ background: theme.pageBg }}
         >
-          {/* FIX 2: torna alla landing con fade-in, non esce dal viewer */}
           <button
-            onClick={goToLanding}
+            onClick={onBack}
             className="text-xs transition-opacity duration-200 hover:opacity-50"
             style={{ color: theme.textMuted }}
           >
@@ -530,9 +483,8 @@ export default function FlipbookViewer({
             )}
 
             {/* ── Hint angolari — z-50 per stare sopra il libro, pointer-events-none
-                 perché i click/swipe devono raggiungere gli angoli nativi di turn.js.
-                 Nascosti sulla landing (showLanding) e finché le pagine non sono pronte. */}
-            {!showLanding && pagesReady && (
+                 perché i click/swipe devono raggiungere gli angoli nativi di turn.js. */}
+            {pagesReady && (
               <>
                 <span
                   className="pointer-events-none absolute bottom-3 left-2 z-50 text-[10px] uppercase tracking-[0.2em] select-none"
@@ -562,7 +514,7 @@ export default function FlipbookViewer({
         </div>
 
         {/* ── C. Barra delle Categorie — visibile solo quando il libro è pronto ── */}
-        {!showLanding && pagesReady && (
+        {pagesReady && (
           <nav
             className="shrink-0 flex items-stretch overflow-x-auto"
             style={{
@@ -593,9 +545,8 @@ export default function FlipbookViewer({
 
       </div>
 
-      {/* Schermo scuro a tutto schermo durante caricamento post-landing —
-          impedisce flash bianchi e tab visibili prima che il libro sia pronto */}
-      {!showLanding && !pagesReady && (
+      {/* Schermo scuro a tutto schermo durante caricamento — impedisce flash bianchi */}
+      {!pagesReady && (
         <div
           className="absolute inset-0 z-10 flex items-center justify-center"
           style={{ background: '#0c0c0c' }}
@@ -603,104 +554,6 @@ export default function FlipbookViewer({
           <span className="text-xs" style={{ color: theme.textMuted }}>
             Caricamento…
           </span>
-        </div>
-      )}
-
-      {/* ──────────────────────────────────────────────────────────────────────
-       *  LANDING PAGE OVERLAY
-       *  Flotta sopra il flipbook (z-20). Svanisce e si smonta al click CTA.
-       * ──────────────────────────────────────────────────────────────────────*/}
-      {showLanding && (
-        <div
-          className="absolute inset-0 flex flex-col items-center justify-center z-20"
-          style={{
-            background:    theme.landingBg,
-            opacity:       landingFading ? 0 : 1,
-            // FIX 1: transizione lenta e raffinata — valore da menuConfig.flipbook.landingFadeDuration
-            transition:    `opacity ${flipbook.landingFadeDuration}ms cubic-bezier(0.4, 0, 0.2, 1)`,
-            pointerEvents: landingFading ? 'none' : 'auto',
-          }}
-        >
-          {/* Filo decorativo superiore */}
-          <div
-            className="absolute top-0 inset-x-0 h-px"
-            style={{
-              background: `linear-gradient(90deg, transparent, ${theme.accent}55, transparent)`,
-            }}
-          />
-
-          {/* ── Contenuto centrale ──────────────────────────────────────────── */}
-          <div className="flex flex-col items-center text-center px-10 max-w-xs">
-
-            {restaurantLogo ? (
-              <img
-                src={restaurantLogo}
-                alt={restaurantName}
-                className="h-14 mb-10 object-contain"
-                style={{ opacity: 0.88 }}
-              />
-            ) : (
-              <>
-                <div
-                  className="w-10 h-px mb-7"
-                  style={{ background: theme.accent }}
-                />
-                <h1
-                  className="font-light uppercase leading-none"
-                  style={{
-                    color:         theme.textPrimary,
-                    fontFamily:    theme.fontSerif,
-                    fontSize:      'clamp(1.6rem, 5vw, 2.4rem)',
-                    letterSpacing: '0.22em',
-                  }}
-                >
-                  {restaurantName ?? 'Menu'}
-                </h1>
-                <div
-                  className="w-10 h-px mt-7"
-                  style={{ background: theme.accent }}
-                />
-              </>
-            )}
-
-            {/* ── Call to Action ───────────────────────────────────────────── */}
-            <button
-              onClick={enterFlipbook}
-              className="group relative mt-10 px-10 py-3 overflow-hidden"
-              style={{
-                color:      theme.textPrimary,
-                border:     `1px solid ${theme.accent}50`,
-                fontFamily: theme.fontSans,
-                fontSize:   '0.625rem',        // 10px
-                letterSpacing: '0.28em',
-                textTransform: 'uppercase',
-              }}
-            >
-              {/* hover shimmer */}
-              <span
-                className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
-                style={{ background: `${theme.accent}14` }}
-              />
-              <span className="relative">Sfoglia il Menu</span>
-            </button>
-
-          </div>
-
-          {/* Watermark */}
-          <p
-            className="absolute bottom-6 text-[8px] uppercase tracking-[0.35em]"
-            style={{ color: theme.textMuted }}
-          >
-            menu digitale
-          </p>
-
-          {/* Filo decorativo inferiore */}
-          <div
-            className="absolute bottom-0 inset-x-0 h-px"
-            style={{
-              background: `linear-gradient(90deg, transparent, ${theme.accent}55, transparent)`,
-            }}
-          />
         </div>
       )}
 

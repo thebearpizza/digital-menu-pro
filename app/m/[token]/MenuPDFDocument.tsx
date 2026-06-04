@@ -2,8 +2,8 @@
 // MenuPDFDocument — @react-pdf/renderer document for a single restaurant menu.
 //
 // Dynamically imported by useMenuPDF (never SSR-ed).
-// Layout: dark cover page + content pages (one section per category, forced
-// page-break between categories, wrap={false} per dish to avoid mid-dish splits).
+// Layout: content pages only (no cover), one section per category with forced
+// page-break between categories, wrap={false} per dish to avoid mid-dish splits.
 // ─────────────────────────────────────────────────────────────────────────────
 import { Document, Page, Text, View, StyleSheet } from '@react-pdf/renderer'
 import { allergenName } from '@/lib/allergens'
@@ -71,51 +71,11 @@ function fmtPrice(p: number | null): string {
 // ── Styles ─────────────────────────────────────────────────────────────────────
 
 const ACCENT    = '#c9a96e'   // gold — matches flipbook theme
-const COVER_BG  = '#0c0c0c'
 const DARK_TXT  = '#1a1a1a'
 const MED_TXT   = '#4a4a4a'
 const LIGHT_TXT = '#9a9a9a'
 
 const s = StyleSheet.create({
-  // ── Cover ──────────────────────────────────────────────────────────────────
-  coverPage: {
-    backgroundColor: COVER_BG,
-    alignItems:      'center',
-    justifyContent:  'center',
-    paddingHorizontal: 60,
-  },
-  coverLine: {
-    width:           36,
-    height:          0.8,
-    backgroundColor: ACCENT,
-    marginVertical:  22,
-  },
-  coverRestaurant: {
-    fontFamily:    'Times-Roman',
-    fontSize:      28,
-    color:         '#ede8e0',
-    textAlign:     'center',
-    letterSpacing: 4,
-    textTransform: 'uppercase',
-  },
-  coverMenuName: {
-    fontFamily:    'Helvetica',
-    fontSize:      8,
-    color:         ACCENT,
-    textAlign:     'center',
-    letterSpacing: 3,
-    textTransform: 'uppercase',
-  },
-  coverWatermark: {
-    position:      'absolute',
-    bottom:        28,
-    fontFamily:    'Helvetica',
-    fontSize:      7,
-    color:         '#2e2e2e',
-    letterSpacing: 2,
-    textTransform: 'uppercase',
-  },
-
   // ── Content page ───────────────────────────────────────────────────────────
   page: {
     backgroundColor:  '#ffffff',
@@ -182,7 +142,7 @@ const s = StyleSheet.create({
   // Fixed footer — appears on every content page
   footer: {
     position:   'absolute',
-    bottom:     22,
+    bottom:     52,
     left:       54,
     right:      54,
     flexDirection: 'row',
@@ -224,18 +184,7 @@ export function MenuPDFDocument({ restaurant, menu }: Props) {
       author={restaurant.name}
       creator="Digital Menu Pro"
     >
-      {/* ── COVER PAGE ──────────────────────────────────────────────────── */}
-      <Page size="A4" style={s.coverPage}>
-        <View style={s.coverLine} />
-        <Text style={s.coverRestaurant}>{restaurant.name}</Text>
-        <Text style={s.coverMenuName}>{menu.name}</Text>
-        <View style={s.coverLine} />
-        <Text style={s.coverWatermark}>Menu Digitale</Text>
-      </Page>
-
-      {/* ── CONTENT PAGES (all categories flow into a single Page element) ── */}
-      {/*    turn.js reads pages by index — the cover is page 1, first        */}
-      {/*    category section starts at page 2.                                */}
+      {/* ── CONTENT PAGES — no cover, first category starts on page 1 ──── */}
       <Page size="A4" style={s.page} wrap>
 
         {categories.map((cat, catIdx) => (
@@ -282,7 +231,7 @@ export function MenuPDFDocument({ restaurant, menu }: Props) {
           <Text
             style={s.footerPage}
             render={({ pageNumber, totalPages }) =>
-              `${pageNumber - 1} / ${totalPages - 1}`
+              `${pageNumber} / ${totalPages}`
             }
           />
         </View>
