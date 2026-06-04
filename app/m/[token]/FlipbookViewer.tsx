@@ -552,35 +552,50 @@ export default function FlipbookViewer({
           </div>
         </div>
 
-        {/* ── C. Barra delle Categorie — sticky in fondo ────────────────────── */}
-        <nav
-          className="shrink-0 flex items-stretch overflow-x-auto"
-          style={{
-            background:    theme.navBg,
-            borderTop:     `1px solid ${theme.textMuted}1a`,
-            scrollbarWidth:'none',
-            WebkitOverflowScrolling: 'touch',
-          } as React.CSSProperties}
-          aria-label="Navigazione categorie menu"
-        >
-          {categories.map((cat, idx) => (
-            <button
-              key={cat.label}
-              onClick={() => handleCategoryClick(cat.targetPage, idx)}
-              className="shrink-0 px-5 py-3 text-[10px] uppercase tracking-[0.22em] transition-all duration-200"
-              style={{
-                color:        idx === activeCatIdx ? theme.navActive : theme.navInactive,
-                borderBottom: `2px solid ${idx === activeCatIdx ? theme.navActive : 'transparent'}`,
-                fontFamily:   theme.fontSans,
-                background:   'transparent',
-              }}
-            >
-              {cat.label}
-            </button>
-          ))}
-        </nav>
+        {/* ── C. Barra delle Categorie — visibile solo quando il libro è pronto ── */}
+        {!showLanding && pagesReady && (
+          <nav
+            className="shrink-0 flex items-stretch overflow-x-auto"
+            style={{
+              background:    theme.navBg,
+              borderTop:     `1px solid ${theme.textMuted}1a`,
+              scrollbarWidth:'none',
+              WebkitOverflowScrolling: 'touch',
+            } as React.CSSProperties}
+            aria-label="Navigazione categorie menu"
+          >
+            {categories.map((cat, idx) => (
+              <button
+                key={cat.label}
+                onClick={() => handleCategoryClick(cat.targetPage, idx)}
+                className="shrink-0 px-5 py-3 text-[10px] uppercase tracking-[0.22em] transition-all duration-200"
+                style={{
+                  color:        idx === activeCatIdx ? theme.navActive : theme.navInactive,
+                  borderBottom: `2px solid ${idx === activeCatIdx ? theme.navActive : 'transparent'}`,
+                  fontFamily:   theme.fontSans,
+                  background:   'transparent',
+                }}
+              >
+                {cat.label}
+              </button>
+            ))}
+          </nav>
+        )}
 
       </div>
+
+      {/* Schermo scuro a tutto schermo durante caricamento post-landing —
+          impedisce flash bianchi e tab visibili prima che il libro sia pronto */}
+      {!showLanding && !pagesReady && (
+        <div
+          className="absolute inset-0 z-10 flex items-center justify-center"
+          style={{ background: '#0c0c0c' }}
+        >
+          <span className="text-xs" style={{ color: theme.textMuted }}>
+            Caricamento…
+          </span>
+        </div>
+      )}
 
       {/* ──────────────────────────────────────────────────────────────────────
        *  LANDING PAGE OVERLAY
