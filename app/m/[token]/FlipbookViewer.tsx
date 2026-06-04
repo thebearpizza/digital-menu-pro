@@ -278,9 +278,41 @@ export default function FlipbookViewer({
         // avvolga nei suoi wrapper. Durante lo swipe, turn.js applica solo
         // CSS transform ai wrapper — il buffer del canvas non viene mai toccato.
         //
-        // Il trick "revealed area": pageWrap[currentPage].backgroundImage =
-        // data URL della pagina di destinazione (pre-computata in FASE 2.5),
-        // così la zona "scoperta" dalla piega mostra subito il contenuto corretto.
+        // Trick "revealed area": in display:'single' la pagina che si piega
+        // (currentPage) sta SOPRA (z alto) e ha sfondo bianco opaco (CSS
+        // .fv-book > div), che copre la pagina di destinazione sottostante.
+        // Dipingendo pageWrap[currentPage].backgroundImage con il contenuto
+        // della destinazione, la zona "scoperta" dalla piega lo mostra subito.
+        //
+        // TIMING CRITICO: il paint DEVE avvenire nell'evento `start` (inizio
+        // piega), NON in `turning`. Per il DRAG, `turning` scatta solo al
+        // rilascio → durante il trascinamento si vedrebbe bianco. `start`
+        // scatta all'inizio sia per drag che per navigazione a tasti.
+
+        // Dipinge la pagina `dest` sotto la pagina che si piega (`cur`).
+        const paintReveal = (cur: number, dest: number): void => {
+          const data = window.$(el!).turn('data') as any
+          const wrap = data?.pageWrap?.[cur]
+          const src  = pageDataUrls.get(dest)
+          if (wrap && src) {
+            window.$(wrap).css({
+              backgroundImage:    `url("${src}")`,
+              backgroundSize:     '100% 100%',
+              backgroundRepeat:   'no-repeat',
+              backgroundPosition: '0 0',
+            })
+          }
+        }
+        // Rimuove gli sfondi di reveal da tutti i pageWrap a piega conclusa.
+        const clearReveal = (): void => {
+          const data = window.$(el!).turn('data') as any
+          if (data?.pageWrap) {
+            Object.values(data.pageWrap).forEach((wrap: any) => {
+              window.$(wrap).css({ backgroundImage: '' })
+            })
+          }
+        }
+
         window.$(el).turn({
           width:        dims.w,
           height:       dims.h,
@@ -291,32 +323,29 @@ export default function FlipbookViewer({
           acceleration: true,
           elevation:    flipbook.elevation,
           when: {
-            turning(_evt: Event, page: number) {
+            // `start(evt, opts, corner)` — opts.page = pagina che si piega.
+            // DRAG: turn.js passa l'angolo ('bl'/'tl' = indietro, 'br'/'tr' =
+            //       avanti in direzione ltr) → ricaviamo la destinazione.
+            // TASTI: corner è null, ma opts.next è già impostato e affidabile.
+            start(_evt: Event, opts: any, corner: any) {
               try {
-                const data     = window.$(el!).turn('data') as any
-                const currPage = data?.page as number
-                const pageWrap = data?.pageWrap?.[currPage]
-                const destSrc  = pageDataUrls.get(page)
-                if (pageWrap && destSrc) {
-                  window.$(pageWrap).css({
-                    backgroundImage:    `url("${destSrc}")`,
-                    backgroundSize:     '100% 100%',
-                    backgroundRepeat:   'no-repeat',
-                    backgroundPosition: '0 0',
-                  })
+                const cur = opts?.page as number
+                if (!cur) return
+                let dest: number
+                if (typeof corner === 'string' &&
+                    (corner.charAt(1) === 'l' || corner.charAt(1) === 'r')) {
+                  dest = corner.charAt(1) === 'l' ? cur - 1 : cur + 1
+                } else if (typeof opts?.next === 'number') {
+                  dest = opts.next
+                } else {
+                  return
                 }
+                paintReveal(cur, dest)
               } catch (_) {}
             },
             turned(_evt: Event, page: number) {
               setCurrentPage(page)
-              try {
-                const data = window.$(el!).turn('data') as any
-                if (data?.pageWrap) {
-                  Object.values(data.pageWrap).forEach((wrap: any) => {
-                    window.$(wrap).css({ backgroundImage: '' })
-                  })
-                }
-              } catch (_) {}
+              try { clearReveal() } catch (_) {}
             },
           },
         })
