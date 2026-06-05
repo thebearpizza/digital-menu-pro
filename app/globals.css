@@ -135,6 +135,28 @@ body.menu-locked {
   background: rgba(201, 169, 110, 0.10) !important;
 }
 
+/* ─── turn.js — azzera hotspot superiori, preserva inferiori ────────── */
+/* width/height:0 rende l'area sensibile matematicamente inesistente senza
+   rimuovere gli elementi dal DOM (display:none romperebbe la state-machine).
+   Gli angoli inferiori bl/br NON sono citati → turn.js li gestisce natively. */
+.turn-page-wrapper[corner="tl"],
+.turn-page-wrapper[corner="tr"] {
+  width:          0px !important;
+  height:         0px !important;
+  pointer-events: none !important;
+  overflow:       hidden !important;
+}
+.turn-page-wrapper .tl,
+.turn-page-wrapper .tr {
+  width:          0px !important;
+  height:         0px !important;
+  pointer-events: none !important;
+}
+.turn-page-wrapper[corner="bl"],
+.turn-page-wrapper[corner="br"] {
+  pointer-events: auto !important;
+}
+
 /* ─── DishModal — animazioni slide/fade per la navigazione piatti ── */
 @keyframes dish-slide-from-right {
   from { opacity: 0; transform: translateX(28px); }
