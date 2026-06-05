@@ -120,8 +120,13 @@ body.menu-locked {
   outline: none !important;
   user-select: none !important;
 }
-.pdf-text-layer span[data-dish-id]:hover {
-  background: rgba(201, 169, 110, 0.18) !important;
+/* Hover solo su dispositivi con puntatore fine (desktop): su touch il
+   primo tap verrebbe "assorbito" dallo stato :hover, richiedendo un secondo
+   tap per aprire la card. Limitandolo a (hover:hover) il tap è sempre singolo. */
+@media (hover: hover) and (pointer: fine) {
+  .pdf-text-layer span[data-dish-id]:hover {
+    background: rgba(201, 169, 110, 0.18) !important;
+  }
 }
 
 /* Div hotspot overlay — copre l'intero blocco del piatto (nome → prossimo nome).

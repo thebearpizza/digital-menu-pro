@@ -326,9 +326,37 @@ export default function FlipbookViewer({
 
           // Stop touch/mouse events from ever reaching the turn.js container.
           // touchstart passive:true keeps scroll intent intact on the span itself.
-          span.addEventListener('touchstart', (evt) => { evt.stopPropagation() }, { passive: true })
-          span.addEventListener('mousedown',  (evt) => { evt.stopPropagation() })
+          let moved   = false
+          let startX  = 0
+          let startY  = 0
 
+          span.addEventListener('touchstart', (evt) => {
+            evt.stopPropagation()
+            moved = false
+            const t = evt.touches[0]
+            if (t) { startX = t.clientX; startY = t.clientY }
+          }, { passive: true })
+
+          span.addEventListener('touchmove', (evt) => {
+            const t = evt.touches[0]
+            if (t && (Math.abs(t.clientX - startX) > 10 || Math.abs(t.clientY - startY) > 10)) {
+              moved = true
+            }
+          }, { passive: true })
+
+          // Apertura su touchend = singolo tap garantito (niente attesa del
+          // click sintetico, niente "primo tap assorbito dall'hover" su iOS).
+          // preventDefault sopprime il ghost-click successivo → nessun doppio fire.
+          span.addEventListener('touchend', (evt) => {
+            evt.stopPropagation()
+            if (moved) return            // era uno swipe, non un tap
+            evt.preventDefault()
+            setActiveDish(captured)
+          }, { passive: false })
+
+          span.addEventListener('mousedown', (evt) => { evt.stopPropagation() })
+
+          // Desktop / fallback (mouse): nessun touchend → questo gestisce il click.
           span.addEventListener('click', (evt) => {
             evt.stopPropagation()
             evt.preventDefault()
@@ -469,6 +497,13 @@ export default function FlipbookViewer({
             //       avanti in direzione ltr) → ricaviamo la destinazione.
             // TASTI: corner è null, ma opts.next è già impostato e affidabile.
             start(_evt: Event, opts: any, corner: any) {
+              // Disabilita SOLO gli angoli superiori: nessun giro pagina da tl/tr.
+              // preventDefault è il meccanismo nativo di turn.js per annullare la
+              // piega — gli angoli inferiori (bl/br) e lo swipe restano intatti.
+              if (corner === 'tl' || corner === 'tr') {
+                (_evt as any).preventDefault?.()
+                return
+              }
               try {
                 const cur = opts?.page as number
                 if (!cur) return
