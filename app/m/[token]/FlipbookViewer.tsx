@@ -517,7 +517,7 @@ export default function FlipbookViewer({
   // ═══════════════════════════════════════════════════════════════════════════
   return (
     <div
-      className="fixed inset-0 h-[100dvh] overflow-hidden select-none"
+      className="fixed inset-0 h-[100dvh] overflow-hidden select-none outline-none [-webkit-tap-highlight-color:transparent] [&_*]:[-webkit-tap-highlight-color:transparent]"
       style={{
         background:  theme.pageBg,
         touchAction: 'none',    // disabilita pan, pinch-to-zoom, scroll verticale
