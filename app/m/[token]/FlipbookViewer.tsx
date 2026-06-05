@@ -263,7 +263,21 @@ export default function FlipbookViewer({
       }
       if (cancelled) return
 
-      // Attach click handlers to spans whose text matches a dish name.
+      // ── Hotspot overlay — extended click area for each dish block ────────────
+      //
+      // Instead of clicking only the dish-name text, we build one invisible
+      // full-width <div> per dish that covers the vertical range from the
+      // dish name down to the next dish name (−2 px safety gap).
+      // This lets the user tap anywhere in the dish block: name, description,
+      // allergens, or whitespace between text and price.
+      //
+      // Horizontal: 100% of page width — price column is inside this range,
+      //   which is intentional (tapping the price still opens the modal).
+      // Vertical: name.top → nextName.top − 2 px (no overlap between dishes).
+      //   For the last dish on the page: name.top + max(fontSize × 5, 60 px).
+
+      const hotspots: Array<{ dish: DishData; topPx: number; fontHeight: number }> = []
+
       for (const div of textDivs) {
         const text = div.textContent?.trim() ?? ''
         if (!text) continue
@@ -271,15 +285,37 @@ export default function FlipbookViewer({
           d => d.name.trim().toUpperCase() === text.toUpperCase()
         )
         if (match) {
-          const captured = match
-          div.dataset.dishId = captured.id
-          div.style.pointerEvents = 'auto'
-          div.addEventListener('click', (evt) => {
-            evt.stopPropagation()
-            setActiveDish(captured)
+          div.dataset.dishId = match.id  // keeps CSS gold-highlight on name span
+          hotspots.push({
+            dish:       match,
+            topPx:      parseFloat(div.style.top)      || 0,
+            fontHeight: parseFloat(div.style.fontSize) || 12,
           })
         }
       }
+
+      hotspots.sort((a, b) => a.topPx - b.topPx)
+
+      hotspots.forEach(({ dish, topPx, fontHeight }, i) => {
+        const nextTopPx = i < hotspots.length - 1
+          ? hotspots[i + 1].topPx - 2
+          : topPx + Math.max(fontHeight * 5, 60)
+
+        const overlay = document.createElement('div')
+        overlay.dataset.dishId = dish.id
+        overlay.style.cssText =
+          `position:absolute;left:0;top:${topPx}px;` +
+          `width:100%;height:${nextTopPx - topPx}px;` +
+          `pointer-events:auto;cursor:pointer;z-index:1;border-radius:3px;`
+
+        const captured = dish
+        overlay.addEventListener('click', (evt) => {
+          evt.stopPropagation()
+          setActiveDish(captured)
+        })
+
+        layer.appendChild(overlay)
+      })
 
       pageDiv.style.position = 'relative'
       pageDiv.appendChild(layer)

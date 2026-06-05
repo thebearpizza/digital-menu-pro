@@ -102,7 +102,7 @@ body.menu-locked {
   background: transparent;
 }
 
-/* Span con data-dish-id = nome piatto riconosciuto → interattivo */
+/* Span con data-dish-id = nome piatto riconosciuto → gold-highlight on hover */
 .pdf-text-layer span[data-dish-id] {
   cursor: pointer;
   border-radius: 2px;
@@ -110,6 +110,17 @@ body.menu-locked {
 }
 .pdf-text-layer span[data-dish-id]:hover {
   background: rgba(201, 169, 110, 0.18) !important;
+}
+
+/* Div hotspot overlay — copre l'intero blocco del piatto (nome → prossimo nome).
+   pointer-events:auto è impostato inline; qui solo il feedback visivo. */
+.pdf-text-layer div[data-dish-id] {
+  cursor: pointer;
+  border-radius: 3px;
+  transition: background 0.12s ease;
+}
+.pdf-text-layer div[data-dish-id]:hover {
+  background: rgba(201, 169, 110, 0.10) !important;
 }
 
 /* ─── DishModal — animazioni slide/fade per la navigazione piatti ── */

@@ -150,24 +150,26 @@ export default function DishModal({ activeDish, allDishes, onClose }: Props) {
           ×
         </button>
 
-        {/* Hero image */}
+        {/* Hero image — 16:9 aspect ratio */}
         {dish.image_url && (
-          <div className="shrink-0 w-full overflow-hidden" style={{ height: 200, background: '#1a1a1a' }}>
+          <div className="shrink-0 w-full aspect-video overflow-hidden" style={{ background: '#1a1a1a' }}>
             <img
               src={dish.image_url}
               alt={dish.name}
-              className="w-full h-full object-cover"
+              className="w-full h-full object-cover object-center"
               style={{ opacity: 0.88 }}
               draggable={false}
             />
           </div>
         )}
 
-        {/* Animated content — key forces re-mount → animation re-fires */}
+        {/* Animated content — key forces re-mount → animation re-fires.
+            touch-action:pan-y: browser handles vertical scroll natively;
+            horizontal gestures pass through to the card's swipe handlers. */}
         <div
           key={contentKey}
           className="flex-1 min-h-0 overflow-y-auto overscroll-contain"
-          style={{ ...animStyle, padding: '20px 24px 4px' }}
+          style={{ ...animStyle, padding: '20px 24px 4px', touchAction: 'pan-y' }}
         >
           {/* Category chip */}
           <p
