@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState, useCallback } from 'react'
+import DishModal, { DishData } from './DishModal'
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // ⚙️  MENU CONFIG
@@ -101,6 +102,7 @@ interface Props {
   /** Sovrascrive le categorie di navigazione hardcoded in menuConfig.
    *  Passato da useMenuPDF con i targetPage reali estratti dal PDF generato. */
   categories?: Array<{ label: string; targetPage: number }>
+  dishes?:     DishData[]
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -112,6 +114,7 @@ export default function FlipbookViewer({
   restaurantLogo,
   onBack,
   categories: categoriesProp,
+  dishes,
 }: Props) {
   const bookRef = useRef<HTMLDivElement>(null)
 
@@ -128,6 +131,12 @@ export default function FlipbookViewer({
   // Le categorie vengono ESCLUSIVAMENTE dal menu selezionato tramite useMenuPDF.
   // Nessun fallback hardcoded — ogni menu ha le sue categorie dinamiche.
   const categories = categoriesProp ?? EMPTY_CATEGORIES
+
+  // Ref sempre aggiornato con i piatti correnti — letto dai click listener sul text layer
+  // senza richiedere il re-init del flipbook quando i piatti cambiano.
+  const dishesRef = useRef<DishData[]>(dishes ?? [])
+  useEffect(() => { dishesRef.current = dishes ?? [] }, [dishes])
+  const [activeDish, setActiveDish] = useState<DishData | null>(null)
 
   // Sincronizza activeCatIdx quando currentPage cambia (sfoglio manuale)
   // o quando le categorie cambiano (cambio menu).
@@ -221,6 +230,61 @@ export default function FlipbookViewer({
       }
     }
 
+    // Builds a transparent text layer over pageDiv and wires dish-name spans to setActiveDish.
+    // Called AFTER canvas rendering and BEFORE turn.js init (FASE 2.7).
+    async function renderTextLayer(pageNum: number, logicalScale: number): Promise<void> {
+      if (cancelled) return
+      const pdfPage = pdfPageObjects[pageNum - 1]
+      if (!pdfPage) return
+
+      const pageDiv = el!.children[pageNum - 1] as HTMLElement | null
+      if (!pageDiv || cancelled) return
+
+      const lib = window.pdfjsLib
+      if (!lib?.renderTextLayer) return
+
+      const viewport = pdfPage.getViewport({ scale: logicalScale })
+      const tc       = await pdfPage.getTextContent()
+      if (cancelled) return
+
+      const layer     = document.createElement('div')
+      layer.className = 'pdf-text-layer'
+      layer.style.cssText = `width:${viewport.width}px;height:${viewport.height}px;`
+
+      const textDivs: HTMLElement[] = []
+      try {
+        const task = lib.renderTextLayer({ textContent: tc, container: layer, viewport, textDivs })
+        await (task.promise ?? task)
+      } catch (err: any) {
+        if (err?.name !== 'RenderingCancelledException') {
+          console.warn('[FlipbookViewer] text layer p.' + pageNum + ':', err)
+        }
+        return
+      }
+      if (cancelled) return
+
+      // Attach click handlers to spans whose text matches a dish name.
+      for (const div of textDivs) {
+        const text = div.textContent?.trim() ?? ''
+        if (!text) continue
+        const match = dishesRef.current.find(
+          d => d.name.trim().toUpperCase() === text.toUpperCase()
+        )
+        if (match) {
+          const captured = match
+          div.dataset.dishId = captured.id
+          div.style.pointerEvents = 'auto'
+          div.addEventListener('click', (evt) => {
+            evt.stopPropagation()
+            setActiveDish(captured)
+          })
+        }
+      }
+
+      pageDiv.style.position = 'relative'
+      pageDiv.appendChild(layer)
+    }
+
     ;(async () => {
       try {
         await requireScript('/jquery.min.js')
@@ -277,6 +341,16 @@ export default function FlipbookViewer({
         await Promise.all(
           Array.from({ length: numPages }, (_, i) => renderPageToCanvas(i + 1))
         )
+        if (cancelled) return
+
+        // ── FASE 2.7: text layer interattivo sopra i canvas ──────────────────
+        // Aggiunge span trasparenti con coordinate PDF.js sui piatti riconosciuti.
+        // Eseguito solo se ci sono piatti — dopo i canvas, prima di turn.js.
+        if (dishesRef.current.length > 0) {
+          await Promise.all(
+            Array.from({ length: numPages }, (_, i) => renderTextLayer(i + 1, scale / dpr))
+          )
+        }
         if (cancelled) return
 
         if (!window.jQuery?.fn?.turn) {
@@ -562,6 +636,15 @@ export default function FlipbookViewer({
             Caricamento…
           </span>
         </div>
+      )}
+
+      {/* Dish modal — rendered outside the flipbook DOM to avoid z-index conflicts */}
+      {activeDish && (
+        <DishModal
+          activeDish={activeDish}
+          allDishes={dishesRef.current}
+          onClose={() => setActiveDish(null)}
+        />
       )}
 
     </div>

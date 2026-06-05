@@ -237,6 +237,7 @@ export default function PublicMenuView({
       restaurantLogo={restaurant.logo_url}
       onBack={() => setSelectedMenuId(null)}
       categories={categories.length > 0 ? categories : undefined}
+      dishes={selectedMenu.dishes}
     />
   )
 }

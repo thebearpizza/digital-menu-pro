@@ -1,129 +1,301 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { allergenName } from '@/lib/allergens'
 
-interface Dish {
-  id: string
-  name: string
-  description: string | null
-  price: number | null
-  category: string
-  image_url: string | null
-  allergens: number[]
+// ── Types ──────────────────────────────────────────────────────────────────────
+
+export interface DishData {
+  id:              string
+  name:            string
+  description:     string | null
+  price:           number | null
+  category:        string
+  image_url:       string | null
+  allergens:       number[]
   pairing_dish_id: string | null
-  pairing_label: string | null
+  pairing_label:   string | null
 }
 
 interface Props {
-  item: Dish
-  allDishes: Dish[]
-  onClose: () => void
-  onOpenDish: (dish: Dish) => void
+  activeDish: DishData
+  allDishes:  DishData[]
+  onClose:    () => void
 }
 
-export default function DishModal({ item, allDishes, onClose, onOpenDish }: Props) {
+const ACCENT     = '#c9a96e'
+const FONT_SERIF = "'Cormorant Garamond', 'Georgia', 'Times New Roman', serif"
+const FONT_SANS  = "'DM Sans', 'Inter', system-ui, sans-serif"
+
+// ── Component ──────────────────────────────────────────────────────────────────
+
+export default function DishModal({ activeDish, allDishes, onClose }: Props) {
+  const startIdx = allDishes.findIndex(d => d.id === activeDish.id)
+
+  const [idx,        setIdx]        = useState(startIdx >= 0 ? startIdx : 0)
+  const [contentKey, setContentKey] = useState(0)
+  const [animDir,    setAnimDir]    = useState<'right' | 'left' | 'fade'>('fade')
+
+  const touchStartX = useRef<number | null>(null)
+  const mouseStartX = useRef<number | null>(null)
+
+  const total = allDishes.length
+  const dish  = allDishes[idx] ?? activeDish
+
+  // ── Navigation ─────────────────────────────────────────────────────────────
+
+  function goTo(newIdx: number, dir: 'right' | 'left') {
+    if (newIdx < 0 || newIdx >= total) return
+    setAnimDir(dir)
+    setIdx(newIdx)
+    setContentKey(k => k + 1)
+  }
+
+  // ── Keyboard ───────────────────────────────────────────────────────────────
+
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape')      { onClose(); return }
+      if (e.key === 'ArrowLeft')   goTo(idx - 1, 'left')
+      if (e.key === 'ArrowRight')  goTo(idx + 1, 'right')
+    }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [onClose])
+  }, [idx, total, onClose]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const pairing = item.pairing_dish_id
-    ? allDishes.find(d => d.id === item.pairing_dish_id)
+  // ── Touch swipe ────────────────────────────────────────────────────────────
+
+  function onTouchStart(e: React.TouchEvent) {
+    touchStartX.current = e.touches[0].clientX
+  }
+  function onTouchEnd(e: React.TouchEvent) {
+    if (touchStartX.current === null) return
+    const delta = e.changedTouches[0].clientX - touchStartX.current
+    touchStartX.current = null
+    if      (delta < -50) goTo(idx + 1, 'right')
+    else if (delta >  50) goTo(idx - 1, 'left')
+  }
+
+  // ── Mouse drag ─────────────────────────────────────────────────────────────
+
+  function onMouseDown(e: React.MouseEvent) {
+    mouseStartX.current = e.clientX
+  }
+  function onMouseUp(e: React.MouseEvent) {
+    if (mouseStartX.current === null) return
+    const delta = e.clientX - mouseStartX.current
+    mouseStartX.current = null
+    if (Math.abs(delta) < 10) return
+    if      (delta < -50) goTo(idx + 1, 'right')
+    else if (delta >  50) goTo(idx - 1, 'left')
+  }
+
+  // ── Animation ─────────────────────────────────────────────────────────────
+
+  const animStyle: React.CSSProperties =
+    animDir === 'right' ? { animation: 'dish-slide-from-right 0.22s ease-out both' } :
+    animDir === 'left'  ? { animation: 'dish-slide-from-left  0.22s ease-out both' } :
+                          { animation: 'dish-fade-in          0.18s ease-out both' }
+
+  // ── Pairing ────────────────────────────────────────────────────────────────
+
+  const pairing = dish.pairing_dish_id
+    ? allDishes.find(d => d.id === dish.pairing_dish_id)
     : null
 
+  // ── Render ─────────────────────────────────────────────────────────────────
+
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
-      {/* Backdrop: touch-none prevents any pan of the page behind the modal */}
-      <div className="absolute inset-0 bg-black/60 modal-backdrop touch-none" onClick={onClose} />
+    <div
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center"
+      style={{ fontFamily: FONT_SANS }}
+    >
+      {/* Backdrop */}
+      <div
+        className="absolute inset-0 modal-backdrop touch-none"
+        style={{
+          background:          'rgba(0,0,0,0.78)',
+          backdropFilter:      'blur(6px)',
+          WebkitBackdropFilter:'blur(6px)',
+        } as React.CSSProperties}
+        onClick={onClose}
+      />
 
-      {/* Card: flex column so image and footer are fixed, content scrolls */}
-      <div className="relative bg-white w-full sm:max-w-md sm:shadow-2xl modal-card flex flex-col max-h-[90dvh]">
+      {/* Card */}
+      <div
+        className="relative w-full sm:max-w-md flex flex-col modal-card overflow-hidden"
+        style={{
+          background:   '#111111',
+          border:       `1px solid ${ACCENT}22`,
+          borderRadius: '14px',
+          maxHeight:    '88dvh',
+        }}
+        onTouchStart={onTouchStart}
+        onTouchEnd={onTouchEnd}
+        onMouseDown={onMouseDown}
+        onMouseUp={onMouseUp}
+      >
+        {/* Drag handle */}
+        <div className="flex justify-center shrink-0 pt-3 pb-1">
+          <div style={{ width: 36, height: 3, borderRadius: 2, background: `${ACCENT}50` }} />
+        </div>
 
-        {item.image_url && (
-          <div className="relative h-56 shrink-0 overflow-hidden bg-stone-100">
-            <img src={item.image_url} alt={item.name} className="w-full h-full object-cover" />
-          </div>
-        )}
-
+        {/* Close button */}
         <button
           onClick={onClose}
           aria-label="Chiudi"
-          className="absolute top-3 right-3 z-10 w-7 h-7 flex items-center justify-center bg-black/30 text-white text-xl leading-none hover:bg-black/50 transition-colors"
+          className="absolute top-3 right-4 z-10 text-xl leading-none transition-opacity hover:opacity-60 select-none"
+          style={{ color: '#555555' }}
         >
-          &times;
+          ×
         </button>
 
-        {/* Scrollable body: vertical scroll only, no scroll-chaining, no pan */}
-        <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-6 [touch-action:pan-y]">
+        {/* Hero image */}
+        {dish.image_url && (
+          <div className="shrink-0 w-full overflow-hidden" style={{ height: 200, background: '#1a1a1a' }}>
+            <img
+              src={dish.image_url}
+              alt={dish.name}
+              className="w-full h-full object-cover"
+              style={{ opacity: 0.88 }}
+              draggable={false}
+            />
+          </div>
+        )}
 
-          <div className="text-[10px] uppercase tracking-widest text-stone-400 mb-2">{item.category}</div>
+        {/* Animated content — key forces re-mount → animation re-fires */}
+        <div
+          key={contentKey}
+          className="flex-1 min-h-0 overflow-y-auto overscroll-contain"
+          style={{ ...animStyle, padding: '20px 24px 4px' }}
+        >
+          {/* Category chip */}
+          <p
+            className="uppercase"
+            style={{ color: ACCENT, fontSize: 9, letterSpacing: '0.28em', marginBottom: 10 }}
+          >
+            {dish.category}
+          </p>
 
-          {/* ── Name + description + price ─────────────────────────────────────
-              Grid layout: left column [1fr] holds the dish name AND description;
-              right column [auto] holds the price.
-              This forces the description to wrap at the exact horizontal position
-              where the price starts — never wider than the name column. */}
-          <div className="grid grid-cols-[1fr_auto] items-start gap-x-4 mb-4">
-            <div className="min-w-0">
-              <h2 className="text-xl font-semibold text-stone-900 leading-snug break-words">{item.name}</h2>
-              {item.description && (
-                <p className="text-sm text-stone-600 leading-relaxed mt-2 break-words whitespace-normal">
-                  {item.description}
-                </p>
-              )}
-            </div>
-            {item.price != null && (
-              <span className="text-xl font-semibold text-stone-700 tabular-nums whitespace-nowrap pt-0.5">
-                &euro;&nbsp;{Number(item.price).toFixed(2)}
+          {/* Name + price */}
+          <div className="flex items-start justify-between gap-4 mb-3">
+            <h2
+              style={{
+                fontFamily: FONT_SERIF,
+                fontSize:   'clamp(1.35rem, 5vw, 1.75rem)',
+                color:      '#ede8e0',
+                fontWeight: 400,
+                lineHeight: 1.2,
+              }}
+            >
+              {dish.name}
+            </h2>
+            {dish.price != null && (
+              <span
+                className="shrink-0 tabular-nums"
+                style={{ color: ACCENT, fontSize: '1.1rem', fontWeight: 600, paddingTop: 4 }}
+              >
+                €&nbsp;{Number(dish.price).toFixed(2)}
               </span>
             )}
           </div>
 
-          {item.allergens?.length > 0 && (
-            <div className="mb-4 p-3 bg-amber-50 border border-amber-100">
-              <p className="text-[10px] uppercase tracking-wider text-amber-700 font-semibold mb-1.5">Allergeni</p>
-              <ul className="space-y-0.5">
-                {item.allergens.map(id => (
-                  <li key={id} className="text-xs text-amber-900">
-                    <span className="font-mono">{id}.</span> {allergenName(id)}
-                  </li>
-                ))}
-              </ul>
+          {/* Gold rule */}
+          <div style={{ height: 0.5, background: `${ACCENT}28`, marginBottom: 14 }} />
+
+          {/* Description */}
+          {dish.description && (
+            <p style={{ color: '#a09080', fontSize: '0.875rem', lineHeight: 1.7, marginBottom: 18 }}>
+              {dish.description}
+            </p>
+          )}
+
+          {/* Allergens */}
+          {dish.allergens?.length > 0 && (
+            <div
+              style={{
+                marginBottom: 16,
+                padding:      '10px 14px',
+                background:   '#181208',
+                border:       `1px solid ${ACCENT}20`,
+                borderRadius: 6,
+              }}
+            >
+              <p style={{ color: ACCENT, fontSize: 8, letterSpacing: '0.26em', textTransform: 'uppercase', marginBottom: 6 }}>
+                Allergeni
+              </p>
+              <p style={{ color: '#7a6a4a', fontSize: '0.75rem', lineHeight: 1.6 }}>
+                {dish.allergens.map(id => allergenName(id)).join(' · ')}
+              </p>
             </div>
           )}
 
+          {/* Pairing */}
           {pairing && (
-            <div className="border border-stone-200 p-3">
-              <p className="text-[10px] uppercase tracking-wider text-stone-400 mb-1.5">
-                {item.pairing_label ?? 'Abbinamento consigliato'}
+            <div
+              style={{
+                marginBottom: 16,
+                padding:      '10px 14px',
+                border:       '1px solid #222222',
+                borderRadius: 6,
+              }}
+            >
+              <p style={{ color: '#3e3e3e', fontSize: 8, letterSpacing: '0.26em', textTransform: 'uppercase', marginBottom: 6 }}>
+                {dish.pairing_label ?? 'Abbinamento consigliato'}
               </p>
-              <button
-                type="button"
-                onClick={() => onOpenDish(pairing)}
-                className="text-sm font-medium text-stone-800 hover:text-stone-500 hover:underline transition-colors text-left"
-              >
+              <p style={{ color: '#6a6a6a', fontSize: '0.8125rem' }}>
                 {pairing.name}
                 {pairing.price != null && (
-                  <span className="ml-2 text-stone-500 tabular-nums font-normal">
+                  <span style={{ color: ACCENT, marginLeft: 8 }}>
                     €&nbsp;{Number(pairing.price).toFixed(2)}
                   </span>
                 )}
-              </button>
+              </p>
             </div>
           )}
         </div>
 
-        {/* Footer pinned at the bottom of the card */}
-        <div className="shrink-0 px-6 py-4 border-t border-stone-100">
-          <button
-            onClick={onClose}
-            className="w-full py-2 text-sm font-medium text-stone-600 border border-stone-300 hover:bg-stone-50 transition-colors"
+        {/* Navigation bar */}
+        {total > 1 && (
+          <div
+            className="shrink-0 flex items-center justify-between px-5"
+            style={{ borderTop: '1px solid #1c1c1c', paddingTop: 12, paddingBottom: 20 }}
           >
-            Chiudi
-          </button>
-        </div>
+            <button
+              onClick={() => goTo(idx - 1, 'left')}
+              disabled={idx === 0}
+              className="transition-opacity"
+              style={{
+                color:         idx === 0 ? '#2a2a2a' : '#6a6a6a',
+                fontSize:      11,
+                letterSpacing: '0.18em',
+                textTransform: 'uppercase',
+                fontFamily:    FONT_SANS,
+              }}
+            >
+              ‹ prec.
+            </button>
+            <span
+              style={{ color: '#303030', fontSize: 10, letterSpacing: '0.15em', fontFamily: FONT_SANS }}
+            >
+              {idx + 1} / {total}
+            </span>
+            <button
+              onClick={() => goTo(idx + 1, 'right')}
+              disabled={idx === total - 1}
+              className="transition-opacity"
+              style={{
+                color:         idx === total - 1 ? '#2a2a2a' : '#6a6a6a',
+                fontSize:      11,
+                letterSpacing: '0.18em',
+                textTransform: 'uppercase',
+                fontFamily:    FONT_SANS,
+              }}
+            >
+              succ. ›
+            </button>
+          </div>
+        )}
       </div>
     </div>
   )

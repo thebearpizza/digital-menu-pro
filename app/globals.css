@@ -72,3 +72,57 @@ body.menu-locked {
   background-color: #ffffff !important;
   opacity: 1 !important;
 }
+
+/* ─── PDF Text Layer — layer interattivo per click sui piatti ── */
+/*
+ * La regola .fv-book .turn-page-wrapper div (sopra) darebbe background
+ * bianco anche al text layer, coprendo il canvas. Sovrascriviamo solo qui.
+ */
+.fv-book .pdf-text-layer {
+  background: transparent !important;
+}
+
+.pdf-text-layer {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  user-select: none;
+  line-height: 1;
+}
+
+/* Tutti gli span: invisibili di default */
+.pdf-text-layer span,
+.pdf-text-layer br {
+  color: transparent;
+  position: absolute;
+  white-space: pre;
+  cursor: default;
+  transform-origin: 0% 0%;
+  background: transparent;
+}
+
+/* Span con data-dish-id = nome piatto riconosciuto → interattivo */
+.pdf-text-layer span[data-dish-id] {
+  cursor: pointer;
+  border-radius: 2px;
+  transition: background 0.12s ease;
+}
+.pdf-text-layer span[data-dish-id]:hover {
+  background: rgba(201, 169, 110, 0.18) !important;
+}
+
+/* ─── DishModal — animazioni slide/fade per la navigazione piatti ── */
+@keyframes dish-slide-from-right {
+  from { opacity: 0; transform: translateX(28px); }
+  to   { opacity: 1; transform: translateX(0);    }
+}
+@keyframes dish-slide-from-left {
+  from { opacity: 0; transform: translateX(-28px); }
+  to   { opacity: 1; transform: translateX(0);     }
+}
+@keyframes dish-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
