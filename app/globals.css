@@ -102,6 +102,8 @@ body.menu-locked {
   cursor: default;
   transform-origin: 0% 0%;
   background: transparent;
+  max-height: 2em;          /* ghigliottina: nessuno span può crescere oltre 2 righe */
+  overflow: hidden;
   -webkit-tap-highlight-color: transparent !important;
   -webkit-touch-callout: none !important;
   user-select: none !important;

@@ -550,7 +550,7 @@ export default function FlipbookViewer({
 
         {/* ── A. Header minimale ────────────────────────────────────────────── */}
         <div
-          className="relative z-20 shrink-0 flex items-center justify-between px-4 py-3"
+          className="relative z-[9999] shrink-0 flex items-center justify-between px-4 py-3 pointer-events-auto"
           style={{ background: theme.pageBg }}
         >
           <button
@@ -656,7 +656,7 @@ export default function FlipbookViewer({
         {/* ── C. Barra delle Categorie — visibile solo quando il libro è pronto ── */}
         {pagesReady && (
           <nav
-            className="relative z-20 shrink-0 flex items-stretch overflow-x-auto"
+            className="relative z-[9999] shrink-0 flex items-stretch overflow-x-auto pointer-events-auto"
             style={{
               background:    theme.navBg,
               borderTop:     `1px solid ${theme.textMuted}1a`,
