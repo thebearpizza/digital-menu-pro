@@ -548,33 +548,7 @@ export default function FlipbookViewer({
        * ──────────────────────────────────────────────────────────────────────*/}
       <div className="absolute inset-0 flex flex-col">
 
-        {/* ── A. Header minimale ────────────────────────────────────────────── */}
-        <div
-          className="relative z-[9999] shrink-0 flex items-center justify-between px-4 py-3 mb-4 pointer-events-auto"
-          style={{ background: theme.pageBg, borderBottom: `1px solid ${theme.textMuted}18` }}
-        >
-          <button
-            onClick={onBack}
-            className="text-xs transition-opacity duration-200 hover:opacity-50"
-            style={{ color: theme.textMuted }}
-          >
-            ← Menù
-          </button>
-          <span
-            className="text-xs truncate max-w-[50%] text-center"
-            style={{ color: theme.textMuted }}
-          >
-            {restaurantName ?? ''}
-          </span>
-          <span
-            className="text-xs tabular-nums w-10 text-right"
-            style={{ color: theme.textMuted }}
-          >
-            {totalPages > 0 ? `${currentPage}/${totalPages}` : ''}
-          </span>
-        </div>
-
-        {/* ── B. Book stage — occupa lo spazio rimasto tra header e nav bar ── */}
+        {/* ── A. Book stage — occupa tutto lo spazio fino alla nav bar ── */}
         <div className="flex-1 flex items-center justify-center min-h-0">
           <div
             style={{
@@ -653,7 +627,10 @@ export default function FlipbookViewer({
           </div>
         </div>
 
-        {/* ── C. Barra delle Categorie — visibile solo quando il libro è pronto ── */}
+        {/* ── B. Barra Categorie — sempre visibile quando il libro è pronto.
+             Il tasto ← Menù è il primo elemento (sticky a sinistra) e il
+             contatore pagine è l'ultimo (sticky a destra). Entrambi fanno
+             parte del nav così condividono il medesimo z-[9999] blindato. ── */}
         {pagesReady && (
           <nav
             className="relative z-[9999] shrink-0 flex items-stretch overflow-x-auto pointer-events-auto"
@@ -665,6 +642,20 @@ export default function FlipbookViewer({
             } as React.CSSProperties}
             aria-label="Navigazione categorie menu"
           >
+            {/* Tasto torna — sticky a sinistra, fuori dallo scroll orizzontale */}
+            <button
+              onClick={onBack}
+              className="sticky left-0 shrink-0 px-4 py-3 text-[10px] uppercase tracking-[0.22em] transition-opacity duration-200 hover:opacity-50"
+              style={{
+                color:      theme.textMuted,
+                fontFamily: theme.fontSans,
+                background: theme.navBg,
+                borderRight:`1px solid ${theme.textMuted}1a`,
+              }}
+            >
+              ← Menù
+            </button>
+
             {categories.map((cat, idx) => (
               <button
                 key={cat.label}
@@ -680,6 +671,21 @@ export default function FlipbookViewer({
                 {cat.label}
               </button>
             ))}
+
+            {/* Contatore pagine — sticky a destra, fuori dallo scroll */}
+            {totalPages > 0 && (
+              <span
+                className="sticky right-0 shrink-0 px-4 py-3 text-[10px] tabular-nums self-center ml-auto"
+                style={{
+                  color:       theme.textMuted,
+                  fontFamily:  theme.fontSans,
+                  background:  theme.navBg,
+                  borderLeft: `1px solid ${theme.textMuted}1a`,
+                }}
+              >
+                {currentPage}/{totalPages}
+              </span>
+            )}
           </nav>
         )}
 
