@@ -495,13 +495,11 @@ export default function MenuFlipbook({
         )}
       </div>
 
-      {/* dish modal — preserved intact */}
       {selectedDish && (
         <DishModal
-          item={selectedDish}
+          activeDish={selectedDish}
           allDishes={items}
           onClose={() => setSelectedDish(null)}
-          onOpenDish={dish => setSelectedDish(dish)}
         />
       )}
     </div>

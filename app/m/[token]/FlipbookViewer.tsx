@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState, useCallback } from 'react'
+import DishModal, { DishData } from './DishModal'
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // ⚙️  MENU CONFIG
@@ -67,6 +68,10 @@ function requireScript(src: string): Promise<void> {
 
 declare global { interface Window { $: any; jQuery: any; pdfjsLib: any } }
 
+// Array vuoto con riferimento stabile — usato come fallback di categories per
+// evitare ri-render infiniti nell'effect che dipende da [currentPage, categories].
+const EMPTY_CATEGORIES: Array<{ label: string; targetPage: number }> = []
+
 const PDFJS_SRC    = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js'
 const PDFJS_WORKER = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'
 
@@ -94,6 +99,10 @@ interface Props {
   restaurantLogo?: string | null
   /** Callback "esci dal viewer" (es. torna alla WelcomeView) */
   onBack:          () => void
+  /** Sovrascrive le categorie di navigazione hardcoded in menuConfig.
+   *  Passato da useMenuPDF con i targetPage reali estratti dal PDF generato. */
+  categories?: Array<{ label: string; targetPage: number }>
+  dishes?:     DishData[]
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -104,6 +113,8 @@ export default function FlipbookViewer({
   restaurantName,
   restaurantLogo,
   onBack,
+  categories: categoriesProp,
+  dishes,
 }: Props) {
   const bookRef = useRef<HTMLDivElement>(null)
 
@@ -111,24 +122,32 @@ export default function FlipbookViewer({
   const [loadPhase,     setLoadPhase]    = useState<'loading' | 'ready' | 'error'>('loading')
   const [currentPage,   setCurrentPage]  = useState(1)
   const [totalPages,    setTotalPages]   = useState(0)
-  // Landing overlay
-  const [showLanding,   setShowLanding]  = useState(true)
-  const [landingFading, setLandingFading]= useState(false)
-  // FIX 3: categoria attiva come state diretto — aggiornata immediatamente al click
+  // categoria attiva come state diretto — aggiornata immediatamente al click
   const [activeCatIdx,  setActiveCatIdx] = useState(0)
-  // Blocco hard: diventa true SOLO dopo Promise.all + turn.js init + Phase 3.5
+  // Blocco hard: diventa true SOLO dopo Promise.all + turn.js init
   const [pagesReady,    setPagesReady]   = useState(false)
 
-  const { theme, categories, flipbook } = menuConfig
+  const { theme, flipbook } = menuConfig
+  // Le categorie vengono ESCLUSIVAMENTE dal menu selezionato tramite useMenuPDF.
+  // Nessun fallback hardcoded — ogni menu ha le sue categorie dinamiche.
+  const categories = categoriesProp ?? EMPTY_CATEGORIES
 
-  // FIX 3: sincronizza activeCatIdx quando currentPage cambia (sfoglio manuale)
+  // Ref sempre aggiornato con i piatti correnti — letto dai click listener sul text layer
+  // senza richiedere il re-init del flipbook quando i piatti cambiano.
+  const dishesRef = useRef<DishData[]>(dishes ?? [])
+  useEffect(() => { dishesRef.current = dishes ?? [] }, [dishes])
+  const [activeDish, setActiveDish] = useState<DishData | null>(null)
+
+  // Sincronizza activeCatIdx quando currentPage cambia (sfoglio manuale)
+  // o quando le categorie cambiano (cambio menu).
   useEffect(() => {
+    if (!categories.length) return
     let idx = 0
     for (let i = 0; i < categories.length; i++) {
       if (currentPage >= categories[i].targetPage) idx = i
     }
     setActiveCatIdx(idx)
-  }, [currentPage]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [currentPage, categories])
 
   // ── Scroll-lock (disabilita scroll e overscroll su tutto il documento) ────────
   useEffect(() => {
@@ -153,22 +172,12 @@ export default function FlipbookViewer({
   }, [])
 
   // ── PDF.js + turn.js init ─────────────────────────────────────────────────────
-  // Carica in background mentre la landing è visibile.
-  //
-  // CAUSA RADICE DEFINITIVA: turn.js riparenta i div delle pagine non solo
-  // all'init, ma AD OGNI FLIP (aggiunge wrapper .turn-page dinamici per
-  // l'animazione). Il canvas viene azzerato dal browser ad ogni spostamento
-  // nel DOM — il restore nel 'turning' event arriva troppo presto, prima
-  // che turn.js completi il reparenting per l'animazione corrente.
-  //
-  // SOLUZIONE: usare <img> invece di <canvas> come elemento di visualizzazione.
-  // Un <img> NON perde il suo src/contenuto quando viene spostato nel DOM.
-  // La pipeline diventa:
-  //   FASE 1 — carica oggetti pagina PDF in memoria
-  //   FASE 2 — crea div+img placeholder (src vuoto = sfondo bianco)
-  //   FASE 2.5 — render offscreen (canvas mai nel DOM) → PNG data URL → img.src
-  //              + attende img.onload per garantire decode prima di turn.js
-  //   FASE 3 — init turn.js: sposta liberamente i div, le img restano intatte
+  // Architettura: Static Pre-rendering & Hand-off
+  //   FASE 1   — carica oggetti pagina PDF in memoria
+  //   FASE 2   — crea div+canvas nel DOM (attr width/height fissi, mai resettati)
+  //   FASE 2.5 — render tutte le pagine in parallelo su canvas con scala dpr-aware;
+  //              data URL pre-computata una volta per il trick "revealed area"
+  //   FASE 3   — init turn.js: canvas già dipinti, turn.js scala via CSS transform
   useEffect(() => {
     if (!dims) return
     const el = bookRef.current
@@ -179,26 +188,28 @@ export default function FlipbookViewer({
     setPagesReady(false)
 
     const pdfPageObjects: any[] = []
-    const renderTasks = new Map<number, { cancel(): void }>()
+    const renderTasks  = new Map<number, { cancel(): void }>()
+    const pageDataUrls = new Map<number, string>()
+
+    // devicePixelRatio: buffer fisicamente grande → testo nitido su retina.
+    // Cappato a 3 per evitare allocazioni eccessive su display ultra-HiDPI.
+    const dpr = Math.min(window.devicePixelRatio || 1, 3)
     let scale = 1
     let cw = 0
     let ch = 0
 
-    // Render una pagina PDF su un canvas offscreen (mai nel DOM),
-    // converte in PNG data URL e lo assegna all'<img> corrispondente.
-    // L'img non viene mai azzerata da turn.js — nessun restore necessario.
-    async function renderPageToImg(pageNum: number): Promise<void> {
+    async function renderPageToCanvas(pageNum: number): Promise<void> {
       if (cancelled) return
       const pdfPage = pdfPageObjects[pageNum - 1]
       if (!pdfPage) return
 
       try { renderTasks.get(pageNum)?.cancel() } catch (_) {}
 
-      const viewport  = pdfPage.getViewport({ scale })
-      const offscreen = document.createElement('canvas')
-      offscreen.width  = cw
-      offscreen.height = ch
-      const ctx = offscreen.getContext('2d')!
+      const viewport = pdfPage.getViewport({ scale })
+      const canvas = el!.querySelector(`canvas[data-page="${pageNum}"]`) as HTMLCanvasElement | null
+      if (!canvas || cancelled) return
+
+      const ctx = canvas.getContext('2d')!
       ctx.fillStyle = flipbook.pageBackground
       ctx.fillRect(0, 0, cw, ch)
 
@@ -207,18 +218,9 @@ export default function FlipbookViewer({
       try {
         await task.promise
         if (cancelled) return
-
-        const dataURL = offscreen.toDataURL('image/png')
-        const img = el!.querySelector(`img[data-page="${pageNum}"]`) as HTMLImageElement | null
-        if (!img || cancelled) return
-
-        await new Promise<void>((resolve) => {
-          img.onload  = () => resolve()
-          img.onerror = () => resolve()
-          img.src = dataURL
-          // Se il browser ha già decodificato (data URL sincrono su alcuni engine)
-          if (img.complete && img.naturalWidth > 0) resolve()
-        })
+        // Pre-computa data URL per il background "revealed area" di turn.js.
+        // Fatto qui una volta — mai chiamato di nuovo durante la navigazione.
+        pageDataUrls.set(pageNum, canvas.toDataURL('image/png'))
       } catch (err: any) {
         if (err?.name !== 'RenderingCancelledException') {
           console.warn('[FlipbookViewer] render p.' + pageNum + ':', err)
@@ -226,6 +228,61 @@ export default function FlipbookViewer({
       } finally {
         renderTasks.delete(pageNum)
       }
+    }
+
+    // Builds a transparent text layer over pageDiv and wires dish-name spans to setActiveDish.
+    // Called AFTER canvas rendering and BEFORE turn.js init (FASE 2.7).
+    async function renderTextLayer(pageNum: number, logicalScale: number): Promise<void> {
+      if (cancelled) return
+      const pdfPage = pdfPageObjects[pageNum - 1]
+      if (!pdfPage) return
+
+      const pageDiv = el!.children[pageNum - 1] as HTMLElement | null
+      if (!pageDiv || cancelled) return
+
+      const lib = window.pdfjsLib
+      if (!lib?.renderTextLayer) return
+
+      const viewport = pdfPage.getViewport({ scale: logicalScale })
+      const tc       = await pdfPage.getTextContent()
+      if (cancelled) return
+
+      const layer     = document.createElement('div')
+      layer.className = 'pdf-text-layer'
+      layer.style.cssText = `width:${viewport.width}px;height:${viewport.height}px;`
+
+      const textDivs: HTMLElement[] = []
+      try {
+        const task = lib.renderTextLayer({ textContent: tc, container: layer, viewport, textDivs })
+        await (task.promise ?? task)
+      } catch (err: any) {
+        if (err?.name !== 'RenderingCancelledException') {
+          console.warn('[FlipbookViewer] text layer p.' + pageNum + ':', err)
+        }
+        return
+      }
+      if (cancelled) return
+
+      // Attach click handlers to spans whose text matches a dish name.
+      for (const div of textDivs) {
+        const text = div.textContent?.trim() ?? ''
+        if (!text) continue
+        const match = dishesRef.current.find(
+          d => d.name.trim().toUpperCase() === text.toUpperCase()
+        )
+        if (match) {
+          const captured = match
+          div.dataset.dishId = captured.id
+          div.style.pointerEvents = 'auto'
+          div.addEventListener('click', (evt) => {
+            evt.stopPropagation()
+            setActiveDish(captured)
+          })
+        }
+      }
+
+      pageDiv.style.position = 'relative'
+      pageDiv.appendChild(layer)
     }
 
     ;(async () => {
@@ -251,12 +308,15 @@ export default function FlipbookViewer({
         }
 
         const naturalVP = pdfPageObjects[0].getViewport({ scale: 1 })
-        scale = Math.min(dims.w / naturalVP.width, dims.h / naturalVP.height)
+        scale = Math.min(dims.w / naturalVP.width, dims.h / naturalVP.height) * dpr
         const vp0 = pdfPageObjects[0].getViewport({ scale })
         cw = Math.round(vp0.width)
         ch = Math.round(vp0.height)
 
-        // ── FASE 2: div + <img> placeholder (src vuoto = sfondo bianco) ─────
+        // ── FASE 2: div + canvas nel DOM ─────────────────────────────────────
+        // canvas.width / canvas.height = dimensioni pixel FISSE (mai cambiate).
+        // canvas CSS width:100%;height:100% → turn.js scala via transform CSS,
+        // senza mai toccare gli attributi → il context 2D non viene mai resettato.
         el.innerHTML = ''
         for (let i = 1; i <= numPages; i++) {
           const pageDiv = document.createElement('div')
@@ -265,26 +325,32 @@ export default function FlipbookViewer({
             `background:${flipbook.pageBackground};` +
             `backface-visibility:hidden;-webkit-backface-visibility:hidden;`
 
-          const img = document.createElement('img')
-          img.width        = cw
-          img.height       = ch
-          img.dataset.page = String(i)
-          img.style.cssText =
-            `display:block;` +
-            `background-color:${flipbook.pageBackground};`
+          const canvas = document.createElement('canvas')
+          canvas.width        = cw
+          canvas.height       = ch
+          canvas.dataset.page = String(i)
+          canvas.style.cssText = `display:block;width:100%;height:100%;`
 
-          pageDiv.appendChild(img)
+          pageDiv.appendChild(canvas)
           el.appendChild(pageDiv)
         }
         if (cancelled) return
 
-        // ── FASE 2.5: render → PNG → img.src (attende decode) ───────────────
-        // Promise.all parallelizza i render PDF.js; ogni renderPageToImg
-        // attende img.onload prima di procedere → turn.js inizia SOLO quando
-        // tutte le img sono già decodificate e pronte nel browser.
+        // ── FASE 2.5: render tutte le pagine in parallelo ────────────────────
+        // Ogni canvas viene dipinto una volta sola e non viene mai più toccato.
         await Promise.all(
-          Array.from({ length: numPages }, (_, i) => renderPageToImg(i + 1))
+          Array.from({ length: numPages }, (_, i) => renderPageToCanvas(i + 1))
         )
+        if (cancelled) return
+
+        // ── FASE 2.7: text layer interattivo sopra i canvas ──────────────────
+        // Aggiunge span trasparenti con coordinate PDF.js sui piatti riconosciuti.
+        // Eseguito solo se ci sono piatti — dopo i canvas, prima di turn.js.
+        if (dishesRef.current.length > 0) {
+          await Promise.all(
+            Array.from({ length: numPages }, (_, i) => renderTextLayer(i + 1, scale / dpr))
+          )
+        }
         if (cancelled) return
 
         if (!window.jQuery?.fn?.turn) {
@@ -292,27 +358,42 @@ export default function FlipbookViewer({
         }
 
         // ── FASE 3: init turn.js ─────────────────────────────────────────────
-        // Turn.js riorganizza il DOM liberamente: le <img> sopravvivono a
-        // qualsiasi spostamento (a differenza dei <canvas>). Nessun restore.
+        // I canvas sono già fisicamente dipinti nel DOM prima che turn.js li
+        // avvolga nei suoi wrapper. Durante lo swipe, turn.js applica solo
+        // CSS transform ai wrapper — il buffer del canvas non viene mai toccato.
         //
-        // NOTA p-temporal: in display:'single', turn.js crea un div vuoto
-        // (.p-temporal) usato come sfondo della piega di animazione. Senza
-        // intervento, questo div è bianco → pagina di destinazione apparente
-        // bianca durante il flip. Fix: iniettare il contenuto della pagina
-        // di destinazione come background-image prima di ogni animazione.
+        // Trick "revealed area": in display:'single' la pagina che si piega
+        // (currentPage) sta SOPRA (z alto) e ha sfondo bianco opaco (CSS
+        // .fv-book > div), che copre la pagina di destinazione sottostante.
+        // Dipingendo pageWrap[currentPage].backgroundImage con il contenuto
+        // della destinazione, la zona "scoperta" dalla piega lo mostra subito.
+        //
+        // TIMING CRITICO: il paint DEVE avvenire nell'evento `start` (inizio
+        // piega), NON in `turning`. Per il DRAG, `turning` scatta solo al
+        // rilascio → durante il trascinamento si vedrebbe bianco. `start`
+        // scatta all'inizio sia per drag che per navigazione a tasti.
 
-        // Inietta il contenuto di `pageNum` nel p-temporal come background.
-        // Chiamata PRIMA che _moveFoldingPage sposti p-temporal in fpage,
-        // così l'animazione mostra subito il contenuto corretto.
-        const stampPTemporal = (pageNum: number): void => {
-          const pTemporal = el!.querySelector('.p-temporal') as HTMLElement | null
-          if (!pTemporal) return
-          const src = (el!.querySelector(`img[data-page="${pageNum}"]`) as HTMLImageElement | null)?.src
-          if (src) {
-            pTemporal.style.backgroundImage    = `url("${src}")`
-            pTemporal.style.backgroundSize     = '100% 100%'
-            pTemporal.style.backgroundRepeat   = 'no-repeat'
-            pTemporal.style.backgroundPosition = '0 0'
+        // Dipinge la pagina `dest` sotto la pagina che si piega (`cur`).
+        const paintReveal = (cur: number, dest: number): void => {
+          const data = window.$(el!).turn('data') as any
+          const wrap = data?.pageWrap?.[cur]
+          const src  = pageDataUrls.get(dest)
+          if (wrap && src) {
+            window.$(wrap).css({
+              backgroundImage:    `url("${src}")`,
+              backgroundSize:     '100% 100%',
+              backgroundRepeat:   'no-repeat',
+              backgroundPosition: '0 0',
+            })
+          }
+        }
+        // Rimuove gli sfondi di reveal da tutti i pageWrap a piega conclusa.
+        const clearReveal = (): void => {
+          const data = window.$(el!).turn('data') as any
+          if (data?.pageWrap) {
+            Object.values(data.pageWrap).forEach((wrap: any) => {
+              window.$(wrap).css({ backgroundImage: '' })
+            })
           }
         }
 
@@ -326,28 +407,37 @@ export default function FlipbookViewer({
           acceleration: true,
           elevation:    flipbook.elevation,
           when: {
-            // `turning` si attiva PRIMA che turn.js sposti p-temporal in fpage
-            // (per navigazione programmatica/tasto). Aggiorna il contenuto qui.
-            turning(_evt: Event, page: number) {
-              stampPTemporal(page)
+            // `start(evt, opts, corner)` — opts.page = pagina che si piega.
+            // DRAG: turn.js passa l'angolo ('bl'/'tl' = indietro, 'br'/'tr' =
+            //       avanti in direzione ltr) → ricaviamo la destinazione.
+            // TASTI: corner è null, ma opts.next è già impostato e affidabile.
+            start(_evt: Event, opts: any, corner: any) {
+              try {
+                const cur = opts?.page as number
+                if (!cur) return
+                let dest: number
+                if (typeof corner === 'string' &&
+                    (corner.charAt(1) === 'l' || corner.charAt(1) === 'r')) {
+                  dest = corner.charAt(1) === 'l' ? cur - 1 : cur + 1
+                } else if (typeof opts?.next === 'number') {
+                  dest = opts.next
+                } else {
+                  return
+                }
+                paintReveal(cur, dest)
+              } catch (_) {}
             },
             turned(_evt: Event, page: number) {
               setCurrentPage(page)
-              // Pre-warm per il prossimo flip (tipicamente in avanti):
-              // così il drag mostra già il contenuto corretto fin dall'inizio.
-              stampPTemporal(page + 1)
+              try { clearReveal() } catch (_) {}
             },
           },
         })
-
-        // Pre-warm iniziale: pagina 2 è la destinazione più probabile dalla 1.
-        stampPTemporal(2)
 
         setCurrentPage(1)
         setTotalPages(numPages)
         setPagesReady(true)
         setLoadPhase('ready')
-        console.log('[FlipbookViewer] pronto —', numPages, 'pagine', dims)
       } catch (err) {
         console.error('[FlipbookViewer] init fallito:', err)
         if (!cancelled) setLoadPhase('error')
@@ -364,49 +454,6 @@ export default function FlipbookViewer({
 
   // ── Callbacks ────────────────────────────────────────────────────────────────
 
-  /** Attiva il flipbook: fade-out landing + reset alla copertina (safety net) */
-  const enterFlipbook = useCallback(() => {
-    setLandingFading(true)
-    // Reset alla pagina 1 mentre la landing copre il libro (nessun flash visibile).
-    // Necessario per il caso in cui l'utente ritorni dopo aver sfogliato.
-    const el = bookRef.current
-    if (el && window.$?.fn?.turn) {
-      try {
-        window.$(el).turn('stop')
-        window.$(el).turn('page', 1)
-        setCurrentPage(1)
-        setActiveCatIdx(0)
-      } catch (_) {}
-    }
-    setTimeout(() => setShowLanding(false), flipbook.landingFadeDuration)
-  }, [flipbook.landingFadeDuration])
-
-  /**
-   * FIX 2 — "← torna": ritorna alla landing con fade-in animato.
-   * Usa rAF doppio per assicurarsi che il div sia nel DOM prima di triggerare
-   * la transizione CSS (altrimenti l'opacity parte già a 1, niente animazione).
-   *
-   * RESET STATO: turn.js conserva l'ultima pagina visitata nella sua istanza
-   * jQuery. Riportiamo il libro alla pagina 1 mentre la landing lo copre, così
-   * al rientro l'utente trova sempre la copertina (nessuna memoria residua).
-   */
-  const goToLanding = useCallback(() => {
-    setLandingFading(true)   // opacity: 0 — landing parte invisibile
-    setShowLanding(true)     // monta il div
-    requestAnimationFrame(() =>
-      requestAnimationFrame(() => setLandingFading(false)) // trigger fade-in
-    )
-    // Reset del flipbook alla copertina, nascosto dietro la landing.
-    const el = bookRef.current
-    if (el && window.$?.fn?.turn) {
-      try {
-        window.$(el).turn('stop')      // interrompe eventuali animazioni in corso
-        window.$(el).turn('page', 1)   // torna alla pagina 1
-        setCurrentPage(1)
-        setActiveCatIdx(0)
-      } catch (_) {}
-    }
-  }, [])
 
   /**
    * FIX 3 — Salta a una categoria: aggiorna activeCatIdx IMMEDIATAMENTE (visual
@@ -447,9 +494,8 @@ export default function FlipbookViewer({
           className="shrink-0 flex items-center justify-between px-4 py-3"
           style={{ background: theme.pageBg }}
         >
-          {/* FIX 2: torna alla landing con fade-in, non esce dal viewer */}
           <button
-            onClick={goToLanding}
+            onClick={onBack}
             className="text-xs transition-opacity duration-200 hover:opacity-50"
             style={{ color: theme.textMuted }}
           >
@@ -518,9 +564,8 @@ export default function FlipbookViewer({
             )}
 
             {/* ── Hint angolari — z-50 per stare sopra il libro, pointer-events-none
-                 perché i click/swipe devono raggiungere gli angoli nativi di turn.js.
-                 Nascosti sulla landing (showLanding) e finché le pagine non sono pronte. */}
-            {!showLanding && pagesReady && (
+                 perché i click/swipe devono raggiungere gli angoli nativi di turn.js. */}
+            {pagesReady && (
               <>
                 <span
                   className="pointer-events-none absolute bottom-3 left-2 z-50 text-[10px] uppercase tracking-[0.2em] select-none"
@@ -549,132 +594,57 @@ export default function FlipbookViewer({
           </div>
         </div>
 
-        {/* ── C. Barra delle Categorie — sticky in fondo ────────────────────── */}
-        <nav
-          className="shrink-0 flex items-stretch overflow-x-auto"
-          style={{
-            background:    theme.navBg,
-            borderTop:     `1px solid ${theme.textMuted}1a`,
-            scrollbarWidth:'none',
-            WebkitOverflowScrolling: 'touch',
-          } as React.CSSProperties}
-          aria-label="Navigazione categorie menu"
-        >
-          {categories.map((cat, idx) => (
-            <button
-              key={cat.label}
-              onClick={() => handleCategoryClick(cat.targetPage, idx)}
-              className="shrink-0 px-5 py-3 text-[10px] uppercase tracking-[0.22em] transition-all duration-200"
-              style={{
-                color:        idx === activeCatIdx ? theme.navActive : theme.navInactive,
-                borderBottom: `2px solid ${idx === activeCatIdx ? theme.navActive : 'transparent'}`,
-                fontFamily:   theme.fontSans,
-                background:   'transparent',
-              }}
-            >
-              {cat.label}
-            </button>
-          ))}
-        </nav>
+        {/* ── C. Barra delle Categorie — visibile solo quando il libro è pronto ── */}
+        {pagesReady && (
+          <nav
+            className="shrink-0 flex items-stretch overflow-x-auto"
+            style={{
+              background:    theme.navBg,
+              borderTop:     `1px solid ${theme.textMuted}1a`,
+              scrollbarWidth:'none',
+              WebkitOverflowScrolling: 'touch',
+            } as React.CSSProperties}
+            aria-label="Navigazione categorie menu"
+          >
+            {categories.map((cat, idx) => (
+              <button
+                key={cat.label}
+                onClick={() => handleCategoryClick(cat.targetPage, idx)}
+                className="shrink-0 px-5 py-3 text-[10px] uppercase tracking-[0.22em] transition-all duration-200"
+                style={{
+                  color:        idx === activeCatIdx ? theme.navActive : theme.navInactive,
+                  borderBottom: `2px solid ${idx === activeCatIdx ? theme.navActive : 'transparent'}`,
+                  fontFamily:   theme.fontSans,
+                  background:   'transparent',
+                }}
+              >
+                {cat.label}
+              </button>
+            ))}
+          </nav>
+        )}
 
       </div>
 
-      {/* ──────────────────────────────────────────────────────────────────────
-       *  LANDING PAGE OVERLAY
-       *  Flotta sopra il flipbook (z-20). Svanisce e si smonta al click CTA.
-       * ──────────────────────────────────────────────────────────────────────*/}
-      {showLanding && (
+      {/* Schermo scuro a tutto schermo durante caricamento — impedisce flash bianchi */}
+      {!pagesReady && (
         <div
-          className="absolute inset-0 flex flex-col items-center justify-center z-20"
-          style={{
-            background:    theme.landingBg,
-            opacity:       landingFading ? 0 : 1,
-            // FIX 1: transizione lenta e raffinata — valore da menuConfig.flipbook.landingFadeDuration
-            transition:    `opacity ${flipbook.landingFadeDuration}ms cubic-bezier(0.4, 0, 0.2, 1)`,
-            pointerEvents: landingFading ? 'none' : 'auto',
-          }}
+          className="absolute inset-0 z-10 flex items-center justify-center"
+          style={{ background: '#0c0c0c' }}
         >
-          {/* Filo decorativo superiore */}
-          <div
-            className="absolute top-0 inset-x-0 h-px"
-            style={{
-              background: `linear-gradient(90deg, transparent, ${theme.accent}55, transparent)`,
-            }}
-          />
-
-          {/* ── Contenuto centrale ──────────────────────────────────────────── */}
-          <div className="flex flex-col items-center text-center px-10 max-w-xs">
-
-            {restaurantLogo ? (
-              <img
-                src={restaurantLogo}
-                alt={restaurantName}
-                className="h-14 mb-10 object-contain"
-                style={{ opacity: 0.88 }}
-              />
-            ) : (
-              <>
-                <div
-                  className="w-10 h-px mb-7"
-                  style={{ background: theme.accent }}
-                />
-                <h1
-                  className="font-light uppercase leading-none"
-                  style={{
-                    color:         theme.textPrimary,
-                    fontFamily:    theme.fontSerif,
-                    fontSize:      'clamp(1.6rem, 5vw, 2.4rem)',
-                    letterSpacing: '0.22em',
-                  }}
-                >
-                  {restaurantName ?? 'Menu'}
-                </h1>
-                <div
-                  className="w-10 h-px mt-7"
-                  style={{ background: theme.accent }}
-                />
-              </>
-            )}
-
-            {/* ── Call to Action ───────────────────────────────────────────── */}
-            <button
-              onClick={enterFlipbook}
-              className="group relative mt-10 px-10 py-3 overflow-hidden"
-              style={{
-                color:      theme.textPrimary,
-                border:     `1px solid ${theme.accent}50`,
-                fontFamily: theme.fontSans,
-                fontSize:   '0.625rem',        // 10px
-                letterSpacing: '0.28em',
-                textTransform: 'uppercase',
-              }}
-            >
-              {/* hover shimmer */}
-              <span
-                className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
-                style={{ background: `${theme.accent}14` }}
-              />
-              <span className="relative">Sfoglia il Menu</span>
-            </button>
-
-          </div>
-
-          {/* Watermark */}
-          <p
-            className="absolute bottom-6 text-[8px] uppercase tracking-[0.35em]"
-            style={{ color: theme.textMuted }}
-          >
-            menu digitale
-          </p>
-
-          {/* Filo decorativo inferiore */}
-          <div
-            className="absolute bottom-0 inset-x-0 h-px"
-            style={{
-              background: `linear-gradient(90deg, transparent, ${theme.accent}55, transparent)`,
-            }}
-          />
+          <span className="text-xs" style={{ color: theme.textMuted }}>
+            Caricamento…
+          </span>
         </div>
+      )}
+
+      {/* Dish modal — rendered outside the flipbook DOM to avoid z-index conflicts */}
+      {activeDish && (
+        <DishModal
+          activeDish={activeDish}
+          allDishes={dishesRef.current}
+          onClose={() => setActiveDish(null)}
+        />
       )}
 
     </div>
