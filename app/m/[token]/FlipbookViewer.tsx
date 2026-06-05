@@ -124,6 +124,14 @@ export default function FlipbookViewer({
   const [totalPages,    setTotalPages]   = useState(0)
   // categoria attiva come state diretto — aggiornata immediatamente al click
   const [activeCatIdx,  setActiveCatIdx] = useState(0)
+  const catNavRef  = useRef<HTMLElement>(null)
+  const catBtnRefs = useRef<(HTMLButtonElement | null)[]>([])
+
+  // Auto-scroll: porta il tab attivo al centro della barra quando cambia categoria
+  useEffect(() => {
+    const btn = catBtnRefs.current[activeCatIdx]
+    if (btn) btn.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' })
+  }, [activeCatIdx])
   // Blocco hard: diventa true SOLO dopo Promise.all + turn.js init
   const [pagesReady,    setPagesReady]   = useState(false)
 
@@ -668,6 +676,7 @@ export default function FlipbookViewer({
              parte del nav così condividono il medesimo z-[9999] blindato. ── */}
         {pagesReady && (
           <nav
+            ref={catNavRef}
             className="relative z-[9999] shrink-0 flex items-stretch overflow-x-auto pointer-events-auto"
             style={{
               background:    theme.navBg,
@@ -694,6 +703,7 @@ export default function FlipbookViewer({
             {categories.map((cat, idx) => (
               <button
                 key={cat.label}
+                ref={el => { catBtnRefs.current[idx] = el }}
                 onClick={() => handleCategoryClick(cat.targetPage, idx)}
                 className="shrink-0 px-5 py-3 text-[10px] uppercase tracking-[0.22em] transition-all duration-200"
                 style={{
