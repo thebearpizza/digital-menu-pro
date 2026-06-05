@@ -165,10 +165,11 @@ export default function DishModal({ activeDish, allDishes, onClose }: Props) {
 
         {/* Animated content — key forces re-mount → animation re-fires.
             touch-action:pan-y: browser handles vertical scroll natively;
-            horizontal gestures pass through to the card's swipe handlers. */}
+            horizontal gestures pass through to the card's swipe handlers.
+            Scrollbar completely hidden on all engines. */}
         <div
           key={contentKey}
-          className="flex-1 min-h-0 overflow-y-auto overscroll-contain"
+          className="flex-1 min-h-0 overflow-y-auto overscroll-contain [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]"
           style={{ ...animStyle, padding: '20px 24px 4px', touchAction: 'pan-y' }}
         >
           {/* Category chip */}
@@ -205,9 +206,9 @@ export default function DishModal({ activeDish, allDishes, onClose }: Props) {
           {/* Gold rule */}
           <div style={{ height: 0.5, background: `${ACCENT}28`, marginBottom: 14 }} />
 
-          {/* Description */}
+          {/* Description — pre-wrap preserves \n line-breaks entered in the admin */}
           {dish.description && (
-            <p style={{ color: '#a09080', fontSize: '0.875rem', lineHeight: 1.7, marginBottom: 18 }}>
+            <p style={{ color: '#a09080', fontSize: '0.875rem', lineHeight: 1.7, marginBottom: 18, whiteSpace: 'pre-wrap' }}>
               {dish.description}
             </p>
           )}

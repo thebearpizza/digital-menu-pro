@@ -263,20 +263,22 @@ export default function FlipbookViewer({
       }
       if (cancelled) return
 
-      // ── Hotspot overlay — extended click area for each dish block ────────────
+      // ── Chirurgical hotspot — two-pass, zero vertical bleed ─────────────────
       //
-      // Instead of clicking only the dish-name text, we build one invisible
-      // full-width <div> per dish that covers the vertical range from the
-      // dish name down to the next dish name (−2 px safety gap).
-      // This lets the user tap anywhere in the dish block: name, description,
-      // allergens, or whitespace between text and price.
+      // Pass 1: identify dish-name spans by exact text match → build a sorted
+      //   list of (dish, topPx) anchors from PDF.js's style.top values.
       //
-      // Horizontal: 100% of page width — price column is inside this range,
-      //   which is intentional (tapping the price still opens the modal).
-      // Vertical: name.top → nextName.top − 2 px (no overlap between dishes).
-      //   For the last dish on the page: name.top + max(fontSize × 5, 60 px).
+      // Pass 2: for EVERY span whose style.top falls inside a dish's vertical
+      //   range [dishName.top, nextDishName.top), extend it to full page width
+      //   (width:100%, transform:none) and attach a click handler.
+      //   Height is NEVER changed — it stays at PDF.js's exact font-size,
+      //   so no vertical bleed onto lines of other dishes.
+      //
+      // Footer exclusion: the bottom 10% of the page (restaurant name +
+      //   page number text items) is capped out of the last dish's range.
 
-      const hotspots: Array<{ dish: DishData; topPx: number; fontHeight: number }> = []
+      type DishAnchor = { dish: DishData; topPx: number }
+      const anchors: DishAnchor[] = []
 
       for (const div of textDivs) {
         const text = div.textContent?.trim() ?? ''
@@ -285,37 +287,42 @@ export default function FlipbookViewer({
           d => d.name.trim().toUpperCase() === text.toUpperCase()
         )
         if (match) {
-          div.dataset.dishId = match.id  // keeps CSS gold-highlight on name span
-          hotspots.push({
-            dish:       match,
-            topPx:      parseFloat(div.style.top)      || 0,
-            fontHeight: parseFloat(div.style.fontSize) || 12,
-          })
+          div.dataset.dishId = match.id  // CSS gold-highlight on name span
+          anchors.push({ dish: match, topPx: parseFloat(div.style.top) || 0 })
         }
       }
 
-      hotspots.sort((a, b) => a.topPx - b.topPx)
+      if (anchors.length > 0) {
+        anchors.sort((a, b) => a.topPx - b.topPx)
 
-      hotspots.forEach(({ dish, topPx, fontHeight }, i) => {
-        const nextTopPx = i < hotspots.length - 1
-          ? hotspots[i + 1].topPx - 2
-          : topPx + Math.max(fontHeight * 5, 60)
+        const footerCutoff = viewport.height * 0.90  // exclude bottom 10%
 
-        const overlay = document.createElement('div')
-        overlay.dataset.dishId = dish.id
-        overlay.style.cssText =
-          `position:absolute;left:0;top:${topPx}px;` +
-          `width:100%;height:${nextTopPx - topPx}px;` +
-          `pointer-events:auto;cursor:pointer;z-index:1;border-radius:3px;`
+        const ranges = anchors.map((anchor, i) => ({
+          dish:   anchor.dish,
+          minTop: anchor.topPx,
+          maxTop: i < anchors.length - 1
+            ? anchors[i + 1].topPx   // exclusive: next dish name starts here
+            : footerCutoff,           // last dish: up to footer safe-zone
+        }))
 
-        const captured = dish
-        overlay.addEventListener('click', (evt) => {
-          evt.stopPropagation()
-          setActiveDish(captured)
-        })
+        // Pass 2: extend every span inside a dish range.
+        for (const span of textDivs) {
+          const spanTop = parseFloat(span.style.top) || 0
+          const range   = ranges.find(r => spanTop >= r.minTop && spanTop < r.maxTop)
+          if (!range) continue
 
-        layer.appendChild(overlay)
-      })
+          const captured = range.dish
+          span.style.width        = '100%'
+          span.style.transform    = 'none'  // removes PDF.js scaleX; text is transparent
+          span.style.pointerEvents = 'auto'
+          if (!span.dataset.dishId) span.dataset.dishId = captured.id
+
+          span.addEventListener('click', (evt) => {
+            evt.stopPropagation()
+            setActiveDish(captured)
+          })
+        }
+      }
 
       pageDiv.style.position = 'relative'
       pageDiv.appendChild(layer)
