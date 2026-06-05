@@ -80,7 +80,7 @@ const s = StyleSheet.create({
   page: {
     backgroundColor:  '#ffffff',
     paddingTop:       52,
-    paddingBottom:    58,
+    paddingBottom:    40,
     paddingHorizontal: 54,
   },
 
@@ -139,33 +139,6 @@ const s = StyleSheet.create({
     marginVertical:  12,
   },
 
-  // Fixed footer — appears on every content page
-  footer: {
-    position:   'absolute',
-    bottom:     52,
-    left:       54,
-    right:      54,
-    flexDirection: 'row',
-    alignItems:    'center',
-  },
-  footerLabel: {
-    fontFamily:    'Helvetica',
-    fontSize:      6.5,
-    color:         '#b0a08a',
-    letterSpacing: 1.5,
-    textTransform: 'uppercase',
-  },
-  footerRule: {
-    flex:            1,
-    height:          0.3,
-    backgroundColor: '#d4c5a2',
-    marginHorizontal: 10,
-  },
-  footerPage: {
-    fontFamily: 'Helvetica',
-    fontSize:   6.5,
-    color:      '#b0a08a',
-  },
 })
 
 // ── Component ──────────────────────────────────────────────────────────────────
@@ -224,17 +197,7 @@ export function MenuPDFDocument({ restaurant, menu }: Props) {
           </View>
         ))}
 
-        {/* Footer — fixed = repeats on every wrapped page of this <Page> element */}
-        <View style={s.footer} fixed>
-          <Text style={s.footerLabel}>{restaurant.name}</Text>
-          <View style={s.footerRule} />
-          <Text
-            style={s.footerPage}
-            render={({ pageNumber, totalPages }) =>
-              `${pageNumber} / ${totalPages}`
-            }
-          />
-        </View>
+
       </Page>
     </Document>
   )
