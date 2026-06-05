@@ -10,7 +10,7 @@ export default async function MenuDishesPage({
 }) {
   const supabase = await createClient()
 
-  const [{ data: menu }, { data: dishes }, { data: allDishes }] = await Promise.all([
+  const [{ data: menu }, { data: dishes }, { data: allDishes }, { data: allMenus }] = await Promise.all([
     supabase
       .from('menus').select('id, name, restaurant_id, category_order')
       .eq('id', params.menuId).eq('restaurant_id', params.restaurantId).single(),
@@ -27,6 +27,12 @@ export default async function MenuDishesPage({
       .eq('restaurant_id', params.restaurantId)
       .eq('is_active', true)
       .order('category').order('sort_order'),
+    // All menus of this restaurant for multi-menu selector
+    supabase
+      .from('menus')
+      .select('id, name')
+      .eq('restaurant_id', params.restaurantId)
+      .order('sort_order', { ascending: true }),
   ])
 
   if (!menu) notFound()
@@ -50,6 +56,7 @@ export default async function MenuDishesPage({
         menuId={params.menuId}
         initialDishes={(dishes ?? []) as any[]}
         allDishes={(allDishes ?? []) as any[]}
+        allMenus={(allMenus ?? []) as any[]}
         initialCategoryOrder={(menu.category_order as string[] | null) ?? null}
       />
     </div>

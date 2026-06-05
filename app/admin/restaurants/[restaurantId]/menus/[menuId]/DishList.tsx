@@ -33,12 +33,14 @@ interface Dish {
 }
 
 interface SimpleDish { id: string; name: string; category: string }
+interface SimpleMenu  { id: string; name: string }
 
 interface Props {
   restaurantId: string
   menuId: string
   initialDishes: Dish[]
   allDishes: SimpleDish[]
+  allMenus: SimpleMenu[]
   initialCategoryOrder: string[] | null
 }
 
@@ -150,7 +152,7 @@ function SortableCategory({
 // ── Main component ─────────────────────────────────────────────────────────────
 
 export default function DishList({
-  restaurantId, menuId, initialDishes, allDishes, initialCategoryOrder,
+  restaurantId, menuId, initialDishes, allDishes, allMenus, initialCategoryOrder,
 }: Props) {
   const [dishes,      setDishes]      = useState(initialDishes)
   const [formOpen,    setFormOpen]    = useState(false)
@@ -258,6 +260,7 @@ export default function DishList({
           menuId={menuId}
           dish={editingDish}
           allDishes={allDishes}
+          allMenus={allMenus}
           onSaved={handleSaved}
           onClose={() => { setFormOpen(false); setEditingDish(null) }}
         />
