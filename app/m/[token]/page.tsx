@@ -32,7 +32,7 @@ export default async function PublicMenuPage({
   const [{ data: rawMenus }, { data: banners }, { data: info }] = await Promise.all([
     supabase
       .from('menus')
-      .select('id, name, sort_order')
+      .select('id, name, sort_order, category_order')
       .eq('restaurant_id', restaurant.id)
       .eq('is_active', true)
       .order('sort_order', { ascending: true }),
@@ -52,18 +52,35 @@ export default async function PublicMenuPage({
 
   const menus = await Promise.all(
     (rawMenus ?? []).map(async menu => {
+      const categoryOrder = (menu as any).category_order as string[] | null
+
       const { data: dishes } = await supabase
         .from('dishes')
         .select('id, name, description, price, category, image_url, allergens, sort_order, pairing_dish_id, pairing_label')
         .eq('menu_id', menu.id)
         .eq('is_active', true)
-        .order('category', { ascending: true })
         .order('sort_order', { ascending: true })
+
+      // Sort dishes respecting admin-defined category order; unknown categories
+      // go alphabetically at the end.
+      const sorted = (dishes ?? []).slice().sort((a, b) => {
+        const catA = (a.category as string | null) ?? 'Menu'
+        const catB = (b.category as string | null) ?? 'Menu'
+        if (catA === catB) return (a.sort_order as number) - (b.sort_order as number)
+        if (categoryOrder) {
+          const iA = categoryOrder.indexOf(catA)
+          const iB = categoryOrder.indexOf(catB)
+          const rankA = iA === -1 ? Infinity : iA
+          const rankB = iB === -1 ? Infinity : iB
+          if (rankA !== rankB) return rankA - rankB
+        }
+        return catA.localeCompare(catB)
+      })
 
       return {
         id:     menu.id as string,
         name:   menu.name as string,
-        dishes: (dishes ?? []).map(d => ({
+        dishes: sorted.map(d => ({
           id:              d.id as string,
           name:            d.name as string,
           description:     d.description as string | null,
@@ -73,7 +90,7 @@ export default async function PublicMenuPage({
           allergens:       (d.allergens as number[] | null) ?? [],
           pairing_dish_id: d.pairing_dish_id as string | null,
           pairing_label:   d.pairing_label as string | null,
-        })),
+        })),   // eslint-disable-line @typescript-eslint/no-explicit-any
       }
     })
   )

@@ -107,6 +107,21 @@ export async function deleteDish(restaurantId: string, menuId: string, dishId: s
   revalidate(restaurantId, menuId)
 }
 
+export async function reorderCategories(
+  restaurantId: string,
+  menuId: string,
+  categoryOrder: string[]
+) {
+  const supabase = await createClient()
+  await verifyOwnership(supabase, restaurantId)
+  const { error } = await supabase
+    .from('menus')
+    .update({ category_order: categoryOrder })
+    .eq('id', menuId)
+  if (error) throw new Error(error.message)
+  revalidate(restaurantId, menuId)
+}
+
 export async function syncDishToMasters(
   restaurantId: string,
   dishId: string,

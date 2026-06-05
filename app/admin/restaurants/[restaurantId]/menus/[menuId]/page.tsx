@@ -12,7 +12,7 @@ export default async function MenuDishesPage({
 
   const [{ data: menu }, { data: dishes }, { data: allDishes }] = await Promise.all([
     supabase
-      .from('menus').select('id, name, restaurant_id')
+      .from('menus').select('id, name, restaurant_id, category_order')
       .eq('id', params.menuId).eq('restaurant_id', params.restaurantId).single(),
     supabase
       .from('dishes')
@@ -50,6 +50,7 @@ export default async function MenuDishesPage({
         menuId={params.menuId}
         initialDishes={(dishes ?? []) as any[]}
         allDishes={(allDishes ?? []) as any[]}
+        initialCategoryOrder={(menu.category_order as string[] | null) ?? null}
       />
     </div>
   )

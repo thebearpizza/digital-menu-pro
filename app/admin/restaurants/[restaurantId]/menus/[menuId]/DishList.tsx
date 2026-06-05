@@ -1,9 +1,20 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
+import {
+  DndContext, closestCenter, DragEndEvent,
+  PointerSensor, useSensor, useSensors,
+} from '@dnd-kit/core'
+import {
+  arrayMove,
+  SortableContext,
+  verticalListSortingStrategy,
+  useSortable,
+} from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 import DishForm from './DishForm'
 import DishSyncModal from './DishSyncModal'
-import { deleteDish } from './actions'
+import { deleteDish, reorderCategories } from './actions'
 import { allergenName } from '@/lib/allergens'
 
 interface Dish {
@@ -28,39 +39,196 @@ interface Props {
   menuId: string
   initialDishes: Dish[]
   allDishes: SimpleDish[]
+  initialCategoryOrder: string[] | null
 }
 
-export default function DishList({ restaurantId, menuId, initialDishes, allDishes }: Props) {
-  const [dishes, setDishes]           = useState(initialDishes)
-  const [formOpen, setFormOpen]       = useState(false)
-  const [editingDish, setEditingDish] = useState<Dish | null>(null)
-  const [syncDish, setSyncDish]       = useState<Dish | null>(null)
-  const [deletingId, setDeletingId]   = useState<string | null>(null)
+// ── Sortable category row ──────────────────────────────────────────────────────
 
-  const categories = Array.from(new Set(dishes.map(d => d.category ?? 'Senza categoria'))).sort()
+function SortableCategory({
+  cat,
+  dishes,
+  expanded,
+  onToggle,
+  onEdit,
+  onDelete,
+  deletingId,
+}: {
+  cat: string
+  dishes: Dish[]
+  expanded: boolean
+  onToggle: () => void
+  onEdit: (dish: Dish) => void
+  onDelete: (dish: Dish) => void
+  deletingId: string | null
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
+    useSortable({ id: cat })
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  }
+
+  return (
+    <div ref={setNodeRef} style={style} className="bg-white border border-gray-200">
+      {/* Category header */}
+      <div className="px-3 py-2.5 bg-gray-50 border-b border-gray-200 flex items-center gap-2">
+        {/* Drag handle */}
+        <button
+          {...attributes} {...listeners}
+          className="text-gray-300 hover:text-gray-500 cursor-grab active:cursor-grabbing shrink-0 touch-none select-none text-base leading-none"
+          aria-label="Trascina per riordinare"
+          title="Trascina per riordinare"
+        >
+          ⠿
+        </button>
+
+        {/* Toggle expand */}
+        <button
+          onClick={onToggle}
+          className="flex-1 flex items-center gap-2 text-left min-w-0"
+        >
+          <span className="text-xs font-semibold uppercase tracking-wide text-gray-600 truncate">{cat}</span>
+          <span className="text-xs text-gray-400 shrink-0">({dishes.length})</span>
+          <span className="ml-auto shrink-0 text-gray-400 text-[10px]">
+            {expanded ? '▲' : '▼'}
+          </span>
+        </button>
+      </div>
+
+      {/* Dish rows — visible only when expanded */}
+      {expanded && (
+        <table className="w-full">
+          <tbody className="divide-y divide-gray-50">
+            {dishes.map(dish => (
+              <tr key={dish.id} className={`hover:bg-gray-50 ${!dish.is_active ? 'opacity-50' : ''}`}>
+                <td className="px-4 py-3">
+                  <div className="text-sm font-medium text-gray-900">{dish.name}</div>
+                  {dish.description && (
+                    <div className="text-xs text-gray-400 mt-0.5 line-clamp-1">{dish.description}</div>
+                  )}
+                  {dish.allergens?.length > 0 && (
+                    <div className="text-[10px] text-orange-500 mt-0.5">
+                      {dish.allergens.map(a => `${a}. ${allergenName(a)}`).join(' · ')}
+                    </div>
+                  )}
+                </td>
+                <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap text-right">
+                  {dish.price != null ? `€ ${Number(dish.price).toFixed(2)}` : '—'}
+                </td>
+                <td className="px-4 py-3 whitespace-nowrap text-right">
+                  <button
+                    onClick={() => onEdit(dish)}
+                    className="text-xs text-blue-600 hover:underline mr-3"
+                  >
+                    Modifica
+                  </button>
+                  <button
+                    onClick={() => onDelete(dish)}
+                    disabled={deletingId === dish.id}
+                    className="text-xs text-red-500 hover:underline disabled:opacity-40"
+                  >
+                    Elimina
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  )
+}
+
+// ── Main component ─────────────────────────────────────────────────────────────
+
+export default function DishList({
+  restaurantId, menuId, initialDishes, allDishes, initialCategoryOrder,
+}: Props) {
+  const [dishes,      setDishes]      = useState(initialDishes)
+  const [formOpen,    setFormOpen]    = useState(false)
+  const [editingDish, setEditingDish] = useState<Dish | null>(null)
+  const [syncDish,    setSyncDish]    = useState<Dish | null>(null)
+  const [deletingId,  setDeletingId]  = useState<string | null>(null)
+
+  // Categorie nell'ordine corretto: prima rispetta category_order salvato,
+  // poi append di eventuali categorie nuove non ancora nell'elenco.
+  const derivedCategories = Array.from(new Set(dishes.map(d => d.category ?? 'Senza categoria')))
+  const [categories, setCategories] = useState<string[]>(() => {
+    if (!initialCategoryOrder) return derivedCategories.sort()
+    const saved = initialCategoryOrder.filter(c => derivedCategories.includes(c))
+    const extra = derivedCategories.filter(c => !saved.includes(c)).sort()
+    return [...saved, ...extra]
+  })
+
+  // Accordion: Set delle categorie espanse — tutte chiuse di default
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
+
   const byCategory = Object.fromEntries(
     categories.map(cat => [cat, dishes.filter(d => (d.category ?? 'Senza categoria') === cat)])
   )
+
+  const sensors = useSensors(useSensor(PointerSensor))
+
+  // Mantieni l'elenco categorie in sync quando arrivano nuovi piatti
+  function syncCategories(newDishes: Dish[]) {
+    const newCats = Array.from(new Set(newDishes.map(d => d.category ?? 'Senza categoria')))
+    setCategories(prev => {
+      const kept  = prev.filter(c => newCats.includes(c))
+      const added = newCats.filter(c => !prev.includes(c)).sort()
+      return [...kept, ...added]
+    })
+  }
+
+  // ── DnD ───────────────────────────────────────────────────────────────────
+
+  async function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event
+    if (!over || active.id === over.id) return
+    const oldIdx = categories.indexOf(active.id as string)
+    const newIdx = categories.indexOf(over.id as string)
+    const reordered = arrayMove(categories, oldIdx, newIdx)
+    setCategories(reordered)                                  // ottimistico
+    await reorderCategories(restaurantId, menuId, reordered)  // persiste
+  }
+
+  // ── Accordion ─────────────────────────────────────────────────────────────
+
+  const toggleCategory = useCallback((cat: string) => {
+    setExpanded(prev => {
+      const next = new Set(prev)
+      next.has(cat) ? next.delete(cat) : next.add(cat)
+      return next
+    })
+  }, [])
+
+  // ── CRUD ──────────────────────────────────────────────────────────────────
 
   async function handleDelete(dish: Dish) {
     if (!confirm(`Eliminare "${dish.name}"?`)) return
     setDeletingId(dish.id)
     try {
       await deleteDish(restaurantId, menuId, dish.id)
-      setDishes(prev => prev.filter(d => d.id !== dish.id))
+      const next = dishes.filter(d => d.id !== dish.id)
+      setDishes(next)
+      syncCategories(next)
     } catch { alert("Errore durante l'eliminazione.") }
     finally { setDeletingId(null) }
   }
 
   function handleSaved(saved: any, isNew: boolean) {
-    setDishes(prev =>
-      isNew ? [...prev, saved] : prev.map(d => d.id === saved.id ? saved : d)
-    )
+    const next = isNew
+      ? [...dishes, saved]
+      : dishes.map(d => d.id === saved.id ? saved : d)
+    setDishes(next)
+    syncCategories(next)
     setFormOpen(false)
     setEditingDish(null)
-    // After saving, if dish has master_dish_id offer sync
     if (!isNew && saved.master_dish_id) setSyncDish(saved)
   }
+
+  // ── Render ────────────────────────────────────────────────────────────────
 
   return (
     <div>
@@ -97,53 +265,24 @@ export default function DishList({ restaurantId, menuId, initialDishes, allDishe
           <p className="text-sm text-gray-500">Nessun piatto. Clicca &ldquo;Aggiungi piatto&rdquo; per iniziare.</p>
         </div>
       ) : (
-        <div className="space-y-5">
-          {categories.map(cat => (
-            <div key={cat} className="bg-white border border-gray-200">
-              <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-200 flex items-center gap-2">
-                <span className="text-xs font-semibold uppercase tracking-wide text-gray-600">{cat}</span>
-                <span className="text-xs text-gray-400">({byCategory[cat].length})</span>
-              </div>
-              <table className="w-full">
-                <tbody className="divide-y divide-gray-50">
-                  {byCategory[cat].map(dish => (
-                    <tr key={dish.id} className={`hover:bg-gray-50 ${!dish.is_active ? 'opacity-50' : ''}`}>
-                      <td className="px-4 py-3">
-                        <div className="text-sm font-medium text-gray-900">{dish.name}</div>
-                        {dish.description && (
-                          <div className="text-xs text-gray-400 mt-0.5 line-clamp-1">{dish.description}</div>
-                        )}
-                        {dish.allergens?.length > 0 && (
-                          <div className="text-[10px] text-orange-500 mt-0.5">
-                            {dish.allergens.map(a => `${a}. ${allergenName(a)}`).join(' · ')}
-                          </div>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap text-right">
-                        {dish.price != null ? `€ ${Number(dish.price).toFixed(2)}` : '—'}
-                      </td>
-                      <td className="px-4 py-3 whitespace-nowrap text-right">
-                        <button
-                          onClick={() => { setEditingDish(dish); setFormOpen(false) }}
-                          className="text-xs text-blue-600 hover:underline mr-3"
-                        >
-                          Modifica
-                        </button>
-                        <button
-                          onClick={() => handleDelete(dish)}
-                          disabled={deletingId === dish.id}
-                          className="text-xs text-red-500 hover:underline disabled:opacity-40"
-                        >
-                          Elimina
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+          <SortableContext items={categories} strategy={verticalListSortingStrategy}>
+            <div className="space-y-5">
+              {categories.map(cat => (
+                <SortableCategory
+                  key={cat}
+                  cat={cat}
+                  dishes={byCategory[cat] ?? []}
+                  expanded={expanded.has(cat)}
+                  onToggle={() => toggleCategory(cat)}
+                  onEdit={dish => { setEditingDish(dish); setFormOpen(false) }}
+                  onDelete={handleDelete}
+                  deletingId={deletingId}
+                />
+              ))}
             </div>
-          ))}
-        </div>
+          </SortableContext>
+        </DndContext>
       )}
     </div>
   )
