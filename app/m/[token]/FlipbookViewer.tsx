@@ -459,7 +459,6 @@ export default function FlipbookViewer({
           autoCenter:   false,
           display:      'single',
           duration:     flipbook.duration,
-          corners:      'bl,br',
           gradients:    true,
           acceleration: true,
           elevation:    flipbook.elevation,
@@ -469,17 +468,6 @@ export default function FlipbookViewer({
             //       avanti in direzione ltr) → ricaviamo la destinazione.
             // TASTI: corner è null, ma opts.next è già impostato e affidabile.
             start(_evt: Event, opts: any, corner: any) {
-              // Block top corners — they intercept dish taps at the top of the page.
-              if (corner === 'tl' || corner === 'tr') {
-                (_evt as any).preventDefault?.()
-                return false
-              }
-              // Safety net: also block any drag-initiated flip whose touch began in
-              // the top 40% of the viewport (handles rare corner mis-classification).
-              if (typeof corner === 'string' && lastTouchStartY < window.innerHeight * 0.4) {
-                (_evt as any).preventDefault?.()
-                return false
-              }
               try {
                 const cur = opts?.page as number
                 if (!cur) return
