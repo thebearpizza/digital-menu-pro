@@ -90,7 +90,7 @@ export default async function PublicMenuPage({
           allergens:       (d.allergens as number[] | null) ?? [],
           pairing_dish_id: d.pairing_dish_id as string | null,
           pairing_label:   d.pairing_label as string | null,
-        })),   // eslint-disable-line @typescript-eslint/no-explicit-any
+        })),
       }
     })
   )
