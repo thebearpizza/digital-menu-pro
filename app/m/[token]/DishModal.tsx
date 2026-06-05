@@ -18,9 +18,12 @@ export interface DishData {
 }
 
 interface Props {
-  activeDish: DishData
-  allDishes:  DishData[]
-  onClose:    () => void
+  activeDish:  DishData
+  allDishes:   DishData[]
+  isNested?:   boolean
+  onClose:     () => void
+  onBack?:     () => void
+  onOpenDish:  (dish: DishData) => void
 }
 
 const ACCENT     = '#c9a96e'
@@ -29,7 +32,7 @@ const FONT_SANS  = "'DM Sans', 'Inter', system-ui, sans-serif"
 
 // ── Component ──────────────────────────────────────────────────────────────────
 
-export default function DishModal({ activeDish, allDishes, onClose }: Props) {
+export default function DishModal({ activeDish, allDishes, isNested, onClose, onBack, onOpenDish }: Props) {
   const startIdx = allDishes.findIndex(d => d.id === activeDish.id)
 
   const [idx,        setIdx]        = useState(startIdx >= 0 ? startIdx : 0)
@@ -41,6 +44,14 @@ export default function DishModal({ activeDish, allDishes, onClose }: Props) {
 
   const total = allDishes.length
   const dish  = allDishes[idx] ?? activeDish
+
+  // When activeDish changes (new modal pushed onto stack), reset to that dish
+  useEffect(() => {
+    const newIdx = allDishes.findIndex(d => d.id === activeDish.id)
+    setIdx(newIdx >= 0 ? newIdx : 0)
+    setAnimDir('fade')
+    setContentKey(k => k + 1)
+  }, [activeDish.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Navigation ─────────────────────────────────────────────────────────────
 
@@ -55,13 +66,18 @@ export default function DishModal({ activeDish, allDishes, onClose }: Props) {
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape')      { onClose(); return }
-      if (e.key === 'ArrowLeft')   goTo(idx - 1, 'left')
-      if (e.key === 'ArrowRight')  goTo(idx + 1, 'right')
+      if (e.key === 'Escape') {
+        if (onBack) { onBack(); return }
+        onClose()
+        return
+      }
+      if (isNested) return
+      if (e.key === 'ArrowLeft')  goTo(idx - 1, 'left')
+      if (e.key === 'ArrowRight') goTo(idx + 1, 'right')
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [idx, total, onClose]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [idx, total, onClose, onBack, isNested]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Touch swipe ────────────────────────────────────────────────────────────
 
@@ -69,7 +85,7 @@ export default function DishModal({ activeDish, allDishes, onClose }: Props) {
     touchStartX.current = e.touches[0].clientX
   }
   function onTouchEnd(e: React.TouchEvent) {
-    if (touchStartX.current === null) return
+    if (isNested || touchStartX.current === null) return
     const delta = e.changedTouches[0].clientX - touchStartX.current
     touchStartX.current = null
     if      (delta < -50) goTo(idx + 1, 'right')
@@ -82,7 +98,7 @@ export default function DishModal({ activeDish, allDishes, onClose }: Props) {
     mouseStartX.current = e.clientX
   }
   function onMouseUp(e: React.MouseEvent) {
-    if (mouseStartX.current === null) return
+    if (isNested || mouseStartX.current === null) return
     const delta = e.clientX - mouseStartX.current
     mouseStartX.current = null
     if (Math.abs(delta) < 10) return
@@ -110,7 +126,7 @@ export default function DishModal({ activeDish, allDishes, onClose }: Props) {
       className="fixed inset-0 z-50 flex items-end sm:items-center justify-center"
       style={{ fontFamily: FONT_SANS }}
     >
-      {/* Backdrop */}
+      {/* Backdrop — clicking it always closes everything */}
       <div
         className="absolute inset-0 modal-backdrop touch-none"
         style={{
@@ -140,15 +156,29 @@ export default function DishModal({ activeDish, allDishes, onClose }: Props) {
           <div style={{ width: 36, height: 3, borderRadius: 2, background: `${ACCENT}50` }} />
         </div>
 
-        {/* Close button */}
-        <button
-          onClick={onClose}
-          aria-label="Chiudi"
-          className="absolute top-3 right-4 z-10 text-xl leading-none transition-opacity hover:opacity-60 select-none"
-          style={{ color: '#555555' }}
-        >
-          ×
-        </button>
+        {/* Header row: back button (nested) or empty, close button */}
+        <div className="absolute top-3 left-0 right-0 flex items-center justify-between px-4 z-10">
+          {onBack ? (
+            <button
+              onClick={onBack}
+              aria-label="Indietro"
+              className="flex items-center gap-1 transition-opacity hover:opacity-60 select-none"
+              style={{ color: ACCENT, fontSize: 12, letterSpacing: '0.12em', textTransform: 'uppercase' }}
+            >
+              ‹ indietro
+            </button>
+          ) : (
+            <span />
+          )}
+          <button
+            onClick={onClose}
+            aria-label="Chiudi"
+            className="text-xl leading-none transition-opacity hover:opacity-60 select-none"
+            style={{ color: '#555555' }}
+          >
+            ×
+          </button>
+        </div>
 
         {/* Hero image — 16:9 aspect ratio */}
         {dish.image_url && (
@@ -228,38 +258,51 @@ export default function DishModal({ activeDish, allDishes, onClose }: Props) {
                 Allergeni
               </p>
               <p style={{ color: '#7a6a4a', fontSize: '0.75rem', lineHeight: 1.6 }}>
-                {dish.allergens.map(id => allergenName(id)).join(' · ')}
+                {dish.allergens.map(id => allergenName(id)).join(', ')}
               </p>
             </div>
           )}
 
-          {/* Pairing */}
+          {/* Pairing — clickable, no price shown */}
           {pairing && (
-            <div
+            <button
+              onClick={() => onOpenDish(pairing)}
               style={{
+                display:      'block',
+                width:        '100%',
                 marginBottom: 16,
                 padding:      '10px 14px',
-                border:       '1px solid #222222',
+                border:       `1px solid ${ACCENT}30`,
                 borderRadius: 6,
+                background:   'transparent',
+                textAlign:    'left',
+                cursor:       'pointer',
+                transition:   'border-color 0.15s ease, background 0.15s ease',
+              }}
+              onMouseEnter={e => {
+                (e.currentTarget as HTMLButtonElement).style.borderColor = `${ACCENT}60`
+                ;(e.currentTarget as HTMLButtonElement).style.background = `${ACCENT}08`
+              }}
+              onMouseLeave={e => {
+                (e.currentTarget as HTMLButtonElement).style.borderColor = `${ACCENT}30`
+                ;(e.currentTarget as HTMLButtonElement).style.background = 'transparent'
               }}
             >
-              <p style={{ color: '#3e3e3e', fontSize: 8, letterSpacing: '0.26em', textTransform: 'uppercase', marginBottom: 6 }}>
+              <p style={{ color: ACCENT, fontSize: 8, letterSpacing: '0.26em', textTransform: 'uppercase', marginBottom: 6 }}>
                 {dish.pairing_label ?? 'Abbinamento consigliato'}
               </p>
-              <p style={{ color: '#6a6a6a', fontSize: '0.8125rem' }}>
-                {pairing.name}
-                {pairing.price != null && (
-                  <span style={{ color: ACCENT, marginLeft: 8 }}>
-                    €&nbsp;{Number(pairing.price).toFixed(2)}
-                  </span>
-                )}
-              </p>
-            </div>
+              <div className="flex items-center justify-between">
+                <p style={{ color: '#8a8a8a', fontSize: '0.8125rem' }}>
+                  {pairing.name}
+                </p>
+                <span style={{ color: ACCENT, fontSize: 10, letterSpacing: '0.1em' }}>›</span>
+              </div>
+            </button>
           )}
         </div>
 
-        {/* Navigation bar */}
-        {total > 1 && (
+        {/* Navigation bar — hidden in nested mode */}
+        {!isNested && total > 1 && (
           <div
             className="shrink-0 flex items-center justify-between px-5"
             style={{ borderTop: '1px solid #1c1c1c', paddingTop: 12, paddingBottom: 20 }}

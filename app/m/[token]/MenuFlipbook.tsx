@@ -375,7 +375,7 @@ function PdfBook({ pdfUrl, dims, items, onDishClick, onPageChange }: PdfBookProp
 export default function MenuFlipbook({
   menuName, restaurantName, items, pdfUrl, infoTitle, infoContent, onBack,
 }: Props) {
-  const [selectedDish, setSelectedDish] = useState<Dish | null>(null)
+  const [modalStack, setModalStack] = useState<Dish[]>([])
   const [dims, setDims]                 = useState<{ w: number; h: number } | null>(null)
   const [currentPage, setCurrentPage]   = useState(1)
   const [totalPages, setTotalPages]     = useState(0)
@@ -387,7 +387,7 @@ export default function MenuFlipbook({
   const hasInfo = !!(infoContent || infoTitle)
 
   // stable callbacks — safe to close over in turn.js `when.turned`
-  const handleDishClick  = useCallback((dish: Dish) => setSelectedDish(dish), [])
+  const handleDishClick  = useCallback((dish: Dish) => setModalStack([dish]), [])
   const handlePageChange = useCallback((page: number, total: number) => {
     setCurrentPage(page); setTotalPages(total)
   }, [])
@@ -471,7 +471,7 @@ export default function MenuFlipbook({
             )}
 
             {/* page counter */}
-            {totalPages > 0 && !selectedDish && (
+            {totalPages > 0 && modalStack.length === 0 && (
               <div className="pointer-events-none absolute top-2 left-1/2 -translate-x-1/2 z-10">
                 <span className="text-[9px] text-zinc-600 tabular-nums select-none">
                   {currentPage}&thinsp;/&thinsp;{totalPages}
@@ -480,7 +480,7 @@ export default function MenuFlipbook({
             )}
 
             {/* visual nav hints — turn.js handles tap-on-corners natively */}
-            {!selectedDish && (
+            {modalStack.length === 0 && (
               <>
                 <span className={`pointer-events-none absolute bottom-4 left-3 z-10 text-[11px] uppercase tracking-[0.18em] select-none transition-opacity duration-200 ${atFirst ? 'opacity-0' : 'text-zinc-500'}`}>
                   ‹ prec.
@@ -495,11 +495,14 @@ export default function MenuFlipbook({
         )}
       </div>
 
-      {selectedDish && (
+      {modalStack.length > 0 && (
         <DishModal
-          activeDish={selectedDish}
+          activeDish={modalStack[modalStack.length - 1]}
           allDishes={items}
-          onClose={() => setSelectedDish(null)}
+          isNested={modalStack.length > 1}
+          onClose={() => setModalStack([])}
+          onBack={modalStack.length > 1 ? () => setModalStack(s => s.slice(0, -1)) : undefined}
+          onOpenDish={(dish) => setModalStack(s => [...s, dish])}
         />
       )}
     </div>

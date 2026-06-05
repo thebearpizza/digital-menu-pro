@@ -136,7 +136,7 @@ export default function FlipbookViewer({
   // senza richiedere il re-init del flipbook quando i piatti cambiano.
   const dishesRef = useRef<DishData[]>(dishes ?? [])
   useEffect(() => { dishesRef.current = dishes ?? [] }, [dishes])
-  const [activeDish, setActiveDish] = useState<DishData | null>(null)
+  const [modalStack, setModalStack] = useState<DishData[]>([])
 
   // Sincronizza activeCatIdx quando currentPage cambia (sfoglio manuale)
   // o quando le categorie cambiano (cambio menu).
@@ -237,7 +237,7 @@ export default function FlipbookViewer({
       }
     }
 
-    // Builds a transparent text layer over pageDiv and wires dish-name spans to setActiveDish.
+    // Builds a transparent text layer over pageDiv and wires dish-name spans to setModalStack.
     // Called AFTER canvas rendering and BEFORE turn.js init (FASE 2.7).
     async function renderTextLayer(pageNum: number, logicalScale: number): Promise<void> {
       if (cancelled) return
@@ -351,7 +351,7 @@ export default function FlipbookViewer({
             evt.stopPropagation()
             if (moved) return            // era uno swipe, non un tap
             evt.preventDefault()
-            setActiveDish(captured)
+            setModalStack([captured])
           }, { passive: false })
 
           span.addEventListener('mousedown', (evt) => { evt.stopPropagation() })
@@ -360,7 +360,7 @@ export default function FlipbookViewer({
           span.addEventListener('click', (evt) => {
             evt.stopPropagation()
             evt.preventDefault()
-            setActiveDish(captured)
+            setModalStack([captured])
           })
         }
       }
@@ -738,12 +738,16 @@ export default function FlipbookViewer({
         </div>
       )}
 
-      {/* Dish modal — rendered outside the flipbook DOM to avoid z-index conflicts */}
-      {activeDish && (
+      {/* Dish modal — rendered outside the flipbook DOM to avoid z-index conflicts.
+          modalStack[last] = currently visible dish; closing pops the stack. */}
+      {modalStack.length > 0 && (
         <DishModal
-          activeDish={activeDish}
+          activeDish={modalStack[modalStack.length - 1]}
           allDishes={dishesRef.current}
-          onClose={() => setActiveDish(null)}
+          isNested={modalStack.length > 1}
+          onClose={() => setModalStack([])}
+          onBack={modalStack.length > 1 ? () => setModalStack(s => s.slice(0, -1)) : undefined}
+          onOpenDish={(dish) => setModalStack(s => [...s, dish])}
         />
       )}
 
