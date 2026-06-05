@@ -124,10 +124,10 @@ export default function CustomizationClient({ restaurantId, initialTheme, initia
 
   return (
     <div>
-      <div className="flex border-b border-gray-200 mb-6">
+      <div className="flex border-b border-gray-200 mb-6 overflow-x-auto [&::-webkit-scrollbar]:hidden [scrollbar-width:none]">
         {SECTION_TABS.map(t => (
           <button key={t.key} onClick={() => setActiveTab(t.key)}
-            className={`px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${
+            className={`px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors whitespace-nowrap shrink-0 ${
               activeTab === t.key
                 ? 'border-blue-600 text-blue-600'
                 : 'border-transparent text-gray-500 hover:text-gray-700'
@@ -140,7 +140,7 @@ export default function CustomizationClient({ restaurantId, initialTheme, initia
       {/* TEMA */}
       {activeTab === 'tema' && (
         <div className="bg-white border border-gray-200 p-6 max-w-lg space-y-4">
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">Font titoli</label>
               <select value={theme.fontHeading ?? 'Inter'}
@@ -158,7 +158,7 @@ export default function CustomizationClient({ restaurantId, initialTheme, initia
               </select>
             </div>
           </div>
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
             {[
               { key: 'bg',      label: 'Sfondo pagina', default: '#fffaf5' },
               { key: 'primary', label: 'Colore primario', default: '#b45309' },
@@ -222,7 +222,7 @@ export default function CustomizationClient({ restaurantId, initialTheme, initia
 
           <div className="bg-white border border-gray-200 p-5 max-w-md space-y-3">
             <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Aggiungi banner</p>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs text-gray-500 mb-1">Titolo (opzionale)</label>
                 <input type="text" value={bannerTitle} onChange={e => setBannerTitle(e.target.value)}

@@ -13,7 +13,7 @@ export default async function RestaurantsPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-8">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-8">
         <div>
           <h1 className="text-xl font-semibold text-gray-900">Ristoranti</h1>
           <p className="text-sm text-gray-500 mt-1">
@@ -22,7 +22,7 @@ export default async function RestaurantsPage() {
         </div>
         <Link
           href="/admin/restaurants/new"
-          className="bg-blue-600 text-white text-sm font-medium px-4 py-2 hover:bg-blue-700 transition-colors"
+          className="shrink-0 inline-flex items-center justify-center bg-blue-600 text-white text-sm font-medium px-4 py-2 min-h-[44px] hover:bg-blue-700 transition-colors"
         >
           + Nuovo ristorante
         </Link>
@@ -36,8 +36,8 @@ export default async function RestaurantsPage() {
           </Link>
         </div>
       ) : (
-        <div className="bg-white border border-gray-200">
-          <table className="w-full">
+        <div className="bg-white border border-gray-200 overflow-x-auto">
+          <table className="w-full min-w-[480px]">
             <thead>
               <tr className="border-b border-gray-200 bg-gray-50 text-left">
                 <th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Nome</th>

@@ -83,7 +83,7 @@ export default function RestaurantForm({ restaurant }: Props) {
         <div className="px-3 py-2 bg-green-50 border border-green-200 text-green-700 text-xs">Salvato.</div>
       )}
 
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
           <label className="block text-xs font-medium text-gray-600 mb-1">Nome *</label>
           <input
@@ -124,7 +124,7 @@ export default function RestaurantForm({ restaurant }: Props) {
       {/* Social Links */}
       <div>
         <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Link Social & Recensioni</p>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {[
             { label: 'Instagram', value: instagram, set: setInstagram, placeholder: 'https://instagram.com/…' },
             { label: 'Facebook',  value: facebook,  set: setFacebook,  placeholder: 'https://facebook.com/…' },

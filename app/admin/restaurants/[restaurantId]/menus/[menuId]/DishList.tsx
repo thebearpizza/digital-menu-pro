@@ -3,7 +3,7 @@
 import { useState, useCallback } from 'react'
 import {
   DndContext, closestCenter, DragEndEvent,
-  PointerSensor, useSensor, useSensors,
+  PointerSensor, TouchSensor, useSensor, useSensors,
 } from '@dnd-kit/core'
 import {
   arrayMove,
@@ -77,7 +77,7 @@ function SortableCategory({
         {/* Drag handle */}
         <button
           {...attributes} {...listeners}
-          className="text-gray-300 hover:text-gray-500 cursor-grab active:cursor-grabbing shrink-0 touch-none select-none text-base leading-none"
+          className="text-gray-300 hover:text-gray-500 cursor-grab active:cursor-grabbing shrink-0 touch-none select-none text-base leading-none min-h-[44px] min-w-[36px] flex items-center justify-center"
           aria-label="Trascina per riordinare"
           title="Trascina per riordinare"
         >
@@ -87,7 +87,7 @@ function SortableCategory({
         {/* Toggle expand */}
         <button
           onClick={onToggle}
-          className="flex-1 flex items-center gap-2 text-left min-w-0"
+          className="flex-1 flex items-center gap-2 text-left min-w-0 min-h-[44px]"
         >
           <span className="text-xs font-semibold uppercase tracking-wide text-gray-600 truncate">{cat}</span>
           <span className="text-xs text-gray-400 shrink-0">({dishes.length})</span>
@@ -97,45 +97,51 @@ function SortableCategory({
         </button>
       </div>
 
-      {/* Dish rows — visible only when expanded */}
+      {/* Dish rows — visible only when expanded.
+          Mobile: layout a card impilato (flex-col). md+: riga con prezzo
+          e azioni allineati a destra. */}
       {expanded && (
-        <table className="w-full">
-          <tbody className="divide-y divide-gray-50">
-            {dishes.map(dish => (
-              <tr key={dish.id} className={`hover:bg-gray-50 ${!dish.is_active ? 'opacity-50' : ''}`}>
-                <td className="px-4 py-3">
-                  <div className="text-sm font-medium text-gray-900">{dish.name}</div>
-                  {dish.description && (
-                    <div className="text-xs text-gray-400 mt-0.5 line-clamp-1">{dish.description}</div>
-                  )}
-                  {dish.allergens?.length > 0 && (
-                    <div className="text-[10px] text-orange-500 mt-0.5">
-                      {dish.allergens.map(a => `${a}. ${allergenName(a)}`).join(' · ')}
-                    </div>
-                  )}
-                </td>
-                <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap text-right">
+        <ul className="divide-y divide-gray-50">
+          {dishes.map(dish => (
+            <li
+              key={dish.id}
+              className={`px-4 py-3 hover:bg-gray-50 flex flex-col md:flex-row md:items-start md:gap-4 ${!dish.is_active ? 'opacity-50' : ''}`}
+            >
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-medium text-gray-900">{dish.name}</div>
+                {dish.description && (
+                  <div className="text-xs text-gray-400 mt-0.5 line-clamp-1">{dish.description}</div>
+                )}
+                {dish.allergens?.length > 0 && (
+                  <div className="text-[10px] text-orange-500 mt-0.5">
+                    {dish.allergens.map(a => `${a}. ${allergenName(a)}`).join(' · ')}
+                  </div>
+                )}
+              </div>
+
+              <div className="flex items-center justify-between gap-4 mt-2 md:mt-0 md:justify-end shrink-0">
+                <span className="text-sm text-gray-600 whitespace-nowrap md:order-1 md:min-w-[64px] md:text-right">
                   {dish.price != null ? `€ ${Number(dish.price).toFixed(2)}` : '—'}
-                </td>
-                <td className="px-4 py-3 whitespace-nowrap text-right">
+                </span>
+                <span className="flex items-center gap-1 md:order-2">
                   <button
                     onClick={() => onEdit(dish)}
-                    className="text-xs text-blue-600 hover:underline mr-3"
+                    className="text-xs text-blue-600 hover:underline px-2 min-h-[44px] md:min-h-0"
                   >
                     Modifica
                   </button>
                   <button
                     onClick={() => onDelete(dish)}
                     disabled={deletingId === dish.id}
-                    className="text-xs text-red-500 hover:underline disabled:opacity-40"
+                    className="text-xs text-red-500 hover:underline disabled:opacity-40 px-2 min-h-[44px] md:min-h-0"
                   >
                     Elimina
                   </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+                </span>
+              </div>
+            </li>
+          ))}
+        </ul>
       )}
     </div>
   )
@@ -169,7 +175,12 @@ export default function DishList({
     categories.map(cat => [cat, dishes.filter(d => (d.category ?? 'Senza categoria') === cat)])
   )
 
-  const sensors = useSensors(useSensor(PointerSensor))
+  // TouchSensor con delay: su mobile un tocco breve scrolla la pagina,
+  // tenere premuto 200ms avvia il drag della categoria (niente conflitto).
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 8 } }),
+  )
 
   // Mantieni l'elenco categorie in sync quando arrivano nuovi piatti
   function syncCategories(newDishes: Dish[]) {

@@ -170,7 +170,7 @@ export default function MenuList({ restaurantId, initialMenus }: Props) {
   return (
     <div>
       {/* Create form */}
-      <form onSubmit={handleCreate} className="flex gap-3 mb-5">
+      <form onSubmit={handleCreate} className="flex flex-col sm:flex-row gap-3 mb-5">
         <input
           type="text"
           value={newName}
@@ -181,7 +181,7 @@ export default function MenuList({ restaurantId, initialMenus }: Props) {
         <button
           type="submit"
           disabled={creating || !newName.trim()}
-          className="bg-blue-600 text-white text-sm font-medium px-4 py-2 hover:bg-blue-700 disabled:opacity-50 transition-colors"
+          className="shrink-0 bg-blue-600 text-white text-sm font-medium px-4 py-2 min-h-[44px] hover:bg-blue-700 disabled:opacity-50 transition-colors"
         >
           {creating ? '…' : '+ Nuovo menu'}
         </button>
