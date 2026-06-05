@@ -18,3 +18,37 @@ export const ALLERGENS = [
 export function allergenName(id: number): string {
   return ALLERGENS.find(a => a.id === id)?.name ?? `Allergene ${id}`
 }
+
+// ── Parsing difensivo ───────────────────────────────────────────────────────────
+// Gli allergeni possono arrivare come numeri (number[]), stringhe ("Allergene 1",
+// "1") o oggetti ({ id, name }). Normalizziamo sempre a un id numerico.
+
+type AllergenInput = number | string | { id?: number | string; name?: string } | null | undefined
+
+function toAllergenId(a: AllergenInput): number | null {
+  if (a == null) return null
+  if (typeof a === 'number') return Number.isFinite(a) ? a : null
+  if (typeof a === 'string') {
+    const m = a.match(/\d+/)            // estrae il primo numero ("Allergene 1" → 1)
+    return m ? parseInt(m[0], 10) : null
+  }
+  if (typeof a === 'object' && a.id != null) return toAllergenId(a.id)
+  return null
+}
+
+function toIds(allergens: unknown): number[] {
+  if (!Array.isArray(allergens)) return []
+  return allergens
+    .map(a => toAllergenId(a as AllergenInput))
+    .filter((n): n is number => n != null)
+}
+
+/** Vista sintetica (testo sopra il PDF / lista) → solo numeri: "1, 3, 5". */
+export function formatAllergensShort(allergens: unknown): string {
+  return toIds(allergens).join(', ')
+}
+
+/** Vista dettaglio (modale) → nomi completi: "Cereali e glutine, Uova". */
+export function formatAllergensFull(allergens: unknown): string {
+  return toIds(allergens).map(allergenName).join(', ')
+}

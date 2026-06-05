@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback, memo } from 'react'
 import DishModal from './DishModal'
+import { formatAllergensShort } from '@/lib/allergens'
 
 interface Dish {
   id: string
@@ -199,7 +200,7 @@ const TurnBook = memo(function TurnBook({
                   )}
                   {dish.allergens?.length > 0 && (
                     <span className="text-[9px] text-stone-300 tabular-nums">
-                      [{dish.allergens.join(', ')}]
+                      [{formatAllergensShort(dish.allergens)}]
                     </span>
                   )}
                 </button>

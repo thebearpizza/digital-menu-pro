@@ -6,7 +6,7 @@
 // page-break between categories, wrap={false} per dish to avoid mid-dish splits.
 // ─────────────────────────────────────────────────────────────────────────────
 import { Document, Page, Text, View, StyleSheet } from '@react-pdf/renderer'
-import { allergenName } from '@/lib/allergens'
+import { formatAllergensShort } from '@/lib/allergens'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -170,7 +170,7 @@ export function MenuPDFDocument({ restaurant, menu }: Props) {
 
             {cat.dishes.map((dish, dishIdx) => {
               const allergenStr = dish.allergens.length > 0
-                ? 'Allergeni: ' + dish.allergens.map(id => allergenName(id)).join(', ')
+                ? 'Allergeni: ' + formatAllergensShort(dish.allergens)
                 : null
 
               return (

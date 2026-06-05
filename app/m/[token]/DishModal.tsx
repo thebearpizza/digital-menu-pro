@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { allergenName } from '@/lib/allergens'
+import { formatAllergensFull } from '@/lib/allergens'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -123,7 +123,7 @@ export default function DishModal({ activeDish, allDishes, isNested, onClose, on
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center"
+      className="fixed inset-0 z-[99999] flex items-end sm:items-center justify-center"
       style={{ fontFamily: FONT_SANS }}
     >
       {/* Backdrop — clicking it always closes everything */}
@@ -258,7 +258,7 @@ export default function DishModal({ activeDish, allDishes, isNested, onClose, on
                 Allergeni
               </p>
               <p style={{ color: '#7a6a4a', fontSize: '0.75rem', lineHeight: 1.6 }}>
-                {dish.allergens.map(id => allergenName(id)).join(', ')}
+                {formatAllergensFull(dish.allergens)}
               </p>
             </div>
           )}
