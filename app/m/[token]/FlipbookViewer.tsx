@@ -256,7 +256,7 @@ export default function FlipbookViewer({
 
       const layer     = document.createElement('div')
       layer.className = 'pdf-text-layer'
-      layer.style.cssText = `width:${viewport.width}px;height:${viewport.height}px;`
+      layer.style.cssText = `width:${viewport.width}px;height:${viewport.height}px;overflow:hidden;`
 
       const textDivs: HTMLElement[] = []
       try {
@@ -338,6 +338,7 @@ export default function FlipbookViewer({
       }
 
       pageDiv.style.position = 'relative'
+      pageDiv.style.overflow = 'hidden'
       pageDiv.appendChild(layer)
     }
 
@@ -549,7 +550,7 @@ export default function FlipbookViewer({
 
         {/* ── A. Header minimale ────────────────────────────────────────────── */}
         <div
-          className="shrink-0 flex items-center justify-between px-4 py-3"
+          className="relative z-20 shrink-0 flex items-center justify-between px-4 py-3"
           style={{ background: theme.pageBg }}
         >
           <button
@@ -655,7 +656,7 @@ export default function FlipbookViewer({
         {/* ── C. Barra delle Categorie — visibile solo quando il libro è pronto ── */}
         {pagesReady && (
           <nav
-            className="shrink-0 flex items-stretch overflow-x-auto"
+            className="relative z-20 shrink-0 flex items-stretch overflow-x-auto"
             style={{
               background:    theme.navBg,
               borderTop:     `1px solid ${theme.textMuted}1a`,

@@ -133,18 +133,6 @@ body.menu-locked {
   background: rgba(201, 169, 110, 0.10) !important;
 }
 
-/* ─── turn.js — micro-corners superiori: 1px per non coprire il Text Layer ─── */
-/* Riduce l'area di hit-testing dei corner superiori a 1×1 px senza
-   rimuoverli (display:none romperebbe la state-machine di turn.js).
-   L'engine può ancora generarli e gestire lo swipe dal basso normalmente. */
-.fv-book .turn-page-wrapper .tl,
-.fv-book .turn-page-wrapper .tr,
-.fv-book [corner="tl"],
-.fv-book [corner="tr"] {
-  width:  1px !important;
-  height: 1px !important;
-}
-
 /* ─── DishModal — animazioni slide/fade per la navigazione piatti ── */
 @keyframes dish-slide-from-right {
   from { opacity: 0; transform: translateX(28px); }
