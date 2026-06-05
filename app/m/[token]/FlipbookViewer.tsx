@@ -550,8 +550,8 @@ export default function FlipbookViewer({
 
         {/* ── A. Header minimale ────────────────────────────────────────────── */}
         <div
-          className="relative z-[9999] shrink-0 flex items-center justify-between px-4 py-3 pointer-events-auto"
-          style={{ background: theme.pageBg }}
+          className="relative z-[9999] shrink-0 flex items-center justify-between px-4 py-3 mb-4 pointer-events-auto"
+          style={{ background: theme.pageBg, borderBottom: `1px solid ${theme.textMuted}18` }}
         >
           <button
             onClick={onBack}
