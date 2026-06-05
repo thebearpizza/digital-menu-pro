@@ -317,8 +317,14 @@ export default function FlipbookViewer({
           span.style.pointerEvents = 'auto'
           if (!span.dataset.dishId) span.dataset.dishId = captured.id
 
+          // Stop touch/mouse events from ever reaching the turn.js container.
+          // touchstart passive:true keeps scroll intent intact on the span itself.
+          span.addEventListener('touchstart', (evt) => { evt.stopPropagation() }, { passive: true })
+          span.addEventListener('mousedown',  (evt) => { evt.stopPropagation() })
+
           span.addEventListener('click', (evt) => {
             evt.stopPropagation()
+            evt.preventDefault()
             setActiveDish(captured)
           })
         }
