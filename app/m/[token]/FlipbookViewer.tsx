@@ -30,7 +30,7 @@ const menuConfig = {
 
   // ── 📖 Flipbook ───────────────────────────────────────────────────────────────
   flipbook: {
-    duration:            600,        // ms animazione sfoglio turn.js
+    duration:            1200,       // ms animazione sfoglio turn.js
     elevation:           50,         // shadow depth — identico al repo di riferimento
     pageRatio:           210 / 297,  // A4 portrait (width / height)
     marginX:             12,         // px margine laterale minimo per lato
@@ -542,7 +542,7 @@ export default function FlipbookViewer({
             className="text-xs transition-opacity duration-200 hover:opacity-50"
             style={{ color: theme.textMuted }}
           >
-            ← torna
+            ← Menù
           </button>
           <span
             className="text-xs truncate max-w-[50%] text-center"
