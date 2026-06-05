@@ -456,6 +456,11 @@ export default function FlipbookViewer({
             //       avanti in direzione ltr) → ricaviamo la destinazione.
             // TASTI: corner è null, ma opts.next è già impostato e affidabile.
             start(_evt: Event, opts: any, corner: any) {
+              // Block top corners — they intercept dish taps at the top of the page.
+              if (corner === 'tl' || corner === 'tr') {
+                (_evt as any).preventDefault?.()
+                return false
+              }
               try {
                 const cur = opts?.page as number
                 if (!cur) return
