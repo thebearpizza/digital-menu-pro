@@ -89,6 +89,8 @@ body.menu-locked {
   pointer-events: none;
   user-select: none;
   line-height: 1;
+  -webkit-tap-highlight-color: transparent !important;
+  -webkit-touch-callout: none !important;
 }
 
 /* Tutti gli span: invisibili di default */
@@ -100,6 +102,10 @@ body.menu-locked {
   cursor: default;
   transform-origin: 0% 0%;
   background: transparent;
+  -webkit-tap-highlight-color: transparent !important;
+  -webkit-touch-callout: none !important;
+  user-select: none !important;
+  outline: none !important;
 }
 
 /* Span con data-dish-id = nome piatto riconosciuto → gold-highlight on hover */
@@ -107,9 +113,10 @@ body.menu-locked {
   cursor: pointer;
   border-radius: 2px;
   transition: background 0.12s ease;
-  -webkit-tap-highlight-color: transparent;
-  outline: none;
-  user-select: none;
+  -webkit-tap-highlight-color: transparent !important;
+  -webkit-touch-callout: none !important;
+  outline: none !important;
+  user-select: none !important;
 }
 .pdf-text-layer span[data-dish-id]:hover {
   background: rgba(201, 169, 110, 0.18) !important;
