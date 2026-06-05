@@ -446,6 +446,7 @@ export default function FlipbookViewer({
           autoCenter:   false,
           display:      'single',
           duration:     flipbook.duration,
+          corners:      'bl,br',
           gradients:    true,
           acceleration: true,
           elevation:    flipbook.elevation,

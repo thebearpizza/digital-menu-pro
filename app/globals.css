@@ -133,6 +133,15 @@ body.menu-locked {
   background: rgba(201, 169, 110, 0.10) !important;
 }
 
+/* ─── turn.js — disabilita corner superiori per non bloccare il Text Layer ─── */
+.fv-book .turn-page-wrapper[corner="tl"],
+.fv-book .turn-page-wrapper[corner="tr"],
+.fv-book .tl,
+.fv-book .tr {
+  pointer-events: none !important;
+  display: none !important;
+}
+
 /* ─── DishModal — animazioni slide/fade per la navigazione piatti ── */
 @keyframes dish-slide-from-right {
   from { opacity: 0; transform: translateX(28px); }
