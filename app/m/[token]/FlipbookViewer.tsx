@@ -198,6 +198,13 @@ export default function FlipbookViewer({
     let cw = 0
     let ch = 0
 
+    // Tracks where the last touch began so the 'start' handler can reject
+    // any flip that originated in the top 40% of the viewport.
+    let lastTouchStartY = Infinity
+    const onBookTouchStart = (e: TouchEvent) => {
+      lastTouchStartY = e.touches[0]?.clientY ?? Infinity
+    }
+
     async function renderPageToCanvas(pageNum: number): Promise<void> {
       if (cancelled) return
       const pdfPage = pdfPageObjects[pageNum - 1]
@@ -467,6 +474,12 @@ export default function FlipbookViewer({
                 (_evt as any).preventDefault?.()
                 return false
               }
+              // Safety net: also block any drag-initiated flip whose touch began in
+              // the top 40% of the viewport (handles rare corner mis-classification).
+              if (typeof corner === 'string' && lastTouchStartY < window.innerHeight * 0.4) {
+                (_evt as any).preventDefault?.()
+                return false
+              }
               try {
                 const cur = opts?.page as number
                 if (!cur) return
@@ -493,6 +506,7 @@ export default function FlipbookViewer({
         setTotalPages(numPages)
         setPagesReady(true)
         setLoadPhase('ready')
+        el.addEventListener('touchstart', onBookTouchStart, { passive: true })
       } catch (err) {
         console.error('[FlipbookViewer] init fallito:', err)
         if (!cancelled) setLoadPhase('error')
@@ -501,6 +515,7 @@ export default function FlipbookViewer({
 
     return () => {
       cancelled = true
+      el.removeEventListener('touchstart', onBookTouchStart)
       renderTasks.forEach(t => { try { t.cancel() } catch (_) {} })
       try { if (el && window.$?.fn?.turn) window.$(el).turn('destroy') } catch (_) {}
       if (el) el.innerHTML = ''
