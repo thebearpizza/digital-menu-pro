@@ -107,6 +107,9 @@ body.menu-locked {
   cursor: pointer;
   border-radius: 2px;
   transition: background 0.12s ease;
+  -webkit-tap-highlight-color: transparent;
+  outline: none;
+  user-select: none;
 }
 .pdf-text-layer span[data-dish-id]:hover {
   background: rgba(201, 169, 110, 0.18) !important;

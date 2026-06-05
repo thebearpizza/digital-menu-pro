@@ -169,7 +169,7 @@ export default function DishModal({ activeDish, allDishes, onClose }: Props) {
             Scrollbar completely hidden on all engines. */}
         <div
           key={contentKey}
-          className="flex-1 min-h-0 overflow-y-auto overscroll-contain [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]"
+          className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden overscroll-contain [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]"
           style={{ ...animStyle, padding: '20px 24px 4px', touchAction: 'pan-y' }}
         >
           {/* Category chip */}
@@ -208,7 +208,7 @@ export default function DishModal({ activeDish, allDishes, onClose }: Props) {
 
           {/* Description — pre-wrap preserves \n line-breaks entered in the admin */}
           {dish.description && (
-            <p style={{ color: '#a09080', fontSize: '0.875rem', lineHeight: 1.7, marginBottom: 18, whiteSpace: 'pre-wrap' }}>
+            <p className="w-full max-w-full break-words" style={{ color: '#a09080', fontSize: '0.875rem', lineHeight: 1.7, marginBottom: 18, whiteSpace: 'pre-wrap' }}>
               {dish.description}
             </p>
           )}
