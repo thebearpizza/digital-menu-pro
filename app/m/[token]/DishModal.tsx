@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { formatAllergensFull } from '@/lib/allergens'
-import { borderRadiusPx, fontStack } from '@/lib/theme'
+import { borderRadiusPx, fontStack, formatPrice } from '@/lib/theme'
 import type { RestaurantTheme } from '@/lib/theme'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -218,7 +218,7 @@ export default function DishModal({ activeDish, allDishes, isNested, onClose, on
             <h2
               style={{
                 fontFamily: FONT_SERIF,
-                fontSize:   'clamp(1.35rem, 5vw, 1.75rem)',
+                fontSize:   'var(--font-size-title, 1.75rem)',
                 color:      '#ede8e0',
                 fontWeight: 400,
                 lineHeight: 1.2,
@@ -229,9 +229,9 @@ export default function DishModal({ activeDish, allDishes, isNested, onClose, on
             {dish.price != null && (
               <span
                 className="shrink-0 tabular-nums"
-                style={{ color: ACCENT, fontSize: '1.1rem', fontWeight: 600, paddingTop: 4 }}
+                style={{ color: ACCENT, fontSize: 'var(--font-size-price, 1.1rem)', fontWeight: 600, paddingTop: 4 }}
               >
-                €&nbsp;{Number(dish.price).toFixed(2)}
+                {formatPrice(dish.price, theme?.priceFormat ?? 'before')}
               </span>
             )}
           </div>
@@ -241,7 +241,7 @@ export default function DishModal({ activeDish, allDishes, isNested, onClose, on
 
           {/* Description — pre-wrap preserves \n line-breaks entered in the admin */}
           {dish.description && (
-            <p className="w-full max-w-full break-words" style={{ color: '#a09080', fontSize: '0.875rem', lineHeight: 1.7, marginBottom: 18, whiteSpace: 'pre-wrap' }}>
+            <p className="w-full max-w-full break-words" style={{ color: '#a09080', fontSize: 'var(--font-size-base, 0.875rem)', lineHeight: 1.7, marginBottom: 18, whiteSpace: 'pre-wrap' }}>
               {dish.description}
             </p>
           )}

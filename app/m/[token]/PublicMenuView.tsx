@@ -81,11 +81,15 @@ function ThemeInjector({ theme }: { theme: RestaurantTheme }) {
     const root = document.documentElement
     root.style.setProperty('--theme-accent',     theme.accent)
     root.style.setProperty('--theme-accent-rgb', hexToRgb(theme.accent))
-    root.style.setProperty('--theme-bg',         theme.pageBg)
+    root.style.setProperty('--theme-bg',         theme.appBg)
+    root.style.setProperty('--page-background',  theme.pageBackground)
     root.style.setProperty('--theme-text',       theme.textPrimary)
     root.style.setProperty('--theme-muted',      theme.textMuted)
     root.style.setProperty('--theme-nav',        theme.navBg)
     root.style.setProperty('--theme-radius',     borderRadiusPx(theme.borderRadius))
+    root.style.setProperty('--font-size-title',  `${theme.fontSizes.title}rem`)
+    root.style.setProperty('--font-size-base',   `${theme.fontSizes.base}rem`)
+    root.style.setProperty('--font-size-price',  `${theme.fontSizes.price}rem`)
   }, [theme])
   return null
 }
@@ -239,7 +243,7 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
         <ThemeInjector theme={t} />
         <ThemeFontLoader fontSerif={t.fontSerif} fontSans={t.fontSans} />
         <div className="fixed inset-0 h-[100dvh] flex flex-col items-center justify-center overflow-y-auto"
-          style={{ background: t.pageBg, fontFamily: SANS }}>
+          style={{ background: t.appBg, fontFamily: SANS }}>
 
           {/* Background image overlay */}
           {t.bgImage && (
@@ -322,7 +326,7 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
       <>
         <ThemeInjector theme={t} />
         <div className="fixed inset-0 h-[100dvh] flex flex-col items-center justify-center"
-          style={{ background: t.pageBg }}>
+          style={{ background: t.appBg }}>
           {error ? (
             <div className="text-center px-8 flex flex-col items-center gap-4">
               <p className="text-xs text-red-400">Impossibile generare il menu.</p>

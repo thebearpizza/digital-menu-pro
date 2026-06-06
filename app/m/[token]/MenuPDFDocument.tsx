@@ -65,7 +65,7 @@ function makeStyles(theme: RestaurantTheme) {
 
   return StyleSheet.create({
     page: {
-      backgroundColor:   '#ffffff',
+      backgroundColor:   theme.pageBackground,
       paddingTop:        compact ? 36 : 52,
       paddingBottom:     compact ? 24 : 40,
       paddingHorizontal: compact ? 42 : 54,

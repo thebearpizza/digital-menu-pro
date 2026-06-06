@@ -29,47 +29,28 @@ body.menu-locked {
 .banner-out { animation: bannerFadeOut 0.4s ease-in  both; }
 
 /* ─── FlipbookViewer — fix trasparenza e back-face turn.js ─── */
-/*
- * Wrapper statici (figli diretti di .fv-book = i nostri pageDiv).
- * Senza !important per non bloccare i gradienti nativi di turn.js.
- */
 .fv-book > div {
-  background: #fff;
+  background: var(--page-background, #fff);
   backface-visibility: hidden;
   -webkit-backface-visibility: hidden;
 }
 
-/*
- * Fix BACK-FACE / GHOSTING:
- * turn.js genera dinamicamente .turn-page, .turn-page-wrapper e loro
- * varianti durante l'animazione. Il "retro" del foglio in rotazione è
- * trasparente perché questi elementi non hanno sfondo esplicito e il
- * browser li mostra come layer di vetro oltre i 90° di rotazione.
- *
- * Soluzione: forziamo sfondo bianco opaco e backface-visibility:hidden
- * su tutti i layer generati da turn.js, mantenendo il contesto 3D
- * (transform-style:preserve-3d) necessario per la fisica dell'animazione.
- * Scoped a .fv-book per non toccare canvas o elementi fuori dal flipbook.
- */
 .fv-book .turn-page,
 .fv-book .page,
 .fv-book [class*="turn-page"] {
-  background-color: #ffffff !important;
+  background-color: var(--page-background, #ffffff) !important;
   opacity: 1 !important;
   backface-visibility: hidden !important;
   -webkit-backface-visibility: hidden !important;
   transform-style: preserve-3d !important;
 }
 
-/* Divs annidati dentro il wrapper (layer intermedi della piega) */
 .fv-book .turn-page-wrapper div {
-  background-color: #ffffff;
+  background-color: var(--page-background, #ffffff);
 }
 
-/* Canvas dentro il flipbook: opaco sia a livello CSS che bitmap
-   (il fillRect nel render copre il bitmap; qui copriamo il compositor GPU) */
 .fv-book canvas {
-  background-color: #ffffff !important;
+  background-color: var(--page-background, #ffffff) !important;
   opacity: 1 !important;
 }
 

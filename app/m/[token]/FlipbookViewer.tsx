@@ -117,9 +117,10 @@ export default function FlipbookViewer({
 }: Props) {
   // Merge incoming theme over menuConfig defaults so existing callers without
   // a theme prop keep working with the hardcoded palette.
+  const pageBgColor  = themeProp?.pageBackground ?? menuConfig.flipbook.pageBackground
   const theme = {
     ...menuConfig.theme,
-    pageBg:     themeProp?.pageBg      ?? menuConfig.theme.pageBg,
+    appBg:      themeProp?.appBg       ?? menuConfig.theme.pageBg,
     accent:     themeProp?.accent      ?? menuConfig.theme.accent,
     textPrimary:themeProp?.textPrimary ?? menuConfig.theme.textPrimary,
     textMuted:  themeProp?.textMuted   ?? menuConfig.theme.textMuted,
@@ -237,7 +238,7 @@ export default function FlipbookViewer({
       if (!canvas || cancelled) return
 
       const ctx = canvas.getContext('2d')!
-      ctx.fillStyle = flipbook.pageBackground
+      ctx.fillStyle = pageBgColor
       ctx.fillRect(0, 0, cw, ch)
 
       const task = pdfPage.render({ canvasContext: ctx, viewport })
@@ -427,7 +428,7 @@ export default function FlipbookViewer({
           const pageDiv = document.createElement('div')
           pageDiv.style.cssText =
             `width:${dims.w}px;height:${dims.h}px;overflow:hidden;` +
-            `background:${flipbook.pageBackground};` +
+            `background:${pageBgColor};` +
             `backface-visibility:hidden;-webkit-backface-visibility:hidden;`
 
           const canvas = document.createElement('canvas')
@@ -590,7 +591,7 @@ export default function FlipbookViewer({
     <div
       className="fixed inset-0 h-[100dvh] overflow-hidden select-none outline-none [-webkit-tap-highlight-color:transparent] [&_*]:[-webkit-tap-highlight-color:transparent]"
       style={{
-        background:  theme.pageBg,
+        background:  theme.appBg,
         touchAction: 'none',
         fontFamily:  theme.fontSans,
         '--theme-accent-rgb': hexToRgb(themeProp?.accent ?? '#c9a96e'),

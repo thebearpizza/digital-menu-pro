@@ -4,70 +4,87 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 export interface RestaurantTheme {
-  // Brand color — affects accent lines, button borders, social icons, PDF
-  accent:       string
-  // Landing page dark background (CSS color or gradient)
-  pageBg:       string
+  // ── Dual background ────────────────────────────────────────────────────────
+  // The dark space behind/around everything: landing, flipbook container
+  appBg:          string
+  // The physical "paper" color of the PDF pages (and flipbook page faces)
+  pageBackground: string
   // Category nav bar background
-  navBg:        string
-  // Optional background image URL (Supabase storage)
-  bgImage?:     string
-  bgImageOpacity: number  // 0–100
-  // Primary text (restaurant name, dish titles)
-  textPrimary:  string
-  // Secondary / muted text (hints, labels, page counter)
-  textMuted:    string
-  // Google Font name for serif headings (restaurant name, dish names)
-  fontSerif:    string
-  // Google Font name for sans-serif body / labels
-  fontSans:     string
-  // Border radius token applied to buttons and modals
+  navBg:          string
+  // Optional texture/pattern overlaid on appBg
+  bgImage?:       string
+  bgImageOpacity: number   // 0–100
+
+  // ── Colors ────────────────────────────────────────────────────────────────
+  accent:      string
+  textPrimary: string
+  textMuted:   string
+
+  // ── Typography ────────────────────────────────────────────────────────────
+  fontSerif:   string
+  fontSans:    string
+  fontSizes: {
+    title: number   // rem — headings (restaurant name, dish names)
+    base:  number   // rem — descriptions, labels
+    price: number   // rem — price labels
+  }
+
+  // ── Style ─────────────────────────────────────────────────────────────────
   borderRadius: 'none' | 'sm' | 'md'
-  // PDF dish layout
+
+  // ── PDF ───────────────────────────────────────────────────────────────────
   pdfLayout:    'classic' | 'compact'
-  // How dish items are arranged (affects PDF page layout)
   dishLayout:   'list' | 'grid' | 'boxed'
-  // Price display format
   priceFormat:  'before' | 'after' | 'minimal'
-  // Separator line between dish items
   dividerStyle: 'none' | 'thin' | 'dashed'
 }
 
 export const DEFAULT_THEME: RestaurantTheme = {
-  accent:           '#c9a96e',
-  pageBg:           '#0d0d0d',
-  navBg:            'rgba(7,7,7,0.96)',
-  bgImage:          undefined,
-  bgImageOpacity:   30,
-  textPrimary:      '#ede8e0',
-  textMuted:        '#4f4f4f',
-  fontSerif:        'Cormorant Garamond',
-  fontSans:         'DM Sans',
-  borderRadius:     'none',
-  pdfLayout:        'classic',
-  dishLayout:       'list',
-  priceFormat:      'before',
-  dividerStyle:     'thin',
+  appBg:          '#0d0d0d',
+  pageBackground: '#ffffff',
+  navBg:          'rgba(7,7,7,0.96)',
+  bgImage:        undefined,
+  bgImageOpacity: 30,
+  accent:         '#c9a96e',
+  textPrimary:    '#ede8e0',
+  textMuted:      '#4f4f4f',
+  fontSerif:      'Cormorant Garamond',
+  fontSans:       'DM Sans',
+  fontSizes:      { title: 1.75, base: 0.875, price: 1.1 },
+  borderRadius:   'none',
+  pdfLayout:      'classic',
+  dishLayout:     'list',
+  priceFormat:    'before',
+  dividerStyle:   'thin',
 }
 
 export function parseTheme(raw: unknown): RestaurantTheme {
-  if (!raw || typeof raw !== 'object') return { ...DEFAULT_THEME }
-  const r = raw as Record<string, unknown>
+  if (!raw || typeof raw !== 'object') return { ...DEFAULT_THEME, fontSizes: { ...DEFAULT_THEME.fontSizes } }
+  const r  = raw as Record<string, unknown>
+  const fs = r.fontSizes && typeof r.fontSizes === 'object' ? r.fontSizes as Record<string, unknown> : {}
   return {
-    accent:          typeof r.accent === 'string'         ? r.accent         : DEFAULT_THEME.accent,
-    pageBg:          typeof r.pageBg === 'string'          ? r.pageBg         : DEFAULT_THEME.pageBg,
-    navBg:           typeof r.navBg === 'string'           ? r.navBg          : DEFAULT_THEME.navBg,
-    bgImage:         typeof r.bgImage === 'string'         ? r.bgImage        : undefined,
-    bgImageOpacity:  typeof r.bgImageOpacity === 'number'  ? r.bgImageOpacity : DEFAULT_THEME.bgImageOpacity,
-    textPrimary:     typeof r.textPrimary === 'string'     ? r.textPrimary    : DEFAULT_THEME.textPrimary,
-    textMuted:       typeof r.textMuted === 'string'       ? r.textMuted      : DEFAULT_THEME.textMuted,
-    fontSerif:       typeof r.fontSerif === 'string'       ? r.fontSerif      : DEFAULT_THEME.fontSerif,
-    fontSans:        typeof r.fontSans === 'string'        ? r.fontSans       : DEFAULT_THEME.fontSans,
-    borderRadius:    r.borderRadius === 'sm' || r.borderRadius === 'md' ? r.borderRadius : 'none',
-    pdfLayout:       r.pdfLayout === 'compact'             ? 'compact'        : 'classic',
-    dishLayout:      r.dishLayout === 'grid' || r.dishLayout === 'boxed' ? r.dishLayout : 'list',
-    priceFormat:     r.priceFormat === 'after' || r.priceFormat === 'minimal' ? r.priceFormat : 'before',
-    dividerStyle:    r.dividerStyle === 'none' || r.dividerStyle === 'dashed' ? r.dividerStyle : 'thin',
+    // appBg backward-compat: also accepts old key 'pageBg'
+    appBg:          typeof r.appBg  === 'string' ? r.appBg  :
+                    typeof r.pageBg === 'string' ? r.pageBg : DEFAULT_THEME.appBg,
+    pageBackground: typeof r.pageBackground === 'string' ? r.pageBackground : DEFAULT_THEME.pageBackground,
+    navBg:          typeof r.navBg      === 'string' ? r.navBg      : DEFAULT_THEME.navBg,
+    bgImage:        typeof r.bgImage    === 'string' ? r.bgImage    : undefined,
+    bgImageOpacity: typeof r.bgImageOpacity === 'number' ? r.bgImageOpacity : DEFAULT_THEME.bgImageOpacity,
+    accent:         typeof r.accent     === 'string' ? r.accent     : DEFAULT_THEME.accent,
+    textPrimary:    typeof r.textPrimary === 'string' ? r.textPrimary : DEFAULT_THEME.textPrimary,
+    textMuted:      typeof r.textMuted  === 'string' ? r.textMuted  : DEFAULT_THEME.textMuted,
+    fontSerif:      typeof r.fontSerif  === 'string' ? r.fontSerif  : DEFAULT_THEME.fontSerif,
+    fontSans:       typeof r.fontSans   === 'string' ? r.fontSans   : DEFAULT_THEME.fontSans,
+    fontSizes: {
+      title: typeof fs.title === 'number' ? fs.title : DEFAULT_THEME.fontSizes.title,
+      base:  typeof fs.base  === 'number' ? fs.base  : DEFAULT_THEME.fontSizes.base,
+      price: typeof fs.price === 'number' ? fs.price : DEFAULT_THEME.fontSizes.price,
+    },
+    borderRadius:  r.borderRadius === 'sm' || r.borderRadius === 'md' ? r.borderRadius : 'none',
+    pdfLayout:     r.pdfLayout === 'compact' ? 'compact' : 'classic',
+    dishLayout:    r.dishLayout === 'grid' || r.dishLayout === 'boxed' ? r.dishLayout : 'list',
+    priceFormat:   r.priceFormat === 'after' || r.priceFormat === 'minimal' ? r.priceFormat : 'before',
+    dividerStyle:  r.dividerStyle === 'none' || r.dividerStyle === 'dashed' ? r.dividerStyle : 'thin',
   }
 }
 
@@ -90,15 +107,13 @@ export function fontStack(name: string, category: 'serif' | 'sans'): string {
   return `'${name}', ${fallback}`
 }
 
-// Format a dish price according to the chosen format.
 export function formatPrice(price: number, format: RestaurantTheme['priceFormat']): string {
   const num = price.toFixed(2)
   if (format === 'after')   return `${num} €`
   if (format === 'minimal') return num
-  return `€ ${num}`          // 'before' (default)
+  return `€ ${num}`
 }
 
-// Returns "r, g, b" string for use in rgba(var(--theme-accent-rgb), alpha) CSS.
 export function hexToRgb(hex: string): string {
   const h = hex.replace('#', '')
   const r = parseInt(h.slice(0, 2), 16)
@@ -107,7 +122,6 @@ export function hexToRgb(hex: string): string {
   return `${r}, ${g}, ${b}`
 }
 
-// Blends hex color with white at `amount` (0 = original, 1 = white).
 export function lightenHex(hex: string, amount: number): string {
   const h = hex.replace('#', '')
   const r = Math.round(parseInt(h.slice(0, 2), 16) + (255 - parseInt(h.slice(0, 2), 16)) * amount)
