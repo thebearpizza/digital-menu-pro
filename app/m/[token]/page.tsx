@@ -23,7 +23,7 @@ export default async function PublicMenuPage({
 
   const { data: restaurant } = await supabase
     .from('restaurants')
-    .select('id, name, description, logo_url, instagram_url, facebook_url, website_url, tripadvisor_url, google_maps_url, visibility')
+    .select('id, name, description, logo_url, instagram_url, facebook_url, website_url, tripadvisor_url, google_maps_url, visibility, theme_config')
     .eq('qr_public_token', params.token)
     .eq('is_active', true)
     .single()

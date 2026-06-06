@@ -25,6 +25,12 @@ export interface RestaurantTheme {
   borderRadius: 'none' | 'sm' | 'md'
   // PDF dish layout
   pdfLayout:    'classic' | 'compact'
+  // How dish items are arranged (affects PDF page layout)
+  dishLayout:   'list' | 'grid' | 'boxed'
+  // Price display format
+  priceFormat:  'before' | 'after' | 'minimal'
+  // Separator line between dish items
+  dividerStyle: 'none' | 'thin' | 'dashed'
 }
 
 export const DEFAULT_THEME: RestaurantTheme = {
@@ -39,23 +45,29 @@ export const DEFAULT_THEME: RestaurantTheme = {
   fontSans:         'DM Sans',
   borderRadius:     'none',
   pdfLayout:        'classic',
+  dishLayout:       'list',
+  priceFormat:      'before',
+  dividerStyle:     'thin',
 }
 
 export function parseTheme(raw: unknown): RestaurantTheme {
   if (!raw || typeof raw !== 'object') return { ...DEFAULT_THEME }
   const r = raw as Record<string, unknown>
   return {
-    accent:          typeof r.accent === 'string'       ? r.accent       : DEFAULT_THEME.accent,
-    pageBg:          typeof r.pageBg === 'string'        ? r.pageBg       : DEFAULT_THEME.pageBg,
-    navBg:           typeof r.navBg === 'string'         ? r.navBg        : DEFAULT_THEME.navBg,
-    bgImage:         typeof r.bgImage === 'string'       ? r.bgImage      : undefined,
-    bgImageOpacity:  typeof r.bgImageOpacity === 'number'? r.bgImageOpacity: DEFAULT_THEME.bgImageOpacity,
-    textPrimary:     typeof r.textPrimary === 'string'   ? r.textPrimary  : DEFAULT_THEME.textPrimary,
-    textMuted:       typeof r.textMuted === 'string'     ? r.textMuted    : DEFAULT_THEME.textMuted,
-    fontSerif:       typeof r.fontSerif === 'string'     ? r.fontSerif    : DEFAULT_THEME.fontSerif,
-    fontSans:        typeof r.fontSans === 'string'      ? r.fontSans     : DEFAULT_THEME.fontSans,
+    accent:          typeof r.accent === 'string'         ? r.accent         : DEFAULT_THEME.accent,
+    pageBg:          typeof r.pageBg === 'string'          ? r.pageBg         : DEFAULT_THEME.pageBg,
+    navBg:           typeof r.navBg === 'string'           ? r.navBg          : DEFAULT_THEME.navBg,
+    bgImage:         typeof r.bgImage === 'string'         ? r.bgImage        : undefined,
+    bgImageOpacity:  typeof r.bgImageOpacity === 'number'  ? r.bgImageOpacity : DEFAULT_THEME.bgImageOpacity,
+    textPrimary:     typeof r.textPrimary === 'string'     ? r.textPrimary    : DEFAULT_THEME.textPrimary,
+    textMuted:       typeof r.textMuted === 'string'       ? r.textMuted      : DEFAULT_THEME.textMuted,
+    fontSerif:       typeof r.fontSerif === 'string'       ? r.fontSerif      : DEFAULT_THEME.fontSerif,
+    fontSans:        typeof r.fontSans === 'string'        ? r.fontSans       : DEFAULT_THEME.fontSans,
     borderRadius:    r.borderRadius === 'sm' || r.borderRadius === 'md' ? r.borderRadius : 'none',
-    pdfLayout:       r.pdfLayout === 'compact'           ? 'compact'      : 'classic',
+    pdfLayout:       r.pdfLayout === 'compact'             ? 'compact'        : 'classic',
+    dishLayout:      r.dishLayout === 'grid' || r.dishLayout === 'boxed' ? r.dishLayout : 'list',
+    priceFormat:     r.priceFormat === 'after' || r.priceFormat === 'minimal' ? r.priceFormat : 'before',
+    dividerStyle:    r.dividerStyle === 'none' || r.dividerStyle === 'dashed' ? r.dividerStyle : 'thin',
   }
 }
 
@@ -63,8 +75,6 @@ export function borderRadiusPx(token: RestaurantTheme['borderRadius']): string {
   return token === 'sm' ? '6px' : token === 'md' ? '14px' : '0px'
 }
 
-// Builds a Google Fonts stylesheet URL for the two selected font families.
-// Handles both curated names and arbitrary custom names.
 export function googleFontsUrl(fontSerif: string, fontSans: string): string {
   const families = [fontSerif, fontSans]
     .filter(Boolean)
@@ -80,23 +90,13 @@ export function fontStack(name: string, category: 'serif' | 'sans'): string {
   return `'${name}', ${fallback}`
 }
 
-// Curated font lists shown in the admin dropdown.
-// Users can also type any Google Font name freely.
-export const SERIF_FONTS = [
-  'Cormorant Garamond',
-  'Playfair Display',
-  'EB Garamond',
-  'Lora',
-  'Libre Baskerville',
-]
-
-export const SANS_FONTS = [
-  'DM Sans',
-  'Inter',
-  'Raleway',
-  'Josefin Sans',
-  'Montserrat',
-]
+// Format a dish price according to the chosen format.
+export function formatPrice(price: number, format: RestaurantTheme['priceFormat']): string {
+  const num = price.toFixed(2)
+  if (format === 'after')   return `${num} €`
+  if (format === 'minimal') return num
+  return `€ ${num}`          // 'before' (default)
+}
 
 // Returns "r, g, b" string for use in rgba(var(--theme-accent-rgb), alpha) CSS.
 export function hexToRgb(hex: string): string {
@@ -115,3 +115,19 @@ export function lightenHex(hex: string, amount: number): string {
   const b = Math.round(parseInt(h.slice(4, 6), 16) + (255 - parseInt(h.slice(4, 6), 16)) * amount)
   return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`
 }
+
+export const SERIF_FONTS = [
+  'Cormorant Garamond',
+  'Playfair Display',
+  'EB Garamond',
+  'Lora',
+  'Libre Baskerville',
+]
+
+export const SANS_FONTS = [
+  'DM Sans',
+  'Inter',
+  'Raleway',
+  'Josefin Sans',
+  'Montserrat',
+]
