@@ -20,7 +20,6 @@ import {
   deleteDish, reorderCategories, reorderDishes,
   duplicateDish, duplicateCategory, findDishTwins, DishTwin,
 } from './actions'
-import { allergenName } from '@/lib/allergens'
 
 interface Dish {
   id: string
@@ -129,7 +128,7 @@ function SortableDish({
           )}
           {dish.allergens?.length > 0 && (
             <div className="text-[10px] text-orange-500 mt-0.5">
-              {dish.allergens.map(a => `${a}. ${allergenName(a)}`).join(' · ')}
+              Allergeni: {dish.allergens.join(', ')}
             </div>
           )}
         </div>
@@ -454,7 +453,7 @@ export default function DishList({
     setMoveDish(null)
   }
 
-  async function handleSaved(saved: any, isNew: boolean) {
+  async function handleSaved(saved: any, isNew: boolean, dirtyFields: Set<string>) {
     const next = isNew
       ? [...dishes, saved]
       : dishes.map(d => d.id === saved.id ? saved : d)
@@ -463,8 +462,12 @@ export default function DishList({
     setFormOpen(false)
     setEditingDish(null)
 
-    // MODULO 5 — dopo una modifica, cerca gemelli (stesso nome) in altri menu
-    if (!isNew) {
+    // Mostra il banner di sync solo se l'utente ha effettivamente modificato
+    // almeno un campo sincronizzabile in questa sessione di modifica.
+    const syncFields = ['name', 'description', 'price', 'category', 'image_url', 'allergens', 'pairing_dish_id']
+    const hasSyncDirty = !isNew && syncFields.some(f => dirtyFields.has(f))
+
+    if (hasSyncDirty) {
       try {
         const { source, twins } = await findDishTwins(restaurantId, menuId, saved.id)
         if (source && twins.length && anyFieldDiffers(source, twins)) {
@@ -520,6 +523,7 @@ export default function DishList({
 
       {(formOpen || editingDish) && (
         <DishForm
+          key={editingDish?.id ?? 'new'}
           restaurantId={restaurantId}
           menuId={menuId}
           dish={editingDish}

@@ -27,7 +27,7 @@ interface Props {
   dish: Dish | null
   allDishes: SimpleDish[]
   allMenus: SimpleMenu[]
-  onSaved: (dish: Dish, isNew: boolean) => void
+  onSaved: (dish: Dish, isNew: boolean, dirtyFields: Set<string>) => void
   onClose: () => void
 }
 
@@ -42,7 +42,10 @@ const AllergenGrid = React.memo(function AllergenGrid({
   initial: number[]
   onChange: (ids: number[]) => void
 }) {
-  const [selected, setSelected] = useState<Set<number>>(() => new Set(initial))
+  // Coerce to numbers defensively — Supabase may return JSON scalars.
+  const [selected, setSelected] = useState<Set<number>>(
+    () => new Set((initial ?? []).map(Number))
+  )
 
   function toggle(id: number) {
     setSelected(prev => {
@@ -167,10 +170,14 @@ export default function DishForm({
   const [extraMenuIds, setExtraMenuIds] = useState<Set<string>>(new Set())
 
   // Allergens kept in a ref so AllergenGrid can update without re-rendering this form
-  const allergensRef = useRef<number[]>(dish?.allergens ?? [])
+  const allergensRef = useRef<number[]>((dish?.allergens ?? []).map(Number))
   const handleAllergenChange = useCallback((ids: number[]) => {
     allergensRef.current = ids
-  }, [])
+    dirtyRef.current.add('allergens')
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Dirty fields tracking — tracks which fields were actually changed in this session
+  const dirtyRef = useRef<Set<string>>(new Set())
 
   // Unique sorted categories from all dishes in this restaurant
   const existingCategories = Array.from(
@@ -190,6 +197,7 @@ export default function DishForm({
     if (!err && data) {
       const { data: pub } = supabase.storage.from('dish-images').getPublicUrl(data.path)
       setImageUrl(pub.publicUrl)
+      dirtyRef.current.add('image_url')
     } else if (err) {
       setError('Upload fallito: ' + err.message)
     }
@@ -224,7 +232,7 @@ export default function DishForm({
         )
       }
 
-      onSaved(saved as unknown as Dish, !dish)
+      onSaved(saved as unknown as Dish, !dish, new Set(dirtyRef.current))
     } catch (err: any) {
       setError(err.message ?? 'Errore. Riprova.')
       setSaving(false)
@@ -258,7 +266,7 @@ export default function DishForm({
             <input
               type="text"
               value={name}
-              onChange={e => setName(e.target.value)}
+              onChange={e => { setName(e.target.value); dirtyRef.current.add('name') }}
               required
               placeholder="Es. Margherita"
               className="w-full px-3 py-2 border border-gray-300 text-base focus:outline-none focus:border-blue-500"
@@ -271,7 +279,7 @@ export default function DishForm({
               <label className="block text-xs font-medium text-gray-600 mb-1">Categoria *</label>
               <CategoryCombobox
                 value={category}
-                onChange={setCategory}
+                onChange={v => { setCategory(v); dirtyRef.current.add('category') }}
                 categories={existingCategories}
               />
             </div>
@@ -280,7 +288,7 @@ export default function DishForm({
               <input
                 type="number"
                 value={price}
-                onChange={e => setPrice(e.target.value)}
+                onChange={e => { setPrice(e.target.value); dirtyRef.current.add('price') }}
                 min="0"
                 step="0.50"
                 placeholder="0.00"
@@ -294,7 +302,7 @@ export default function DishForm({
             <label className="block text-xs font-medium text-gray-600 mb-1">Descrizione</label>
             <textarea
               value={description}
-              onChange={e => setDescription(e.target.value)}
+              onChange={e => { setDescription(e.target.value); dirtyRef.current.add('description') }}
               rows={3}
               placeholder="Ingredienti, note…"
               className="w-full px-3 py-2 border border-gray-300 text-base focus:outline-none focus:border-blue-500 resize-none"
@@ -309,7 +317,7 @@ export default function DishForm({
                 <img src={imageUrl} alt="" className="w-20 h-20 object-cover border border-gray-200" />
                 <button
                   type="button"
-                  onClick={() => setImageUrl('')}
+                  onClick={() => { setImageUrl(''); dirtyRef.current.add('image_url') }}
                   className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 text-white text-xs rounded-full flex items-center justify-center"
                 >
                   &times;
@@ -329,7 +337,8 @@ export default function DishForm({
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-2">Allergeni</label>
             <AllergenGrid
-              initial={dish?.allergens ?? []}
+              key={dish?.id ?? 'new'}
+              initial={(dish?.allergens ?? []).map(Number)}
               onChange={handleAllergenChange}
             />
           </div>
@@ -342,7 +351,7 @@ export default function DishForm({
               </label>
               <select
                 value={pairingId}
-                onChange={e => setPairingId(e.target.value)}
+                onChange={e => { setPairingId(e.target.value); dirtyRef.current.add('pairing_dish_id') }}
                 className="w-full px-3 py-2 border border-gray-300 text-base focus:outline-none focus:border-blue-500 bg-white"
               >
                 <option value="">— Nessuno —</option>

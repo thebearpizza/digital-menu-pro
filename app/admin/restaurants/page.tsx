@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
+import RestaurantDeleteButton from './RestaurantDeleteButton'
 
 export default async function RestaurantsPage() {
   const supabase = await createClient()
@@ -37,7 +38,7 @@ export default async function RestaurantsPage() {
         </div>
       ) : (
         <div className="bg-white border border-gray-200 overflow-x-auto">
-          <table className="w-full min-w-[480px]">
+          <table className="w-full min-w-[520px]">
             <thead>
               <tr className="border-b border-gray-200 bg-gray-50 text-left">
                 <th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Nome</th>
@@ -64,13 +65,19 @@ export default async function RestaurantsPage() {
                   <td className="px-4 py-3 text-xs text-gray-400 font-mono hidden md:table-cell">
                     {r.qr_public_token}
                   </td>
-                  <td className="px-4 py-3 text-right">
-                    <Link
-                      href={`/admin/restaurants/${r.id}`}
-                      className="text-sm text-blue-600 hover:underline"
-                    >
-                      Gestisci →
-                    </Link>
+                  <td className="px-4 py-3">
+                    <div className="flex items-center justify-end gap-3 whitespace-nowrap">
+                      <Link
+                        href={`/admin/restaurants/${r.id}`}
+                        className="text-sm text-blue-600 hover:underline"
+                      >
+                        Gestisci →
+                      </Link>
+                      <RestaurantDeleteButton
+                        restaurantId={r.id}
+                        restaurantName={r.name}
+                      />
+                    </div>
                   </td>
                 </tr>
               ))}
