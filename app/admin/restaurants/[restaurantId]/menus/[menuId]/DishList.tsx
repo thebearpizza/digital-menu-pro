@@ -16,9 +16,11 @@ import { CSS } from '@dnd-kit/utilities'
 import DishForm from './DishForm'
 import DishSyncBannerModal from './DishSyncBannerModal'
 import MoveDishModal from './MoveDishModal'
+import MoveCategoryModal from './MoveCategoryModal'
 import {
   deleteDish, reorderCategories, reorderDishes,
   duplicateDish, duplicateCategory, findDishTwins, DishTwin,
+  toggleDishActive, toggleCategoryActive,
 } from './actions'
 
 interface Dish {
@@ -88,6 +90,7 @@ function SortableDish({
   onDelete,
   onDuplicate,
   onMove,
+  onToggle,
   deletingId,
 }: {
   dish: Dish
@@ -95,6 +98,7 @@ function SortableDish({
   onDelete: (dish: Dish) => void
   onDuplicate: (dish: Dish) => void
   onMove: (dish: Dish) => void
+  onToggle: (dish: Dish) => void
   deletingId: string | null
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
@@ -146,6 +150,12 @@ function SortableDish({
             Modifica
           </button>
           <button
+            onClick={() => onToggle(dish)}
+            className={`text-xs hover:underline px-2 min-h-[44px] md:min-h-0 ${dish.is_active ? 'text-orange-500' : 'text-green-600'}`}
+          >
+            {dish.is_active ? 'Disabilita' : 'Abilita'}
+          </button>
+          <button
             onClick={() => onDuplicate(dish)}
             className="text-xs text-gray-500 hover:text-gray-800 hover:underline px-2 min-h-[44px] md:min-h-0"
           >
@@ -182,9 +192,13 @@ function SortableCategory({
   onDelete,
   onDuplicateDish,
   onMoveDish,
+  onToggleDish,
   onReorderDishes,
   onDuplicateCategory,
   onDeleteCategory,
+  onAddDish,
+  onMoveCategory,
+  onToggleCategory,
   deletingId,
 }: {
   cat: string
@@ -196,9 +210,13 @@ function SortableCategory({
   onDelete: (dish: Dish) => void
   onDuplicateDish: (dish: Dish) => void
   onMoveDish: (dish: Dish) => void
+  onToggleDish: (dish: Dish) => void
   onReorderDishes: (cat: string, dishIds: string[]) => void
   onDuplicateCategory: (cat: string) => void
   onDeleteCategory: (cat: string) => void
+  onAddDish: (cat: string) => void
+  onMoveCategory: (cat: string) => void
+  onToggleCategory: (cat: string, active: boolean) => void
   deletingId: string | null
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
@@ -245,6 +263,23 @@ function SortableCategory({
 
         {/* Azioni categoria */}
         <div className="flex items-center gap-1 shrink-0">
+          {dishes.length > 0 && (() => {
+            const allActive = dishes.every(d => d.is_active)
+            return (
+              <button
+                onClick={() => onToggleCategory(cat, !allActive)}
+                className={`text-xs hover:underline px-2 min-h-[44px] md:min-h-0 ${allActive ? 'text-orange-500' : 'text-green-600'}`}
+              >
+                {allActive ? 'Disabilita' : 'Abilita'}
+              </button>
+            )
+          })()}
+          <button
+            onClick={() => onMoveCategory(cat)}
+            className="text-xs text-gray-500 hover:text-gray-800 hover:underline px-2 min-h-[44px] md:min-h-0"
+          >
+            Sposta in
+          </button>
           <button
             onClick={() => onDuplicateCategory(cat)}
             className="text-xs text-gray-500 hover:text-gray-800 hover:underline px-2 min-h-[44px] md:min-h-0"
@@ -271,29 +306,41 @@ function SortableCategory({
 
       {/* Dish rows — visibili solo quando espanso, con DnD interno per i piatti. */}
       {expanded && (
-        dishes.length === 0 ? (
-          <p className="px-4 py-4 text-xs text-gray-400">
-            Categoria vuota. Aggiungi un piatto scegliendo questa categoria.
-          </p>
-        ) : (
-          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDishDragEnd}>
-            <SortableContext items={dishes.map(d => d.id)} strategy={verticalListSortingStrategy}>
-              <ul className="divide-y divide-gray-50">
-                {dishes.map(dish => (
-                  <SortableDish
-                    key={dish.id}
-                    dish={dish}
-                    onEdit={onEdit}
-                    onDelete={onDelete}
-                    onDuplicate={onDuplicateDish}
-                    onMove={onMoveDish}
-                    deletingId={deletingId}
-                  />
-                ))}
-              </ul>
-            </SortableContext>
-          </DndContext>
-        )
+        <div>
+          {dishes.length === 0 ? (
+            <p className="px-4 py-4 text-xs text-gray-400">
+              Categoria vuota. Aggiungi un piatto con il pulsante qui sotto.
+            </p>
+          ) : (
+            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDishDragEnd}>
+              <SortableContext items={dishes.map(d => d.id)} strategy={verticalListSortingStrategy}>
+                <ul className="divide-y divide-gray-50">
+                  {dishes.map(dish => (
+                    <SortableDish
+                      key={dish.id}
+                      dish={dish}
+                      onEdit={onEdit}
+                      onDelete={onDelete}
+                      onDuplicate={onDuplicateDish}
+                      onMove={onMoveDish}
+                      onToggle={onToggleDish}
+                      deletingId={deletingId}
+                    />
+                  ))}
+                </ul>
+              </SortableContext>
+            </DndContext>
+          )}
+          {/* MODULO 4 — quick add within category */}
+          <div className="px-3 py-2 border-t border-gray-100 bg-gray-50/50">
+            <button
+              onClick={() => onAddDish(cat)}
+              className="text-xs text-blue-600 hover:underline font-medium"
+            >
+              + Aggiungi piatto
+            </button>
+          </div>
+        </div>
       )}
     </div>
   )
@@ -304,12 +351,14 @@ function SortableCategory({
 export default function DishList({
   restaurantId, menuId, initialDishes, allDishes, allMenus, initialCategoryOrder,
 }: Props) {
-  const [dishes,      setDishes]      = useState(initialDishes)
-  const [formOpen,    setFormOpen]    = useState(false)
-  const [editingDish, setEditingDish] = useState<Dish | null>(null)
-  const [moveDish,    setMoveDish]    = useState<Dish | null>(null)
-  const [bannerSync,  setBannerSync]  = useState<{ source: SourceDish; twins: DishTwin[] } | null>(null)
-  const [deletingId,  setDeletingId]  = useState<string | null>(null)
+  const [dishes,       setDishes]       = useState(initialDishes)
+  const [formOpen,     setFormOpen]     = useState(false)
+  const [editingDish,  setEditingDish]  = useState<Dish | null>(null)
+  const [formCat,      setFormCat]      = useState<string | null>(null) // pre-fill category (MODULO 4)
+  const [moveDish,     setMoveDish]     = useState<Dish | null>(null)
+  const [moveCatName,  setMoveCatName]  = useState<string | null>(null) // MODULO 3: sposta categoria
+  const [bannerSync,   setBannerSync]   = useState<{ source: SourceDish; twins: DishTwin[] } | null>(null)
+  const [deletingId,   setDeletingId]   = useState<string | null>(null)
 
   // Aggiunta categoria (MODULO 3)
   const [addingCat, setAddingCat] = useState(false)
@@ -453,6 +502,42 @@ export default function DishList({
     setMoveDish(null)
   }
 
+  // ── MODULO 3: toggle is_active per piatto / categoria ──────────────────────
+
+  async function handleToggleDish(dish: Dish) {
+    const next = !dish.is_active
+    setDishes(prev => prev.map(d => d.id === dish.id ? { ...d, is_active: next } : d))
+    try {
+      await toggleDishActive(restaurantId, menuId, dish.id, next)
+    } catch { alert('Errore nel cambio stato piatto.') }
+  }
+
+  async function handleToggleCategory(cat: string, active: boolean) {
+    setDishes(prev => prev.map(d =>
+      (d.category ?? 'Senza categoria') === cat ? { ...d, is_active: active } : d
+    ))
+    try {
+      await toggleCategoryActive(restaurantId, menuId, cat, active)
+    } catch { alert('Errore nel cambio stato categoria.') }
+  }
+
+  // ── MODULO 3: sposta categoria ──────────────────────────────────────────────
+
+  function handleMovedCategory(cat: string) {
+    const next = dishes.filter(d => (d.category ?? 'Senza categoria') !== cat)
+    setDishes(next)
+    setCategories(prev => prev.filter(c => c !== cat))
+    setMoveCatName(null)
+  }
+
+  // ── MODULO 4: apri form con categoria pre-impostata ─────────────────────────
+
+  function handleAddDish(cat: string) {
+    setEditingDish(null)
+    setFormCat(cat)
+    setFormOpen(true)
+  }
+
   async function handleSaved(saved: any, isNew: boolean, dirtyFields: Set<string>) {
     const next = isNew
       ? [...dishes, saved]
@@ -461,6 +546,7 @@ export default function DishList({
     syncCategories(next)
     setFormOpen(false)
     setEditingDish(null)
+    setFormCat(null)
 
     // Mostra il banner di sync solo se l'utente ha effettivamente modificato
     // almeno un campo sincronizzabile in questa sessione di modifica.
@@ -523,14 +609,15 @@ export default function DishList({
 
       {(formOpen || editingDish) && (
         <DishForm
-          key={editingDish?.id ?? 'new'}
+          key={editingDish?.id ?? `new-${formCat ?? ''}`}
           restaurantId={restaurantId}
           menuId={menuId}
           dish={editingDish}
           allDishes={allDishes}
           allMenus={allMenus}
+          defaultCategory={formCat ?? undefined}
           onSaved={handleSaved}
-          onClose={() => { setFormOpen(false); setEditingDish(null) }}
+          onClose={() => { setFormOpen(false); setEditingDish(null); setFormCat(null) }}
         />
       )}
 
@@ -543,6 +630,18 @@ export default function DishList({
           menus={allMenus}
           onMoved={handleMoved}
           onClose={() => setMoveDish(null)}
+        />
+      )}
+
+      {moveCatName && (
+        <MoveCategoryModal
+          restaurantId={restaurantId}
+          fromMenuId={menuId}
+          category={moveCatName}
+          dishCount={(byCategory[moveCatName] ?? []).length}
+          menus={allMenus}
+          onMoved={handleMovedCategory}
+          onClose={() => setMoveCatName(null)}
         />
       )}
 
@@ -571,13 +670,17 @@ export default function DishList({
                   expanded={expanded.has(cat)}
                   sensors={sensors}
                   onToggle={() => toggleCategory(cat)}
-                  onEdit={dish => { setEditingDish(dish); setFormOpen(false) }}
+                  onEdit={dish => { setEditingDish(dish); setFormCat(null); setFormOpen(false) }}
                   onDelete={handleDelete}
                   onDuplicateDish={handleDuplicateDish}
                   onMoveDish={setMoveDish}
+                  onToggleDish={handleToggleDish}
                   onReorderDishes={handleReorderDishes}
                   onDuplicateCategory={handleDuplicateCategory}
                   onDeleteCategory={handleDeleteCategory}
+                  onAddDish={handleAddDish}
+                  onMoveCategory={setMoveCatName}
+                  onToggleCategory={handleToggleCategory}
                   deletingId={deletingId}
                 />
               ))}

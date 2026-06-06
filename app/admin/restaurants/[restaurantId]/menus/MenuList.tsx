@@ -13,7 +13,7 @@ import {
   useSortable,
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { createMenu, deleteMenu, duplicateMenu, reorderMenus, updateMenuName } from './actions'
+import { createMenu, deleteMenu, duplicateMenu, reorderMenus, updateMenuName, toggleMenuActive } from './actions'
 
 interface Menu {
   id: string
@@ -32,11 +32,15 @@ function SortableMenu({
   restaurantId,
   onRename,
   onDelete,
+  onDuplicate,
+  onToggleActive,
 }: {
   menu: Menu
   restaurantId: string
   onRename: (id: string, name: string) => void
   onDelete: (id: string) => void
+  onDuplicate: (id: string) => void
+  onToggleActive: (id: string, active: boolean) => void
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: menu.id })
@@ -90,10 +94,20 @@ function SortableMenu({
           >
             {menu.name}
           </Link>
-          <div className="flex items-center gap-3 shrink-0">
+          <div className="flex items-center gap-3 shrink-0 flex-wrap justify-end">
+            <button
+              onClick={() => onToggleActive(menu.id, !menu.is_active)}
+              className={`text-xs hover:underline ${menu.is_active ? 'text-orange-500' : 'text-green-600'}`}
+            >
+              {menu.is_active ? 'Disabilita' : 'Abilita'}
+            </button>
             <button onClick={() => setEditing(true)}
               className="text-xs text-gray-500 hover:text-gray-800 hover:underline">
               Rinomina
+            </button>
+            <button onClick={() => onDuplicate(menu.id)}
+              className="text-xs text-gray-500 hover:text-gray-800 hover:underline">
+              Duplica
             </button>
             <button onClick={() => onDelete(menu.id)}
               className="text-xs text-red-500 hover:underline">
@@ -148,13 +162,24 @@ export default function MenuList({ restaurantId, initialMenus }: Props) {
   }
 
   async function handleDuplicate(id: string) {
-    const copy = await duplicateMenu(restaurantId, id)
-    setMenus(prev => {
-      const idx = prev.findIndex(m => m.id === id)
-      const next = [...prev]
-      next.splice(idx + 1, 0, copy as Menu)
-      return next
-    })
+    try {
+      const copy = await duplicateMenu(restaurantId, id)
+      setMenus(prev => {
+        const idx = prev.findIndex(m => m.id === id)
+        const next = [...prev]
+        next.splice(idx + 1, 0, copy as Menu)
+        return next
+      })
+    } catch (err: any) {
+      setError(err.message ?? 'Errore durante la duplicazione.')
+    }
+  }
+
+  async function handleToggleActive(id: string, active: boolean) {
+    setMenus(prev => prev.map(m => m.id === id ? { ...m, is_active: active } : m))
+    try {
+      await toggleMenuActive(restaurantId, id, active)
+    } catch { setError('Errore nel cambio stato menu.') }
   }
 
   async function handleDragEnd(event: DragEndEvent) {
@@ -213,6 +238,8 @@ export default function MenuList({ restaurantId, initialMenus }: Props) {
                   restaurantId={restaurantId}
                   onRename={handleRename}
                   onDelete={handleDelete}
+                  onDuplicate={handleDuplicate}
+                  onToggleActive={handleToggleActive}
                 />
               ))}
             </SortableContext>

@@ -325,6 +325,67 @@ export async function applyDishSync(
   revalidatePath('/admin/restaurants/[restaurantId]/menus/[menuId]', 'page')
 }
 
+// ── MODULO 3: soft-delete toggle (is_active) + sposta categoria ─────────────────
+
+export async function toggleDishActive(
+  restaurantId: string,
+  menuId: string,
+  dishId: string,
+  active: boolean
+) {
+  const supabase = await createClient()
+  await verifyOwnership(supabase, restaurantId)
+  const { error } = await supabase
+    .from('dishes').update({ is_active: active }).eq('id', dishId)
+  if (error) throw new Error(error.message)
+  revalidate(restaurantId, menuId)
+}
+
+export async function toggleCategoryActive(
+  restaurantId: string,
+  menuId: string,
+  category: string,
+  active: boolean
+) {
+  const supabase = await createClient()
+  await verifyOwnership(supabase, restaurantId)
+  const isUncategorized = category === 'Senza categoria'
+  const base = supabase.from('dishes').update({ is_active: active }).eq('menu_id', menuId)
+  const { error } = await (isUncategorized ? base.is('category', null) : base.eq('category', category))
+  if (error) throw new Error(error.message)
+  revalidate(restaurantId, menuId)
+}
+
+/** Sposta tutti i piatti di una categoria in un altro menu. */
+export async function moveCategoryToMenu(
+  restaurantId: string,
+  fromMenuId: string,
+  category: string,
+  toMenuId: string
+) {
+  const supabase = await createClient()
+  await verifyOwnership(supabase, restaurantId)
+
+  const isUncategorized = category === 'Senza categoria'
+  const qSrc = supabase.from('dishes').select('id').eq('menu_id', fromMenuId)
+  const { data: srcDishes } = await (isUncategorized ? qSrc.is('category', null) : qSrc.eq('category', category))
+  if (!srcDishes?.length) return
+
+  const { data: last } = await supabase
+    .from('dishes').select('sort_order').eq('menu_id', toMenuId)
+    .order('sort_order', { ascending: false }).limit(1).single()
+  const base = (last?.sort_order ?? -1) + 1
+
+  await Promise.all(
+    srcDishes.map((d, i) =>
+      supabase.from('dishes').update({ menu_id: toMenuId, sort_order: base + i }).eq('id', d.id)
+    )
+  )
+
+  revalidate(restaurantId, fromMenuId)
+  revalidate(restaurantId, toMenuId)
+}
+
 export async function syncDishToMasters(
   restaurantId: string,
   dishId: string,

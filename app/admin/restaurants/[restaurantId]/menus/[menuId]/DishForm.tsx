@@ -27,6 +27,7 @@ interface Props {
   dish: Dish | null
   allDishes: SimpleDish[]
   allMenus: SimpleMenu[]
+  defaultCategory?: string
   onSaved: (dish: Dish, isNew: boolean, dirtyFields: Set<string>) => void
   onClose: () => void
 }
@@ -154,12 +155,12 @@ function CategoryCombobox({
 // ── Main form ─────────────────────────────────────────────────────────────────────
 
 export default function DishForm({
-  restaurantId, menuId, dish, allDishes, allMenus, onSaved, onClose,
+  restaurantId, menuId, dish, allDishes, allMenus, defaultCategory, onSaved, onClose,
 }: Props) {
   const [name, setName]               = useState(dish?.name ?? '')
   const [description, setDescription] = useState(dish?.description ?? '')
   const [price, setPrice]             = useState(dish?.price?.toString() ?? '')
-  const [category, setCategory]       = useState(dish?.category ?? '')
+  const [category, setCategory]       = useState(dish?.category ?? defaultCategory ?? '')
   const [imageUrl, setImageUrl]       = useState(dish?.image_url ?? '')
   const [pairingId, setPairingId]     = useState(dish?.pairing_dish_id ?? '')
   const [uploading, setUploading]     = useState(false)

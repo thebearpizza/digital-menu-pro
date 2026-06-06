@@ -64,8 +64,8 @@ export async function duplicateMenu(restaurantId: string, menuId: string) {
 
   const { data: newMenu, error: menuErr } = await supabase
     .from('menus')
-    .insert({ restaurant_id: restaurantId, name: `${source.name} - copia`, sort_order: source.sort_order + 1 })
-    .select('id').single()
+    .insert({ restaurant_id: restaurantId, name: `${source.name} (Copia)`, sort_order: source.sort_order + 1 })
+    .select('id, name, sort_order, is_active').single()
   if (menuErr) throw new Error(menuErr.message)
 
   // Duplicate dishes
@@ -88,6 +88,15 @@ export async function duplicateMenu(restaurantId: string, menuId: string) {
 
   revalidate(restaurantId)
   return newMenu
+}
+
+export async function toggleMenuActive(restaurantId: string, menuId: string, active: boolean) {
+  const supabase = await createClient()
+  await verifyOwnership(supabase, restaurantId)
+  const { error } = await supabase
+    .from('menus').update({ is_active: active }).eq('id', menuId).eq('restaurant_id', restaurantId)
+  if (error) throw new Error(error.message)
+  revalidate(restaurantId)
 }
 
 export async function reorderMenus(restaurantId: string, orderedIds: string[]) {
