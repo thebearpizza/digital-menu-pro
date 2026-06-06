@@ -32,10 +32,11 @@ interface Props {
 // ── Component ──────────────────────────────────────────────────────────────────
 
 export default function DishModal({ activeDish, allDishes, isNested, onClose, onBack, onOpenDish, theme }: Props) {
-  const ACCENT      = theme?.accent     ?? '#c9a96e'
-  const FONT_SERIF  = fontStack(theme?.fontSerif ?? 'Cormorant Garamond', 'serif')
-  const FONT_SANS   = fontStack(theme?.fontSans  ?? 'DM Sans', 'sans')
+  const ACCENT      = theme?.accent        ?? '#c9a96e'
+  const FONT_SERIF  = fontStack(theme?.fontSerif  ?? 'Cormorant Garamond', 'serif')
+  const FONT_SANS   = fontStack(theme?.fontSans   ?? 'DM Sans', 'sans')
   const CARD_RADIUS = borderRadiusPx(theme?.borderRadius ?? 'none')
+  const TEXT_ALIGN  = theme?.dishAlignment === 'center' ? 'center' : 'left'
   const startIdx = allDishes.findIndex(d => d.id === activeDish.id)
 
   const [idx,        setIdx]        = useState(startIdx >= 0 ? startIdx : 0)
@@ -214,7 +215,7 @@ export default function DishModal({ activeDish, allDishes, isNested, onClose, on
           </p>
 
           {/* Name + price */}
-          <div className="flex items-start justify-between gap-4 mb-3">
+          <div className={`flex gap-4 mb-3 ${TEXT_ALIGN === 'center' ? 'flex-col items-center' : 'items-start justify-between'}`}>
             <h2
               style={{
                 fontFamily: FONT_SERIF,
@@ -222,14 +223,15 @@ export default function DishModal({ activeDish, allDishes, isNested, onClose, on
                 color:      '#ede8e0',
                 fontWeight: 400,
                 lineHeight: 1.2,
+                textAlign:  TEXT_ALIGN,
               }}
             >
               {dish.name}
             </h2>
             {dish.price != null && (
               <span
-                className="shrink-0 tabular-nums"
-                style={{ color: ACCENT, fontSize: 'var(--font-size-price, 1.1rem)', fontWeight: 600, paddingTop: 4 }}
+                className={`tabular-nums ${TEXT_ALIGN === 'center' ? '' : 'shrink-0'}`}
+                style={{ color: ACCENT, fontSize: 'var(--font-size-price, 1.1rem)', fontWeight: 600, paddingTop: TEXT_ALIGN === 'center' ? 0 : 4 }}
               >
                 {formatPrice(dish.price, theme?.priceFormat ?? 'before')}
               </span>
@@ -241,7 +243,7 @@ export default function DishModal({ activeDish, allDishes, isNested, onClose, on
 
           {/* Description — pre-wrap preserves \n line-breaks entered in the admin */}
           {dish.description && (
-            <p className="w-full max-w-full break-words" style={{ color: '#a09080', fontSize: 'var(--font-size-base, 0.875rem)', lineHeight: 1.7, marginBottom: 18, whiteSpace: 'pre-wrap' }}>
+            <p className="w-full max-w-full break-words" style={{ color: '#a09080', fontSize: 'var(--font-size-base, 0.875rem)', lineHeight: 1.7, marginBottom: 18, whiteSpace: 'pre-wrap', textAlign: TEXT_ALIGN }}>
               {dish.description}
             </p>
           )}

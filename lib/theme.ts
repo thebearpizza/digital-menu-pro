@@ -72,7 +72,9 @@ export interface RestaurantTheme {
   dishLayout:      'list' | 'grid' | 'boxed'
   priceFormat:     'before' | 'after' | 'minimal'
   dividerStyle:    'none' | 'thin' | 'dashed'
-  paginationStyle: PaginationStyle
+  paginationStyle:     PaginationStyle
+  stickyCategoryStyle: 'transparent-blur' | 'solid' | 'none'
+  dishAlignment:       'left' | 'center'
 }
 
 export const DEFAULT_THEME: RestaurantTheme = {
@@ -95,7 +97,9 @@ export const DEFAULT_THEME: RestaurantTheme = {
   dishLayout:      'list',
   priceFormat:     'before',
   dividerStyle:    'thin',
-  paginationStyle: 'prec_succ',
+  paginationStyle:     'prec_succ',
+  stickyCategoryStyle: 'solid',
+  dishAlignment:       'left',
 }
 
 export function parseTheme(raw: unknown): RestaurantTheme {
@@ -130,6 +134,9 @@ export function parseTheme(raw: unknown): RestaurantTheme {
     dividerStyle:    r.dividerStyle === 'none' || r.dividerStyle === 'dashed' ? r.dividerStyle : 'thin',
     paginationStyle: (r.paginationStyle as PaginationStyle) in PAGINATION_OPTIONS
       ? r.paginationStyle as PaginationStyle : 'prec_succ',
+    stickyCategoryStyle: r.stickyCategoryStyle === 'transparent-blur' || r.stickyCategoryStyle === 'none'
+      ? r.stickyCategoryStyle as 'transparent-blur' | 'none' : 'solid',
+    dishAlignment: r.dishAlignment === 'center' ? 'center' : 'left',
   }
 }
 

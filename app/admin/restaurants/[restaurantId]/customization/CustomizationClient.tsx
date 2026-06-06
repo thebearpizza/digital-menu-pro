@@ -333,6 +333,7 @@ export default function CustomizationClient({
   const [bgUploading,  setBgUploading]  = useState(false)
   const [vidUploading, setVidUploading] = useState(false)
   const [previewMode,  setPreviewMode]  = useState<'landing' | 'menu'>('landing')
+  const [previewOpen,  setPreviewOpen]  = useState(false)
 
   usePreviewFonts(theme.fontSerif, theme.fontSans)
 
@@ -427,6 +428,23 @@ export default function CustomizationClient({
         </div>
       </div>
 
+      {/* ── Mode toggle (above the grid, visible on all sizes) ─────────────── */}
+      <div className="flex gap-1 mb-6">
+        {(['landing', 'menu'] as const).map(mode => (
+          <button key={mode} type="button" onClick={() => setPreviewMode(mode)}
+            className={`px-4 py-2 text-[10px] font-semibold uppercase tracking-wider border transition-colors ${
+              previewMode === mode
+                ? 'bg-gray-900 text-white border-gray-900'
+                : 'bg-white text-gray-500 border-gray-200 hover:border-gray-400'
+            }`}>
+            {mode === 'landing' ? '↙ Landing' : '↗ Menù'}
+          </button>
+        ))}
+        <span className="ml-2 text-[10px] text-gray-400 self-center hidden sm:inline">
+          {previewMode === 'landing' ? 'Schermata di benvenuto clienti' : 'Pagine menù e piatti'}
+        </span>
+      </div>
+
       {/* ── 30 / 70 layout ─────────────────────────────────────────────────── */}
       {/* items-start + naturally-tall left column → page viewport scrolls.
           The right column is sticky so the preview stays pinned while the
@@ -436,237 +454,279 @@ export default function CustomizationClient({
         {/* ── Controls — natural height, page scrolls ─────────────────────── */}
         <div className="space-y-8 lg:pr-2">
 
-          {/* Doppio sfondo */}
-          <div>
-            <SectionLabel>Sfondi</SectionLabel>
-            <div className="bg-white border border-gray-100 p-4 space-y-4">
+          {previewMode === 'landing' ? (
+            <>
+              {/* ── LANDING: Sfondo ── */}
               <div>
-                <p className="text-[10px] text-gray-400 mb-2 uppercase tracking-wider">Contenitore app (landing, intorno al flipbook)</p>
-                <ColorRow label="Colore sfondo app" value={theme.appBg} onChange={v => set('appBg', v)} />
-              </div>
-              <div className="border-t border-gray-50 pt-4">
-                <p className="text-[10px] text-gray-400 mb-2 uppercase tracking-wider">Pagine PDF (il &quot;foglio&quot; del menù)</p>
-                <ColorRow label="Colore pagine" value={theme.pageBackground} onChange={v => set('pageBackground', v)} />
-                <p className="text-[10px] text-gray-400 mt-1">
-                  Su carta stampata si usa sempre bianco o avorio (es. <span className="font-mono">#fffff5</span>).
-                </p>
-              </div>
-              <div className="border-t border-gray-50 pt-4">
-                <ColorRow label="Barra navigazione"  value={theme.navBg}       onChange={v => set('navBg', v)} />
-                <ColorRow label="Colore accento"     value={theme.accent}      onChange={v => set('accent', v)} />
-                <ColorRow label="Testo principale"   value={theme.textPrimary} onChange={v => set('textPrimary', v)} />
-                <ColorRow label="Testo secondario"   value={theme.textMuted}   onChange={v => set('textMuted', v)} />
-              </div>
-            </div>
-          </div>
-
-          {/* Sfondo texture */}
-          <div>
-            <SectionLabel>Texture sfondo app (opzionale)</SectionLabel>
-            <div className="bg-white border border-gray-100 p-4 space-y-3">
-              {theme.bgImage && (
-                <div className="relative inline-block">
-                  <img src={theme.bgImage} alt="Sfondo" className="w-24 h-16 object-cover border border-gray-200" />
-                  <button type="button" onClick={() => set('bgImage', undefined)}
-                    className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 text-white text-xs rounded-full flex items-center justify-center">×</button>
+                <SectionLabel>Sfondo landing</SectionLabel>
+                <div className="bg-white border border-gray-100 p-4 space-y-3">
+                  <ColorRow label="Colore sfondo app" value={theme.appBg} onChange={v => set('appBg', v)} />
+                  <p className="text-[10px] text-gray-400">Visibile intorno al flipbook e nella landing.</p>
                 </div>
-              )}
-              <input type="file" accept="image/*"
-                onChange={e => e.target.files?.[0] && handleBgUpload(e.target.files[0])}
-                className="block text-xs text-gray-500 file:mr-2 file:py-1 file:px-3 file:border file:border-gray-200 file:text-xs file:bg-white file:text-gray-600 hover:file:bg-gray-50 cursor-pointer" />
-              {bgUploading && <p className="text-xs text-gray-400">Caricamento…</p>}
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">
-                  Opacità media: <span className="font-medium text-gray-700">{theme.bgImageOpacity}%</span>
-                </label>
-                <input type="range" min={5} max={100} step={5} value={theme.bgImageOpacity}
-                  onChange={e => set('bgImageOpacity', Number(e.target.value))}
-                  className="w-full accent-gray-900" />
               </div>
-            </div>
-          </div>
 
-          {/* Sfondo video / immersione */}
-          <div>
-            <SectionLabel>Video di sfondo e immersione</SectionLabel>
-            <div className="bg-white border border-gray-100 p-4 space-y-3">
-              {theme.bgVideo && (
-                <div className="relative inline-block">
-                  {/* Show poster as thumbnail if available — it's a tiny JPEG and loads instantly */}
-                  {theme.bgVideoPoster
-                    ? <img src={theme.bgVideoPoster} alt="" className="w-32 h-20 object-cover border border-gray-200" />
-                    : <video src={theme.bgVideo} muted className="w-32 h-20 object-cover border border-gray-200 bg-black" />
-                  }
-                  <button type="button" onClick={() => {
-                    setSaved(false)
-                    setTheme(t => ({ ...t, bgVideo: undefined, bgVideoPoster: undefined }))
-                  }}
-                    className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 text-white text-xs rounded-full flex items-center justify-center">×</button>
+              {/* ── LANDING: Colori ── */}
+              <div>
+                <SectionLabel>Colori</SectionLabel>
+                <div className="bg-white border border-gray-100 p-4 space-y-3">
+                  <ColorRow label="Accento (bottoni, bordi, prezzi)" value={theme.accent}      onChange={v => set('accent', v)} />
+                  <ColorRow label="Testo principale"                  value={theme.textPrimary} onChange={v => set('textPrimary', v)} />
+                  <ColorRow label="Testo secondario / hint"           value={theme.textMuted}   onChange={v => set('textMuted', v)} />
                 </div>
-              )}
-              <input type="file" accept="video/*"
-                onChange={e => e.target.files?.[0] && handleVideoUpload(e.target.files[0])}
-                className="block text-xs text-gray-500 file:mr-2 file:py-1 file:px-3 file:border file:border-gray-200 file:text-xs file:bg-white file:text-gray-600 hover:file:bg-gray-50 cursor-pointer" />
-              {vidUploading && <p className="text-xs text-gray-400">Caricamento e estrazione poster…</p>}
-              <p className="text-[10px] text-gray-400">Max 5MB. MP4/WebM consigliati. Il primo fotogramma viene estratto automaticamente come poster. Usa l&apos;opacità qui sopra anche per il video.</p>
-
-              <label className={`flex items-start gap-2 pt-2 border-t border-gray-50 ${theme.bgVideo ? 'cursor-pointer' : 'opacity-50 cursor-not-allowed'}`}>
-                <input type="checkbox" disabled={!theme.bgVideo}
-                  checked={theme.immersiveTransition}
-                  onChange={e => set('immersiveTransition', e.target.checked)}
-                  className="mt-0.5 accent-gray-900" />
-                <span className="text-xs text-gray-600">
-                  Transizione immersiva
-                  <span className="block text-[10px] text-gray-400">
-                    Al tap su un menù la UI svanisce, il video parte e al termine si apre il menù. Senza spunta il video resta come sfondo in loop.
-                  </span>
-                </span>
-              </label>
-            </div>
-          </div>
-
-          {/* Tipografia */}
-          <div>
-            <SectionLabel>Tipografia</SectionLabel>
-            <div className="bg-white border border-gray-100 p-4 space-y-4">
-              <FontSelector label="Font titoli (nome ristorante, piatti)" value={theme.fontSerif} curated={SERIF_FONTS} category="serif" onChange={v => set('fontSerif', v)} />
-              <FontSelector label="Font testi (label, bottoni)"            value={theme.fontSans}  curated={SANS_FONTS}  category="sans"  onChange={v => set('fontSans', v)} />
-            </div>
-          </div>
-
-          {/* Dimensioni testo */}
-          <div>
-            <SectionLabel>Dimensioni testo</SectionLabel>
-            <div className="bg-white border border-gray-100 p-4 space-y-5">
-              <FontSizeSlider label="Titoli (nome ristorante, piatti)" value={theme.fontSizes.title} min={1.0} max={2.5} step={0.05} previewFont={SERIF} onChange={v => setFs('title', v)} />
-              <FontSizeSlider label="Testo normale (descrizioni)"       value={theme.fontSizes.base}  min={0.6} max={1.3} step={0.05} previewFont={SANS}  onChange={v => setFs('base', v)} />
-              <FontSizeSlider label="Prezzi"                            value={theme.fontSizes.price} min={0.7} max={1.8} step={0.05} previewFont={SANS}  onChange={v => setFs('price', v)} />
-            </div>
-          </div>
-
-          {/* Stile bordi */}
-          <div>
-            <SectionLabel>Stile bordi</SectionLabel>
-            <div className="bg-white border border-gray-100 p-4">
-              <PillGroup options={[
-                { label: 'Netto',       value: 'none' as const },
-                { label: 'Soft',        value: 'sm'   as const },
-                { label: 'Arrotondato', value: 'md'   as const },
-              ]} value={theme.borderRadius} onChange={v => set('borderRadius', v)} />
-            </div>
-          </div>
-
-          {/* Navigazione flipbook */}
-          <div>
-            <SectionLabel>Navigazione flipbook</SectionLabel>
-            <div className="bg-white border border-gray-100 p-4 space-y-2">
-              <label className="block text-xs text-gray-600 mb-1">Stile indicatori di pagina</label>
-              <select
-                value={theme.paginationStyle}
-                onChange={e => set('paginationStyle', e.target.value as PaginationStyle)}
-                className="w-full px-2 py-1.5 border border-gray-200 text-xs bg-white focus:outline-none focus:border-gray-400"
-              >
-                {(Object.entries(PAGINATION_OPTIONS) as [PaginationStyle, { label: string; prev: string; next: string }][]).map(
-                  ([key, opt]) => (
-                    <option key={key} value={key}>{opt.label}</option>
-                  )
-                )}
-              </select>
-              {theme.paginationStyle !== 'hidden' && (
-                <p className="text-[10px] font-mono text-gray-400 pt-0.5">
-                  {PAGINATION_OPTIONS[theme.paginationStyle].prev}
-                  {'  ···  '}
-                  {PAGINATION_OPTIONS[theme.paginationStyle].next}
-                </p>
-              )}
-            </div>
-          </div>
-
-          {/* Layout piatti */}
-          <div>
-            <SectionLabel>Layout piatti (PDF)</SectionLabel>
-            <div className="bg-white border border-gray-100 p-4 space-y-3">
-              <PillGroup options={[
-                { label: 'Lista',   value: 'list'  as const },
-                { label: 'Griglia', value: 'grid'  as const },
-                { label: 'Boxed',   value: 'boxed' as const },
-              ]} value={theme.dishLayout} onChange={v => set('dishLayout', v)} />
-              <p className="text-[11px] text-gray-400">
-                {theme.dishLayout === 'list'  ? 'Verticale classico.' :
-                 theme.dishLayout === 'grid'  ? '2 colonne — compatto, menù lunghi.' :
-                                                'Riquadro per piatto — modulare.'}
-              </p>
-            </div>
-          </div>
-
-          {/* Prezzo e divisori */}
-          <div>
-            <SectionLabel>Prezzo e divisori</SectionLabel>
-            <div className="bg-white border border-gray-100 p-4 space-y-4">
-              <div>
-                <p className="text-xs text-gray-600 mb-2">Formato prezzo</p>
-                <PillGroup options={[
-                  { label: '€ 12,50', value: 'before'  as const },
-                  { label: '12,50 €', value: 'after'   as const },
-                  { label: '12.50',   value: 'minimal' as const },
-                ]} value={theme.priceFormat} onChange={v => set('priceFormat', v)} />
-                <p className="text-[10px] font-mono text-gray-400 mt-1">{formatPrice(12.50, theme.priceFormat)}</p>
               </div>
+
+              {/* ── LANDING: Texture sfondo ── */}
               <div>
-                <p className="text-xs text-gray-600 mb-2">Divisori tra piatti</p>
-                <PillGroup options={[
-                  { label: 'Nessuno',  value: 'none'   as const },
-                  { label: 'Linea',    value: 'thin'   as const },
-                  { label: 'Tratteg.', value: 'dashed' as const },
-                ]} value={theme.dividerStyle} onChange={v => set('dividerStyle', v)} />
+                <SectionLabel>Texture sfondo (opzionale)</SectionLabel>
+                <div className="bg-white border border-gray-100 p-4 space-y-3">
+                  {theme.bgImage && (
+                    <div className="relative inline-block">
+                      <img src={theme.bgImage} alt="Sfondo" className="w-24 h-16 object-cover border border-gray-200" />
+                      <button type="button" onClick={() => set('bgImage', undefined)}
+                        className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 text-white text-xs rounded-full flex items-center justify-center">×</button>
+                    </div>
+                  )}
+                  <input type="file" accept="image/*"
+                    onChange={e => e.target.files?.[0] && handleBgUpload(e.target.files[0])}
+                    className="block text-xs text-gray-500 file:mr-2 file:py-1 file:px-3 file:border file:border-gray-200 file:text-xs file:bg-white file:text-gray-600 hover:file:bg-gray-50 cursor-pointer" />
+                  {bgUploading && <p className="text-xs text-gray-400">Caricamento…</p>}
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">
+                      Opacità: <span className="font-medium text-gray-700">{theme.bgImageOpacity}%</span>
+                    </label>
+                    <input type="range" min={5} max={100} step={5} value={theme.bgImageOpacity}
+                      onChange={e => set('bgImageOpacity', Number(e.target.value))}
+                      className="w-full accent-gray-900" />
+                  </div>
+                </div>
               </div>
-            </div>
-          </div>
 
-          {/* Impaginazione PDF */}
-          <div>
-            <SectionLabel>Impaginazione PDF</SectionLabel>
-            <div className="bg-white border border-gray-100 p-4 space-y-3">
-              <PillGroup options={[
-                { label: 'Classic', value: 'classic' as const },
-                { label: 'Compact', value: 'compact' as const },
-              ]} value={theme.pdfLayout} onChange={v => set('pdfLayout', v)} />
-              <p className="text-[11px] text-gray-400">
-                {theme.pdfLayout === 'classic' ? '1 categoria/pagina. Margini ampi.' : 'Flow continuo. Più dense.'}
-              </p>
-            </div>
-          </div>
+              {/* ── LANDING: Video / immersione ── */}
+              <div>
+                <SectionLabel>Video di sfondo e immersione</SectionLabel>
+                <div className="bg-white border border-gray-100 p-4 space-y-3">
+                  {theme.bgVideo && (
+                    <div className="relative inline-block">
+                      {theme.bgVideoPoster
+                        ? <img src={theme.bgVideoPoster} alt="" className="w-32 h-20 object-cover border border-gray-200" />
+                        : <video src={theme.bgVideo} muted className="w-32 h-20 object-cover border border-gray-200 bg-black" />
+                      }
+                      <button type="button" onClick={() => {
+                        setSaved(false)
+                        setTheme(t => ({ ...t, bgVideo: undefined, bgVideoPoster: undefined }))
+                      }}
+                        className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 text-white text-xs rounded-full flex items-center justify-center">×</button>
+                    </div>
+                  )}
+                  <input type="file" accept="video/*"
+                    onChange={e => e.target.files?.[0] && handleVideoUpload(e.target.files[0])}
+                    className="block text-xs text-gray-500 file:mr-2 file:py-1 file:px-3 file:border file:border-gray-200 file:text-xs file:bg-white file:text-gray-600 hover:file:bg-gray-50 cursor-pointer" />
+                  {vidUploading && <p className="text-xs text-gray-400">Caricamento e estrazione poster…</p>}
+                  <p className="text-[10px] text-gray-400">Max 5MB. MP4/WebM consigliati. Il primo fotogramma viene estratto automaticamente come poster.</p>
+                  <label className={`flex items-start gap-2 pt-2 border-t border-gray-50 ${theme.bgVideo ? 'cursor-pointer' : 'opacity-50 cursor-not-allowed'}`}>
+                    <input type="checkbox" disabled={!theme.bgVideo}
+                      checked={theme.immersiveTransition}
+                      onChange={e => set('immersiveTransition', e.target.checked)}
+                      className="mt-0.5 accent-gray-900" />
+                    <span className="text-xs text-gray-600">
+                      Transizione immersiva
+                      <span className="block text-[10px] text-gray-400">
+                        Al tap su un menù la UI svanisce, il video parte e al termine si apre il menù. Senza spunta il video resta come sfondo in loop.
+                      </span>
+                    </span>
+                  </label>
+                </div>
+              </div>
 
-          {/* Banner */}
-          <div>
-            <SectionLabel>Banner promozionali</SectionLabel>
-            <div className="bg-white border border-gray-100 p-4">
-              <p className="text-xs text-gray-400 mb-4">Appaiono nella landing sopra i bottoni menu.</p>
-              <BannerManager restaurantId={restaurantId} initialBanners={initialBanners} />
-            </div>
-          </div>
+              {/* ── LANDING: Font titoli ── */}
+              <div>
+                <SectionLabel>Font titoli</SectionLabel>
+                <div className="bg-white border border-gray-100 p-4 space-y-4">
+                  <FontSelector label="Font titoli (nome ristorante)" value={theme.fontSerif} curated={SERIF_FONTS} category="serif" onChange={v => set('fontSerif', v)} />
+                </div>
+              </div>
+
+              {/* ── LANDING: Stile bottoni ── */}
+              <div>
+                <SectionLabel>Stile bottoni e card</SectionLabel>
+                <div className="bg-white border border-gray-100 p-4 space-y-4">
+                  <div>
+                    <p className="text-xs text-gray-600 mb-2">Arrotondamento bordi</p>
+                    <PillGroup options={[
+                      { label: 'Netto',       value: 'none' as const },
+                      { label: 'Soft',        value: 'sm'   as const },
+                      { label: 'Arrotondato', value: 'md'   as const },
+                    ]} value={theme.borderRadius} onChange={v => set('borderRadius', v)} />
+                  </div>
+                  <FontSelector label="Font bottoni / label" value={theme.fontSans} curated={SANS_FONTS} category="sans" onChange={v => set('fontSans', v)} />
+                </div>
+              </div>
+
+              {/* ── LANDING: Banner ── */}
+              <div>
+                <SectionLabel>Banner promozionali</SectionLabel>
+                <div className="bg-white border border-gray-100 p-4">
+                  <p className="text-xs text-gray-400 mb-4">Appaiono nella landing sopra i bottoni menu.</p>
+                  <BannerManager restaurantId={restaurantId} initialBanners={initialBanners} />
+                </div>
+              </div>
+            </>
+          ) : (
+            <>
+              {/* ── MENU: Sfondo menù ── */}
+              <div>
+                <SectionLabel>Sfondo menù</SectionLabel>
+                <div className="bg-white border border-gray-100 p-4 space-y-3">
+                  <ColorRow label="Barra navigazione categorie" value={theme.navBg}         onChange={v => set('navBg', v)} />
+                  <div className="border-t border-gray-50 pt-3">
+                    <ColorRow label="Colore pagine PDF"         value={theme.pageBackground} onChange={v => set('pageBackground', v)} />
+                    <p className="text-[10px] text-gray-400 mt-1">
+                      Su carta stampata si usa bianco o avorio (es. <span className="font-mono">#fffff5</span>).
+                    </p>
+                  </div>
+                  <div className="border-t border-gray-50 pt-3">
+                    <ColorRow label="Accento (prezzi, bordi, icone)" value={theme.accent} onChange={v => set('accent', v)} />
+                  </div>
+                </div>
+              </div>
+
+              {/* ── MENU: Tipografia ── */}
+              <div>
+                <SectionLabel>Tipografia</SectionLabel>
+                <div className="bg-white border border-gray-100 p-4 space-y-4">
+                  <FontSelector label="Font titoli (nomi piatti)"  value={theme.fontSerif} curated={SERIF_FONTS} category="serif" onChange={v => set('fontSerif', v)} />
+                  <FontSelector label="Font testi (label, bottoni)" value={theme.fontSans}  curated={SANS_FONTS}  category="sans"  onChange={v => set('fontSans', v)} />
+                </div>
+              </div>
+
+              {/* ── MENU: Dimensioni testo ── */}
+              <div>
+                <SectionLabel>Dimensioni testo</SectionLabel>
+                <div className="bg-white border border-gray-100 p-4 space-y-5">
+                  <FontSizeSlider label="Titoli (nomi piatti)" value={theme.fontSizes.title} min={1.0} max={2.5} step={0.05} previewFont={SERIF} onChange={v => setFs('title', v)} />
+                  <FontSizeSlider label="Descrizioni"          value={theme.fontSizes.base}  min={0.6} max={1.3} step={0.05} previewFont={SANS}  onChange={v => setFs('base', v)} />
+                  <FontSizeSlider label="Prezzi"               value={theme.fontSizes.price} min={0.7} max={1.8} step={0.05} previewFont={SANS}  onChange={v => setFs('price', v)} />
+                </div>
+              </div>
+
+              {/* ── MENU: Allineamento piatti ── */}
+              <div>
+                <SectionLabel>Allineamento piatti</SectionLabel>
+                <div className="bg-white border border-gray-100 p-4 space-y-3">
+                  <PillGroup options={[
+                    { label: 'Sinistra', value: 'left'   as const },
+                    { label: 'Centro',   value: 'center' as const },
+                  ]} value={theme.dishAlignment} onChange={v => set('dishAlignment', v)} />
+                  <p className="text-[11px] text-gray-400">
+                    {theme.dishAlignment === 'center' ? 'Nome e descrizione piatto centrati.' : 'Allineamento classico a sinistra.'}
+                  </p>
+                </div>
+              </div>
+
+              {/* ── MENU: Stile barra categorie ── */}
+              <div>
+                <SectionLabel>Barra categorie</SectionLabel>
+                <div className="bg-white border border-gray-100 p-4 space-y-3">
+                  <PillGroup options={[
+                    { label: 'Solida',           value: 'solid'           as const },
+                    { label: 'Vetro (blur)',      value: 'transparent-blur' as const },
+                    { label: 'Nascosta',         value: 'none'            as const },
+                  ]} value={theme.stickyCategoryStyle} onChange={v => set('stickyCategoryStyle', v)} />
+                  <p className="text-[11px] text-gray-400">
+                    {theme.stickyCategoryStyle === 'solid'            ? 'Barra opaca con colore navigazione.' :
+                     theme.stickyCategoryStyle === 'transparent-blur' ? 'Effetto vetro smerigliato (backdrop-blur).' :
+                                                                        'Barra nascosta — solo sfoglio manuale.'}
+                  </p>
+                </div>
+              </div>
+
+              {/* ── MENU: Navigazione flipbook ── */}
+              <div>
+                <SectionLabel>Navigazione flipbook</SectionLabel>
+                <div className="bg-white border border-gray-100 p-4 space-y-2">
+                  <label className="block text-xs text-gray-600 mb-1">Stile indicatori di pagina</label>
+                  <select
+                    value={theme.paginationStyle}
+                    onChange={e => set('paginationStyle', e.target.value as PaginationStyle)}
+                    className="w-full px-2 py-1.5 border border-gray-200 text-xs bg-white focus:outline-none focus:border-gray-400"
+                  >
+                    {(Object.entries(PAGINATION_OPTIONS) as [PaginationStyle, { label: string; prev: string; next: string }][]).map(
+                      ([key, opt]) => (
+                        <option key={key} value={key}>{opt.label}</option>
+                      )
+                    )}
+                  </select>
+                  {theme.paginationStyle !== 'hidden' && (
+                    <p className="text-[10px] font-mono text-gray-400 pt-0.5">
+                      {PAGINATION_OPTIONS[theme.paginationStyle].prev}
+                      {'  ···  '}
+                      {PAGINATION_OPTIONS[theme.paginationStyle].next}
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              {/* ── MENU: Layout piatti PDF ── */}
+              <div>
+                <SectionLabel>Layout piatti (PDF)</SectionLabel>
+                <div className="bg-white border border-gray-100 p-4 space-y-3">
+                  <PillGroup options={[
+                    { label: 'Lista',   value: 'list'  as const },
+                    { label: 'Griglia', value: 'grid'  as const },
+                    { label: 'Boxed',   value: 'boxed' as const },
+                  ]} value={theme.dishLayout} onChange={v => set('dishLayout', v)} />
+                  <p className="text-[11px] text-gray-400">
+                    {theme.dishLayout === 'list'  ? 'Verticale classico.' :
+                     theme.dishLayout === 'grid'  ? '2 colonne — compatto, menù lunghi.' :
+                                                    'Riquadro per piatto — modulare.'}
+                  </p>
+                </div>
+              </div>
+
+              {/* ── MENU: Prezzo e divisori ── */}
+              <div>
+                <SectionLabel>Prezzo e divisori</SectionLabel>
+                <div className="bg-white border border-gray-100 p-4 space-y-4">
+                  <div>
+                    <p className="text-xs text-gray-600 mb-2">Formato prezzo</p>
+                    <PillGroup options={[
+                      { label: '€ 12,50', value: 'before'  as const },
+                      { label: '12,50 €', value: 'after'   as const },
+                      { label: '12.50',   value: 'minimal' as const },
+                    ]} value={theme.priceFormat} onChange={v => set('priceFormat', v)} />
+                    <p className="text-[10px] font-mono text-gray-400 mt-1">{formatPrice(12.50, theme.priceFormat)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-600 mb-2">Divisori tra piatti</p>
+                    <PillGroup options={[
+                      { label: 'Nessuno',  value: 'none'   as const },
+                      { label: 'Linea',    value: 'thin'   as const },
+                      { label: 'Tratteg.', value: 'dashed' as const },
+                    ]} value={theme.dividerStyle} onChange={v => set('dividerStyle', v)} />
+                  </div>
+                </div>
+              </div>
+
+              {/* ── MENU: Impaginazione PDF ── */}
+              <div>
+                <SectionLabel>Impaginazione PDF</SectionLabel>
+                <div className="bg-white border border-gray-100 p-4 space-y-3">
+                  <PillGroup options={[
+                    { label: 'Classic', value: 'classic' as const },
+                    { label: 'Compact', value: 'compact' as const },
+                  ]} value={theme.pdfLayout} onChange={v => set('pdfLayout', v)} />
+                  <p className="text-[11px] text-gray-400">
+                    {theme.pdfLayout === 'classic' ? '1 categoria/pagina. Margini ampi.' : 'Flow continuo. Più dense.'}
+                  </p>
+                </div>
+              </div>
+            </>
+          )}
 
         </div>
 
-        {/* ── Live preview — sticky to viewport, full height ──────────────── */}
+        {/* ── Live preview — sticky to viewport, full height (desktop only) ─── */}
         <div className="hidden lg:flex lg:sticky lg:top-4 flex-col" style={{ height: 'calc(100vh - 2rem)' }}>
-          {/* Toggle */}
-          <div className="flex gap-1 mb-3 shrink-0">
-            {(['landing', 'menu'] as const).map(mode => (
-              <button key={mode} type="button" onClick={() => setPreviewMode(mode)}
-                className={`px-4 py-1.5 text-[10px] font-semibold uppercase tracking-wider border transition-colors ${
-                  previewMode === mode
-                    ? 'bg-gray-900 text-white border-gray-900'
-                    : 'bg-white text-gray-500 border-gray-200 hover:border-gray-400'
-                }`}>
-                {mode === 'landing' ? 'Landing' : 'Menù'}
-              </button>
-            ))}
-            <span className="ml-auto text-[10px] text-gray-400 self-center">
-              {previewMode === 'landing' ? 'Schermata di benvenuto clienti' : 'Pagine menù reali'}
-            </span>
-          </div>
-
           {/* Preview area — real /m/[token] page inside an iframe */}
           <div className="flex-1 min-h-0 flex items-center justify-center bg-gradient-to-br from-gray-100 to-gray-200 border border-gray-200 rounded-lg overflow-hidden p-6">
             <LivePreview qrToken={qrToken} theme={theme} previewMode={previewMode} />
@@ -678,6 +738,53 @@ export default function CustomizationClient({
         </div>
 
       </div>
+
+      {/* ── Mobile FAB — opens full-screen preview modal ─────────────────────── */}
+      <button
+        type="button"
+        onClick={() => setPreviewOpen(true)}
+        className="lg:hidden fixed bottom-6 right-6 z-50 bg-gray-900 text-white text-xs font-semibold px-5 py-3.5 rounded-full shadow-2xl hover:bg-gray-700 active:scale-95 transition-all flex items-center gap-2"
+      >
+        <span>Vedi Anteprima</span>
+        <span className="text-base leading-none">↗</span>
+      </button>
+
+      {/* ── Mobile full-screen preview modal ─────────────────────────────────── */}
+      {previewOpen && (
+        <div className="lg:hidden fixed inset-0 z-[9999] bg-gray-950 flex flex-col">
+          {/* Modal header */}
+          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-800 shrink-0">
+            <div className="flex gap-1">
+              {(['landing', 'menu'] as const).map(mode => (
+                <button key={mode} type="button" onClick={() => setPreviewMode(mode)}
+                  className={`px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider border transition-colors ${
+                    previewMode === mode
+                      ? 'bg-white text-gray-900 border-white'
+                      : 'bg-transparent text-gray-400 border-gray-700 hover:border-gray-500'
+                  }`}>
+                  {mode === 'landing' ? 'Landing' : 'Menù'}
+                </button>
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={() => setPreviewOpen(false)}
+              className="text-gray-400 hover:text-white text-2xl leading-none transition-colors w-10 h-10 flex items-center justify-center"
+              aria-label="Chiudi anteprima"
+            >
+              ×
+            </button>
+          </div>
+          {/* Preview content */}
+          <div className="flex-1 min-h-0 flex items-center justify-center p-4">
+            <LivePreview qrToken={qrToken} theme={theme} previewMode={previewMode} />
+          </div>
+          <p className="text-[10px] text-center text-gray-600 pb-4 shrink-0">
+            Anteprima dal vivo · modifiche non ancora salvate
+          </p>
+        </div>
+      )}
+
     </div>
   )
 }

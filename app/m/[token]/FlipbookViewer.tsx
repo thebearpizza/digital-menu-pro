@@ -584,6 +584,8 @@ export default function FlipbookViewer({
   const atFirst   = currentPage <= 1
   const atLast    = totalPages > 0 && currentPage >= totalPages
   const pagOpt    = PAGINATION_OPTIONS[themeProp?.paginationStyle ?? 'prec_succ']
+  const catStyle  = themeProp?.stickyCategoryStyle ?? 'solid'
+  const navBgComputed = catStyle === 'transparent-blur' ? 'rgba(0,0,0,0.35)' : theme.navBg
 
   // ═══════════════════════════════════════════════════════════════════════════
   // RENDER
@@ -689,12 +691,14 @@ export default function FlipbookViewer({
              Il tasto ← Menù è il primo elemento (sticky a sinistra) e il
              contatore pagine è l'ultimo (sticky a destra). Entrambi fanno
              parte del nav così condividono il medesimo z-[9999] blindato. ── */}
-        {pagesReady && (
+        {pagesReady && catStyle !== 'none' && (
           <nav
             ref={catNavRef}
             className="relative z-[9999] shrink-0 flex items-stretch overflow-x-auto pointer-events-auto"
             style={{
-              background:    theme.navBg,
+              background:           navBgComputed,
+              backdropFilter:       catStyle === 'transparent-blur' ? 'blur(16px)' : undefined,
+              WebkitBackdropFilter: catStyle === 'transparent-blur' ? 'blur(16px)' : undefined,
               borderTop:     `1px solid ${theme.textMuted}1a`,
               scrollbarWidth:'none',
               WebkitOverflowScrolling: 'touch',
@@ -708,7 +712,7 @@ export default function FlipbookViewer({
               style={{
                 color:      theme.textMuted,
                 fontFamily: theme.fontSans,
-                background: theme.navBg,
+                background: catStyle === 'transparent-blur' ? 'transparent' : theme.navBg,
                 borderRight:`1px solid ${theme.textMuted}1a`,
               }}
             >
@@ -739,7 +743,7 @@ export default function FlipbookViewer({
                 style={{
                   color:       theme.textMuted,
                   fontFamily:  theme.fontSans,
-                  background:  theme.navBg,
+                  background:  catStyle === 'transparent-blur' ? 'transparent' : theme.navBg,
                   borderLeft: `1px solid ${theme.textMuted}1a`,
                 }}
               >
