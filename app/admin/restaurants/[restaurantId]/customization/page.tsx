@@ -13,7 +13,7 @@ export default async function CustomizationPage({
   const [{ data: restaurant }, { data: rawBanners }] = await Promise.all([
     supabase
       .from('restaurants')
-      .select('id, name, logo_url, theme_config')
+      .select('id, name, logo_url, theme_config, qr_public_token')
       .eq('id', params.restaurantId)
       .single(),
     supabase
@@ -30,6 +30,7 @@ export default async function CustomizationPage({
       restaurantId={params.restaurantId}
       restaurantName={restaurant.name as string}
       restaurantLogo={(restaurant.logo_url ?? null) as string | null}
+      qrToken={(restaurant.qr_public_token ?? null) as string | null}
       initialTheme={parseTheme(restaurant.theme_config)}
       initialBanners={(rawBanners ?? []).map(b => ({
         id:         b.id as string,

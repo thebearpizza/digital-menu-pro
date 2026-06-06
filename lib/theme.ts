@@ -14,6 +14,11 @@ export interface RestaurantTheme {
   // Optional texture/pattern overlaid on appBg
   bgImage?:       string
   bgImageOpacity: number   // 0–100
+  // Optional landing background video (mp4/webm). When immersiveTransition is
+  // off it loops muted as a living wallpaper; when on it stays paused until a
+  // menu button is tapped, then plays once and reveals the menu on `ended`.
+  bgVideo?:            string
+  immersiveTransition: boolean
 
   // ── Colors ────────────────────────────────────────────────────────────────
   accent:      string
@@ -45,6 +50,8 @@ export const DEFAULT_THEME: RestaurantTheme = {
   navBg:          'rgba(7,7,7,0.96)',
   bgImage:        undefined,
   bgImageOpacity: 30,
+  bgVideo:             undefined,
+  immersiveTransition: false,
   accent:         '#c9a96e',
   textPrimary:    '#ede8e0',
   textMuted:      '#4f4f4f',
@@ -70,6 +77,8 @@ export function parseTheme(raw: unknown): RestaurantTheme {
     navBg:          typeof r.navBg      === 'string' ? r.navBg      : DEFAULT_THEME.navBg,
     bgImage:        typeof r.bgImage    === 'string' ? r.bgImage    : undefined,
     bgImageOpacity: typeof r.bgImageOpacity === 'number' ? r.bgImageOpacity : DEFAULT_THEME.bgImageOpacity,
+    bgVideo:             typeof r.bgVideo === 'string' ? r.bgVideo : undefined,
+    immersiveTransition: r.immersiveTransition === true,
     accent:         typeof r.accent     === 'string' ? r.accent     : DEFAULT_THEME.accent,
     textPrimary:    typeof r.textPrimary === 'string' ? r.textPrimary : DEFAULT_THEME.textPrimary,
     textMuted:      typeof r.textMuted  === 'string' ? r.textMuted  : DEFAULT_THEME.textMuted,

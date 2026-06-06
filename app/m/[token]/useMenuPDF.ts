@@ -182,7 +182,14 @@ export function useMenuPDF(
     })()
 
     return () => { cancelled = true }
-  }, [menu?.id, restaurant?.name, theme?.accent, theme?.pdfLayout]) // eslint-disable-line react-hooks/exhaustive-deps
+    // Regenerate whenever any PDF-affecting theme field changes, so the admin's
+    // typography/layout/price sliders are reflected in the generated document.
+  }, [
+    menu?.id, restaurant?.name,
+    theme?.accent, theme?.pageBackground, theme?.pdfLayout, theme?.dishLayout,
+    theme?.priceFormat, theme?.dividerStyle,
+    theme?.fontSizes.title, theme?.fontSizes.base, theme?.fontSizes.price,
+  ]) // eslint-disable-line react-hooks/exhaustive-deps
 
   return result
 }

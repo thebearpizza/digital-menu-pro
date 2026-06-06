@@ -3,11 +3,11 @@
 // PublicMenuView — client wrapper for /m/[token].
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import FlipbookViewer  from './FlipbookViewer'
 import { useMenuPDF }  from './useMenuPDF'
 import {
-  googleFontsUrl, fontStack, borderRadiusPx, hexToRgb,
+  googleFontsUrl, fontStack, borderRadiusPx, hexToRgb, parseTheme,
 } from '@/lib/theme'
 import type { RestaurantTheme } from '@/lib/theme'
 
@@ -208,7 +208,67 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
   const [selectedMenuId, setSelectedMenuId] = useState<string | null>(defaultMenuId ?? null)
   const selectedMenu = selectedMenuId ? menus.find(m => m.id === selectedMenuId) ?? null : null
 
-  const t = restaurant.theme
+  // ── Live theme ────────────────────────────────────────────────────────────
+  // In normal use the theme comes straight from the DB-loaded prop. When the
+  // page runs inside the admin preview iframe (?preview), the admin pushes
+  // unsaved theme changes via postMessage and we re-render them in real time.
+  const [liveTheme, setLiveTheme] = useState<RestaurantTheme>(restaurant.theme)
+  const t = liveTheme
+
+  // ── Immersive video transition ──────────────────────────────────────────────
+  // When theme.immersiveTransition + theme.bgVideo are set, tapping a menu
+  // button fades the landing UI out, plays the video once, and only opens the
+  // menu on the video's `ended` event. Otherwise selection is immediate.
+  const [pendingMenuId, setPendingMenuId] = useState<string | null>(null)
+  const transitioning = pendingMenuId !== null
+  const videoRef = useRef<HTMLVideoElement>(null)
+
+  function openMenu(menuId: string) {
+    if (t.immersiveTransition && t.bgVideo) {
+      setPendingMenuId(menuId)
+    } else {
+      setSelectedMenuId(menuId)
+    }
+  }
+
+  // Drive the immersive video once a transition starts.
+  useEffect(() => {
+    if (!transitioning) return
+    const v = videoRef.current
+    if (!v) { setSelectedMenuId(pendingMenuId); return }
+    v.currentTime = 0
+    const finish = () => setSelectedMenuId(pendingMenuId)
+    v.addEventListener('ended', finish, { once: true })
+    // Safety net: if the video can't play (blocked/missing), don't trap the user.
+    const fallback = setTimeout(finish, 8000)
+    const p = v.play()
+    if (p && typeof p.catch === 'function') p.catch(() => finish())
+    return () => { v.removeEventListener('ended', finish); clearTimeout(fallback) }
+  }, [transitioning, pendingMenuId])
+
+  // ── Admin preview bridge (postMessage) ───────────────────────────────────────
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const isPreview = new URLSearchParams(window.location.search).has('preview')
+    if (!isPreview) return
+
+    function onMessage(e: MessageEvent) {
+      // Same-origin only: the admin iframe and the public page share the domain.
+      if (e.origin !== window.location.origin) return
+      const d = e.data
+      if (!d || typeof d !== 'object') return
+      if (d.type === 'dmp-theme' && d.theme) {
+        setLiveTheme(parseTheme(d.theme))
+      } else if (d.type === 'dmp-nav') {
+        if (d.view === 'landing') { setPendingMenuId(null); setSelectedMenuId(null) }
+        else if (d.view === 'menu') setSelectedMenuId(prev => prev ?? menus[0]?.id ?? null)
+      }
+    }
+    window.addEventListener('message', onMessage)
+    // Tell the parent we're ready so it can push the current draft theme.
+    try { window.parent?.postMessage({ type: 'dmp-preview-ready' }, window.location.origin) } catch {}
+    return () => window.removeEventListener('message', onMessage)
+  }, [menus])
 
   const { pdfUrl, categories, isGenerating, error } = useMenuPDF(
     { name: restaurant.name },
@@ -245,17 +305,38 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
         <div className="fixed inset-0 h-[100dvh] flex flex-col items-center justify-center overflow-y-auto"
           style={{ background: t.appBg, fontFamily: SANS }}>
 
-          {/* Background image overlay */}
-          {t.bgImage && (
+          {/* Background image overlay (only when no video is set) */}
+          {t.bgImage && !t.bgVideo && (
             <div className="absolute inset-0 pointer-events-none"
               style={{ backgroundImage: `url(${t.bgImage})`, backgroundSize: 'cover',
                 backgroundPosition: 'center', opacity: (t.bgImageOpacity ?? 30) / 100 }} />
           )}
 
+          {/* Background / immersive video. Non-immersive: looping muted wallpaper.
+              Immersive: paused until a menu button is tapped, then plays fullscreen. */}
+          {t.bgVideo && (
+            <video
+              ref={videoRef}
+              src={t.bgVideo}
+              muted
+              playsInline
+              autoPlay={!t.immersiveTransition}
+              loop={!t.immersiveTransition}
+              className="absolute inset-0 w-full h-full object-cover pointer-events-none"
+              style={{
+                opacity:    transitioning ? 1 : (t.bgImageOpacity ?? 30) / 100,
+                zIndex:     transitioning ? 40 : 0,
+                transition: 'opacity 0.8s ease',
+              }}
+            />
+          )}
+
           <div className="absolute top-0 inset-x-0 h-px"
             style={{ background: `linear-gradient(90deg,transparent,${t.accent}55,transparent)` }} />
 
-          <div className="relative flex flex-col items-center text-center px-10 w-full max-w-xs py-12">
+          <div className="relative flex flex-col items-center text-center px-10 w-full max-w-xs py-12"
+            style={{ opacity: transitioning ? 0 : 1, transition: 'opacity 0.6s ease',
+              pointerEvents: transitioning ? 'none' : 'auto' }}>
 
             <BannerCarousel banners={banners} accent={t.accent} />
 
@@ -294,7 +375,7 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
                 </p>
               ) : (
                 menus.map(m => (
-                  <button key={m.id} onClick={() => setSelectedMenuId(m.id)}
+                  <button key={m.id} onClick={() => openMenu(m.id)}
                     className="group relative px-10 py-3 overflow-hidden transition-colors duration-300"
                     style={{ color: t.textPrimary, border: `1px solid ${t.accent}50`,
                       borderRadius: RADIUS, fontFamily: SANS,

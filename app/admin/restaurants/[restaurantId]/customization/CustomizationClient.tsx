@@ -5,9 +5,12 @@ import { createClient } from '@/lib/supabase/client'
 import { saveTheme, createBanner, deleteBanner } from './actions'
 import {
   DEFAULT_THEME, SERIF_FONTS, SANS_FONTS,
-  googleFontsUrl, fontStack, borderRadiusPx, formatPrice,
+  googleFontsUrl, fontStack, formatPrice,
 } from '@/lib/theme'
 import type { RestaurantTheme } from '@/lib/theme'
+
+// Max upload size for landing media (banners + background video).
+const MAX_MEDIA_BYTES = 5 * 1024 * 1024 // 5MB
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -25,11 +28,12 @@ interface Props {
   restaurantId:   string
   restaurantName: string
   restaurantLogo: string | null
+  qrToken:        string | null
   initialTheme:   RestaurantTheme
   initialBanners: AdminBanner[]
 }
 
-// ── Font loader ───────────────────────────────────────────────────────────────
+// ── Font loader (for the admin-side live previews of font pickers) ─────────────
 
 function usePreviewFonts(fontSerif: string, fontSans: string) {
   useEffect(() => {
@@ -139,159 +143,65 @@ function FontSizeSlider({ label, value, min, max, step, previewFont, onChange }:
   )
 }
 
-// ── Phone frame wrapper ───────────────────────────────────────────────────────
+// ── Live preview iframe (real /m/[token] page + postMessage bridge) ────────────
 
-function PhoneFrame({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="relative mx-auto" style={{ aspectRatio: '9/19.5', width: '100%', maxWidth: 320 }}>
-      {/* Outer bezel */}
-      <div className="absolute inset-0 border-[10px] border-gray-900 rounded-[3rem] shadow-2xl z-10 pointer-events-none" />
-      {/* Volume buttons (left) */}
-      <div className="absolute -left-3.5 top-20 w-1.5 h-8 bg-gray-800 rounded-l z-20" />
-      <div className="absolute -left-3.5 top-32 w-1.5 h-8 bg-gray-800 rounded-l z-20" />
-      {/* Power button (right) */}
-      <div className="absolute -right-3.5 top-24 w-1.5 h-12 bg-gray-800 rounded-r z-20" />
-      {/* Notch */}
-      <div className="absolute top-[10px] left-1/2 -translate-x-1/2 w-28 h-7 bg-gray-900 rounded-b-2xl z-20 pointer-events-none" />
-      {/* Home pill */}
-      <div className="absolute bottom-[10px] left-1/2 -translate-x-1/2 w-20 h-1 bg-gray-700 rounded-full z-20 pointer-events-none" />
-      {/* Screen */}
-      <div className="absolute inset-[10px] rounded-[2.5rem] overflow-hidden bg-black">
-        {children}
-      </div>
-    </div>
-  )
-}
-
-// ── Landing Preview ───────────────────────────────────────────────────────────
-
-function LandingPreview({ theme, restaurantName, restaurantLogo }: {
-  theme: RestaurantTheme; restaurantName: string; restaurantLogo: string | null
+function LivePreview({ qrToken, theme, previewMode }: {
+  qrToken: string | null; theme: RestaurantTheme; previewMode: 'landing' | 'menu'
 }) {
-  const SERIF = fontStack(theme.fontSerif, 'serif')
-  const SANS  = fontStack(theme.fontSans, 'sans')
-  const R     = borderRadiusPx(theme.borderRadius)
+  const iframeRef = useRef<HTMLIFrameElement>(null)
+  const readyRef  = useRef(false)
+
+  function post(msg: object) {
+    iframeRef.current?.contentWindow?.postMessage(msg, window.location.origin)
+  }
+
+  // Receive the iframe's "ready" handshake, then push the current draft state.
+  useEffect(() => {
+    function onMsg(e: MessageEvent) {
+      if (e.origin !== window.location.origin) return
+      if (e.data?.type === 'dmp-preview-ready') {
+        readyRef.current = true
+        post({ type: 'dmp-theme', theme })
+        post({ type: 'dmp-nav', view: previewMode })
+      }
+    }
+    window.addEventListener('message', onMsg)
+    return () => window.removeEventListener('message', onMsg)
+  }, [theme, previewMode])
+
+  // Debounced theme push — only fires once the user pauses, so dragging a color
+  // or font slider stays buttery even on slow machines.
+  useEffect(() => {
+    if (!readyRef.current) return
+    const id = setTimeout(() => post({ type: 'dmp-theme', theme }), 150)
+    return () => clearTimeout(id)
+  }, [theme])
+
+  // Navigate the preview between landing and menu.
+  useEffect(() => {
+    if (!readyRef.current) return
+    post({ type: 'dmp-nav', view: previewMode })
+  }, [previewMode])
+
+  if (!qrToken) {
+    return (
+      <div className="w-full h-full flex items-center justify-center text-center px-6">
+        <p className="text-xs text-gray-400">
+          Anteprima non disponibile: questo ristorante non ha ancora un token QR pubblico.
+        </p>
+      </div>
+    )
+  }
 
   return (
-    <div className="w-full h-full relative flex flex-col items-center justify-center overflow-hidden"
-      style={{ background: theme.appBg, fontFamily: SANS }}>
-      {theme.bgImage && (
-        <div className="absolute inset-0 pointer-events-none"
-          style={{ backgroundImage: `url(${theme.bgImage})`, backgroundSize: 'cover',
-            backgroundPosition: 'center', opacity: (theme.bgImageOpacity ?? 30) / 100 }} />
-      )}
-      <div className="absolute top-0 inset-x-0 h-px"
-        style={{ background: `linear-gradient(90deg,transparent,${theme.accent}55,transparent)` }} />
-
-      <div className="relative flex flex-col items-center text-center px-8 w-full">
-        {restaurantLogo ? (
-          <img src={restaurantLogo} alt="" className="h-10 object-contain mb-4" style={{ opacity: 0.88 }} />
-        ) : (
-          <>
-            <div className="w-6 h-px mb-3" style={{ background: theme.accent }} />
-            <h1 className="font-light uppercase leading-none mb-3"
-              style={{ color: theme.textPrimary, fontFamily: SERIF,
-                fontSize: `${theme.fontSizes.title * 0.65}rem`, letterSpacing: '0.22em' }}>
-              {restaurantName}
-            </h1>
-            <div className="w-6 h-px mb-4" style={{ background: theme.accent }} />
-          </>
-        )}
-        <div className="flex flex-col gap-2 w-full">
-          {['Pranzo', 'Cena'].map(name => (
-            <div key={name} className="px-4 py-2 text-center"
-              style={{ color: theme.textPrimary, border: `1px solid ${theme.accent}50`,
-                borderRadius: R, fontFamily: SANS,
-                fontSize: `${theme.fontSizes.base * 0.55}rem`,
-                letterSpacing: '0.28em', textTransform: 'uppercase' }}>
-              {`Sfoglia il menu ${name}`}
-            </div>
-          ))}
-        </div>
-        <div className="flex gap-3 mt-4">
-          {[...Array(3)].map((_, i) => (
-            <div key={i} className="w-2.5 h-2.5 rounded-full" style={{ background: `${theme.accent}60` }} />
-          ))}
-        </div>
-      </div>
-      <div className="absolute bottom-0 inset-x-0 h-px"
-        style={{ background: `linear-gradient(90deg,transparent,${theme.accent}55,transparent)` }} />
-    </div>
-  )
-}
-
-// ── Menu Preview (dish list mock) ─────────────────────────────────────────────
-
-const MOCK_DISHES = [
-  { id: '1', name: 'Bruschetta al Pomodoro', description: 'Pane tostato, pomodoro, basilico, olio EVO', price: 6.50, category: 'Antipasti' },
-  { id: '2', name: 'Carpaccio di Manzo',     description: 'Manzo crudo, rucola, parmigiano, limone',   price: 12.00, category: 'Antipasti' },
-  { id: '3', name: 'Tagliatelle al Ragù',    description: 'Pasta fresca, ragù bolognese',               price: 14.00, category: 'Primi' },
-  { id: '4', name: 'Risotto ai Porcini',     description: 'Carnaroli, porcini, parmigiano 24 mesi',    price: 15.50, category: 'Primi' },
-]
-
-function MenuPreview({ theme }: { theme: RestaurantTheme }) {
-  const SERIF  = fontStack(theme.fontSerif, 'serif')
-  const SANS   = fontStack(theme.fontSans, 'sans')
-  const isGrid = theme.dishLayout === 'grid'
-  const isBox  = theme.dishLayout === 'boxed'
-  const scale  = 0.55   // preview is ~55% of real size
-
-  return (
-    <div className="w-full h-full relative overflow-hidden flex flex-col"
-      style={{ background: theme.pageBackground, fontFamily: SANS }}>
-
-      {/* Nav bar */}
-      <div className="shrink-0 px-3 py-1.5 flex gap-2 overflow-hidden" style={{ background: theme.navBg }}>
-        {['Antipasti', 'Primi'].map((cat, i) => (
-          <span key={cat} className="text-[8px] uppercase tracking-widest shrink-0 px-1.5 py-0.5"
-            style={{ color: i === 0 ? theme.accent : `${theme.textMuted}88`, fontFamily: SANS,
-              borderBottom: i === 0 ? `1.5px solid ${theme.accent}` : 'none' }}>
-            {cat}
-          </span>
-        ))}
-      </div>
-
-      {/* Category label */}
-      <div className="px-4 pt-3 pb-1.5 shrink-0">
-        <p className="uppercase text-[8px] tracking-[0.2em]" style={{ color: theme.accent }}>Antipasti</p>
-        <div className="h-px mt-1" style={{ background: `${theme.accent}30` }} />
-      </div>
-
-      {/* Dishes */}
-      <div className={`px-3 flex-1 overflow-hidden ${isGrid ? 'grid grid-cols-2 gap-1.5 content-start pt-1' : 'flex flex-col'}`}>
-        {MOCK_DISHES.slice(0, isGrid ? 4 : 3).map((dish, i) => {
-          const priceStr = formatPrice(dish.price, theme.priceFormat)
-          const showDiv  = !isGrid && !isBox && theme.dividerStyle !== 'none' && i < 2
-
-          return (
-            <div key={dish.id}
-              style={isBox ? {
-                border: `0.5px solid ${theme.accent}40`,
-                borderRadius: borderRadiusPx(theme.borderRadius),
-                padding: '5px 6px', marginBottom: 4,
-              } : { paddingTop: 4, paddingBottom: showDiv ? 0 : 4 }}>
-              <div className="flex items-start justify-between gap-1.5">
-                <p style={{ fontFamily: SANS, fontSize: `${theme.fontSizes.base * scale}rem`,
-                  fontWeight: 600, color: '#1a1a1a', textTransform: 'uppercase',
-                  letterSpacing: '0.04em', lineHeight: 1.2, flex: 1 }}>
-                  {dish.name}
-                </p>
-                <p style={{ fontFamily: SANS, fontSize: `${theme.fontSizes.price * scale}rem`,
-                  fontWeight: 600, color: '#1a1a1a', flexShrink: 0, lineHeight: 1.2 }}>
-                  {priceStr}
-                </p>
-              </div>
-              <p style={{ fontFamily: SERIF, fontSize: `${theme.fontSizes.base * scale * 0.85}rem`,
-                color: '#6a6a6a', lineHeight: 1.35, marginTop: 2 }}>
-                {dish.description}
-              </p>
-              {showDiv && (
-                <div className="mt-2 mb-0.5 h-px"
-                  style={{ background: '#ece6da', borderStyle: theme.dividerStyle === 'dashed' ? 'dashed' : 'solid' }} />
-              )}
-            </div>
-          )
-        })}
+    <div className="relative mx-auto h-full" style={{ aspectRatio: '9/19.5', maxWidth: '100%' }}>
+      <div className="absolute inset-0 rounded-[2rem] overflow-hidden border border-gray-300 shadow-xl bg-black">
+        <iframe
+          ref={iframeRef}
+          title="Anteprima menu"
+          src={`/m/${qrToken}?preview=1`}
+          className="w-full h-full border-0"
+        />
       </div>
     </div>
   )
@@ -309,8 +219,9 @@ function BannerManager({ restaurantId, initialBanners }: { restaurantId: string;
 
   async function handleAdd() {
     if (!fileRef.current?.files?.[0]) { setError('Seleziona un file.'); return }
-    setUploading(true); setError(null)
     const file = fileRef.current.files[0]
+    if (file.size > MAX_MEDIA_BYTES) { setError('File troppo grande (max 5MB).'); return }
+    setUploading(true); setError(null)
     const supabase = createClient()
     const ext  = file.name.split('.').pop() ?? 'jpg'
     const path = `${restaurantId}/banners/${Date.now()}.${ext}`
@@ -376,14 +287,15 @@ function BannerManager({ restaurantId, initialBanners }: { restaurantId: string;
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 export default function CustomizationClient({
-  restaurantId, restaurantName, restaurantLogo, initialTheme, initialBanners,
+  restaurantId, qrToken, initialTheme, initialBanners,
 }: Props) {
-  const [theme,       setTheme]       = useState<RestaurantTheme>(initialTheme)
-  const [saving,      setSaving]      = useState(false)
-  const [saved,       setSaved]       = useState(false)
-  const [error,       setError]       = useState<string | null>(null)
-  const [bgUploading, setBgUploading] = useState(false)
-  const [previewMode, setPreviewMode] = useState<'landing' | 'menu'>('landing')
+  const [theme,        setTheme]        = useState<RestaurantTheme>(initialTheme)
+  const [saving,       setSaving]       = useState(false)
+  const [saved,        setSaved]        = useState(false)
+  const [error,        setError]        = useState<string | null>(null)
+  const [bgUploading,  setBgUploading]  = useState(false)
+  const [vidUploading, setVidUploading] = useState(false)
+  const [previewMode,  setPreviewMode]  = useState<'landing' | 'menu'>('landing')
 
   usePreviewFonts(theme.fontSerif, theme.fontSans)
 
@@ -395,7 +307,8 @@ export default function CustomizationClient({
   }
 
   async function handleBgUpload(file: File) {
-    setBgUploading(true)
+    if (file.size > MAX_MEDIA_BYTES) { setError('Immagine troppo grande (max 5MB).'); return }
+    setBgUploading(true); setError(null)
     const supabase = createClient()
     const ext  = file.name.split('.').pop() ?? 'jpg'
     const path = `${restaurantId}/theme-bg.${ext}`
@@ -403,9 +316,25 @@ export default function CustomizationClient({
       .from('restaurant-assets').upload(path, file, { upsert: true })
     if (!err && data) {
       const { data: pub } = supabase.storage.from('restaurant-assets').getPublicUrl(data.path)
-      set('bgImage', pub.publicUrl)
+      // Cache-bust so the iframe preview reloads a replaced file at the same path.
+      set('bgImage', `${pub.publicUrl}?v=${Date.now()}`)
     } else if (err) setError('Upload: ' + err.message)
     setBgUploading(false)
+  }
+
+  async function handleVideoUpload(file: File) {
+    if (file.size > MAX_MEDIA_BYTES) { setError('Video troppo grande (max 5MB).'); return }
+    setVidUploading(true); setError(null)
+    const supabase = createClient()
+    const ext  = file.name.split('.').pop() ?? 'mp4'
+    const path = `${restaurantId}/theme-video.${ext}`
+    const { data, error: err } = await supabase.storage
+      .from('restaurant-assets').upload(path, file, { upsert: true })
+    if (!err && data) {
+      const { data: pub } = supabase.storage.from('restaurant-assets').getPublicUrl(data.path)
+      set('bgVideo', `${pub.publicUrl}?v=${Date.now()}`)
+    } else if (err) setError('Upload: ' + err.message)
+    setVidUploading(false)
   }
 
   async function handleSave() {
@@ -424,7 +353,7 @@ export default function CustomizationClient({
       <div className="flex items-center justify-between mb-6 pb-4 border-b border-gray-100">
         <div>
           <h2 className="text-sm font-semibold text-gray-800">Personalizzazione</h2>
-          <p className="text-xs text-gray-400 mt-0.5">Le modifiche si applicano al menu clienti dopo il salvataggio.</p>
+          <p className="text-xs text-gray-400 mt-0.5">Anteprima dal vivo a destra. Le modifiche si applicano al menu clienti dopo il salvataggio.</p>
         </div>
         <div className="flex items-center gap-3">
           {saved && <span className="text-xs text-green-600">Salvato.</span>}
@@ -485,12 +414,44 @@ export default function CustomizationClient({
               {bgUploading && <p className="text-xs text-gray-400">Caricamento…</p>}
               <div>
                 <label className="block text-xs text-gray-500 mb-1">
-                  Opacità texture: <span className="font-medium text-gray-700">{theme.bgImageOpacity}%</span>
+                  Opacità media: <span className="font-medium text-gray-700">{theme.bgImageOpacity}%</span>
                 </label>
-                <input type="range" min={5} max={80} step={5} value={theme.bgImageOpacity}
+                <input type="range" min={5} max={100} step={5} value={theme.bgImageOpacity}
                   onChange={e => set('bgImageOpacity', Number(e.target.value))}
                   className="w-full accent-gray-900" />
               </div>
+            </div>
+          </div>
+
+          {/* Sfondo video / immersione */}
+          <div>
+            <SectionLabel>Video di sfondo e immersione</SectionLabel>
+            <div className="bg-white border border-gray-100 p-4 space-y-3">
+              {theme.bgVideo && (
+                <div className="relative inline-block">
+                  <video src={theme.bgVideo} muted className="w-32 h-20 object-cover border border-gray-200 bg-black" />
+                  <button type="button" onClick={() => set('bgVideo', undefined)}
+                    className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 text-white text-xs rounded-full flex items-center justify-center">×</button>
+                </div>
+              )}
+              <input type="file" accept="video/*"
+                onChange={e => e.target.files?.[0] && handleVideoUpload(e.target.files[0])}
+                className="block text-xs text-gray-500 file:mr-2 file:py-1 file:px-3 file:border file:border-gray-200 file:text-xs file:bg-white file:text-gray-600 hover:file:bg-gray-50 cursor-pointer" />
+              {vidUploading && <p className="text-xs text-gray-400">Caricamento…</p>}
+              <p className="text-[10px] text-gray-400">Max 5MB. MP4/WebM consigliati. Usa l&apos;opacità qui sopra anche per il video.</p>
+
+              <label className={`flex items-start gap-2 pt-2 border-t border-gray-50 ${theme.bgVideo ? 'cursor-pointer' : 'opacity-50 cursor-not-allowed'}`}>
+                <input type="checkbox" disabled={!theme.bgVideo}
+                  checked={theme.immersiveTransition}
+                  onChange={e => set('immersiveTransition', e.target.checked)}
+                  className="mt-0.5 accent-gray-900" />
+                <span className="text-xs text-gray-600">
+                  Transizione immersiva
+                  <span className="block text-[10px] text-gray-400">
+                    Al tap su un menù la UI svanisce, il video parte e al termine si apre il menù. Senza spunta il video resta come sfondo in loop.
+                  </span>
+                </span>
+              </label>
             </div>
           </div>
 
@@ -591,7 +552,7 @@ export default function CustomizationClient({
 
         </div>
 
-        {/* ── Preview (70%, sticky, full-height) ─────────────────────────── */}
+        {/* ── Live preview (70%, sticky, full-height iframe) ──────────────── */}
         <div className="lg:sticky lg:top-6 flex flex-col" style={{ height: 'calc(100vh - 11rem)' }}>
           {/* Toggle */}
           <div className="flex gap-1 mb-3 shrink-0">
@@ -606,21 +567,17 @@ export default function CustomizationClient({
               </button>
             ))}
             <span className="ml-auto text-[10px] text-gray-400 self-center">
-              {previewMode === 'landing' ? 'Schermata di benvenuto clienti' : 'Layout pagine menù'}
+              {previewMode === 'landing' ? 'Schermata di benvenuto clienti' : 'Pagine menù reali'}
             </span>
           </div>
 
-          {/* Preview area — centrata, con phone frame */}
-          <div className="flex-1 min-h-0 flex items-center justify-center bg-gradient-to-br from-gray-100 to-gray-200 border border-gray-200 rounded-lg overflow-hidden p-8">
-            <PhoneFrame>
-              {previewMode === 'landing'
-                ? <LandingPreview theme={theme} restaurantName={restaurantName} restaurantLogo={restaurantLogo} />
-                : <MenuPreview theme={theme} />}
-            </PhoneFrame>
+          {/* Preview area — real /m/[token] page inside an iframe */}
+          <div className="flex-1 min-h-0 flex items-center justify-center bg-gradient-to-br from-gray-100 to-gray-200 border border-gray-200 rounded-lg overflow-hidden p-6">
+            <LivePreview qrToken={qrToken} theme={theme} previewMode={previewMode} />
           </div>
 
           <p className="text-[10px] text-center text-gray-400 mt-2 shrink-0">
-            Preview in tempo reale · Scala circa 60%
+            Anteprima dal vivo della pagina reale · le modifiche non salvate sono visibili solo qui
           </p>
         </div>
 

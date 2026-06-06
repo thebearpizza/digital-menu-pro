@@ -63,6 +63,13 @@ function makeStyles(theme: RestaurantTheme) {
   const isDashed     = theme.dividerStyle === 'dashed'
   const noDivider    = theme.dividerStyle === 'none'
 
+  // Font sizes scale relative to the admin's theme.fontSizes, so the sliders in
+  // the customization panel actually change the generated PDF's dish typography.
+  // Each PDF base size is multiplied by the ratio of chosen / default rem.
+  const titleScale = theme.fontSizes.title / DEFAULT_THEME.fontSizes.title
+  const baseScale  = theme.fontSizes.base  / DEFAULT_THEME.fontSizes.base
+  const priceScale = theme.fontSizes.price / DEFAULT_THEME.fontSizes.price
+
   return StyleSheet.create({
     page: {
       backgroundColor:   theme.pageBackground,
@@ -72,7 +79,7 @@ function makeStyles(theme: RestaurantTheme) {
     },
     catTitle: {
       fontFamily:    'Times-Bold',
-      fontSize:      compact ? 13 : 18,
+      fontSize:      (compact ? 13 : 18) * titleScale,
       color:         '#1a1a1a',
       textTransform: 'uppercase',
       letterSpacing: compact ? 1.5 : 2,
@@ -92,7 +99,7 @@ function makeStyles(theme: RestaurantTheme) {
     },
     dishName: {
       fontFamily:    'Helvetica-Bold',
-      fontSize:      compact ? 9 : 10,
+      fontSize:      (compact ? 9 : 10) * titleScale,
       color:         '#1a1a1a',
       textTransform: 'uppercase',
       letterSpacing: compact ? 0.4 : 0.6,
@@ -101,12 +108,12 @@ function makeStyles(theme: RestaurantTheme) {
     },
     dishPrice: {
       fontFamily: 'Helvetica-Bold',
-      fontSize:   compact ? 9 : 10,
+      fontSize:   (compact ? 9 : 10) * priceScale,
       color:      '#1a1a1a',
     },
     dishDesc: {
       fontFamily:   'Helvetica-Oblique',
-      fontSize:     compact ? 7.5 : 8.5,
+      fontSize:     (compact ? 7.5 : 8.5) * baseScale,
       color:        '#4a4a4a',
       lineHeight:   1.55,
       marginBottom: compact ? 2 : 3,
