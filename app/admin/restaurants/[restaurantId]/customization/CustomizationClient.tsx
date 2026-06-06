@@ -453,7 +453,7 @@ export default function CustomizationClient({
                 <ColorRow label="Colore sfondo app" value={theme.appBg} onChange={v => set('appBg', v)} />
               </div>
               <div className="border-t border-gray-50 pt-4">
-                <p className="text-[10px] text-gray-400 mb-2 uppercase tracking-wider">Pagine PDF (il "foglio" del menù)</p>
+                <p className="text-[10px] text-gray-400 mb-2 uppercase tracking-wider">Pagine PDF (il &quot;foglio&quot; del menù)</p>
                 <ColorRow label="Colore pagine" value={theme.pageBackground} onChange={v => set('pageBackground', v)} />
                 <p className="text-[10px] text-gray-400 mt-1">
                   Su carta stampata si usa sempre bianco o avorio (es. <span className="font-mono">#fffff5</span>).
