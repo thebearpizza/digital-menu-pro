@@ -17,6 +17,7 @@ import DishForm from './DishForm'
 import DishSyncBannerModal from './DishSyncBannerModal'
 import MoveDishModal from './MoveDishModal'
 import MoveCategoryModal from './MoveCategoryModal'
+import VisibilityToggle from '@/components/ui/VisibilityToggle'
 import {
   deleteDish, reorderCategories, reorderDishes,
   duplicateDish, duplicateCategory, findDishTwins, DishTwin,
@@ -110,71 +111,94 @@ function SortableDish({
     opacity: isDragging ? 0.5 : 1,
   }
 
+  // Kebab locale per le azioni secondarie del piatto
+  const [kebabOpen, setKebabOpen] = useState(false)
+  const kebabRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!kebabOpen) return
+    function onOut(e: MouseEvent) {
+      if (kebabRef.current && !kebabRef.current.contains(e.target as Node)) setKebabOpen(false)
+    }
+    document.addEventListener('mousedown', onOut)
+    return () => document.removeEventListener('mousedown', onOut)
+  }, [kebabOpen])
+
   return (
     <li
       ref={setNodeRef}
       style={style}
-      className={`px-3 py-3 hover:bg-gray-50 flex flex-col md:flex-row md:items-start md:gap-3 ${!dish.is_active ? 'opacity-50' : ''}`}
+      className={`px-3 py-2.5 hover:bg-gray-50 flex items-center gap-2 ${!dish.is_active ? 'opacity-40' : ''}`}
     >
-      <div className="flex items-start gap-2 flex-1 min-w-0">
-        <button
-          {...attributes} {...listeners}
-          className="text-gray-300 hover:text-gray-500 cursor-grab active:cursor-grabbing shrink-0 touch-none select-none text-base leading-none min-h-[44px] min-w-[28px] flex items-center justify-center"
-          aria-label="Trascina per riordinare il piatto"
-          title="Trascina per riordinare"
-        >
-          ⠿
-        </button>
-        <div className="flex-1 min-w-0 pt-2.5 md:pt-0">
-          <div className="text-sm font-medium text-gray-900">{dish.name}</div>
-          {dish.description && (
-            <div className="text-xs text-gray-400 mt-0.5 line-clamp-1">{dish.description}</div>
-          )}
-          {dish.allergens?.length > 0 && (
-            <div className="text-[10px] text-orange-500 mt-0.5">
-              Allergeni: {dish.allergens.join(', ')}
+      {/* Drag handle */}
+      <button
+        {...attributes} {...listeners}
+        className="text-gray-300 hover:text-gray-500 cursor-grab active:cursor-grabbing shrink-0 touch-none select-none text-base leading-none min-h-[44px] min-w-[28px] flex items-center justify-center"
+        aria-label="Trascina per riordinare"
+        title="Trascina per riordinare"
+      >
+        ⠿
+      </button>
+
+      {/* Contenuto — flex-1, mai sacrificato */}
+      <div className="flex-1 min-w-0">
+        <div className="text-sm font-medium text-gray-900 truncate">{dish.name}</div>
+        {dish.description && (
+          <div className="text-xs text-gray-400 mt-0.5 line-clamp-1">{dish.description}</div>
+        )}
+        {dish.allergens?.length > 0 && (
+          <div className="text-[10px] text-orange-500 mt-0.5">Allergeni: {dish.allergens.join(', ')}</div>
+        )}
+      </div>
+
+      {/* Destra: prezzo | 👁 | ⋮ */}
+      <div className="flex items-center gap-1 shrink-0">
+        <span className="text-sm text-gray-600 tabular-nums whitespace-nowrap min-w-[52px] text-right">
+          {dish.price != null ? `€ ${Number(dish.price).toFixed(2)}` : '—'}
+        </span>
+
+        <VisibilityToggle isVisible={dish.is_active} onToggle={() => onToggle(dish)} />
+
+        {/* Kebab — Modifica / Duplica / Sposta / Elimina */}
+        <div className="relative" ref={kebabRef}>
+          <button
+            onClick={() => setKebabOpen(o => !o)}
+            className="flex items-center justify-center w-[36px] h-[36px] text-gray-400 hover:text-gray-700 text-lg leading-none rounded transition-colors hover:bg-gray-100"
+            aria-label="Azioni piatto"
+          >
+            ⋮
+          </button>
+          {kebabOpen && (
+            <div className="absolute right-0 top-full mt-1 z-50 bg-white border border-gray-200 shadow-lg min-w-[148px] py-1">
+              <button
+                onClick={() => { onEdit(dish); setKebabOpen(false) }}
+                className="w-full text-left px-4 py-2.5 text-sm text-blue-600 hover:bg-blue-50"
+              >
+                Modifica
+              </button>
+              <button
+                onClick={() => { onDuplicate(dish); setKebabOpen(false) }}
+                className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50"
+              >
+                Duplica
+              </button>
+              <button
+                onClick={() => { onMove(dish); setKebabOpen(false) }}
+                className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50"
+              >
+                Sposta in
+              </button>
+              <div className="h-px bg-gray-100 my-1" />
+              <button
+                onClick={() => { onDelete(dish); setKebabOpen(false) }}
+                disabled={deletingId === dish.id}
+                className="w-full text-left px-4 py-2.5 text-sm text-red-500 hover:bg-red-50 disabled:opacity-40"
+              >
+                Elimina
+              </button>
             </div>
           )}
         </div>
-      </div>
-
-      <div className="flex items-center justify-between gap-3 mt-2 md:mt-0 md:justify-end shrink-0 flex-wrap pl-7 md:pl-0">
-        <span className="text-sm text-gray-600 whitespace-nowrap md:order-1 md:min-w-[64px] md:text-right">
-          {dish.price != null ? `€ ${Number(dish.price).toFixed(2)}` : '—'}
-        </span>
-        <span className="flex items-center gap-0.5 md:order-2 flex-wrap">
-          <button
-            onClick={() => onEdit(dish)}
-            className="text-xs text-blue-600 hover:underline px-2 min-h-[44px] md:min-h-0"
-          >
-            Modifica
-          </button>
-          <button
-            onClick={() => onToggle(dish)}
-            className={`text-xs hover:underline px-2 min-h-[44px] md:min-h-0 ${dish.is_active ? 'text-orange-500' : 'text-green-600'}`}
-          >
-            {dish.is_active ? 'Disabilita' : 'Abilita'}
-          </button>
-          <button
-            onClick={() => onDuplicate(dish)}
-            className="text-xs text-gray-500 hover:text-gray-800 hover:underline px-2 min-h-[44px] md:min-h-0"
-          >
-            Duplica
-          </button>
-          <button
-            onClick={() => onMove(dish)}
-            className="text-xs text-gray-500 hover:text-gray-800 hover:underline px-2 min-h-[44px] md:min-h-0"
-          >
-            Sposta
-          </button>
-          <button
-            onClick={() => onDelete(dish)}
-            disabled={deletingId === dish.id}
-            className="text-xs text-red-500 hover:underline disabled:opacity-40 px-2 min-h-[44px] md:min-h-0"
-          >
-            Elimina
-          </button>
-        </span>
       </div>
     </li>
   )
@@ -258,23 +282,17 @@ function SortableCategory({
   const toggleLabel = (allActive || anyActive) ? 'Disabilita' : 'Abilita'
   const toggleActive = allActive || anyActive
 
-  // Azioni secondarie — usate sia nell'inline desktop sia nel dropdown mobile
+  // Azioni secondarie — usate nell'inline desktop (testo) e nel dropdown mobile
   const secondaryActions = (
     <>
       {dishes.length > 0 && (
         <button
-          onClick={() => { onToggleCategory(cat, !toggleActive); setKebabOpen(false) }}
-          className={`text-xs hover:underline whitespace-nowrap ${toggleActive ? 'text-orange-500' : 'text-green-600'}`}
+          onClick={() => { onMoveCategory(cat); setKebabOpen(false) }}
+          className="text-xs text-gray-500 hover:text-gray-800 hover:underline whitespace-nowrap"
         >
-          {toggleLabel}
+          Sposta in
         </button>
       )}
-      <button
-        onClick={() => { onMoveCategory(cat); setKebabOpen(false) }}
-        className="text-xs text-gray-500 hover:text-gray-800 hover:underline whitespace-nowrap"
-      >
-        Sposta in
-      </button>
       <button
         onClick={() => { onDuplicateCategory(cat); setKebabOpen(false) }}
         className="text-xs text-gray-500 hover:text-gray-800 hover:underline whitespace-nowrap"
@@ -317,50 +335,59 @@ function SortableCategory({
 
         {/* Azioni inline — visibili solo su md+ */}
         <div className="hidden md:flex items-center gap-1 shrink-0">
+          {dishes.length > 0 && (
+            <VisibilityToggle
+              isVisible={toggleActive}
+              onToggle={() => onToggleCategory(cat, !toggleActive)}
+            />
+          )}
           {secondaryActions}
         </div>
 
         {/* Kebab menu — visibile solo su mobile */}
-        <div className="md:hidden relative shrink-0" ref={kebabRef}>
-          <button
-            onClick={() => setKebabOpen(o => !o)}
-            className="flex items-center justify-center w-[44px] h-[44px] text-gray-500 hover:text-gray-800 text-lg leading-none"
-            aria-label="Azioni categoria"
-          >
-            ⋮
-          </button>
-          {kebabOpen && (
-            <div className="absolute right-0 top-full mt-1 z-[100] bg-white border border-gray-200 shadow-lg min-w-[160px] py-1">
-              {dishes.length > 0 && (
-                <button
-                  onClick={() => { onToggleCategory(cat, !toggleActive); setKebabOpen(false) }}
-                  className={`w-full text-left px-4 py-3 text-sm hover:bg-gray-50 ${toggleActive ? 'text-orange-500' : 'text-green-600'}`}
-                >
-                  {toggleLabel}
-                </button>
-              )}
-              <button
-                onClick={() => { onMoveCategory(cat); setKebabOpen(false) }}
-                className="w-full text-left px-4 py-3 text-sm text-gray-700 hover:bg-gray-50"
-              >
-                Sposta in
-              </button>
-              <button
-                onClick={() => { onDuplicateCategory(cat); setKebabOpen(false) }}
-                className="w-full text-left px-4 py-3 text-sm text-gray-700 hover:bg-gray-50"
-              >
-                Duplica
-              </button>
-              {dishes.length === 0 && (
-                <button
-                  onClick={() => { onDeleteCategory(cat); setKebabOpen(false) }}
-                  className="w-full text-left px-4 py-3 text-sm text-red-500 hover:bg-red-50"
-                >
-                  Elimina
-                </button>
-              )}
-            </div>
+        <div className="md:hidden flex items-center shrink-0" ref={kebabRef}>
+          {/* 👁 sempre visibile anche su mobile */}
+          {dishes.length > 0 && (
+            <VisibilityToggle
+              isVisible={toggleActive}
+              onToggle={() => onToggleCategory(cat, !toggleActive)}
+            />
           )}
+          <div className="relative">
+            <button
+              onClick={() => setKebabOpen(o => !o)}
+              className="flex items-center justify-center w-[44px] h-[44px] text-gray-500 hover:text-gray-800 text-lg leading-none"
+              aria-label="Azioni categoria"
+            >
+              ⋮
+            </button>
+            {kebabOpen && (
+              <div className="absolute right-0 top-full mt-1 z-[100] bg-white border border-gray-200 shadow-lg min-w-[160px] py-1">
+                {dishes.length > 0 && (
+                  <button
+                    onClick={() => { onMoveCategory(cat); setKebabOpen(false) }}
+                    className="w-full text-left px-4 py-3 text-sm text-gray-700 hover:bg-gray-50"
+                  >
+                    Sposta in
+                  </button>
+                )}
+                <button
+                  onClick={() => { onDuplicateCategory(cat); setKebabOpen(false) }}
+                  className="w-full text-left px-4 py-3 text-sm text-gray-700 hover:bg-gray-50"
+                >
+                  Duplica
+                </button>
+                {dishes.length === 0 && (
+                  <button
+                    onClick={() => { onDeleteCategory(cat); setKebabOpen(false) }}
+                    className="w-full text-left px-4 py-3 text-sm text-red-500 hover:bg-red-50"
+                  >
+                    Elimina
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Espandi / Comprimi — sempre visibile */}

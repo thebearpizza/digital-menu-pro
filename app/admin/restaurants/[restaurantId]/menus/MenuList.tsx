@@ -14,6 +14,7 @@ import {
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { createMenu, deleteMenu, duplicateMenu, reorderMenus, updateMenuName, toggleMenuActive } from './actions'
+import VisibilityToggle from '@/components/ui/VisibilityToggle'
 
 interface Menu {
   id: string
@@ -123,70 +124,68 @@ function SortableMenu({
           </Link>
 
           {/* Azioni inline — visibili solo su md+ */}
-          <div className="hidden md:flex items-center gap-3 shrink-0">
-            <button
-              onClick={() => onToggleActive(menu.id, !menu.is_active)}
-              className={`text-xs hover:underline ${menu.is_active ? 'text-orange-500' : 'text-green-600'}`}
-            >
-              {menu.is_active ? 'Disabilita' : 'Abilita'}
-            </button>
+          <div className="hidden md:flex items-center gap-1 shrink-0">
+            <VisibilityToggle
+              isVisible={menu.is_active}
+              onToggle={() => onToggleActive(menu.id, !menu.is_active)}
+            />
             <button
               onClick={() => setEditing(true)}
-              className="text-xs text-gray-500 hover:text-gray-800 hover:underline"
+              className="text-xs text-gray-500 hover:text-gray-800 hover:underline px-2"
             >
               Rinomina
             </button>
             <button
               onClick={() => onDuplicate(menu.id)}
-              className="text-xs text-gray-500 hover:text-gray-800 hover:underline"
+              className="text-xs text-gray-500 hover:text-gray-800 hover:underline px-2"
             >
               Duplica
             </button>
             <button
               onClick={() => onDelete(menu.id)}
-              className="text-xs text-red-500 hover:underline"
+              className="text-xs text-red-500 hover:underline px-2"
             >
               Elimina
             </button>
           </div>
 
-          {/* Kebab menu — visibile solo su mobile, z-50 + shadow-lg per sovrapposi agli elementi sottostanti */}
-          <div className="md:hidden relative shrink-0" ref={kebabRef}>
-            <button
-              onClick={() => setKebabOpen(o => !o)}
-              className="flex items-center justify-center w-[44px] h-[44px] text-gray-500 hover:text-gray-800 text-lg leading-none"
-              aria-label="Azioni menu"
-            >
-              ⋮
-            </button>
-            {kebabOpen && (
-              <div className="absolute right-0 top-full mt-1 z-50 bg-white border border-gray-200 shadow-lg min-w-[160px] py-1">
-                <button
-                  onClick={() => { onToggleActive(menu.id, !menu.is_active); setKebabOpen(false) }}
-                  className={`w-full text-left px-4 py-3 text-sm hover:bg-gray-50 ${menu.is_active ? 'text-orange-500' : 'text-green-600'}`}
-                >
-                  {menu.is_active ? 'Disabilita' : 'Abilita'}
-                </button>
-                <button
-                  onClick={() => { setEditing(true); setKebabOpen(false) }}
-                  className="w-full text-left px-4 py-3 text-sm text-gray-700 hover:bg-gray-50"
-                >
-                  Rinomina
-                </button>
-                <button
-                  onClick={() => { onDuplicate(menu.id); setKebabOpen(false) }}
-                  className="w-full text-left px-4 py-3 text-sm text-gray-700 hover:bg-gray-50"
-                >
-                  Duplica
-                </button>
-                <button
-                  onClick={() => { onDelete(menu.id); setKebabOpen(false) }}
-                  className="w-full text-left px-4 py-3 text-sm text-red-500 hover:bg-red-50"
-                >
-                  Elimina
-                </button>
-              </div>
-            )}
+          {/* Mobile: 👁 sempre visibile + kebab per le restanti azioni */}
+          <div className="md:hidden flex items-center shrink-0" ref={kebabRef}>
+            <VisibilityToggle
+              isVisible={menu.is_active}
+              onToggle={() => onToggleActive(menu.id, !menu.is_active)}
+            />
+            <div className="relative">
+              <button
+                onClick={() => setKebabOpen(o => !o)}
+                className="flex items-center justify-center w-[44px] h-[44px] text-gray-500 hover:text-gray-800 text-lg leading-none"
+                aria-label="Azioni menu"
+              >
+                ⋮
+              </button>
+              {kebabOpen && (
+                <div className="absolute right-0 top-full mt-1 z-50 bg-white border border-gray-200 shadow-lg min-w-[148px] py-1">
+                  <button
+                    onClick={() => { setEditing(true); setKebabOpen(false) }}
+                    className="w-full text-left px-4 py-3 text-sm text-gray-700 hover:bg-gray-50"
+                  >
+                    Rinomina
+                  </button>
+                  <button
+                    onClick={() => { onDuplicate(menu.id); setKebabOpen(false) }}
+                    className="w-full text-left px-4 py-3 text-sm text-gray-700 hover:bg-gray-50"
+                  >
+                    Duplica
+                  </button>
+                  <button
+                    onClick={() => { onDelete(menu.id); setKebabOpen(false) }}
+                    className="w-full text-left px-4 py-3 text-sm text-red-500 hover:bg-red-50"
+                  >
+                    Elimina
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
 
           {/* CTA primario — sempre visibile, mai sacrificato */}
