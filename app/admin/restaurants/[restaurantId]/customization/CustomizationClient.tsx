@@ -4,10 +4,10 @@ import { useEffect, useRef, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { saveTheme, createBanner, deleteBanner } from './actions'
 import {
-  DEFAULT_THEME, SERIF_FONTS, SANS_FONTS,
+  DEFAULT_THEME, SERIF_FONTS, SANS_FONTS, PAGINATION_OPTIONS,
   googleFontsUrl, fontStack, formatPrice,
 } from '@/lib/theme'
-import type { RestaurantTheme } from '@/lib/theme'
+import type { RestaurantTheme, PaginationStyle } from '@/lib/theme'
 
 // Max upload size for landing media (banners + background video).
 const MAX_MEDIA_BYTES = 5 * 1024 * 1024 // 5MB
@@ -428,10 +428,13 @@ export default function CustomizationClient({
       </div>
 
       {/* ── 30 / 70 layout ─────────────────────────────────────────────────── */}
+      {/* items-start + naturally-tall left column → page viewport scrolls.
+          The right column is sticky so the preview stays pinned while the
+          user works through the controls. */}
       <div className="grid grid-cols-1 lg:grid-cols-[380px_1fr] gap-8 items-start">
 
-        {/* ── Controls (scrollable fixed column) ─────────────────────────── */}
-        <div className="space-y-8 lg:max-h-[calc(100vh-11rem)] lg:overflow-y-auto lg:pr-2">
+        {/* ── Controls — natural height, page scrolls ─────────────────────── */}
+        <div className="space-y-8 lg:pr-2">
 
           {/* Doppio sfondo */}
           <div>
@@ -553,6 +556,32 @@ export default function CustomizationClient({
             </div>
           </div>
 
+          {/* Navigazione flipbook */}
+          <div>
+            <SectionLabel>Navigazione flipbook</SectionLabel>
+            <div className="bg-white border border-gray-100 p-4 space-y-2">
+              <label className="block text-xs text-gray-600 mb-1">Stile indicatori di pagina</label>
+              <select
+                value={theme.paginationStyle}
+                onChange={e => set('paginationStyle', e.target.value as PaginationStyle)}
+                className="w-full px-2 py-1.5 border border-gray-200 text-xs bg-white focus:outline-none focus:border-gray-400"
+              >
+                {(Object.entries(PAGINATION_OPTIONS) as [PaginationStyle, { label: string; prev: string; next: string }][]).map(
+                  ([key, opt]) => (
+                    <option key={key} value={key}>{opt.label}</option>
+                  )
+                )}
+              </select>
+              {theme.paginationStyle !== 'hidden' && (
+                <p className="text-[10px] font-mono text-gray-400 pt-0.5">
+                  {PAGINATION_OPTIONS[theme.paginationStyle].prev}
+                  {'  ···  '}
+                  {PAGINATION_OPTIONS[theme.paginationStyle].next}
+                </p>
+              )}
+            </div>
+          </div>
+
           {/* Layout piatti */}
           <div>
             <SectionLabel>Layout piatti (PDF)</SectionLabel>
@@ -619,8 +648,8 @@ export default function CustomizationClient({
 
         </div>
 
-        {/* ── Live preview (70%, sticky, full-height iframe) ──────────────── */}
-        <div className="lg:sticky lg:top-6 flex flex-col" style={{ height: 'calc(100vh - 11rem)' }}>
+        {/* ── Live preview — sticky to viewport, full height ──────────────── */}
+        <div className="hidden lg:flex lg:sticky lg:top-4 flex-col" style={{ height: 'calc(100vh - 2rem)' }}>
           {/* Toggle */}
           <div className="flex gap-1 mb-3 shrink-0">
             {(['landing', 'menu'] as const).map(mode => (

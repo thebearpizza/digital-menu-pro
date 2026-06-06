@@ -3,6 +3,33 @@
 // Stored as theme_config JSONB in the restaurants table.
 // ─────────────────────────────────────────────────────────────────────────────
 
+// ── Pagination hint style ──────────────────────────────────────────────────────
+
+export type PaginationStyle =
+  | 'hidden'
+  | 'prec_succ'
+  | 'precedente_successivo'
+  | 'indietro_avanti'
+  | 'back_next'
+  | 'angle'
+  | 'arrow'
+  | 'chevron'
+  | 'guillemet'
+  | 'bracket'
+
+export const PAGINATION_OPTIONS: Record<PaginationStyle, { label: string; prev: string; next: string }> = {
+  hidden:                 { label: 'Nascondi',               prev: '',            next: ''            },
+  prec_succ:              { label: 'Prec. / Succ.',          prev: '‹ prec.',     next: 'succ. ›'     },
+  precedente_successivo:  { label: 'Precedente / Successivo', prev: 'Precedente', next: 'Successivo'  },
+  indietro_avanti:        { label: 'Indietro / Avanti',      prev: 'Indietro',    next: 'Avanti'      },
+  back_next:              { label: 'BACK / NEXT',             prev: 'BACK',       next: 'NEXT'        },
+  angle:                  { label: '< / >',                  prev: '<',           next: '>'           },
+  arrow:                  { label: '← / →',                  prev: '←',          next: '→'           },
+  chevron:                { label: '⟨ / ⟩',                  prev: '⟨',          next: '⟩'           },
+  guillemet:              { label: '≪ / ≫',                  prev: '≪',          next: '≫'           },
+  bracket:                { label: '[ / ]',                   prev: '[',           next: ']'           },
+}
+
 export interface RestaurantTheme {
   // ── Dual background ────────────────────────────────────────────────────────
   // The dark space behind/around everything: landing, flipbook container
@@ -41,10 +68,11 @@ export interface RestaurantTheme {
   borderRadius: 'none' | 'sm' | 'md'
 
   // ── PDF ───────────────────────────────────────────────────────────────────
-  pdfLayout:    'classic' | 'compact'
-  dishLayout:   'list' | 'grid' | 'boxed'
-  priceFormat:  'before' | 'after' | 'minimal'
-  dividerStyle: 'none' | 'thin' | 'dashed'
+  pdfLayout:       'classic' | 'compact'
+  dishLayout:      'list' | 'grid' | 'boxed'
+  priceFormat:     'before' | 'after' | 'minimal'
+  dividerStyle:    'none' | 'thin' | 'dashed'
+  paginationStyle: PaginationStyle
 }
 
 export const DEFAULT_THEME: RestaurantTheme = {
@@ -63,10 +91,11 @@ export const DEFAULT_THEME: RestaurantTheme = {
   fontSans:       'DM Sans',
   fontSizes:      { title: 1.75, base: 0.875, price: 1.1 },
   borderRadius:   'none',
-  pdfLayout:      'classic',
-  dishLayout:     'list',
-  priceFormat:    'before',
-  dividerStyle:   'thin',
+  pdfLayout:       'classic',
+  dishLayout:      'list',
+  priceFormat:     'before',
+  dividerStyle:    'thin',
+  paginationStyle: 'prec_succ',
 }
 
 export function parseTheme(raw: unknown): RestaurantTheme {
@@ -95,10 +124,12 @@ export function parseTheme(raw: unknown): RestaurantTheme {
       price: typeof fs.price === 'number' ? fs.price : DEFAULT_THEME.fontSizes.price,
     },
     borderRadius:  r.borderRadius === 'sm' || r.borderRadius === 'md' ? r.borderRadius : 'none',
-    pdfLayout:     r.pdfLayout === 'compact' ? 'compact' : 'classic',
-    dishLayout:    r.dishLayout === 'grid' || r.dishLayout === 'boxed' ? r.dishLayout : 'list',
-    priceFormat:   r.priceFormat === 'after' || r.priceFormat === 'minimal' ? r.priceFormat : 'before',
-    dividerStyle:  r.dividerStyle === 'none' || r.dividerStyle === 'dashed' ? r.dividerStyle : 'thin',
+    pdfLayout:       r.pdfLayout === 'compact' ? 'compact' : 'classic',
+    dishLayout:      r.dishLayout === 'grid' || r.dishLayout === 'boxed' ? r.dishLayout : 'list',
+    priceFormat:     r.priceFormat === 'after' || r.priceFormat === 'minimal' ? r.priceFormat : 'before',
+    dividerStyle:    r.dividerStyle === 'none' || r.dividerStyle === 'dashed' ? r.dividerStyle : 'thin',
+    paginationStyle: (r.paginationStyle as PaginationStyle) in PAGINATION_OPTIONS
+      ? r.paginationStyle as PaginationStyle : 'prec_succ',
   }
 }
 

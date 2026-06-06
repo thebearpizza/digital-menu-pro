@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react'
 import DishModal, { DishData } from './DishModal'
-import { fontStack, hexToRgb } from '@/lib/theme'
+import { fontStack, hexToRgb, PAGINATION_OPTIONS } from '@/lib/theme'
 import type { RestaurantTheme } from '@/lib/theme'
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -581,8 +581,9 @@ export default function FlipbookViewer({
     window.$(el).turn('page', targetPage)
   }, [])
 
-  const atFirst = currentPage <= 1
-  const atLast  = totalPages > 0 && currentPage >= totalPages
+  const atFirst   = currentPage <= 1
+  const atLast    = totalPages > 0 && currentPage >= totalPages
+  const pagOpt    = PAGINATION_OPTIONS[themeProp?.paginationStyle ?? 'prec_succ']
 
   // ═══════════════════════════════════════════════════════════════════════════
   // RENDER
@@ -653,33 +654,33 @@ export default function FlipbookViewer({
               </div>
             )}
 
-            {/* ── Hint angolari — z-50 per stare sopra il libro, pointer-events-none
-                 perché i click/swipe devono raggiungere gli angoli nativi di turn.js. */}
-            {pagesReady && (
-              <>
-                <span
-                  className="pointer-events-none absolute bottom-3 left-2 z-50 text-[10px] uppercase tracking-[0.2em] select-none"
-                  style={{
-                    color:      theme.textMuted,
-                    opacity:    atFirst ? 0 : 0.6,
-                    transition: 'opacity 0.25s ease',
-                    fontFamily: theme.fontSans,
-                  }}
-                >
-                  ‹ prec.
-                </span>
-                <span
-                  className="pointer-events-none absolute bottom-3 right-2 z-50 text-[10px] uppercase tracking-[0.2em] select-none"
-                  style={{
-                    color:      theme.textMuted,
-                    opacity:    atLast ? 0 : 0.6,
-                    transition: 'opacity 0.25s ease',
-                    fontFamily: theme.fontSans,
-                  }}
-                >
-                  succ. ›
-                </span>
-              </>
+            {/* ── Hint angolari — driven by theme.paginationStyle.
+                 pointer-events-none: i click devono raggiungere gli angoli turn.js. */}
+            {pagesReady && pagOpt.prev && (
+              <span
+                className="pointer-events-none absolute bottom-3 left-2 z-50 text-[10px] uppercase tracking-[0.2em] select-none"
+                style={{
+                  color:      theme.textMuted,
+                  opacity:    atFirst ? 0 : 0.6,
+                  transition: 'opacity 0.25s ease',
+                  fontFamily: theme.fontSans,
+                }}
+              >
+                {pagOpt.prev}
+              </span>
+            )}
+            {pagesReady && pagOpt.next && (
+              <span
+                className="pointer-events-none absolute bottom-3 right-2 z-50 text-[10px] uppercase tracking-[0.2em] select-none"
+                style={{
+                  color:      theme.textMuted,
+                  opacity:    atLast ? 0 : 0.6,
+                  transition: 'opacity 0.25s ease',
+                  fontFamily: theme.fontSans,
+                }}
+              >
+                {pagOpt.next}
+              </span>
             )}
           </div>
         </div>
