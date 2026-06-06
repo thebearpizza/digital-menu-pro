@@ -18,7 +18,7 @@ const ACCENT     = '#c9a96e'
 const FONT_SERIF = "'Cormorant Garamond', 'Georgia', 'Times New Roman', serif"
 const FONT_SANS  = "'DM Sans', 'Inter', system-ui, sans-serif"
 
-// ── Types (mirror the shape returned by page.tsx) ─────────────────────────────
+// ── Types ─────────────────────────────────────────────────────────────────────
 
 export interface Dish {
   id:              string
@@ -47,6 +47,7 @@ export interface Restaurant {
   website_url:     string | null
   tripadvisor_url: string | null
   google_maps_url: string | null
+  visibility:      Record<string, boolean> | null
 }
 
 export interface Banner {
@@ -70,6 +71,101 @@ interface Props {
   defaultMenuId?: string | null
 }
 
+// ── Visibility helper ─────────────────────────────────────────────────────────
+
+type VisKey = 'name' | 'description' | 'logo' | 'instagram' | 'facebook' | 'website' | 'tripadvisor' | 'google_maps'
+
+function isVis(visibility: Record<string, boolean> | null, key: VisKey): boolean {
+  if (!visibility) return true
+  return visibility[key] !== false
+}
+
+// ── Social icon SVGs (inline, zero deps) ─────────────────────────────────────
+
+function InstagramIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}
+      strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+      <rect x="2" y="2" width="20" height="20" rx="5" ry="5"/>
+      <circle cx="12" cy="12" r="4"/>
+      <circle cx="17.5" cy="6.5" r="1" fill="currentColor" stroke="none"/>
+    </svg>
+  )
+}
+
+function FacebookIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
+      <path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/>
+    </svg>
+  )
+}
+
+function GlobeIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}
+      strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+      <circle cx="12" cy="12" r="10"/>
+      <line x1="2" y1="12" x2="22" y2="12"/>
+      <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+    </svg>
+  )
+}
+
+function MapPinIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}
+      strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+      <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/>
+      <circle cx="12" cy="10" r="3"/>
+    </svg>
+  )
+}
+
+function CompassIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}
+      strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+      <circle cx="12" cy="12" r="10"/>
+      <polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/>
+    </svg>
+  )
+}
+
+// ── Social bar ────────────────────────────────────────────────────────────────
+
+function SocialBar({ restaurant }: { restaurant: Restaurant }) {
+  const vis = restaurant.visibility
+
+  const links = [
+    { key: 'instagram'   as VisKey, url: restaurant.instagram_url,   Icon: InstagramIcon, label: 'Instagram'   },
+    { key: 'facebook'    as VisKey, url: restaurant.facebook_url,    Icon: FacebookIcon,  label: 'Facebook'    },
+    { key: 'website'     as VisKey, url: restaurant.website_url,     Icon: GlobeIcon,     label: 'Sito web'    },
+    { key: 'tripadvisor' as VisKey, url: restaurant.tripadvisor_url, Icon: CompassIcon,   label: 'TripAdvisor' },
+    { key: 'google_maps' as VisKey, url: restaurant.google_maps_url, Icon: MapPinIcon,    label: 'Google Maps' },
+  ].filter(({ key, url }) => url && isVis(vis, key))
+
+  if (links.length === 0) return null
+
+  return (
+    <div className="mt-10 flex items-center justify-center gap-5">
+      {links.map(({ url, Icon, label }) => (
+        <a
+          key={label}
+          href={url!}
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label={label}
+          className="transition-opacity duration-200 hover:opacity-50"
+          style={{ color: `${ACCENT}99` }}
+        >
+          <Icon />
+        </a>
+      ))}
+    </div>
+  )
+}
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function PublicMenuView({
@@ -85,8 +181,6 @@ export default function PublicMenuView({
     ? menus.find(m => m.id === selectedMenuId) ?? null
     : null
 
-  // Generate the PDF blob whenever the selected menu changes.
-  // Dishes are mapped to PDFDish shape (category defaults to 'Menu' if blank).
   const { pdfUrl, categories, isGenerating, error } = useMenuPDF(
     { name: restaurant.name },
     selectedMenu
@@ -105,8 +199,14 @@ export default function PublicMenuView({
       : null
   )
 
-  // ── 1. No menu selected → dark landing with per-menu buttons ────────────
+  const vis = restaurant.visibility
+
+  // ── 1. No menu selected → dark landing ────────────────────────────────────
   if (!selectedMenuId || !selectedMenu) {
+    const showLogo = !!restaurant.logo_url && isVis(vis, 'logo')
+    const showName = isVis(vis, 'name')
+    const showDesc = !!restaurant.description && isVis(vis, 'description')
+
     return (
       <div
         className="fixed inset-0 h-[100dvh] flex flex-col items-center justify-center"
@@ -119,32 +219,56 @@ export default function PublicMenuView({
         />
 
         <div className="flex flex-col items-center text-center px-10 w-full max-w-xs">
-          {restaurant.logo_url ? (
+
+          {/* Brand: logo → name (or both, or neither) */}
+          {showLogo && (
             <img
-              src={restaurant.logo_url}
+              src={restaurant.logo_url!}
               alt={restaurant.name}
-              className="h-14 mb-10 object-contain"
-              style={{ opacity: 0.88 }}
+              className="h-14 object-contain"
+              style={{ opacity: 0.88, marginBottom: showName || showDesc ? '1.5rem' : '2.5rem' }}
             />
-          ) : (
-            <>
-              <div className="w-10 h-px mb-7" style={{ background: ACCENT }} />
-              <h1
-                className="font-light uppercase leading-none"
-                style={{
-                  color:         '#ede8e0',
-                  fontFamily:    FONT_SERIF,
-                  fontSize:      'clamp(1.6rem, 5vw, 2.4rem)',
-                  letterSpacing: '0.22em',
-                }}
-              >
-                {restaurant.name}
-              </h1>
-              <div className="w-10 h-px mt-7" style={{ background: ACCENT }} />
-            </>
           )}
 
-          {/* One button per menu */}
+          {!showLogo && showName && (
+            <div className="w-10 h-px mb-7" style={{ background: ACCENT }} />
+          )}
+
+          {showName && (
+            <h1
+              className="font-light uppercase leading-none"
+              style={{
+                color:         '#ede8e0',
+                fontFamily:    FONT_SERIF,
+                fontSize:      'clamp(1.6rem, 5vw, 2.4rem)',
+                letterSpacing: '0.22em',
+              }}
+            >
+              {restaurant.name}
+            </h1>
+          )}
+
+          {showDesc && (
+            <p
+              style={{
+                color:         `${ACCENT}80`,
+                fontFamily:    FONT_SANS,
+                fontSize:      '0.6rem',
+                letterSpacing: '0.2em',
+                textTransform: 'uppercase',
+                marginTop:     '0.6rem',
+              }}
+            >
+              {restaurant.description}
+            </p>
+          )}
+
+          {/* Bottom decorative line (only when no logo) */}
+          {!showLogo && (showName || showDesc) && (
+            <div className="w-10 h-px mt-7" style={{ background: ACCENT }} />
+          )}
+
+          {/* Menu selection buttons */}
           <div className="mt-10 flex flex-col gap-3 w-full">
             {menus.length === 0 ? (
               <p
@@ -179,6 +303,10 @@ export default function PublicMenuView({
               ))
             )}
           </div>
+
+          {/* Social icons row */}
+          <SocialBar restaurant={restaurant} />
+
         </div>
 
         <p
