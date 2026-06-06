@@ -12,6 +12,43 @@ import type { RestaurantTheme } from '@/lib/theme'
 // Max upload size for landing media (banners + background video).
 const MAX_MEDIA_BYTES = 5 * 1024 * 1024 // 5MB
 
+// ── Poster extraction ─────────────────────────────────────────────────────────
+// Draws video frame 0 to a canvas and exports a compressed JPEG.
+// Returns null on any failure — the upload still proceeds without a poster.
+// Uses loadeddata (not seeked) for reliable first-frame capture on mobile
+// WebKit without needing an explicit currentTime assignment.
+async function extractVideoPoster(file: File): Promise<Blob | null> {
+  return new Promise(resolve => {
+    const video = document.createElement('video')
+    const url   = URL.createObjectURL(file)
+    video.src   = url
+    video.muted = true
+    video.playsInline = true
+
+    const cleanup = () => URL.revokeObjectURL(url)
+
+    const draw = () => {
+      try {
+        const canvas = document.createElement('canvas')
+        // Cap poster at 1280px wide — keeps JPEG under ~100KB on typical footage
+        const maxW   = 1280
+        const ratio  = Math.min(maxW / (video.videoWidth  || maxW), 1)
+        canvas.width  = Math.round((video.videoWidth  || 1280) * ratio)
+        canvas.height = Math.round((video.videoHeight || 720)  * ratio)
+        const ctx = canvas.getContext('2d')
+        if (!ctx) { cleanup(); resolve(null); return }
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+        cleanup()
+        canvas.toBlob(b => resolve(b), 'image/jpeg', 0.82)
+      } catch { cleanup(); resolve(null) }
+    }
+
+    video.addEventListener('loadeddata', draw,                           { once: true })
+    video.addEventListener('error',      () => { cleanup(); resolve(null) }, { once: true })
+    video.load()
+  })
+}
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface AdminBanner {
@@ -328,12 +365,35 @@ export default function CustomizationClient({
     const supabase = createClient()
     const ext  = file.name.split('.').pop() ?? 'mp4'
     const path = `${restaurantId}/theme-video.${ext}`
-    const { data, error: err } = await supabase.storage
-      .from('restaurant-assets').upload(path, file, { upsert: true })
-    if (!err && data) {
-      const { data: pub } = supabase.storage.from('restaurant-assets').getPublicUrl(data.path)
-      set('bgVideo', `${pub.publicUrl}?v=${Date.now()}`)
-    } else if (err) setError('Upload: ' + err.message)
+
+    // Poster extraction runs in parallel with the video upload — no extra wait.
+    const [{ data, error: err }, posterBlob] = await Promise.all([
+      supabase.storage.from('restaurant-assets').upload(path, file, { upsert: true }),
+      extractVideoPoster(file),
+    ])
+
+    if (err || !data) { setError('Upload: ' + err?.message); setVidUploading(false); return }
+
+    const { data: pub } = supabase.storage.from('restaurant-assets').getPublicUrl(data.path)
+    const ts       = Date.now()
+    const videoUrl = `${pub.publicUrl}?v=${ts}`
+
+    // Upload poster if extraction succeeded.
+    let posterUrl: string | undefined
+    if (posterBlob) {
+      const posterPath = `${restaurantId}/theme-video-poster.jpg`
+      const { data: pUp } = await supabase.storage
+        .from('restaurant-assets')
+        .upload(posterPath, posterBlob, { upsert: true, contentType: 'image/jpeg' })
+      if (pUp) {
+        const { data: pPub } = supabase.storage.from('restaurant-assets').getPublicUrl(pUp.path)
+        posterUrl = `${pPub.publicUrl}?v=${ts}`
+      }
+    }
+
+    // Batch both fields into one state update.
+    setSaved(false)
+    setTheme(prev => ({ ...prev, bgVideo: videoUrl, bgVideoPoster: posterUrl ?? prev.bgVideoPoster }))
     setVidUploading(false)
   }
 
@@ -429,16 +489,23 @@ export default function CustomizationClient({
             <div className="bg-white border border-gray-100 p-4 space-y-3">
               {theme.bgVideo && (
                 <div className="relative inline-block">
-                  <video src={theme.bgVideo} muted className="w-32 h-20 object-cover border border-gray-200 bg-black" />
-                  <button type="button" onClick={() => set('bgVideo', undefined)}
+                  {/* Show poster as thumbnail if available — it's a tiny JPEG and loads instantly */}
+                  {theme.bgVideoPoster
+                    ? <img src={theme.bgVideoPoster} alt="" className="w-32 h-20 object-cover border border-gray-200" />
+                    : <video src={theme.bgVideo} muted className="w-32 h-20 object-cover border border-gray-200 bg-black" />
+                  }
+                  <button type="button" onClick={() => {
+                    setSaved(false)
+                    setTheme(t => ({ ...t, bgVideo: undefined, bgVideoPoster: undefined }))
+                  }}
                     className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 text-white text-xs rounded-full flex items-center justify-center">×</button>
                 </div>
               )}
               <input type="file" accept="video/*"
                 onChange={e => e.target.files?.[0] && handleVideoUpload(e.target.files[0])}
                 className="block text-xs text-gray-500 file:mr-2 file:py-1 file:px-3 file:border file:border-gray-200 file:text-xs file:bg-white file:text-gray-600 hover:file:bg-gray-50 cursor-pointer" />
-              {vidUploading && <p className="text-xs text-gray-400">Caricamento…</p>}
-              <p className="text-[10px] text-gray-400">Max 5MB. MP4/WebM consigliati. Usa l&apos;opacità qui sopra anche per il video.</p>
+              {vidUploading && <p className="text-xs text-gray-400">Caricamento e estrazione poster…</p>}
+              <p className="text-[10px] text-gray-400">Max 5MB. MP4/WebM consigliati. Il primo fotogramma viene estratto automaticamente come poster. Usa l&apos;opacità qui sopra anche per il video.</p>
 
               <label className={`flex items-start gap-2 pt-2 border-t border-gray-50 ${theme.bgVideo ? 'cursor-pointer' : 'opacity-50 cursor-not-allowed'}`}>
                 <input type="checkbox" disabled={!theme.bgVideo}

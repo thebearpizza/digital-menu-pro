@@ -19,6 +19,9 @@ export interface RestaurantTheme {
   // menu button is tapped, then plays once and reveals the menu on `ended`.
   bgVideo?:            string
   immersiveTransition: boolean
+  // First frame extracted from bgVideo at upload time — a JPEG that renders
+  // in <50ms while the full video buffers. Enables zero-perceived-delay start.
+  bgVideoPoster?:      string
 
   // ── Colors ────────────────────────────────────────────────────────────────
   accent:      string
@@ -52,6 +55,7 @@ export const DEFAULT_THEME: RestaurantTheme = {
   bgImageOpacity: 30,
   bgVideo:             undefined,
   immersiveTransition: false,
+  bgVideoPoster:       undefined,
   accent:         '#c9a96e',
   textPrimary:    '#ede8e0',
   textMuted:      '#4f4f4f',
@@ -77,8 +81,9 @@ export function parseTheme(raw: unknown): RestaurantTheme {
     navBg:          typeof r.navBg      === 'string' ? r.navBg      : DEFAULT_THEME.navBg,
     bgImage:        typeof r.bgImage    === 'string' ? r.bgImage    : undefined,
     bgImageOpacity: typeof r.bgImageOpacity === 'number' ? r.bgImageOpacity : DEFAULT_THEME.bgImageOpacity,
-    bgVideo:             typeof r.bgVideo === 'string' ? r.bgVideo : undefined,
+    bgVideo:             typeof r.bgVideo       === 'string' ? r.bgVideo       : undefined,
     immersiveTransition: r.immersiveTransition === true,
+    bgVideoPoster:       typeof r.bgVideoPoster === 'string' ? r.bgVideoPoster : undefined,
     accent:         typeof r.accent     === 'string' ? r.accent     : DEFAULT_THEME.accent,
     textPrimary:    typeof r.textPrimary === 'string' ? r.textPrimary : DEFAULT_THEME.textPrimary,
     textMuted:      typeof r.textMuted  === 'string' ? r.textMuted  : DEFAULT_THEME.textMuted,

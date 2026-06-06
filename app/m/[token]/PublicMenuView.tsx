@@ -223,6 +223,20 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
   const transitioning = pendingMenuId !== null
   const videoRef = useRef<HTMLVideoElement>(null)
 
+  // Poster is visible initially. For looping wallpaper it cross-fades to the
+  // video on `canplay`. For immersive mode we drop it when the transition fires.
+  const [posterVisible, setPosterVisible] = useState(true)
+
+  function handleCanPlay() {
+    if (!t.immersiveTransition) setPosterVisible(false)
+  }
+
+  // Restore poster whenever the landing re-mounts so the JPEG fills any
+  // buffering gap the next time the user sees the landing screen.
+  useEffect(() => {
+    if (!selectedMenuId) setPosterVisible(true)
+  }, [selectedMenuId])
+
   function openMenu(menuId: string) {
     if (t.immersiveTransition && t.bgVideo) {
       setPendingMenuId(menuId)
@@ -237,6 +251,7 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
     const v = videoRef.current
     if (!v) { setSelectedMenuId(pendingMenuId); return }
     v.currentTime = 0
+    setPosterVisible(false)   // drop poster: video fills the full screen during immersion
     const finish = () => setSelectedMenuId(pendingMenuId)
     v.addEventListener('ended', finish, { once: true })
     // Safety net: if the video can't play (blocked/missing), don't trap the user.
@@ -312,23 +327,50 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
                 backgroundPosition: 'center', opacity: (t.bgImageOpacity ?? 30) / 100 }} />
           )}
 
-          {/* Background / immersive video. Non-immersive: looping muted wallpaper.
-              Immersive: paused until a menu button is tapped, then plays fullscreen. */}
+          {/* Background / immersive video.
+              A JPEG poster (first frame, extracted at upload time) is shown
+              instantly while the full video buffers, then cross-fades out on
+              `canplay`. Non-immersive: looping muted wallpaper. Immersive:
+              pre-buffered via preload="auto", plays on menu tap, menu opens
+              on `ended`. The outer div owns overall opacity + z-index; the
+              inner poster↔video pair owns the cross-fade between themselves. */}
           {t.bgVideo && (
-            <video
-              ref={videoRef}
-              src={t.bgVideo}
-              muted
-              playsInline
-              autoPlay={!t.immersiveTransition}
-              loop={!t.immersiveTransition}
-              className="absolute inset-0 w-full h-full object-cover pointer-events-none"
+            <div
+              className="absolute inset-0 pointer-events-none"
               style={{
                 opacity:    transitioning ? 1 : (t.bgImageOpacity ?? 30) / 100,
                 zIndex:     transitioning ? 40 : 0,
                 transition: 'opacity 0.8s ease',
               }}
-            />
+            >
+              {/* Poster: JPEG first-frame — appears in <50ms, covers buffering gap */}
+              {t.bgVideoPoster && (
+                <img
+                  src={t.bgVideoPoster}
+                  alt=""
+                  className="absolute inset-0 w-full h-full object-cover"
+                  style={{ opacity: posterVisible ? 1 : 0, transition: 'opacity 0.6s ease' }}
+                />
+              )}
+              {/* Video: invisible while poster is up, cross-fades in on canplay.
+                  preload="auto" tells the browser to eagerly buffer so the cross-
+                  fade fires quickly and immersive playback starts without stutter. */}
+              <video
+                ref={videoRef}
+                src={t.bgVideo}
+                muted
+                playsInline
+                preload="auto"
+                autoPlay={!t.immersiveTransition}
+                loop={!t.immersiveTransition}
+                className="absolute inset-0 w-full h-full object-cover"
+                style={{
+                  opacity:    (t.bgVideoPoster && posterVisible) ? 0 : 1,
+                  transition: 'opacity 0.6s ease',
+                }}
+                onCanPlay={handleCanPlay}
+              />
+            </div>
           )}
 
           <div className="absolute top-0 inset-x-0 h-px"
