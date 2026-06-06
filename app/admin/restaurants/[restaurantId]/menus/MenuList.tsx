@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import Link from 'next/link'
 import {
   DndContext, closestCenter, DragEndEvent,
@@ -51,8 +51,22 @@ function SortableMenu({
     opacity: isDragging ? 0.5 : 1,
   }
 
-  const [editing, setEditing] = useState(false)
-  const [nameVal, setNameVal] = useState(menu.name)
+  const [editing,   setEditing]   = useState(false)
+  const [nameVal,   setNameVal]   = useState(menu.name)
+  const [kebabOpen, setKebabOpen] = useState(false)
+  const kebabRef = useRef<HTMLDivElement>(null)
+
+  // Chiude il dropdown al click fuori
+  useEffect(() => {
+    if (!kebabOpen) return
+    function onOut(e: MouseEvent) {
+      if (kebabRef.current && !kebabRef.current.contains(e.target as Node)) {
+        setKebabOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', onOut)
+    return () => document.removeEventListener('mousedown', onOut)
+  }, [kebabOpen])
 
   async function submitRename() {
     if (!nameVal.trim()) return
@@ -61,17 +75,22 @@ function SortableMenu({
   }
 
   return (
-    <div ref={setNodeRef} style={style} className="flex items-center gap-3 px-4 py-3 bg-white border-b border-gray-100 last:border-0">
+    <div
+      ref={setNodeRef}
+      style={style}
+      className="flex items-center gap-2 px-3 py-3 bg-white border-b border-gray-100 last:border-0"
+    >
       {/* Drag handle */}
       <button
         {...attributes} {...listeners}
-        className="text-gray-300 hover:text-gray-500 cursor-grab active:cursor-grabbing shrink-0 touch-none"
+        className="text-gray-300 hover:text-gray-500 cursor-grab active:cursor-grabbing shrink-0 touch-none text-base min-h-[44px] min-w-[28px] flex items-center justify-center"
         aria-label="Sposta"
       >
         ⠿
       </button>
 
       {editing ? (
+        /* ── Modalità rinomina — occupa tutta la riga ── */
         <form
           onSubmit={e => { e.preventDefault(); submitRename() }}
           className="flex-1 flex gap-2"
@@ -82,44 +101,101 @@ function SortableMenu({
             onChange={e => setNameVal(e.target.value)}
             className="flex-1 px-2 py-1 border border-blue-400 text-sm focus:outline-none"
           />
-          <button type="submit" className="text-xs text-blue-600 font-medium hover:underline">Salva</button>
-          <button type="button" onClick={() => { setEditing(false); setNameVal(menu.name) }}
-            className="text-xs text-gray-400 hover:underline">Annulla</button>
+          <button type="submit" className="text-xs text-blue-600 font-medium hover:underline">
+            Salva
+          </button>
+          <button
+            type="button"
+            onClick={() => { setEditing(false); setNameVal(menu.name) }}
+            className="text-xs text-gray-400 hover:underline"
+          >
+            Annulla
+          </button>
         </form>
       ) : (
         <>
+          {/* Nome menu — flex-1 assorbe lo spazio, truncate previene overflow */}
           <Link
             href={`/admin/restaurants/${restaurantId}/menus/${menu.id}`}
-            className="flex-1 text-sm font-medium text-gray-900 hover:text-blue-600 hover:underline"
+            className="flex-1 min-w-0 text-sm font-medium text-gray-900 hover:text-blue-600 hover:underline truncate"
           >
             {menu.name}
           </Link>
-          <div className="flex items-center gap-3 shrink-0 flex-wrap justify-end">
+
+          {/* Azioni inline — visibili solo su md+ */}
+          <div className="hidden md:flex items-center gap-3 shrink-0">
             <button
               onClick={() => onToggleActive(menu.id, !menu.is_active)}
               className={`text-xs hover:underline ${menu.is_active ? 'text-orange-500' : 'text-green-600'}`}
             >
               {menu.is_active ? 'Disabilita' : 'Abilita'}
             </button>
-            <button onClick={() => setEditing(true)}
-              className="text-xs text-gray-500 hover:text-gray-800 hover:underline">
+            <button
+              onClick={() => setEditing(true)}
+              className="text-xs text-gray-500 hover:text-gray-800 hover:underline"
+            >
               Rinomina
             </button>
-            <button onClick={() => onDuplicate(menu.id)}
-              className="text-xs text-gray-500 hover:text-gray-800 hover:underline">
+            <button
+              onClick={() => onDuplicate(menu.id)}
+              className="text-xs text-gray-500 hover:text-gray-800 hover:underline"
+            >
               Duplica
             </button>
-            <button onClick={() => onDelete(menu.id)}
-              className="text-xs text-red-500 hover:underline">
+            <button
+              onClick={() => onDelete(menu.id)}
+              className="text-xs text-red-500 hover:underline"
+            >
               Elimina
             </button>
-            <Link
-              href={`/admin/restaurants/${restaurantId}/menus/${menu.id}`}
-              className="text-xs bg-blue-600 text-white px-3 py-1 hover:bg-blue-700 transition-colors"
-            >
-              Piatti →
-            </Link>
           </div>
+
+          {/* Kebab menu — visibile solo su mobile, z-50 + shadow-lg per sovrapposi agli elementi sottostanti */}
+          <div className="md:hidden relative shrink-0" ref={kebabRef}>
+            <button
+              onClick={() => setKebabOpen(o => !o)}
+              className="flex items-center justify-center w-[44px] h-[44px] text-gray-500 hover:text-gray-800 text-lg leading-none"
+              aria-label="Azioni menu"
+            >
+              ⋮
+            </button>
+            {kebabOpen && (
+              <div className="absolute right-0 top-full mt-1 z-50 bg-white border border-gray-200 shadow-lg min-w-[160px] py-1">
+                <button
+                  onClick={() => { onToggleActive(menu.id, !menu.is_active); setKebabOpen(false) }}
+                  className={`w-full text-left px-4 py-3 text-sm hover:bg-gray-50 ${menu.is_active ? 'text-orange-500' : 'text-green-600'}`}
+                >
+                  {menu.is_active ? 'Disabilita' : 'Abilita'}
+                </button>
+                <button
+                  onClick={() => { setEditing(true); setKebabOpen(false) }}
+                  className="w-full text-left px-4 py-3 text-sm text-gray-700 hover:bg-gray-50"
+                >
+                  Rinomina
+                </button>
+                <button
+                  onClick={() => { onDuplicate(menu.id); setKebabOpen(false) }}
+                  className="w-full text-left px-4 py-3 text-sm text-gray-700 hover:bg-gray-50"
+                >
+                  Duplica
+                </button>
+                <button
+                  onClick={() => { onDelete(menu.id); setKebabOpen(false) }}
+                  className="w-full text-left px-4 py-3 text-sm text-red-500 hover:bg-red-50"
+                >
+                  Elimina
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* CTA primario — sempre visibile, mai sacrificato */}
+          <Link
+            href={`/admin/restaurants/${restaurantId}/menus/${menu.id}`}
+            className="shrink-0 text-xs bg-blue-600 text-white px-3 py-1.5 hover:bg-blue-700 transition-colors whitespace-nowrap"
+          >
+            Piatti →
+          </Link>
         </>
       )}
     </div>
@@ -127,10 +203,10 @@ function SortableMenu({
 }
 
 export default function MenuList({ restaurantId, initialMenus }: Props) {
-  const [menus, setMenus] = useState(initialMenus)
-  const [newName, setNewName] = useState('')
+  const [menus,    setMenus]    = useState(initialMenus)
+  const [newName,  setNewName]  = useState('')
   const [creating, setCreating] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [error,    setError]    = useState<string | null>(null)
 
   const sensors = useSensors(useSensor(PointerSensor))
 
@@ -223,7 +299,7 @@ export default function MenuList({ restaurantId, initialMenus }: Props) {
           </p>
         </div>
       ) : (
-        <div className="bg-white border border-gray-200">
+        <div className="bg-white border border-gray-200 overflow-visible">
           <div className="px-4 py-2 bg-gray-50 border-b border-gray-200">
             <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
               Menu ({menus.length}) — trascina per riordinare
