@@ -125,7 +125,7 @@ body.menu-locked {
    tap per aprire la card. Limitandolo a (hover:hover) il tap è sempre singolo. */
 @media (hover: hover) and (pointer: fine) {
   .pdf-text-layer span[data-dish-id]:hover {
-    background: rgba(201, 169, 110, 0.18) !important;
+    background: rgba(var(--theme-accent-rgb, 201, 169, 110), 0.18) !important;
   }
 }
 
@@ -137,7 +137,7 @@ body.menu-locked {
   transition: background 0.12s ease;
 }
 .pdf-text-layer div[data-dish-id]:hover {
-  background: rgba(201, 169, 110, 0.10) !important;
+  background: rgba(var(--theme-accent-rgb, 201, 169, 110), 0.10) !important;
 }
 
 /* ─── turn.js — azzera hotspot superiori, preserva inferiori ────────── */

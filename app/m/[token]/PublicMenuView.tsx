@@ -10,13 +10,11 @@
 // The /m/[token] URL is permanent (printed QR codes). See CLAUDE.md.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import FlipbookViewer  from './FlipbookViewer'
 import { useMenuPDF }  from './useMenuPDF'
-
-const ACCENT     = '#c9a96e'
-const FONT_SERIF = "'Cormorant Garamond', 'Georgia', 'Times New Roman', serif"
-const FONT_SANS  = "'DM Sans', 'Inter', system-ui, sans-serif"
+import { googleFontsUrl, fontStack, borderRadiusPx } from '@/lib/theme'
+import type { RestaurantTheme } from '@/lib/theme'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -48,6 +46,7 @@ export interface Restaurant {
   tripadvisor_url: string | null
   google_maps_url: string | null
   visibility:      Record<string, boolean> | null
+  theme:           RestaurantTheme
 }
 
 export interface Banner {
@@ -78,6 +77,23 @@ type VisKey = 'name' | 'description' | 'logo' | 'instagram' | 'facebook' | 'webs
 function isVis(visibility: Record<string, boolean> | null, key: VisKey): boolean {
   if (!visibility) return true
   return visibility[key] !== false
+}
+
+// ── Google Fonts loader ───────────────────────────────────────────────────────
+
+function ThemeFontLoader({ fontSerif, fontSans }: { fontSerif: string; fontSans: string }) {
+  useEffect(() => {
+    const href = googleFontsUrl(fontSerif, fontSans)
+    let link = document.querySelector('link[data-theme-fonts]') as HTMLLinkElement | null
+    if (!link) {
+      link = document.createElement('link')
+      link.rel = 'stylesheet'
+      link.setAttribute('data-theme-fonts', '1')
+      document.head.appendChild(link)
+    }
+    link.href = href
+  }, [fontSerif, fontSans])
+  return null
 }
 
 // ── Social icon SVGs (inline, zero deps) ─────────────────────────────────────
@@ -132,10 +148,9 @@ function CompassIcon() {
   )
 }
 
-// ── Social bar ────────────────────────────────────────────────────────────────
-
 function SocialBar({ restaurant }: { restaurant: Restaurant }) {
   const vis = restaurant.visibility
+  const t   = restaurant.theme
 
   const links = [
     { key: 'instagram'   as VisKey, url: restaurant.instagram_url,   Icon: InstagramIcon, label: 'Instagram'   },
@@ -157,7 +172,7 @@ function SocialBar({ restaurant }: { restaurant: Restaurant }) {
           rel="noopener noreferrer"
           aria-label={label}
           className="transition-opacity duration-200 hover:opacity-50"
-          style={{ color: `${ACCENT}99` }}
+          style={{ color: `${t.accent}99` }}
         >
           <Icon />
         </a>
@@ -181,6 +196,8 @@ export default function PublicMenuView({
     ? menus.find(m => m.id === selectedMenuId) ?? null
     : null
 
+  const t = restaurant.theme
+
   const { pdfUrl, categories, isGenerating, error } = useMenuPDF(
     { name: restaurant.name },
     selectedMenu
@@ -196,10 +213,14 @@ export default function PublicMenuView({
             allergens:   d.allergens,
           })),
         }
-      : null
+      : null,
+    t,
   )
 
-  const vis = restaurant.visibility
+  const vis      = restaurant.visibility
+  const SERIF    = fontStack(t.fontSerif, 'serif')
+  const SANS     = fontStack(t.fontSans, 'sans')
+  const BTN_RADIUS = borderRadiusPx(t.borderRadius)
 
   // ── 1. No menu selected → dark landing ────────────────────────────────────
   if (!selectedMenuId || !selectedMenu) {
@@ -208,120 +229,132 @@ export default function PublicMenuView({
     const showDesc = !!restaurant.description && isVis(vis, 'description')
 
     return (
-      <div
-        className="fixed inset-0 h-[100dvh] flex flex-col items-center justify-center"
-        style={{ background: 'linear-gradient(155deg, #0d0d0d 0%, #131313 60%, #0f0e0e 100%)' }}
-      >
-        {/* Top accent line */}
+      <>
+        <ThemeFontLoader fontSerif={t.fontSerif} fontSans={t.fontSans} />
         <div
-          className="absolute top-0 inset-x-0 h-px"
-          style={{ background: `linear-gradient(90deg, transparent, ${ACCENT}55, transparent)` }}
-        />
-
-        <div className="flex flex-col items-center text-center px-10 w-full max-w-xs">
-
-          {/* Brand: logo → name (or both, or neither) */}
-          {showLogo && (
-            <img
-              src={restaurant.logo_url!}
-              alt={restaurant.name}
-              className="h-14 object-contain"
-              style={{ opacity: 0.88, marginBottom: showName || showDesc ? '1.5rem' : '2.5rem' }}
+          className="fixed inset-0 h-[100dvh] flex flex-col items-center justify-center"
+          style={{ background: t.pageBg }}
+        >
+          {/* Optional background image */}
+          {t.bgImage && (
+            <div
+              className="absolute inset-0"
+              style={{
+                backgroundImage:    `url(${t.bgImage})`,
+                backgroundSize:     'cover',
+                backgroundPosition: 'center',
+                opacity:            (t.bgImageOpacity ?? 30) / 100,
+              }}
             />
           )}
 
-          {!showLogo && showName && (
-            <div className="w-10 h-px mb-7" style={{ background: ACCENT }} />
-          )}
+          {/* Top accent line */}
+          <div
+            className="absolute top-0 inset-x-0 h-px"
+            style={{ background: `linear-gradient(90deg, transparent, ${t.accent}55, transparent)` }}
+          />
 
-          {showName && (
-            <h1
-              className="font-light uppercase leading-none"
-              style={{
-                color:         '#ede8e0',
-                fontFamily:    FONT_SERIF,
-                fontSize:      'clamp(1.6rem, 5vw, 2.4rem)',
-                letterSpacing: '0.22em',
-              }}
-            >
-              {restaurant.name}
-            </h1>
-          )}
+          <div className="relative flex flex-col items-center text-center px-10 w-full max-w-xs">
 
-          {showDesc && (
-            <p
-              style={{
-                color:         `${ACCENT}80`,
-                fontFamily:    FONT_SANS,
-                fontSize:      '0.6rem',
-                letterSpacing: '0.2em',
-                textTransform: 'uppercase',
-                marginTop:     '0.6rem',
-              }}
-            >
-              {restaurant.description}
-            </p>
-          )}
-
-          {/* Bottom decorative line (only when no logo) */}
-          {!showLogo && (showName || showDesc) && (
-            <div className="w-10 h-px mt-7" style={{ background: ACCENT }} />
-          )}
-
-          {/* Menu selection buttons */}
-          <div className="mt-10 flex flex-col gap-3 w-full">
-            {menus.length === 0 ? (
-              <p
-                className="text-[10px] uppercase tracking-[0.25em]"
-                style={{ color: '#4f4f4f' }}
-              >
-                Menu in aggiornamento.
-              </p>
-            ) : (
-              menus.map(m => (
-                <button
-                  key={m.id}
-                  onClick={() => setSelectedMenuId(m.id)}
-                  className="group relative px-10 py-3 overflow-hidden"
-                  style={{
-                    color:         '#ede8e0',
-                    border:        `1px solid ${ACCENT}50`,
-                    fontFamily:    FONT_SANS,
-                    fontSize:      '0.625rem',
-                    letterSpacing: '0.28em',
-                    textTransform: 'uppercase',
-                  }}
-                >
-                  <span
-                    className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
-                    style={{ background: `${ACCENT}14` }}
-                  />
-                  <span className="relative">
-                    {`Sfoglia il menu ${m.name}`}
-                  </span>
-                </button>
-              ))
+            {showLogo && (
+              <img
+                src={restaurant.logo_url!}
+                alt={restaurant.name}
+                className="h-14 object-contain"
+                style={{ opacity: 0.88, marginBottom: showName || showDesc ? '1.5rem' : '2.5rem' }}
+              />
             )}
+
+            {!showLogo && showName && (
+              <div className="w-10 h-px mb-7" style={{ background: t.accent }} />
+            )}
+
+            {showName && (
+              <h1
+                className="font-light uppercase leading-none"
+                style={{
+                  color:         t.textPrimary,
+                  fontFamily:    SERIF,
+                  fontSize:      'clamp(1.6rem, 5vw, 2.4rem)',
+                  letterSpacing: '0.22em',
+                }}
+              >
+                {restaurant.name}
+              </h1>
+            )}
+
+            {showDesc && (
+              <p
+                style={{
+                  color:         `${t.accent}80`,
+                  fontFamily:    SANS,
+                  fontSize:      '0.6rem',
+                  letterSpacing: '0.2em',
+                  textTransform: 'uppercase',
+                  marginTop:     '0.6rem',
+                }}
+              >
+                {restaurant.description}
+              </p>
+            )}
+
+            {!showLogo && (showName || showDesc) && (
+              <div className="w-10 h-px mt-7" style={{ background: t.accent }} />
+            )}
+
+            {/* Menu selection buttons */}
+            <div className="mt-10 flex flex-col gap-3 w-full">
+              {menus.length === 0 ? (
+                <p
+                  className="text-[10px] uppercase tracking-[0.25em]"
+                  style={{ color: t.textMuted }}
+                >
+                  Menu in aggiornamento.
+                </p>
+              ) : (
+                menus.map(m => (
+                  <button
+                    key={m.id}
+                    onClick={() => setSelectedMenuId(m.id)}
+                    className="group relative px-10 py-3 overflow-hidden"
+                    style={{
+                      color:         t.textPrimary,
+                      border:        `1px solid ${t.accent}50`,
+                      borderRadius:  BTN_RADIUS,
+                      fontFamily:    SANS,
+                      fontSize:      '0.625rem',
+                      letterSpacing: '0.28em',
+                      textTransform: 'uppercase',
+                    }}
+                  >
+                    <span
+                      className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
+                      style={{ background: `${t.accent}14` }}
+                    />
+                    <span className="relative">
+                      {`Sfoglia il menu ${m.name}`}
+                    </span>
+                  </button>
+                ))
+              )}
+            </div>
+
+            <SocialBar restaurant={restaurant} />
           </div>
 
-          {/* Social icons row */}
-          <SocialBar restaurant={restaurant} />
+          <p
+            className="absolute bottom-6 text-[8px] uppercase tracking-[0.35em]"
+            style={{ color: t.textMuted }}
+          >
+            menu digitale
+          </p>
 
+          <div
+            className="absolute bottom-0 inset-x-0 h-px"
+            style={{ background: `linear-gradient(90deg, transparent, ${t.accent}55, transparent)` }}
+          />
         </div>
-
-        <p
-          className="absolute bottom-6 text-[8px] uppercase tracking-[0.35em]"
-          style={{ color: '#4f4f4f' }}
-        >
-          menu digitale
-        </p>
-
-        {/* Bottom accent line */}
-        <div
-          className="absolute bottom-0 inset-x-0 h-px"
-          style={{ background: `linear-gradient(90deg, transparent, ${ACCENT}55, transparent)` }}
-        />
-      </div>
+      </>
     )
   }
 
@@ -330,7 +363,7 @@ export default function PublicMenuView({
     return (
       <div
         className="fixed inset-0 h-[100dvh] flex flex-col items-center justify-center"
-        style={{ background: '#0c0c0c' }}
+        style={{ background: t.pageBg }}
       >
         {error ? (
           <div className="text-center px-8 flex flex-col items-center gap-4">
@@ -340,7 +373,7 @@ export default function PublicMenuView({
             <button
               onClick={() => setSelectedMenuId(null)}
               className="text-[10px] uppercase tracking-[0.25em] underline underline-offset-4"
-              style={{ color: '#4f4f4f' }}
+              style={{ color: t.textMuted }}
             >
               ← torna
             </button>
@@ -348,7 +381,7 @@ export default function PublicMenuView({
         ) : (
           <p
             className="text-[10px] uppercase tracking-[0.3em]"
-            style={{ color: '#4f4f4f' }}
+            style={{ color: t.textMuted }}
           >
             Preparazione menu…
           </p>
@@ -366,6 +399,7 @@ export default function PublicMenuView({
       onBack={() => setSelectedMenuId(null)}
       categories={categories.length > 0 ? categories : undefined}
       dishes={selectedMenu.dishes}
+      theme={t}
     />
   )
 }

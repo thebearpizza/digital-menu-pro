@@ -13,6 +13,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { PDFMenu, PDFRestaurant } from './MenuPDFDocument'
 import { groupByCategory } from './MenuPDFDocument'
+import type { RestaurantTheme } from '@/lib/theme'
 
 // Same CDN as FlipbookViewer — script deduplication prevents double-loading.
 const PDFJS_CDN    = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js'
@@ -108,6 +109,7 @@ async function detectCategoryPages(
 export function useMenuPDF(
   restaurant: PDFRestaurant | null,
   menu:       PDFMenu | null,
+  theme?:     RestaurantTheme,
 ): UseMenuPDFResult {
   const [result, setResult] = useState<UseMenuPDFResult>({
     pdfUrl: null, categories: [], isGenerating: false, error: null,
@@ -147,7 +149,7 @@ export function useMenuPDF(
 
         // ── Generate PDF blob ──────────────────────────────────────────────────
         const blob = await (pdf as any)(
-          createElement(MenuPDFDocument, { restaurant, menu })
+          createElement(MenuPDFDocument, { restaurant, menu, theme })
         ).toBlob()
         if (cancelled) return
 
@@ -180,7 +182,7 @@ export function useMenuPDF(
     })()
 
     return () => { cancelled = true }
-  }, [menu?.id, restaurant?.name]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [menu?.id, restaurant?.name, theme?.accent, theme?.pdfLayout]) // eslint-disable-line react-hooks/exhaustive-deps
 
   return result
 }

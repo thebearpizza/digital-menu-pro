@@ -3,10 +3,12 @@
 //
 // Dynamically imported by useMenuPDF (never SSR-ed).
 // Layout: content pages only (no cover), one section per category with forced
-// page-break between categories, wrap={false} per dish to avoid mid-dish splits.
+// page-break between categories (classic) or flowing layout (compact).
 // ─────────────────────────────────────────────────────────────────────────────
 import { Document, Page, Text, View, StyleSheet } from '@react-pdf/renderer'
 import { formatAllergensShort } from '@/lib/allergens'
+import type { RestaurantTheme } from '@/lib/theme'
+import { DEFAULT_THEME, lightenHex } from '@/lib/theme'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -16,7 +18,7 @@ export interface PDFDish {
   description: string | null
   price: number | null
   category: string
-  allergens: number[]   // IDs from lib/allergens.ts
+  allergens: number[]
 }
 
 export interface PDFMenu {
@@ -29,7 +31,7 @@ export interface PDFRestaurant {
   name: string
 }
 
-// ── Mock data (for testing without Supabase) ──────────────────────────────────
+// ── Mock data ─────────────────────────────────────────────────────────────────
 
 export const MOCK_RESTAURANT: PDFRestaurant = { name: 'Ristorante Da Marco' }
 
@@ -41,18 +43,15 @@ export const MOCK_MENU: PDFMenu = {
     { id: 'd2', name: 'Carpaccio di Manzo', description: 'Fettine di manzo crudo, rucola, scaglie di parmigiano, limone e olio EVO', price: 12.00, category: 'Antipasti', allergens: [7] },
     { id: 'd3', name: 'Tagliatelle al Ragù', description: 'Pasta fresca all\'uovo con ragù di carne tradizionale bolognese', price: 14.00, category: 'Primi', allergens: [1, 3] },
     { id: 'd4', name: 'Risotto ai Funghi Porcini', description: 'Riso Carnaroli, porcini freschi di stagione, parmigiano reggiano 24 mesi', price: 15.50, category: 'Primi', allergens: [7] },
-    { id: 'd5', name: 'Gnocchi alla Sorrentina', description: 'Gnocchi di patate fatti in casa, pomodoro San Marzano, mozzarella di bufala', price: 13.00, category: 'Primi', allergens: [1, 3, 7] },
-    { id: 'd6', name: 'Filetto di Branzino', description: 'Branzino mediterraneo con patate al forno, olive taggiasche e capperi di Pantelleria', price: 22.00, category: 'Secondi', allergens: [4] },
-    { id: 'd7', name: 'Tagliata di Manzo', description: 'Controfiletto di Chianina grigliato, rucola, ciliegini, grana padano a scaglie', price: 26.00, category: 'Secondi', allergens: [7] },
-    { id: 'd8', name: 'Pollo alla Cacciatora', description: 'Coscetta di pollo ruspante con olive, pomodori pelati, rosmarino fresco e vino bianco', price: 18.00, category: 'Secondi', allergens: [] },
-    { id: 'd9', name: 'Tiramisù della Casa', description: 'Ricetta originale con savoiardi, mascarpone, caffè espresso e cacao amaro', price: 7.00, category: 'Dessert', allergens: [1, 3, 7] },
-    { id: 'd10', name: 'Panna Cotta ai Frutti di Bosco', description: 'Crema di panna fresca con coulis di lamponi, mirtilli e ribes', price: 6.50, category: 'Dessert', allergens: [7] },
+    { id: 'd5', name: 'Filetto di Branzino', description: 'Branzino mediterraneo con patate al forno, olive taggiasche e capperi di Pantelleria', price: 22.00, category: 'Secondi', allergens: [4] },
+    { id: 'd6', name: 'Tagliata di Manzo', description: 'Controfiletto di Chianina grigliato, rucola, ciliegini, grana padano a scaglie', price: 26.00, category: 'Secondi', allergens: [7] },
+    { id: 'd7', name: 'Tiramisù della Casa', description: 'Ricetta originale con savoiardi, mascarpone, caffè espresso e cacao amaro', price: 7.00, category: 'Dessert', allergens: [1, 3, 7] },
+    { id: 'd8', name: 'Panna Cotta ai Frutti di Bosco', description: 'Crema di panna fresca con coulis di lamponi, mirtilli e ribes', price: 6.50, category: 'Dessert', allergens: [7] },
   ],
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
-/** Returns ordered list of category sections from flat dish array. */
 export function groupByCategory(dishes: PDFDish[]): Array<{ name: string; dishes: PDFDish[] }> {
   const map = new Map<string, PDFDish[]>()
   for (const d of dishes) {
@@ -68,88 +67,89 @@ function fmtPrice(p: number | null): string {
   return `€ ${p.toFixed(2)}`
 }
 
-// ── Styles ─────────────────────────────────────────────────────────────────────
+// ── Dynamic styles (theme-aware) ──────────────────────────────────────────────
 
-const ACCENT    = '#c9a96e'   // gold — matches flipbook theme
-const DARK_TXT  = '#1a1a1a'
-const MED_TXT   = '#4a4a4a'
-const LIGHT_TXT = '#9a9a9a'
+function makeStyles(theme: RestaurantTheme) {
+  const compact   = theme.pdfLayout === 'compact'
+  const catLineColor = lightenHex(theme.accent, 0.55)  // soft tint of accent for separator
 
-const s = StyleSheet.create({
-  // ── Content page ───────────────────────────────────────────────────────────
-  page: {
-    backgroundColor:  '#ffffff',
-    paddingTop:       52,
-    paddingBottom:    40,
-    paddingHorizontal: 54,
-  },
-
-  // Category header
-  catTitle: {
-    fontFamily:    'Times-Bold',
-    fontSize:      18,
-    color:         DARK_TXT,
-    textTransform: 'uppercase',
-    letterSpacing: 2,
-    marginBottom:  8,
-  },
-  catLine: {
-    height:          0.5,
-    backgroundColor: '#d4c5a2',
-    marginBottom:    18,
-  },
-
-  // Dish block
-  dishRow: {
-    flexDirection:   'row',
-    justifyContent:  'space-between',
-    alignItems:      'flex-start',
-    marginBottom:    3,
-  },
-  dishName: {
-    fontFamily:    'Helvetica-Bold',
-    fontSize:      10,
-    color:         DARK_TXT,
-    textTransform: 'uppercase',
-    letterSpacing: 0.6,
-    flex:          1,
-    marginRight:   14,
-  },
-  dishPrice: {
-    fontFamily: 'Helvetica-Bold',
-    fontSize:   10,
-    color:      DARK_TXT,
-  },
-  dishDesc: {
-    fontFamily:  'Helvetica-Oblique',
-    fontSize:    8.5,
-    color:       MED_TXT,
-    lineHeight:  1.55,
-    marginBottom: 3,
-  },
-  dishAllergens: {
-    fontFamily:    'Helvetica',
-    fontSize:      7,
-    color:         LIGHT_TXT,
-    letterSpacing: 0.2,
-  },
-  dishDivider: {
-    height:          0.3,
-    backgroundColor: '#ece6da',
-    marginVertical:  12,
-  },
-
-})
+  return StyleSheet.create({
+    page: {
+      backgroundColor:   '#ffffff',
+      paddingTop:        compact ? 36 : 52,
+      paddingBottom:     compact ? 24 : 40,
+      paddingHorizontal: compact ? 42 : 54,
+    },
+    catTitle: {
+      fontFamily:    'Times-Bold',
+      fontSize:      compact ? 13 : 18,
+      color:         '#1a1a1a',
+      textTransform: 'uppercase',
+      letterSpacing: compact ? 1.5 : 2,
+      marginBottom:  compact ? 5 : 8,
+    },
+    catLine: {
+      height:          0.5,
+      backgroundColor: catLineColor,
+      marginBottom:    compact ? 12 : 18,
+    },
+    dishRow: {
+      flexDirection:  'row',
+      justifyContent: 'space-between',
+      alignItems:     'flex-start',
+      marginBottom:   compact ? 2 : 3,
+    },
+    dishName: {
+      fontFamily:    'Helvetica-Bold',
+      fontSize:      compact ? 9 : 10,
+      color:         '#1a1a1a',
+      textTransform: 'uppercase',
+      letterSpacing: compact ? 0.4 : 0.6,
+      flex:          1,
+      marginRight:   14,
+    },
+    dishPrice: {
+      fontFamily: 'Helvetica-Bold',
+      fontSize:   compact ? 9 : 10,
+      color:      '#1a1a1a',
+    },
+    dishDesc: {
+      fontFamily:   'Helvetica-Oblique',
+      fontSize:     compact ? 7.5 : 8.5,
+      color:        '#4a4a4a',
+      lineHeight:   1.55,
+      marginBottom: compact ? 2 : 3,
+    },
+    dishAllergens: {
+      fontFamily:    'Helvetica',
+      fontSize:      compact ? 6.5 : 7,
+      color:         '#9a9a9a',
+      letterSpacing: 0.2,
+    },
+    dishDivider: {
+      height:          0.3,
+      backgroundColor: '#ece6da',
+      marginVertical:  compact ? 8 : 12,
+    },
+    catSpacer: {
+      marginTop: compact ? 20 : 0,
+    },
+  })
+}
 
 // ── Component ──────────────────────────────────────────────────────────────────
 
 interface Props {
   restaurant: PDFRestaurant
   menu:       PDFMenu
+  theme?:     RestaurantTheme
 }
 
-export function MenuPDFDocument({ restaurant, menu }: Props) {
+export function MenuPDFDocument({ restaurant, menu, theme: themeProp }: Props) {
+  const theme      = themeProp ?? DEFAULT_THEME
+  const s          = makeStyles(theme)
   const categories = groupByCategory(menu.dishes)
+  const compact    = theme.pdfLayout === 'compact'
 
   return (
     <Document
@@ -157,13 +157,13 @@ export function MenuPDFDocument({ restaurant, menu }: Props) {
       author={restaurant.name}
       creator="Digital Menu Pro"
     >
-      {/* ── CONTENT PAGES — no cover, first category starts on page 1 ──── */}
       <Page size="A4" style={s.page} wrap>
-
         {categories.map((cat, catIdx) => (
-          // break={catIdx > 0}: each category (except the first) starts on a new page.
-          // This makes category page numbers stable and detectable via PDF.js text scan.
-          <View key={cat.name} break={catIdx > 0}>
+          // Classic: forced page break per category.
+          // Compact: categories flow naturally; spacer separates sections.
+          <View key={cat.name} break={!compact && catIdx > 0}>
+
+            {compact && catIdx > 0 && <View style={s.catSpacer} />}
 
             <Text style={s.catTitle}>{cat.name}</Text>
             <View style={s.catLine} />
@@ -174,7 +174,6 @@ export function MenuPDFDocument({ restaurant, menu }: Props) {
                 : null
 
               return (
-                // wrap={false}: never split a single dish item across pages
                 <View key={dish.id} wrap={false}>
                   <View style={s.dishRow}>
                     <Text style={s.dishName}>{dish.name}</Text>
@@ -196,8 +195,6 @@ export function MenuPDFDocument({ restaurant, menu }: Props) {
             })}
           </View>
         ))}
-
-
       </Page>
     </Document>
   )

@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { formatAllergensFull } from '@/lib/allergens'
+import { borderRadiusPx, fontStack } from '@/lib/theme'
+import type { RestaurantTheme } from '@/lib/theme'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -24,15 +26,16 @@ interface Props {
   onClose:     () => void
   onBack?:     () => void
   onOpenDish:  (dish: DishData) => void
+  theme?:      RestaurantTheme
 }
-
-const ACCENT     = '#c9a96e'
-const FONT_SERIF = "'Cormorant Garamond', 'Georgia', 'Times New Roman', serif"
-const FONT_SANS  = "'DM Sans', 'Inter', system-ui, sans-serif"
 
 // ── Component ──────────────────────────────────────────────────────────────────
 
-export default function DishModal({ activeDish, allDishes, isNested, onClose, onBack, onOpenDish }: Props) {
+export default function DishModal({ activeDish, allDishes, isNested, onClose, onBack, onOpenDish, theme }: Props) {
+  const ACCENT      = theme?.accent     ?? '#c9a96e'
+  const FONT_SERIF  = fontStack(theme?.fontSerif ?? 'Cormorant Garamond', 'serif')
+  const FONT_SANS   = fontStack(theme?.fontSans  ?? 'DM Sans', 'sans')
+  const CARD_RADIUS = borderRadiusPx(theme?.borderRadius ?? 'none')
   const startIdx = allDishes.findIndex(d => d.id === activeDish.id)
 
   const [idx,        setIdx]        = useState(startIdx >= 0 ? startIdx : 0)
@@ -143,7 +146,7 @@ export default function DishModal({ activeDish, allDishes, isNested, onClose, on
         style={{
           background:   '#111111',
           border:       `1px solid ${ACCENT}22`,
-          borderRadius: '14px',
+          borderRadius: CARD_RADIUS,
           maxHeight:    '88dvh',
         }}
         onTouchStart={onTouchStart}

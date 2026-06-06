@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
 import type { Metadata } from 'next'
 import PublicMenuView from './PublicMenuView'
+import { parseTheme } from '@/lib/theme'
 
 // The /m/[token] URL pattern is the printed QR contract — this path must never change.
 // See CLAUDE.md → "URL del QR code stabile per sempre"
@@ -110,6 +111,7 @@ export default async function PublicMenuPage({
         tripadvisor_url:  restaurant.tripadvisor_url as string | null,
         google_maps_url:  restaurant.google_maps_url as string | null,
         visibility:       (restaurant.visibility ?? null) as Record<string, boolean> | null,
+        theme:            parseTheme((restaurant as any).theme_config),
       }}
       menus={menus}
       banners={(banners ?? []) as any[]}

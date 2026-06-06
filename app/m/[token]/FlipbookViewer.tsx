@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react'
 import DishModal, { DishData } from './DishModal'
+import { fontStack, hexToRgb } from '@/lib/theme'
+import type { RestaurantTheme } from '@/lib/theme'
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // ⚙️  MENU CONFIG
@@ -92,17 +94,13 @@ function computeDims() {
 // PROPS
 // ═══════════════════════════════════════════════════════════════════════════════
 interface Props {
-  /** URL del PDF da visualizzare (prop stringa, backend-agnostic) */
   pdfUrl:          string
   restaurantName?: string
-  /** URL logo ristorante (opzionale — se assente usa il nome testuale) */
   restaurantLogo?: string | null
-  /** Callback "esci dal viewer" (es. torna alla WelcomeView) */
   onBack:          () => void
-  /** Sovrascrive le categorie di navigazione hardcoded in menuConfig.
-   *  Passato da useMenuPDF con i targetPage reali estratti dal PDF generato. */
   categories?: Array<{ label: string; targetPage: number }>
   dishes?:     DishData[]
+  theme?:      RestaurantTheme
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -115,7 +113,21 @@ export default function FlipbookViewer({
   onBack,
   categories: categoriesProp,
   dishes,
+  theme: themeProp,
 }: Props) {
+  // Merge incoming theme over menuConfig defaults so existing callers without
+  // a theme prop keep working with the hardcoded palette.
+  const theme = {
+    ...menuConfig.theme,
+    pageBg:     themeProp?.pageBg      ?? menuConfig.theme.pageBg,
+    accent:     themeProp?.accent      ?? menuConfig.theme.accent,
+    textPrimary:themeProp?.textPrimary ?? menuConfig.theme.textPrimary,
+    textMuted:  themeProp?.textMuted   ?? menuConfig.theme.textMuted,
+    navBg:      themeProp?.navBg       ?? menuConfig.theme.navBg,
+    navActive:  themeProp?.accent      ?? menuConfig.theme.navActive,
+    fontSerif:  fontStack(themeProp?.fontSerif ?? 'Cormorant Garamond', 'serif'),
+    fontSans:   fontStack(themeProp?.fontSans  ?? 'DM Sans', 'sans'),
+  }
   const bookRef = useRef<HTMLDivElement>(null)
 
   const [dims,          setDims]         = useState<{ w: number; h: number } | null>(null)
@@ -135,7 +147,7 @@ export default function FlipbookViewer({
   // Blocco hard: diventa true SOLO dopo Promise.all + turn.js init
   const [pagesReady,    setPagesReady]   = useState(false)
 
-  const { theme, flipbook } = menuConfig
+  const { flipbook } = menuConfig
   // Le categorie vengono ESCLUSIVAMENTE dal menu selezionato tramite useMenuPDF.
   // Nessun fallback hardcoded — ogni menu ha le sue categorie dinamiche.
   const categories = categoriesProp ?? EMPTY_CATEGORIES
@@ -579,9 +591,10 @@ export default function FlipbookViewer({
       className="fixed inset-0 h-[100dvh] overflow-hidden select-none outline-none [-webkit-tap-highlight-color:transparent] [&_*]:[-webkit-tap-highlight-color:transparent]"
       style={{
         background:  theme.pageBg,
-        touchAction: 'none',    // disabilita pan, pinch-to-zoom, scroll verticale
+        touchAction: 'none',
         fontFamily:  theme.fontSans,
-      }}
+        '--theme-accent-rgb': hexToRgb(themeProp?.accent ?? '#c9a96e'),
+      } as React.CSSProperties}
     >
 
       {/* ──────────────────────────────────────────────────────────────────────
@@ -758,6 +771,7 @@ export default function FlipbookViewer({
           onClose={() => setModalStack([])}
           onBack={modalStack.length > 1 ? () => setModalStack(s => s.slice(0, -1)) : undefined}
           onOpenDish={(dish) => setModalStack(s => [...s, dish])}
+          theme={themeProp}
         />
       )}
 
