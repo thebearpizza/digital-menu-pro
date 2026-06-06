@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef, useEffect } from 'react'
 import {
   DndContext, closestCenter, DragEndEvent,
   PointerSensor, TouchSensor, useSensor, useSensors,
@@ -228,6 +228,21 @@ function SortableCategory({
     opacity: isDragging ? 0.5 : 1,
   }
 
+  // Kebab menu state (mobile)
+  const [kebabOpen, setKebabOpen] = useState(false)
+  const kebabRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!kebabOpen) return
+    function onClickOutside(e: MouseEvent) {
+      if (kebabRef.current && !kebabRef.current.contains(e.target as Node)) {
+        setKebabOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', onClickOutside)
+    return () => document.removeEventListener('mousedown', onClickOutside)
+  }, [kebabOpen])
+
   function handleDishDragEnd(event: DragEndEvent) {
     const { active, over } = event
     if (!over || active.id === over.id) return
@@ -238,11 +253,50 @@ function SortableCategory({
     onReorderDishes(cat, arrayMove(ids, oldIdx, newIdx))
   }
 
+  const allActive   = dishes.length > 0 && dishes.every(d => d.is_active)
+  const anyActive   = dishes.some(d => d.is_active)
+  const toggleLabel = (allActive || anyActive) ? 'Disabilita' : 'Abilita'
+  const toggleActive = allActive || anyActive
+
+  // Azioni secondarie — usate sia nell'inline desktop sia nel dropdown mobile
+  const secondaryActions = (
+    <>
+      {dishes.length > 0 && (
+        <button
+          onClick={() => { onToggleCategory(cat, !toggleActive); setKebabOpen(false) }}
+          className={`text-xs hover:underline whitespace-nowrap ${toggleActive ? 'text-orange-500' : 'text-green-600'}`}
+        >
+          {toggleLabel}
+        </button>
+      )}
+      <button
+        onClick={() => { onMoveCategory(cat); setKebabOpen(false) }}
+        className="text-xs text-gray-500 hover:text-gray-800 hover:underline whitespace-nowrap"
+      >
+        Sposta in
+      </button>
+      <button
+        onClick={() => { onDuplicateCategory(cat); setKebabOpen(false) }}
+        className="text-xs text-gray-500 hover:text-gray-800 hover:underline whitespace-nowrap"
+      >
+        Duplica
+      </button>
+      {dishes.length === 0 && (
+        <button
+          onClick={() => { onDeleteCategory(cat); setKebabOpen(false) }}
+          className="text-xs text-red-500 hover:underline whitespace-nowrap"
+        >
+          Elimina
+        </button>
+      )}
+    </>
+  )
+
   return (
     <div ref={setNodeRef} style={style} className="bg-white border border-gray-200">
       {/* Category header */}
       <div className="px-3 py-2.5 bg-gray-50 border-b border-gray-200 flex items-center gap-2">
-        {/* Drag handle categoria */}
+        {/* Drag handle */}
         <button
           {...attributes} {...listeners}
           className="text-gray-300 hover:text-gray-500 cursor-grab active:cursor-grabbing shrink-0 touch-none select-none text-base leading-none min-h-[44px] min-w-[36px] flex items-center justify-center"
@@ -252,7 +306,7 @@ function SortableCategory({
           ⠿
         </button>
 
-        {/* Toggle expand */}
+        {/* Nome categoria — occupa tutto lo spazio disponibile, non si tronca mai */}
         <button
           onClick={onToggle}
           className="flex-1 flex items-center gap-2 text-left min-w-0 min-h-[44px]"
@@ -261,47 +315,62 @@ function SortableCategory({
           <span className="text-xs text-gray-400 shrink-0">({dishes.length})</span>
         </button>
 
-        {/* Azioni categoria */}
-        <div className="flex items-center gap-1 shrink-0">
-          {dishes.length > 0 && (() => {
-            const allActive = dishes.every(d => d.is_active)
-            return (
-              <button
-                onClick={() => onToggleCategory(cat, !allActive)}
-                className={`text-xs hover:underline px-2 min-h-[44px] md:min-h-0 ${allActive ? 'text-orange-500' : 'text-green-600'}`}
-              >
-                {allActive ? 'Disabilita' : 'Abilita'}
-              </button>
-            )
-          })()}
-          <button
-            onClick={() => onMoveCategory(cat)}
-            className="text-xs text-gray-500 hover:text-gray-800 hover:underline px-2 min-h-[44px] md:min-h-0"
-          >
-            Sposta in
-          </button>
-          <button
-            onClick={() => onDuplicateCategory(cat)}
-            className="text-xs text-gray-500 hover:text-gray-800 hover:underline px-2 min-h-[44px] md:min-h-0"
-          >
-            Duplica
-          </button>
-          {dishes.length === 0 && (
-            <button
-              onClick={() => onDeleteCategory(cat)}
-              className="text-xs text-red-500 hover:underline px-2 min-h-[44px] md:min-h-0"
-            >
-              Elimina
-            </button>
-          )}
-          <button
-            onClick={onToggle}
-            className="text-gray-400 text-[10px] px-1 min-h-[44px] min-w-[28px] flex items-center justify-center"
-            aria-label={expanded ? 'Comprimi' : 'Espandi'}
-          >
-            {expanded ? '▲' : '▼'}
-          </button>
+        {/* Azioni inline — visibili solo su md+ */}
+        <div className="hidden md:flex items-center gap-1 shrink-0">
+          {secondaryActions}
         </div>
+
+        {/* Kebab menu — visibile solo su mobile */}
+        <div className="md:hidden relative shrink-0" ref={kebabRef}>
+          <button
+            onClick={() => setKebabOpen(o => !o)}
+            className="flex items-center justify-center w-[44px] h-[44px] text-gray-500 hover:text-gray-800 text-lg leading-none"
+            aria-label="Azioni categoria"
+          >
+            ⋮
+          </button>
+          {kebabOpen && (
+            <div className="absolute right-0 top-full mt-1 z-[100] bg-white border border-gray-200 shadow-lg min-w-[160px] py-1">
+              {dishes.length > 0 && (
+                <button
+                  onClick={() => { onToggleCategory(cat, !toggleActive); setKebabOpen(false) }}
+                  className={`w-full text-left px-4 py-3 text-sm hover:bg-gray-50 ${toggleActive ? 'text-orange-500' : 'text-green-600'}`}
+                >
+                  {toggleLabel}
+                </button>
+              )}
+              <button
+                onClick={() => { onMoveCategory(cat); setKebabOpen(false) }}
+                className="w-full text-left px-4 py-3 text-sm text-gray-700 hover:bg-gray-50"
+              >
+                Sposta in
+              </button>
+              <button
+                onClick={() => { onDuplicateCategory(cat); setKebabOpen(false) }}
+                className="w-full text-left px-4 py-3 text-sm text-gray-700 hover:bg-gray-50"
+              >
+                Duplica
+              </button>
+              {dishes.length === 0 && (
+                <button
+                  onClick={() => { onDeleteCategory(cat); setKebabOpen(false) }}
+                  className="w-full text-left px-4 py-3 text-sm text-red-500 hover:bg-red-50"
+                >
+                  Elimina
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Espandi / Comprimi — sempre visibile */}
+        <button
+          onClick={onToggle}
+          className="text-gray-400 text-[10px] px-1 min-h-[44px] min-w-[28px] flex items-center justify-center shrink-0"
+          aria-label={expanded ? 'Comprimi' : 'Espandi'}
+        >
+          {expanded ? '▲' : '▼'}
+        </button>
       </div>
 
       {/* Dish rows — visibili solo quando espanso, con DnD interno per i piatti. */}
