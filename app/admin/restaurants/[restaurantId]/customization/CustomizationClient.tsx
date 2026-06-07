@@ -5,18 +5,18 @@ import { createClient } from '@/lib/supabase/client'
 import { saveTheme, createBanner, deleteBanner } from './actions'
 import {
   DEFAULT_THEME, SERIF_FONTS, SANS_FONTS, PAGINATION_OPTIONS,
-  googleFontsUrl, fontStack, formatPrice,
+  MENU_BG_EFFECTS, MENU_BG_EFFECT_LABELS,
+  googleFontsUrl, allThemeFonts, fontStack, formatPrice,
 } from '@/lib/theme'
-import type { RestaurantTheme, PaginationStyle } from '@/lib/theme'
+import type {
+  RestaurantTheme, LandingTheme, LandingBackground, MenuTheme,
+  MenuBgEffect, PaginationStyle,
+} from '@/lib/theme'
 
-// Max upload size for landing media (banners + background video).
 const MAX_MEDIA_BYTES = 5 * 1024 * 1024 // 5MB
 
 // ── Poster extraction ─────────────────────────────────────────────────────────
-// Draws video frame 0 to a canvas and exports a compressed JPEG.
-// Returns null on any failure — the upload still proceeds without a poster.
-// Uses loadeddata (not seeked) for reliable first-frame capture on mobile
-// WebKit without needing an explicit currentTime assignment.
+
 async function extractVideoPoster(file: File): Promise<Blob | null> {
   return new Promise(resolve => {
     const video = document.createElement('video')
@@ -26,11 +26,9 @@ async function extractVideoPoster(file: File): Promise<Blob | null> {
     video.playsInline = true
 
     const cleanup = () => URL.revokeObjectURL(url)
-
     const draw = () => {
       try {
         const canvas = document.createElement('canvas')
-        // Cap poster at 1280px wide — keeps JPEG under ~100KB on typical footage
         const maxW   = 1280
         const ratio  = Math.min(maxW / (video.videoWidth  || maxW), 1)
         canvas.width  = Math.round((video.videoWidth  || 1280) * ratio)
@@ -43,7 +41,7 @@ async function extractVideoPoster(file: File): Promise<Blob | null> {
       } catch { cleanup(); resolve(null) }
     }
 
-    video.addEventListener('loadeddata', draw,                           { once: true })
+    video.addEventListener('loadeddata', draw,                            { once: true })
     video.addEventListener('error',      () => { cleanup(); resolve(null) }, { once: true })
     video.load()
   })
@@ -70,11 +68,13 @@ interface Props {
   initialBanners: AdminBanner[]
 }
 
-// ── Font loader (for the admin-side live previews of font pickers) ─────────────
+// ── Font loader ───────────────────────────────────────────────────────────────
 
-function usePreviewFonts(fontSerif: string, fontSans: string) {
+function usePreviewFonts(theme: RestaurantTheme) {
+  const fontsKey = allThemeFonts(theme).join(',')
   useEffect(() => {
-    const href = googleFontsUrl(fontSerif, fontSans)
+    const href = googleFontsUrl(allThemeFonts(theme))
+    if (!href) return
     let link = document.querySelector('link[data-admin-preview-fonts]') as HTMLLinkElement | null
     if (!link) {
       link = document.createElement('link')
@@ -83,13 +83,26 @@ function usePreviewFonts(fontSerif: string, fontSans: string) {
       document.head.appendChild(link)
     }
     link.href = href
-  }, [fontSerif, fontSans])
+  }, [fontsKey]) // eslint-disable-line react-hooks/exhaustive-deps
 }
 
 // ── UI Atoms ──────────────────────────────────────────────────────────────────
 
-function SectionLabel({ children }: { children: React.ReactNode }) {
-  return <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-gray-400 mb-3">{children}</p>
+function Accordion({ title, defaultOpen = false, children }: {
+  title: string; defaultOpen?: boolean; children: React.ReactNode
+}) {
+  const [open, setOpen] = useState(defaultOpen)
+  return (
+    <div className="border border-gray-100">
+      <button type="button"
+        className="w-full flex items-center justify-between px-4 py-2.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-gray-500 hover:bg-gray-50 transition-colors"
+        onClick={() => setOpen(o => !o)}>
+        {title}
+        <span className="text-gray-300 text-lg leading-none">{open ? '−' : '+'}</span>
+      </button>
+      {open && <div className="px-4 pb-4 pt-2 space-y-3">{children}</div>}
+    </div>
+  )
 }
 
 function ColorRow({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
@@ -97,9 +110,10 @@ function ColorRow({ label, value, onChange }: { label: string; value: string; on
     <div className="flex items-center justify-between gap-3">
       <label className="text-xs text-gray-600 min-w-0 flex-1">{label}</label>
       <div className="flex items-center gap-2 shrink-0">
-        <span className="text-[10px] text-gray-400 font-mono w-16 text-right">{value}</span>
+        <span className="text-[10px] text-gray-400 font-mono w-16 text-right">{value.slice(0, 7)}</span>
         <div className="relative w-8 h-8 border border-gray-200 overflow-hidden rounded-sm">
-          <input type="color" value={value} onChange={e => onChange(e.target.value)}
+          <input type="color" value={value.startsWith('#') && value.length >= 7 ? value.slice(0,7) : '#888888'}
+            onChange={e => onChange(e.target.value)}
             className="absolute inset-0 w-[150%] h-[150%] -top-1 -left-1 cursor-pointer border-0 p-0 bg-transparent" />
         </div>
       </div>
@@ -137,7 +151,8 @@ function FontSelector({ label, value, curated, category, onChange }: {
     <div>
       <label className="block text-xs text-gray-600 mb-1">{label}</label>
       {!customMode ? (
-        <select value={value} onChange={e => { if (e.target.value === '__custom__') { setCustomMode(true); return } onChange(e.target.value) }}
+        <select value={value}
+          onChange={e => { if (e.target.value === '__custom__') { setCustomMode(true); return } onChange(e.target.value) }}
           className="w-full px-2 py-1.5 border border-gray-200 text-xs bg-white focus:outline-none focus:border-gray-400">
           {curated.map(f => <option key={f} value={f}>{f}</option>)}
           <option value="__custom__">Altro Google Font…</option>
@@ -173,14 +188,15 @@ function FontSizeSlider({ label, value, min, max, step, previewFont, onChange }:
       <input type="range" min={min} max={max} step={step} value={value}
         onChange={e => onChange(Number(e.target.value))}
         className="w-full accent-gray-900" />
-      <p className="mt-0.5 overflow-hidden text-nowrap" style={{ fontSize: `${value}rem`, fontFamily: previewFont, color: '#999', lineHeight: 1.2 }}>
+      <p className="mt-0.5 overflow-hidden text-nowrap"
+        style={{ fontSize: `${value}rem`, fontFamily: previewFont, color: '#999', lineHeight: 1.2 }}>
         Testo di esempio
       </p>
     </div>
   )
 }
 
-// ── Live preview iframe (real /m/[token] page + postMessage bridge) ────────────
+// ── Live preview iframe ───────────────────────────────────────────────────────
 
 function LivePreview({ qrToken, theme, previewMode }: {
   qrToken: string | null; theme: RestaurantTheme; previewMode: 'landing' | 'menu'
@@ -192,7 +208,6 @@ function LivePreview({ qrToken, theme, previewMode }: {
     iframeRef.current?.contentWindow?.postMessage(msg, window.location.origin)
   }
 
-  // Receive the iframe's "ready" handshake, then push the current draft state.
   useEffect(() => {
     function onMsg(e: MessageEvent) {
       if (e.origin !== window.location.origin) return
@@ -204,21 +219,18 @@ function LivePreview({ qrToken, theme, previewMode }: {
     }
     window.addEventListener('message', onMsg)
     return () => window.removeEventListener('message', onMsg)
-  }, [theme, previewMode])
+  }, [theme, previewMode]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Debounced theme push — only fires once the user pauses, so dragging a color
-  // or font slider stays buttery even on slow machines.
   useEffect(() => {
     if (!readyRef.current) return
     const id = setTimeout(() => post({ type: 'dmp-theme', theme }), 150)
     return () => clearTimeout(id)
-  }, [theme])
+  }, [theme]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Navigate the preview between landing and menu.
   useEffect(() => {
     if (!readyRef.current) return
     post({ type: 'dmp-nav', view: previewMode })
-  }, [previewMode])
+  }, [previewMode]) // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!qrToken) {
     return (
@@ -247,11 +259,11 @@ function LivePreview({ qrToken, theme, previewMode }: {
 // ── Banner Manager ────────────────────────────────────────────────────────────
 
 function BannerManager({ restaurantId, initialBanners }: { restaurantId: string; initialBanners: AdminBanner[] }) {
-  const [banners, setBanners] = useState<AdminBanner[]>(initialBanners)
-  const [uploading, setUploading] = useState(false)
+  const [banners, setBanners]       = useState<AdminBanner[]>(initialBanners)
+  const [uploading, setUploading]   = useState(false)
   const [newTitle,    setNewTitle]    = useState('')
   const [newSubtitle, setNewSubtitle] = useState('')
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError]           = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
 
   async function handleAdd() {
@@ -263,15 +275,14 @@ function BannerManager({ restaurantId, initialBanners }: { restaurantId: string;
     const ext  = file.name.split('.').pop() ?? 'jpg'
     const path = `${restaurantId}/banners/${Date.now()}.${ext}`
     const { data: up, error: upErr } = await supabase.storage
-      .from('restaurant-assets')
-      .upload(path, file, { upsert: false })
+      .from('restaurant-assets').upload(path, file, { upsert: false })
     if (upErr || !up) { setError('Upload: ' + upErr?.message); setUploading(false); return }
     const { data: pub } = supabase.storage.from('restaurant-assets').getPublicUrl(up.path)
     try {
       const b = await createBanner(restaurantId, {
         media_url:  pub.publicUrl,
         media_type: file.type.startsWith('video/') ? 'video' : 'image',
-        title:      newTitle.trim() || undefined,
+        title:      newTitle.trim()    || undefined,
         subtitle:   newSubtitle.trim() || undefined,
         sort_order: banners.length,
       })
@@ -307,9 +318,11 @@ function BannerManager({ restaurantId, initialBanners }: { restaurantId: string;
         <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">+ Nuovo banner</p>
         <input ref={fileRef} type="file" accept="image/*,video/*"
           className="block text-xs text-gray-500 file:mr-2 file:py-1 file:px-3 file:border file:border-gray-200 file:text-xs file:bg-white file:text-gray-600 hover:file:bg-gray-50 cursor-pointer" />
-        <input type="text" placeholder="Titolo (opzionale)" value={newTitle} onChange={e => setNewTitle(e.target.value)}
+        <input type="text" placeholder="Titolo (opzionale)" value={newTitle}
+          onChange={e => setNewTitle(e.target.value)}
           className="w-full px-2 py-1.5 border border-gray-200 text-xs focus:outline-none focus:border-gray-400 bg-white" />
-        <input type="text" placeholder="Sottotitolo (opzionale)" value={newSubtitle} onChange={e => setNewSubtitle(e.target.value)}
+        <input type="text" placeholder="Sottotitolo (opzionale)" value={newSubtitle}
+          onChange={e => setNewSubtitle(e.target.value)}
           className="w-full px-2 py-1.5 border border-gray-200 text-xs focus:outline-none focus:border-gray-400 bg-white" />
         {error && <p className="text-xs text-red-500">{error}</p>}
         <button type="button" onClick={handleAdd} disabled={uploading}
@@ -335,14 +348,63 @@ export default function CustomizationClient({
   const [previewMode,  setPreviewMode]  = useState<'landing' | 'menu'>('landing')
   const [previewOpen,  setPreviewOpen]  = useState(false)
 
-  usePreviewFonts(theme.fontSerif, theme.fontSans)
+  usePreviewFonts(theme)
 
-  function set<K extends keyof RestaurantTheme>(key: K, value: RestaurantTheme[K]) {
-    setSaved(false); setTheme(t => ({ ...t, [key]: value }))
+  // ── Typed patch helpers ──────────────────────────────────────────────────────
+
+  function setL(patch: Partial<LandingTheme>) {
+    setSaved(false); setTheme(t => ({ ...t, landing: { ...t.landing, ...patch } }))
   }
-  function setFs(key: keyof RestaurantTheme['fontSizes'], value: number) {
-    setSaved(false); setTheme(t => ({ ...t, fontSizes: { ...t.fontSizes, [key]: value } }))
+  function setM(patch: Partial<MenuTheme>) {
+    setSaved(false); setTheme(t => ({ ...t, menu: { ...t.menu, ...patch } }))
   }
+  function setLBg(patch: Partial<LandingBackground>) {
+    setSaved(false); setTheme(t => ({ ...t, landing: { ...t.landing, background: { ...t.landing.background, ...patch } } }))
+  }
+  function setLLogo(patch: Partial<LandingTheme['logo']>) {
+    setSaved(false); setTheme(t => ({ ...t, landing: { ...t.landing, logo: { ...t.landing.logo, ...patch } } }))
+  }
+  function setLTitle(patch: Partial<LandingTheme['title']>) {
+    setSaved(false); setTheme(t => ({ ...t, landing: { ...t.landing, title: { ...t.landing.title, ...patch } } }))
+  }
+  function setLDesc(patch: Partial<LandingTheme['description']>) {
+    setSaved(false); setTheme(t => ({ ...t, landing: { ...t.landing, description: { ...t.landing.description, ...patch } } }))
+  }
+  function setLBu(patch: Partial<LandingTheme['buttons']>) {
+    setSaved(false); setTheme(t => ({ ...t, landing: { ...t.landing, buttons: { ...t.landing.buttons, ...patch } } }))
+  }
+  function setMLayout(patch: Partial<MenuTheme['layout']>) {
+    setSaved(false); setTheme(t => ({ ...t, menu: { ...t.menu, layout: { ...t.menu.layout, ...patch } } }))
+  }
+  function setMDivider(patch: Partial<MenuTheme['layout']['divider']>) {
+    setSaved(false); setTheme(t => ({ ...t, menu: { ...t.menu, layout: { ...t.menu.layout, divider: { ...t.menu.layout.divider, ...patch } } } }))
+  }
+  function setMDishes(patch: Partial<MenuTheme['dishes']>) {
+    setSaved(false); setTheme(t => ({ ...t, menu: { ...t.menu, dishes: { ...t.menu.dishes, ...patch } } }))
+  }
+  function setMDescs(patch: Partial<MenuTheme['descriptions']>) {
+    setSaved(false); setTheme(t => ({ ...t, menu: { ...t.menu, descriptions: { ...t.menu.descriptions, ...patch } } }))
+  }
+  function setMAllergens(patch: Partial<MenuTheme['allergens']>) {
+    setSaved(false); setTheme(t => ({ ...t, menu: { ...t.menu, allergens: { ...t.menu.allergens, ...patch } } }))
+  }
+  function setMPrices(patch: Partial<MenuTheme['prices']>) {
+    setSaved(false); setTheme(t => ({ ...t, menu: { ...t.menu, prices: { ...t.menu.prices, ...patch } } }))
+  }
+  function setMCats(patch: Partial<MenuTheme['categories']>) {
+    setSaved(false); setTheme(t => ({ ...t, menu: { ...t.menu, categories: { ...t.menu.categories, ...patch } } }))
+  }
+  function setMSticky(patch: Partial<MenuTheme['stickyCategories']>) {
+    setSaved(false); setTheme(t => ({ ...t, menu: { ...t.menu, stickyCategories: { ...t.menu.stickyCategories, ...patch } } }))
+  }
+  function setMNav(patch: Partial<MenuTheme['navigation']>) {
+    setSaved(false); setTheme(t => ({ ...t, menu: { ...t.menu, navigation: { ...t.menu.navigation, ...patch } } }))
+  }
+  function setMBg(patch: Partial<MenuTheme['background']>) {
+    setSaved(false); setTheme(t => ({ ...t, menu: { ...t.menu, background: { ...t.menu.background, ...patch } } }))
+  }
+
+  // ── Upload handlers ──────────────────────────────────────────────────────────
 
   async function handleBgUpload(file: File) {
     if (file.size > MAX_MEDIA_BYTES) { setError('Immagine troppo grande (max 5MB).'); return }
@@ -354,8 +416,7 @@ export default function CustomizationClient({
       .from('restaurant-assets').upload(path, file, { upsert: true })
     if (!err && data) {
       const { data: pub } = supabase.storage.from('restaurant-assets').getPublicUrl(data.path)
-      // Cache-bust so the iframe preview reloads a replaced file at the same path.
-      set('bgImage', `${pub.publicUrl}?v=${Date.now()}`)
+      setLBg({ type: 'image', value: `${pub.publicUrl}?v=${Date.now()}` })
     } else if (err) setError('Upload: ' + err.message)
     setBgUploading(false)
   }
@@ -367,7 +428,6 @@ export default function CustomizationClient({
     const ext  = file.name.split('.').pop() ?? 'mp4'
     const path = `${restaurantId}/theme-video.${ext}`
 
-    // Poster extraction runs in parallel with the video upload — no extra wait.
     const [{ data, error: err }, posterBlob] = await Promise.all([
       supabase.storage.from('restaurant-assets').upload(path, file, { upsert: true }),
       extractVideoPoster(file),
@@ -379,7 +439,6 @@ export default function CustomizationClient({
     const ts       = Date.now()
     const videoUrl = `${pub.publicUrl}?v=${ts}`
 
-    // Upload poster if extraction succeeded.
     let posterUrl: string | undefined
     if (posterBlob) {
       const posterPath = `${restaurantId}/theme-video-poster.jpg`
@@ -392,9 +451,7 @@ export default function CustomizationClient({
       }
     }
 
-    // Batch both fields into one state update.
-    setSaved(false)
-    setTheme(prev => ({ ...prev, bgVideo: videoUrl, bgVideoPoster: posterUrl ?? prev.bgVideoPoster }))
+    setLBg({ type: 'video', value: videoUrl, poster: posterUrl })
     setVidUploading(false)
   }
 
@@ -405,8 +462,12 @@ export default function CustomizationClient({
     finally { setSaving(false) }
   }
 
-  const SERIF = fontStack(theme.fontSerif, 'serif')
-  const SANS  = fontStack(theme.fontSans, 'sans')
+  // ── Derived values ───────────────────────────────────────────────────────────
+
+  const l    = theme.landing
+  const m    = theme.menu
+  const SERIF_STACK = fontStack(l.title.font,   'serif')
+  const SANS_STACK  = fontStack(l.buttons.font, 'sans')
 
   return (
     <div>
@@ -414,13 +475,18 @@ export default function CustomizationClient({
       <div className="flex items-center justify-between mb-6 pb-4 border-b border-gray-100">
         <div>
           <h2 className="text-sm font-semibold text-gray-800">Personalizzazione</h2>
-          <p className="text-xs text-gray-400 mt-0.5">Anteprima dal vivo a destra. Le modifiche si applicano al menu clienti dopo il salvataggio.</p>
+          <p className="text-xs text-gray-400 mt-0.5">
+            Anteprima dal vivo a destra. Le modifiche si applicano dopo il salvataggio.
+          </p>
         </div>
         <div className="flex items-center gap-3">
           {saved && <span className="text-xs text-green-600">Salvato.</span>}
           {error && <span className="text-xs text-red-500 max-w-[200px] truncate">{error}</span>}
-          <button type="button" onClick={() => { if (confirm('Ripristinare il tema predefinito?')) { setTheme(DEFAULT_THEME); setSaved(false) } }}
-            className="text-xs text-gray-400 hover:text-gray-600">Ripristina</button>
+          <button type="button"
+            onClick={() => { if (confirm('Ripristinare il tema predefinito?')) { setTheme(DEFAULT_THEME); setSaved(false) } }}
+            className="text-xs text-gray-400 hover:text-gray-600">
+            Ripristina
+          </button>
           <button type="button" onClick={handleSave} disabled={saving}
             className="bg-gray-900 text-white text-xs font-medium px-4 py-2 hover:bg-gray-700 disabled:opacity-50 transition-colors">
             {saving ? 'Salvataggio…' : 'Salva modifiche'}
@@ -428,7 +494,7 @@ export default function CustomizationClient({
         </div>
       </div>
 
-      {/* ── Mode toggle (above the grid, visible on all sizes) ─────────────── */}
+      {/* ── Mode toggle ────────────────────────────────────────────────────── */}
       <div className="flex gap-1 mb-6">
         {(['landing', 'menu'] as const).map(mode => (
           <button key={mode} type="button" onClick={() => setPreviewMode(mode)}
@@ -445,314 +511,413 @@ export default function CustomizationClient({
         </span>
       </div>
 
-      {/* ── 30 / 70 layout ─────────────────────────────────────────────────── */}
-      {/* items-start + naturally-tall left column → page viewport scrolls.
-          The right column is sticky so the preview stays pinned while the
-          user works through the controls. */}
+      {/* ── 30/70 grid ─────────────────────────────────────────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-[380px_1fr] gap-8 items-start">
 
-        {/* ── Controls — natural height, page scrolls ─────────────────────── */}
-        <div className="space-y-8 lg:pr-2">
+        {/* ── Controls ───────────────────────────────────────────────────── */}
+        <div className="space-y-2 lg:pr-2">
 
           {previewMode === 'landing' ? (
             <>
               {/* ── LANDING: Sfondo ── */}
-              <div>
-                <SectionLabel>Sfondo landing</SectionLabel>
-                <div className="bg-white border border-gray-100 p-4 space-y-3">
-                  <ColorRow label="Colore sfondo app" value={theme.appBg} onChange={v => set('appBg', v)} />
-                  <p className="text-[10px] text-gray-400">Visibile intorno al flipbook e nella landing.</p>
+              <Accordion title="Sfondo landing" defaultOpen>
+                <div>
+                  <p className="text-xs text-gray-600 mb-2">Tipo</p>
+                  <PillGroup options={[
+                    { label: 'Colore',    value: 'color' as const },
+                    { label: 'Immagine',  value: 'image' as const },
+                    { label: 'Video',     value: 'video' as const },
+                  ]} value={l.background.type} onChange={v => setLBg({ type: v })} />
                 </div>
-              </div>
 
-              {/* ── LANDING: Colori ── */}
-              <div>
-                <SectionLabel>Colori</SectionLabel>
-                <div className="bg-white border border-gray-100 p-4 space-y-3">
-                  <ColorRow label="Accento (bottoni, bordi, prezzi)" value={theme.accent}      onChange={v => set('accent', v)} />
-                  <ColorRow label="Testo principale"                  value={theme.textPrimary} onChange={v => set('textPrimary', v)} />
-                  <ColorRow label="Testo secondario / hint"           value={theme.textMuted}   onChange={v => set('textMuted', v)} />
-                </div>
-              </div>
+                {l.background.type === 'color' && (
+                  <ColorRow label="Colore sfondo" value={l.background.value} onChange={v => setLBg({ value: v })} />
+                )}
 
-              {/* ── LANDING: Texture sfondo ── */}
-              <div>
-                <SectionLabel>Texture sfondo (opzionale)</SectionLabel>
-                <div className="bg-white border border-gray-100 p-4 space-y-3">
-                  {theme.bgImage && (
-                    <div className="relative inline-block">
-                      <img src={theme.bgImage} alt="Sfondo" className="w-24 h-16 object-cover border border-gray-200" />
-                      <button type="button" onClick={() => set('bgImage', undefined)}
-                        className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 text-white text-xs rounded-full flex items-center justify-center">×</button>
+                {l.background.type === 'image' && (
+                  <>
+                    {l.background.value && l.background.value.startsWith('http') && (
+                      <div className="relative inline-block">
+                        <img src={l.background.value} alt="Sfondo" className="w-24 h-16 object-cover border border-gray-200" />
+                        <button type="button"
+                          onClick={() => setLBg({ type: 'color', value: '#0d0d0d' })}
+                          className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 text-white text-xs rounded-full flex items-center justify-center">×</button>
+                      </div>
+                    )}
+                    <input type="file" accept="image/*"
+                      onChange={e => e.target.files?.[0] && handleBgUpload(e.target.files[0])}
+                      className="block text-xs text-gray-500 file:mr-2 file:py-1 file:px-3 file:border file:border-gray-200 file:text-xs file:bg-white file:text-gray-600 hover:file:bg-gray-50 cursor-pointer" />
+                    {bgUploading && <p className="text-xs text-gray-400">Caricamento…</p>}
+                    <div>
+                      <label className="block text-xs text-gray-500 mb-1">
+                        Opacità overlay: <span className="font-medium text-gray-700">{l.background.opacity}%</span>
+                      </label>
+                      <input type="range" min={5} max={100} step={5} value={l.background.opacity}
+                        onChange={e => setLBg({ opacity: Number(e.target.value) })}
+                        className="w-full accent-gray-900" />
                     </div>
-                  )}
-                  <input type="file" accept="image/*"
-                    onChange={e => e.target.files?.[0] && handleBgUpload(e.target.files[0])}
-                    className="block text-xs text-gray-500 file:mr-2 file:py-1 file:px-3 file:border file:border-gray-200 file:text-xs file:bg-white file:text-gray-600 hover:file:bg-gray-50 cursor-pointer" />
-                  {bgUploading && <p className="text-xs text-gray-400">Caricamento…</p>}
-                  <div>
-                    <label className="block text-xs text-gray-500 mb-1">
-                      Opacità: <span className="font-medium text-gray-700">{theme.bgImageOpacity}%</span>
-                    </label>
-                    <input type="range" min={5} max={100} step={5} value={theme.bgImageOpacity}
-                      onChange={e => set('bgImageOpacity', Number(e.target.value))}
-                      className="w-full accent-gray-900" />
-                  </div>
-                </div>
-              </div>
+                  </>
+                )}
 
-              {/* ── LANDING: Video / immersione ── */}
-              <div>
-                <SectionLabel>Video di sfondo e immersione</SectionLabel>
-                <div className="bg-white border border-gray-100 p-4 space-y-3">
-                  {theme.bgVideo && (
-                    <div className="relative inline-block">
-                      {theme.bgVideoPoster
-                        ? <img src={theme.bgVideoPoster} alt="" className="w-32 h-20 object-cover border border-gray-200" />
-                        : <video src={theme.bgVideo} muted className="w-32 h-20 object-cover border border-gray-200 bg-black" />
-                      }
-                      <button type="button" onClick={() => {
-                        setSaved(false)
-                        setTheme(t => ({ ...t, bgVideo: undefined, bgVideoPoster: undefined }))
-                      }}
-                        className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 text-white text-xs rounded-full flex items-center justify-center">×</button>
-                    </div>
-                  )}
-                  <input type="file" accept="video/*"
-                    onChange={e => e.target.files?.[0] && handleVideoUpload(e.target.files[0])}
-                    className="block text-xs text-gray-500 file:mr-2 file:py-1 file:px-3 file:border file:border-gray-200 file:text-xs file:bg-white file:text-gray-600 hover:file:bg-gray-50 cursor-pointer" />
-                  {vidUploading && <p className="text-xs text-gray-400">Caricamento e estrazione poster…</p>}
-                  <p className="text-[10px] text-gray-400">Max 5MB. MP4/WebM consigliati. Il primo fotogramma viene estratto automaticamente come poster.</p>
-                  <label className={`flex items-start gap-2 pt-2 border-t border-gray-50 ${theme.bgVideo ? 'cursor-pointer' : 'opacity-50 cursor-not-allowed'}`}>
-                    <input type="checkbox" disabled={!theme.bgVideo}
-                      checked={theme.immersiveTransition}
-                      onChange={e => set('immersiveTransition', e.target.checked)}
-                      className="mt-0.5 accent-gray-900" />
-                    <span className="text-xs text-gray-600">
-                      Transizione immersiva
-                      <span className="block text-[10px] text-gray-400">
-                        Al tap su un menù la UI svanisce, il video parte e al termine si apre il menù. Senza spunta il video resta come sfondo in loop.
+                {l.background.type === 'video' && (
+                  <>
+                    {l.background.value && l.background.value.startsWith('http') && (
+                      <div className="relative inline-block">
+                        {l.background.poster
+                          ? <img src={l.background.poster} alt="" className="w-32 h-20 object-cover border border-gray-200" />
+                          : <video src={l.background.value} muted className="w-32 h-20 object-cover border border-gray-200 bg-black" />
+                        }
+                        <button type="button"
+                          onClick={() => setLBg({ type: 'color', value: '#0d0d0d', poster: undefined })}
+                          className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 text-white text-xs rounded-full flex items-center justify-center">×</button>
+                      </div>
+                    )}
+                    <input type="file" accept="video/*"
+                      onChange={e => e.target.files?.[0] && handleVideoUpload(e.target.files[0])}
+                      className="block text-xs text-gray-500 file:mr-2 file:py-1 file:px-3 file:border file:border-gray-200 file:text-xs file:bg-white file:text-gray-600 hover:file:bg-gray-50 cursor-pointer" />
+                    {vidUploading && <p className="text-xs text-gray-400">Caricamento e estrazione poster…</p>}
+                    <p className="text-[10px] text-gray-400">Max 5MB. MP4/WebM consigliati.</p>
+                    <label className={`flex items-start gap-2 pt-2 border-t border-gray-50 ${l.background.value ? 'cursor-pointer' : 'opacity-50 cursor-not-allowed'}`}>
+                      <input type="checkbox" disabled={!l.background.value}
+                        checked={l.background.immersiveTransition}
+                        onChange={e => setLBg({ immersiveTransition: e.target.checked })}
+                        className="mt-0.5 accent-gray-900" />
+                      <span className="text-xs text-gray-600">
+                        Transizione immersiva
+                        <span className="block text-[10px] text-gray-400">
+                          Al tap su un menù la UI svanisce, il video parte e al termine si apre il menù.
+                        </span>
                       </span>
-                    </span>
-                  </label>
-                </div>
-              </div>
+                    </label>
+                  </>
+                )}
 
-              {/* ── LANDING: Font titoli ── */}
-              <div>
-                <SectionLabel>Font titoli</SectionLabel>
-                <div className="bg-white border border-gray-100 p-4 space-y-4">
-                  <FontSelector label="Font titoli (nome ristorante)" value={theme.fontSerif} curated={SERIF_FONTS} category="serif" onChange={v => set('fontSerif', v)} />
+                <div>
+                  <p className="text-xs text-gray-600 mb-2">Texture overlay</p>
+                  <PillGroup options={[
+                    { label: 'Nessuna', value: 'none'  as const },
+                    { label: 'Rumore', value: 'noise' as const },
+                    { label: 'Grana',  value: 'grain' as const },
+                    { label: 'Marmo',  value: 'marble' as const },
+                  ]} value={l.background.texture} onChange={v => setLBg({ texture: v })} />
                 </div>
-              </div>
+              </Accordion>
 
-              {/* ── LANDING: Stile bottoni ── */}
-              <div>
-                <SectionLabel>Stile bottoni e card</SectionLabel>
-                <div className="bg-white border border-gray-100 p-4 space-y-4">
-                  <div>
-                    <p className="text-xs text-gray-600 mb-2">Arrotondamento bordi</p>
-                    <PillGroup options={[
-                      { label: 'Netto',       value: 'none' as const },
-                      { label: 'Soft',        value: 'sm'   as const },
-                      { label: 'Arrotondato', value: 'md'   as const },
-                    ]} value={theme.borderRadius} onChange={v => set('borderRadius', v)} />
+              {/* ── LANDING: Accento ── */}
+              <Accordion title="Accento & Social" defaultOpen>
+                <ColorRow label="Colore accento (bottoni, bordi)" value={l.accent}        onChange={v => setL({ accent: v })} />
+                <ColorRow label="Icone social"                     value={l.socials.color} onChange={v => setL({ socials: { color: v } })} />
+              </Accordion>
+
+              {/* ── LANDING: Logo ── */}
+              <Accordion title="Logo">
+                <div>
+                  <div className="flex justify-between items-center mb-1">
+                    <label className="text-xs text-gray-600">Dimensione logo</label>
+                    <span className="text-[10px] font-mono text-gray-400">{l.logo.size.toFixed(1)}rem</span>
                   </div>
-                  <FontSelector label="Font bottoni / label" value={theme.fontSans} curated={SANS_FONTS} category="sans" onChange={v => set('fontSans', v)} />
+                  <input type="range" min={1.5} max={8} step={0.5} value={l.logo.size}
+                    onChange={e => setLLogo({ size: Number(e.target.value) })}
+                    className="w-full accent-gray-900" />
                 </div>
-              </div>
+                <div>
+                  <p className="text-xs text-gray-600 mb-2">Blend mode logo</p>
+                  <PillGroup options={[
+                    { label: 'Normale',   value: 'normal'   as const },
+                    { label: 'Moltiplica', value: 'multiply' as const },
+                    { label: 'Screen',    value: 'screen'   as const },
+                  ]} value={l.logo.mixBlend} onChange={v => setLLogo({ mixBlend: v })} />
+                  <p className="text-[10px] text-gray-400 mt-1">
+                    {l.logo.mixBlend === 'multiply' ? 'Rimuove lo sfondo bianco del logo.' :
+                     l.logo.mixBlend === 'screen'   ? 'Rimuove lo sfondo scuro del logo.' :
+                                                      'Logo con sfondo opaco.'}
+                  </p>
+                </div>
+              </Accordion>
+
+              {/* ── LANDING: Titolo ── */}
+              <Accordion title="Titolo ristorante">
+                <FontSelector label="Font" value={l.title.font} curated={SERIF_FONTS} category="serif"
+                  onChange={v => setLTitle({ font: v })} />
+                <FontSizeSlider label="Dimensione" value={l.title.size} min={1.0} max={4.0} step={0.1}
+                  previewFont={SERIF_STACK} onChange={v => setLTitle({ size: v })} />
+                <ColorRow label="Colore" value={l.title.color} onChange={v => setLTitle({ color: v })} />
+                <div>
+                  <p className="text-xs text-gray-600 mb-2">Peso</p>
+                  <PillGroup options={[
+                    { label: 'Light',    value: 'light'  as const },
+                    { label: 'Normale',  value: 'normal' as const },
+                    { label: 'Grassetto', value: 'bold'  as const },
+                  ]} value={l.title.weight} onChange={v => setLTitle({ weight: v })} />
+                </div>
+              </Accordion>
+
+              {/* ── LANDING: Descrizione ── */}
+              <Accordion title="Descrizione / Slogan">
+                <FontSelector label="Font" value={l.description.font} curated={SANS_FONTS} category="sans"
+                  onChange={v => setLDesc({ font: v })} />
+                <FontSizeSlider label="Dimensione" value={l.description.size} min={0.4} max={1.2} step={0.05}
+                  previewFont={SANS_STACK} onChange={v => setLDesc({ size: v })} />
+                <ColorRow label="Colore" value={l.description.color.slice(0, 7)} onChange={v => setLDesc({ color: v })} />
+              </Accordion>
+
+              {/* ── LANDING: Bottoni ── */}
+              <Accordion title="Bottoni menu">
+                <div>
+                  <p className="text-xs text-gray-600 mb-2">Forma</p>
+                  <PillGroup options={[
+                    { label: 'Netto',       value: 'flat'    as const },
+                    { label: 'Arrotondato', value: 'rounded' as const },
+                    { label: 'Pill',        value: 'pill'    as const },
+                  ]} value={l.buttons.shape} onChange={v => setLBu({ shape: v })} />
+                </div>
+                <ColorRow label="Colore testo"  value={l.buttons.textColor}   onChange={v => setLBu({ textColor: v })} />
+                <ColorRow label="Colore sfondo" value={l.buttons.bgColor.startsWith('#') ? l.buttons.bgColor : '#000000'} onChange={v => setLBu({ bgColor: v })} />
+                <ColorRow label="Colore bordo"  value={l.buttons.borderColor} onChange={v => setLBu({ borderColor: v })} />
+                <div>
+                  <p className="text-xs text-gray-600 mb-2">Stile bordo</p>
+                  <PillGroup options={[
+                    { label: 'Nessuno',   value: 'none'   as const },
+                    { label: 'Continuo',  value: 'solid'  as const },
+                    { label: 'Tratteg.', value: 'dashed' as const },
+                  ]} value={l.buttons.borderStyle} onChange={v => setLBu({ borderStyle: v })} />
+                </div>
+                <FontSelector label="Font" value={l.buttons.font} curated={SANS_FONTS} category="sans"
+                  onChange={v => setLBu({ font: v })} />
+                <FontSizeSlider label="Dimensione font" value={l.buttons.fontSize} min={0.4} max={1.0} step={0.025}
+                  previewFont={SANS_STACK} onChange={v => setLBu({ fontSize: v })} />
+              </Accordion>
 
               {/* ── LANDING: Banner ── */}
-              <div>
-                <SectionLabel>Banner promozionali</SectionLabel>
-                <div className="bg-white border border-gray-100 p-4">
-                  <p className="text-xs text-gray-400 mb-4">Appaiono nella landing sopra i bottoni menu.</p>
-                  <BannerManager restaurantId={restaurantId} initialBanners={initialBanners} />
-                </div>
-              </div>
+              <Accordion title="Banner promozionali">
+                <p className="text-xs text-gray-400">Appaiono nella landing sopra i bottoni menu.</p>
+                <BannerManager restaurantId={restaurantId} initialBanners={initialBanners} />
+              </Accordion>
             </>
           ) : (
             <>
-              {/* ── MENU: Sfondo menù ── */}
-              <div>
-                <SectionLabel>Sfondo menù</SectionLabel>
-                <div className="bg-white border border-gray-100 p-4 space-y-3">
-                  <ColorRow label="Barra navigazione categorie" value={theme.navBg}         onChange={v => set('navBg', v)} />
-                  <div className="border-t border-gray-50 pt-3">
-                    <ColorRow label="Colore pagine PDF"         value={theme.pageBackground} onChange={v => set('pageBackground', v)} />
-                    <p className="text-[10px] text-gray-400 mt-1">
-                      Su carta stampata si usa bianco o avorio (es. <span className="font-mono">#fffff5</span>).
-                    </p>
-                  </div>
-                  <div className="border-t border-gray-50 pt-3">
-                    <ColorRow label="Accento (prezzi, bordi, icone)" value={theme.accent} onChange={v => set('accent', v)} />
-                  </div>
+              {/* ── MENU: Sfondo ── */}
+              <Accordion title="Sfondo menù" defaultOpen>
+                <ColorRow label="Colore base" value={m.background.color} onChange={v => setMBg({ color: v })} />
+                <div>
+                  <label className="block text-xs text-gray-600 mb-1">Effetto sfondo</label>
+                  <select value={m.background.effect}
+                    onChange={e => setMBg({ effect: e.target.value as MenuBgEffect })}
+                    className="w-full px-2 py-1.5 border border-gray-200 text-xs bg-white focus:outline-none focus:border-gray-400">
+                    {MENU_BG_EFFECTS.map(e => (
+                      <option key={e} value={e}>{MENU_BG_EFFECT_LABELS[e]}</option>
+                    ))}
+                  </select>
                 </div>
-              </div>
+              </Accordion>
 
-              {/* ── MENU: Tipografia ── */}
-              <div>
-                <SectionLabel>Tipografia</SectionLabel>
-                <div className="bg-white border border-gray-100 p-4 space-y-4">
-                  <FontSelector label="Font titoli (nomi piatti)"  value={theme.fontSerif} curated={SERIF_FONTS} category="serif" onChange={v => set('fontSerif', v)} />
-                  <FontSelector label="Font testi (label, bottoni)" value={theme.fontSans}  curated={SANS_FONTS}  category="sans"  onChange={v => set('fontSans', v)} />
+              {/* ── MENU: Accento ── */}
+              <Accordion title="Accento menù" defaultOpen>
+                <ColorRow label="Colore accento (prezzi, icone)" value={m.accent} onChange={v => setM({ accent: v })} />
+              </Accordion>
+
+              {/* ── MENU: Layout piatti ── */}
+              <Accordion title="Layout piatti" defaultOpen>
+                <div>
+                  <p className="text-xs text-gray-600 mb-2">Disposizione</p>
+                  <PillGroup options={[
+                    { label: 'Lista',     value: 'list'        as const },
+                    { label: 'Griglia',   value: 'grid-2'      as const },
+                    { label: 'Boxed',     value: 'boxed-card'  as const },
+                    { label: 'Minimale',  value: 'minimal-row' as const },
+                  ]} value={m.layout.dishLayout} onChange={v => setMLayout({ dishLayout: v })} />
+                  <p className="text-[10px] text-gray-400 mt-1">
+                    {m.layout.dishLayout === 'grid-2'      ? '2 colonne — compatto, menù lunghi.' :
+                     m.layout.dishLayout === 'boxed-card'  ? 'Riquadro per piatto.' :
+                     m.layout.dishLayout === 'minimal-row' ? 'Solo nome e prezzo, nessuna descrizione.' :
+                                                              'Lista verticale classica.'}
+                  </p>
                 </div>
-              </div>
-
-              {/* ── MENU: Dimensioni testo ── */}
-              <div>
-                <SectionLabel>Dimensioni testo</SectionLabel>
-                <div className="bg-white border border-gray-100 p-4 space-y-5">
-                  <FontSizeSlider label="Titoli (nomi piatti)" value={theme.fontSizes.title} min={1.0} max={2.5} step={0.05} previewFont={SERIF} onChange={v => setFs('title', v)} />
-                  <FontSizeSlider label="Descrizioni"          value={theme.fontSizes.base}  min={0.6} max={1.3} step={0.05} previewFont={SANS}  onChange={v => setFs('base', v)} />
-                  <FontSizeSlider label="Prezzi"               value={theme.fontSizes.price} min={0.7} max={1.8} step={0.05} previewFont={SANS}  onChange={v => setFs('price', v)} />
-                </div>
-              </div>
-
-              {/* ── MENU: Allineamento piatti ── */}
-              <div>
-                <SectionLabel>Allineamento piatti</SectionLabel>
-                <div className="bg-white border border-gray-100 p-4 space-y-3">
+                <div>
+                  <p className="text-xs text-gray-600 mb-2">Allineamento</p>
                   <PillGroup options={[
                     { label: 'Sinistra', value: 'left'   as const },
                     { label: 'Centro',   value: 'center' as const },
-                  ]} value={theme.dishAlignment} onChange={v => set('dishAlignment', v)} />
-                  <p className="text-[11px] text-gray-400">
-                    {theme.dishAlignment === 'center' ? 'Nome e descrizione piatto centrati.' : 'Allineamento classico a sinistra.'}
-                  </p>
+                    { label: 'Destra',   value: 'right'  as const },
+                  ]} value={m.layout.dishAlignment} onChange={v => setMLayout({ dishAlignment: v })} />
                 </div>
-              </div>
+                <div>
+                  <div className="flex justify-between items-center mb-1">
+                    <label className="text-xs text-gray-600">Spaziatura tra piatti</label>
+                    <span className="text-[10px] font-mono text-gray-400">{m.layout.dishSpacing}px</span>
+                  </div>
+                  <input type="range" min={0} max={24} step={2} value={m.layout.dishSpacing}
+                    onChange={e => setMLayout({ dishSpacing: Number(e.target.value) })}
+                    className="w-full accent-gray-900" />
+                </div>
+              </Accordion>
 
-              {/* ── MENU: Stile barra categorie ── */}
-              <div>
-                <SectionLabel>Barra categorie</SectionLabel>
-                <div className="bg-white border border-gray-100 p-4 space-y-3">
+              {/* ── MENU: Divisori ── */}
+              <Accordion title="Divisori tra piatti">
+                <div>
+                  <p className="text-xs text-gray-600 mb-2">Tipo</p>
                   <PillGroup options={[
-                    { label: 'Solida',           value: 'solid'           as const },
-                    { label: 'Vetro (blur)',      value: 'transparent-blur' as const },
-                    { label: 'Nascosta',         value: 'none'            as const },
-                  ]} value={theme.stickyCategoryStyle} onChange={v => set('stickyCategoryStyle', v)} />
-                  <p className="text-[11px] text-gray-400">
-                    {theme.stickyCategoryStyle === 'solid'            ? 'Barra opaca con colore navigazione.' :
-                     theme.stickyCategoryStyle === 'transparent-blur' ? 'Effetto vetro smerigliato (backdrop-blur).' :
-                                                                        'Barra nascosta — solo sfoglio manuale.'}
+                    { label: 'Nessuno',  value: 'none'   as const },
+                    { label: 'Linea',    value: 'solid'  as const },
+                    { label: 'Tratteg.', value: 'dashed' as const },
+                    { label: 'Puntini',  value: 'dotted' as const },
+                  ]} value={m.layout.divider.type} onChange={v => setMDivider({ type: v })} />
+                </div>
+                {m.layout.divider.type !== 'none' && (
+                  <ColorRow label="Colore divisore" value={m.layout.divider.color} onChange={v => setMDivider({ color: v })} />
+                )}
+              </Accordion>
+
+              {/* ── MENU: Nomi piatti ── */}
+              <Accordion title="Nomi piatti">
+                <FontSelector label="Font nomi" value={m.dishes.titleFont} curated={SERIF_FONTS} category="serif"
+                  onChange={v => setMDishes({ titleFont: v })} />
+                <FontSizeSlider label="Dimensione" value={m.dishes.titleSize} min={1.0} max={2.5} step={0.05}
+                  previewFont={fontStack(m.dishes.titleFont, 'serif')}
+                  onChange={v => setMDishes({ titleSize: v })} />
+                <ColorRow label="Colore" value={m.dishes.titleColor} onChange={v => setMDishes({ titleColor: v })} />
+              </Accordion>
+
+              {/* ── MENU: Descrizioni ── */}
+              <Accordion title="Descrizioni">
+                <FontSelector label="Font" value={m.descriptions.font} curated={SANS_FONTS} category="sans"
+                  onChange={v => setMDescs({ font: v })} />
+                <FontSizeSlider label="Dimensione" value={m.descriptions.size} min={0.6} max={1.3} step={0.05}
+                  previewFont={fontStack(m.descriptions.font, 'sans')}
+                  onChange={v => setMDescs({ size: v })} />
+                <ColorRow label="Colore" value={m.descriptions.color} onChange={v => setMDescs({ color: v })} />
+              </Accordion>
+
+              {/* ── MENU: Allergeni ── */}
+              <Accordion title="Allergeni">
+                <div>
+                  <p className="text-xs text-gray-600 mb-2">Stile visualizzazione</p>
+                  <PillGroup options={[
+                    { label: 'Testo',  value: 'text'  as const },
+                    { label: 'Badge',  value: 'badge' as const },
+                  ]} value={m.allergens.style} onChange={v => setMAllergens({ style: v })} />
+                  <p className="text-[10px] text-gray-400 mt-1">
+                    {m.allergens.style === 'badge' ? 'Pill compatto con ⚠.' : 'Riquadro con intestazione "Allergeni".'}
                   </p>
                 </div>
-              </div>
+                <ColorRow label="Colore testo" value={m.allergens.color}   onChange={v => setMAllergens({ color: v })} />
+                <ColorRow label="Sfondo"       value={m.allergens.bgColor} onChange={v => setMAllergens({ bgColor: v })} />
+              </Accordion>
+
+              {/* ── MENU: Prezzi ── */}
+              <Accordion title="Prezzi">
+                <div>
+                  <p className="text-xs text-gray-600 mb-2">Formato</p>
+                  <PillGroup options={[
+                    { label: '€ 12,50', value: 'symbol-left'  as const },
+                    { label: '12,50 €', value: 'symbol-right' as const },
+                    { label: '12.50',   value: 'no-symbol'    as const },
+                  ]} value={m.prices.format} onChange={v => setMPrices({ format: v })} />
+                  <p className="text-[10px] font-mono text-gray-400 mt-1">{formatPrice(12.50, m.prices.format)}</p>
+                </div>
+                <FontSelector label="Font prezzi" value={m.prices.font} curated={SANS_FONTS} category="sans"
+                  onChange={v => setMPrices({ font: v })} />
+                <FontSizeSlider label="Dimensione" value={m.prices.size} min={0.7} max={1.8} step={0.05}
+                  previewFont={fontStack(m.prices.font, 'sans')}
+                  onChange={v => setMPrices({ size: v })} />
+                <ColorRow label="Colore" value={m.prices.color} onChange={v => setMPrices({ color: v })} />
+              </Accordion>
+
+              {/* ── MENU: Categorie ── */}
+              <Accordion title="Titoli categorie">
+                <FontSelector label="Font" value={m.categories.font} curated={SERIF_FONTS} category="serif"
+                  onChange={v => setMCats({ font: v })} />
+                <ColorRow label="Colore" value={m.categories.color} onChange={v => setMCats({ color: v })} />
+              </Accordion>
+
+              {/* ── MENU: Barra sticky ── */}
+              <Accordion title="Barra categorie sticky">
+                <div>
+                  <p className="text-xs text-gray-600 mb-2">Stile</p>
+                  <PillGroup options={[
+                    { label: 'Solida',      value: 'solid'            as const },
+                    { label: 'Vetro blur',  value: 'transparent-blur' as const },
+                    { label: 'Nascosta',    value: 'none'             as const },
+                  ]} value={m.stickyCategories.style} onChange={v => setMSticky({ style: v })} />
+                  <p className="text-[10px] text-gray-400 mt-1">
+                    {m.stickyCategories.style === 'transparent-blur' ? 'Effetto vetro smerigliato (backdrop-blur).' :
+                     m.stickyCategories.style === 'none'             ? 'Barra nascosta — solo sfoglio manuale.' :
+                                                                       'Barra opaca con colore navigazione.'}
+                  </p>
+                </div>
+                {m.stickyCategories.style !== 'none' && (
+                  <>
+                    <ColorRow label="Sfondo barra"  value={m.stickyCategories.bgColor}   onChange={v => setMSticky({ bgColor: v })} />
+                    <ColorRow label="Colore testo"  value={m.stickyCategories.textColor} onChange={v => setMSticky({ textColor: v })} />
+                    <FontSelector label="Font" value={m.stickyCategories.font} curated={SANS_FONTS} category="sans"
+                      onChange={v => setMSticky({ font: v })} />
+                  </>
+                )}
+              </Accordion>
 
               {/* ── MENU: Navigazione flipbook ── */}
-              <div>
-                <SectionLabel>Navigazione flipbook</SectionLabel>
-                <div className="bg-white border border-gray-100 p-4 space-y-2">
-                  <label className="block text-xs text-gray-600 mb-1">Stile indicatori di pagina</label>
-                  <select
-                    value={theme.paginationStyle}
-                    onChange={e => set('paginationStyle', e.target.value as PaginationStyle)}
-                    className="w-full px-2 py-1.5 border border-gray-200 text-xs bg-white focus:outline-none focus:border-gray-400"
-                  >
+              <Accordion title="Navigazione flipbook">
+                <div>
+                  <label className="block text-xs text-gray-600 mb-1">Stile indicatori pagina</label>
+                  <select value={m.navigation.style}
+                    onChange={e => setMNav({ style: e.target.value as PaginationStyle })}
+                    className="w-full px-2 py-1.5 border border-gray-200 text-xs bg-white focus:outline-none focus:border-gray-400">
                     {(Object.entries(PAGINATION_OPTIONS) as [PaginationStyle, { label: string; prev: string; next: string }][]).map(
-                      ([key, opt]) => (
-                        <option key={key} value={key}>{opt.label}</option>
-                      )
+                      ([key, opt]) => <option key={key} value={key}>{opt.label}</option>
                     )}
                   </select>
-                  {theme.paginationStyle !== 'hidden' && (
-                    <p className="text-[10px] font-mono text-gray-400 pt-0.5">
-                      {PAGINATION_OPTIONS[theme.paginationStyle].prev}
-                      {'  ···  '}
-                      {PAGINATION_OPTIONS[theme.paginationStyle].next}
+                  {m.navigation.style !== 'hidden' && (
+                    <p className="text-[10px] font-mono text-gray-400 mt-1">
+                      {PAGINATION_OPTIONS[m.navigation.style].prev}{'  ···  '}{PAGINATION_OPTIONS[m.navigation.style].next}
                     </p>
                   )}
                 </div>
-              </div>
-
-              {/* ── MENU: Layout piatti PDF ── */}
-              <div>
-                <SectionLabel>Layout piatti (PDF)</SectionLabel>
-                <div className="bg-white border border-gray-100 p-4 space-y-3">
-                  <PillGroup options={[
-                    { label: 'Lista',   value: 'list'  as const },
-                    { label: 'Griglia', value: 'grid'  as const },
-                    { label: 'Boxed',   value: 'boxed' as const },
-                  ]} value={theme.dishLayout} onChange={v => set('dishLayout', v)} />
-                  <p className="text-[11px] text-gray-400">
-                    {theme.dishLayout === 'list'  ? 'Verticale classico.' :
-                     theme.dishLayout === 'grid'  ? '2 colonne — compatto, menù lunghi.' :
-                                                    'Riquadro per piatto — modulare.'}
-                  </p>
-                </div>
-              </div>
-
-              {/* ── MENU: Prezzo e divisori ── */}
-              <div>
-                <SectionLabel>Prezzo e divisori</SectionLabel>
-                <div className="bg-white border border-gray-100 p-4 space-y-4">
-                  <div>
-                    <p className="text-xs text-gray-600 mb-2">Formato prezzo</p>
-                    <PillGroup options={[
-                      { label: '€ 12,50', value: 'before'  as const },
-                      { label: '12,50 €', value: 'after'   as const },
-                      { label: '12.50',   value: 'minimal' as const },
-                    ]} value={theme.priceFormat} onChange={v => set('priceFormat', v)} />
-                    <p className="text-[10px] font-mono text-gray-400 mt-1">{formatPrice(12.50, theme.priceFormat)}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-gray-600 mb-2">Divisori tra piatti</p>
-                    <PillGroup options={[
-                      { label: 'Nessuno',  value: 'none'   as const },
-                      { label: 'Linea',    value: 'thin'   as const },
-                      { label: 'Tratteg.', value: 'dashed' as const },
-                    ]} value={theme.dividerStyle} onChange={v => set('dividerStyle', v)} />
-                  </div>
-                </div>
-              </div>
+                <ColorRow label="Colore navigazione" value={m.navigation.color} onChange={v => setMNav({ color: v })} />
+              </Accordion>
 
               {/* ── MENU: Impaginazione PDF ── */}
-              <div>
-                <SectionLabel>Impaginazione PDF</SectionLabel>
-                <div className="bg-white border border-gray-100 p-4 space-y-3">
+              <Accordion title="Impaginazione PDF">
+                <div>
+                  <p className="text-xs text-gray-600 mb-2">Layout pagine</p>
                   <PillGroup options={[
                     { label: 'Classic', value: 'classic' as const },
                     { label: 'Compact', value: 'compact' as const },
-                  ]} value={theme.pdfLayout} onChange={v => set('pdfLayout', v)} />
-                  <p className="text-[11px] text-gray-400">
-                    {theme.pdfLayout === 'classic' ? '1 categoria/pagina. Margini ampi.' : 'Flow continuo. Più dense.'}
+                  ]} value={m.pdfLayout} onChange={v => setM({ pdfLayout: v })} />
+                  <p className="text-[11px] text-gray-400 mt-1">
+                    {m.pdfLayout === 'classic' ? '1 categoria/pagina. Margini ampi.' : 'Flow continuo. Più dense.'}
                   </p>
                 </div>
-              </div>
+                <ColorRow label="Colore pagine (stampa)" value={m.pageBackground} onChange={v => setM({ pageBackground: v })} />
+                <p className="text-[10px] text-gray-400">
+                  Su carta stampata si usa bianco o avorio (es. <span className="font-mono">#fffff5</span>).
+                </p>
+              </Accordion>
             </>
           )}
-
         </div>
 
-        {/* ── Live preview — sticky to viewport, full height (desktop only) ─── */}
+        {/* ── Live preview — sticky (desktop) ────────────────────────────── */}
         <div className="hidden lg:flex lg:sticky lg:top-4 flex-col" style={{ height: 'calc(100vh - 2rem)' }}>
-          {/* Preview area — real /m/[token] page inside an iframe */}
           <div className="flex-1 min-h-0 flex items-center justify-center bg-gradient-to-br from-gray-100 to-gray-200 border border-gray-200 rounded-lg overflow-hidden p-6">
             <LivePreview qrToken={qrToken} theme={theme} previewMode={previewMode} />
           </div>
-
           <p className="text-[10px] text-center text-gray-400 mt-2 shrink-0">
-            Anteprima dal vivo della pagina reale · le modifiche non salvate sono visibili solo qui
+            Anteprima dal vivo · modifiche non salvate visibili solo qui
           </p>
         </div>
 
       </div>
 
-      {/* ── Mobile FAB — opens full-screen preview modal ─────────────────────── */}
-      <button
-        type="button"
-        onClick={() => setPreviewOpen(true)}
-        className="lg:hidden fixed bottom-6 right-6 z-50 bg-gray-900 text-white text-xs font-semibold px-5 py-3.5 rounded-full shadow-2xl hover:bg-gray-700 active:scale-95 transition-all flex items-center gap-2"
-      >
+      {/* ── Mobile FAB ─────────────────────────────────────────────────────────── */}
+      <button type="button" onClick={() => setPreviewOpen(true)}
+        className="lg:hidden fixed bottom-6 right-6 z-50 bg-gray-900 text-white text-xs font-semibold px-5 py-3.5 rounded-full shadow-2xl hover:bg-gray-700 active:scale-95 transition-all flex items-center gap-2">
         <span>Vedi Anteprima</span>
         <span className="text-base leading-none">↗</span>
       </button>
 
-      {/* ── Mobile full-screen preview modal ─────────────────────────────────── */}
+      {/* ── Mobile full-screen preview ─────────────────────────────────────────── */}
       {previewOpen && (
         <div className="lg:hidden fixed inset-0 z-[9999] bg-gray-950 flex flex-col">
-          {/* Modal header */}
           <div className="flex items-center justify-between px-4 py-3 border-b border-gray-800 shrink-0">
             <div className="flex gap-1">
               {(['landing', 'menu'] as const).map(mode => (
@@ -766,16 +931,12 @@ export default function CustomizationClient({
                 </button>
               ))}
             </div>
-            <button
-              type="button"
-              onClick={() => setPreviewOpen(false)}
+            <button type="button" onClick={() => setPreviewOpen(false)}
               className="text-gray-400 hover:text-white text-2xl leading-none transition-colors w-10 h-10 flex items-center justify-center"
-              aria-label="Chiudi anteprima"
-            >
+              aria-label="Chiudi anteprima">
               ×
             </button>
           </div>
-          {/* Preview content */}
           <div className="flex-1 min-h-0 flex items-center justify-center p-4">
             <LivePreview qrToken={qrToken} theme={theme} previewMode={previewMode} />
           </div>
