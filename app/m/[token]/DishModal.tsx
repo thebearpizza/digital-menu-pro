@@ -327,7 +327,7 @@ export default function DishModal({ activeDish, allDishes, isNested, onClose, on
               }}
             >
               {!ALRG_BADGE && <p style={{ color: ALRG_COLOR, fontSize: 8, letterSpacing: '0.26em', textTransform: 'uppercase', marginBottom: 6 }}>Allergeni</p>}
-              <p style={{ color: ALRG_BADGE ? ALRG_COLOR : '#7a6a4a', fontSize: '0.75rem', lineHeight: 1.6 }}>
+              <p style={{ color: ALRG_COLOR, fontSize: '0.75rem', lineHeight: 1.6 }}>
                 {ALRG_BADGE ? '⚠ ' : ''}{formatAllergensFull(dish.allergens)}
               </p>
             </div>

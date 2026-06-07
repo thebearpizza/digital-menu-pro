@@ -123,11 +123,11 @@ function makeStyles(theme: RestaurantTheme) {
       color:         '#9a9a9a',
       letterSpacing: 0.2,
     },
-    dishDivider: noDivider ? { height: compact ? 8 : 12 } : {
+    dishDivider: noDivider ? { height: compact ? 8 + m.layout.dishSpacing : 12 + m.layout.dishSpacing } : {
       height:          0.3,
       backgroundColor: divColor,
       borderStyle:     isDashed ? 'dashed' : 'solid',
-      marginVertical:  compact ? 8 : 12,
+      marginVertical:  compact ? 8 + m.layout.dishSpacing / 2 : 12 + m.layout.dishSpacing / 2,
     },
     // ── Grid layout (2-column) ───────────────────────────────────────────────
     gridRow: {

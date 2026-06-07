@@ -744,7 +744,26 @@ export default function CustomizationClient({
                   ]} value={l.buttons.shape} onChange={v => setLBu({ shape: v })} />
                 </div>
                 <ColorRow label="Colore testo"  value={l.buttons.textColor}   onChange={v => setLBu({ textColor: v })} />
-                <ColorRow label="Colore sfondo" value={l.buttons.bgColor.startsWith('#') ? l.buttons.bgColor : '#000000'} onChange={v => setLBu({ bgColor: v })} />
+                <div className="flex items-center justify-between gap-3">
+                  <label className="text-xs text-gray-600 flex-1">Colore sfondo</label>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button type="button"
+                      onClick={() => setLBu({ bgColor: l.buttons.bgColor === 'transparent' ? '#000000' : 'transparent' })}
+                      className={`text-[10px] px-2 py-0.5 border transition-colors ${l.buttons.bgColor === 'transparent' ? 'bg-gray-900 text-white border-gray-900' : 'bg-white text-gray-400 border-gray-200 hover:border-gray-400'}`}>
+                      Trasparente
+                    </button>
+                    {l.buttons.bgColor !== 'transparent' && (
+                      <>
+                        <span className="text-[10px] text-gray-400 font-mono w-16 text-right">{l.buttons.bgColor.slice(0, 7)}</span>
+                        <div className="relative w-8 h-8 border border-gray-200 overflow-hidden rounded-sm">
+                          <input type="color" value={l.buttons.bgColor.startsWith('#') && l.buttons.bgColor.length >= 7 ? l.buttons.bgColor.slice(0,7) : '#000000'}
+                            onChange={e => setLBu({ bgColor: e.target.value })}
+                            className="absolute inset-0 w-[150%] h-[150%] -top-1 -left-1 cursor-pointer border-0 p-0 bg-transparent" />
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </div>
                 <ColorRow label="Colore bordo"  value={l.buttons.borderColor} onChange={v => setLBu({ borderColor: v })} />
                 <div>
                   <p className="text-xs text-gray-600 mb-2">Stile bordo</p>
@@ -870,6 +889,9 @@ export default function CustomizationClient({
 
               {/* ── MENU: Nomi piatti ── */}
               <Accordion title="Nomi piatti">
+                <p className="text-[10px] text-amber-600 bg-amber-50 border border-amber-100 px-2 py-1.5 leading-snug">
+                  Il font non si applica al PDF (usa Helvetica incorporato). La dimensione e il colore sì.
+                </p>
                 <FontSelector label="Font nomi" value={m.dishes.titleFont} curated={[...SERIF_FONTS, ...DISPLAY_FONTS]} category="serif"
                   onChange={v => setMDishes({ titleFont: v })} />
                 <FontSizeSlider label="Dimensione" value={m.dishes.titleSize} min={1.0} max={2.5} step={0.05}
@@ -880,6 +902,9 @@ export default function CustomizationClient({
 
               {/* ── MENU: Descrizioni ── */}
               <Accordion title="Descrizioni">
+                <p className="text-[10px] text-amber-600 bg-amber-50 border border-amber-100 px-2 py-1.5 leading-snug">
+                  Font e colore non si applicano al PDF. Usali per il colore nella card espansa.
+                </p>
                 <FontSelector label="Font" value={m.descriptions.font} curated={SANS_FONTS} category="sans"
                   onChange={v => setMDescs({ font: v })} />
                 <FontSizeSlider label="Dimensione" value={m.descriptions.size} min={0.6} max={1.3} step={0.05}
@@ -906,6 +931,9 @@ export default function CustomizationClient({
 
               {/* ── MENU: Prezzi ── */}
               <Accordion title="Prezzi">
+                <p className="text-[10px] text-amber-600 bg-amber-50 border border-amber-100 px-2 py-1.5 leading-snug">
+                  Font e colore si applicano alla card espansa, non al PDF (sempre nero in stampa).
+                </p>
                 <div>
                   <p className="text-xs text-gray-600 mb-2">Formato</p>
                   <PillGroup options={[
