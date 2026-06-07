@@ -55,6 +55,11 @@ function ThemeInjector({ theme }: { theme: RestaurantTheme }) {
     root.style.setProperty('--font-size-title',  `${m.dishes.titleSize}rem`)
     root.style.setProperty('--font-size-base',   `${m.descriptions.size}rem`)
     root.style.setProperty('--font-size-price',  `${m.prices.size}rem`)
+    // card vars
+    const c = theme.card
+    root.style.setProperty('--card-bg',          c.bgColor)
+    root.style.setProperty('--card-title-color', c.title.color)
+    root.style.setProperty('--card-price-color', c.price.color)
   }, [theme])
   return null
 }
@@ -77,11 +82,11 @@ function ThemeFontLoader({ theme }: { theme: RestaurantTheme }) {
 
 // ── Social icons ──────────────────────────────────────────────────────────────
 
-function InstagramIcon() { return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5"><rect x="2" y="2" width="20" height="20" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="1" fill="currentColor" stroke="none"/></svg> }
-function FacebookIcon()  { return <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5"><path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/></svg> }
-function GlobeIcon()     { return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg> }
-function MapPinIcon()    { return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg> }
-function CompassIcon()   { return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5"><circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/></svg> }
+function InstagramIcon() { return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" style={{ width: '1em', height: '1em' }}><rect x="2" y="2" width="20" height="20" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="1" fill="currentColor" stroke="none"/></svg> }
+function FacebookIcon()  { return <svg viewBox="0 0 24 24" fill="currentColor" style={{ width: '1em', height: '1em' }}><path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/></svg> }
+function GlobeIcon()     { return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" style={{ width: '1em', height: '1em' }}><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg> }
+function MapPinIcon()    { return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" style={{ width: '1em', height: '1em' }}><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg> }
+function CompassIcon()   { return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" style={{ width: '1em', height: '1em' }}><circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/></svg> }
 
 // ── Banner carousel ───────────────────────────────────────────────────────────
 
@@ -204,6 +209,20 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
     return () => { v.removeEventListener('ended', finish); clearTimeout(fallback) }
   }, [transitioning, pendingMenuId])
 
+  // Pingpong loop: on end, reverse playback rate
+  useEffect(() => {
+    const v = videoRef.current
+    if (!v || l.background.loopMode !== 'pingpong' || l.background.immersiveTransition) return
+    function handleEnded() {
+      if (!v) return
+      v.playbackRate = -v.playbackRate
+      v.currentTime = v.playbackRate < 0 ? v.duration - 0.01 : 0.01
+      v.play().catch(() => {})
+    }
+    v.addEventListener('ended', handleEnded)
+    return () => v.removeEventListener('ended', handleEnded)
+  }, [l.background.loopMode, l.background.immersiveTransition])
+
   // ── Fonts ─────────────────────────────────────────────────────────────────
   const TITLE_FONT    = fontStack(l.title.font,   'serif')
   const DESC_FONT     = fontStack(l.description.font, 'sans')
@@ -322,7 +341,7 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
                   style={{
                     color:       l.buttons.textColor,
                     background:  l.buttons.bgColor,
-                    border:      l.buttons.borderStyle === 'none' ? 'none' : `1px ${l.buttons.borderStyle} ${l.buttons.borderColor}50`,
+                    border:      l.buttons.borderStyle === 'none' ? 'none' : `${l.buttons.borderWidth ?? 1}px ${l.buttons.borderStyle} ${l.buttons.borderColor}50`,
                     borderRadius:BUTTON_RADIUS,
                     fontFamily:  BUTTON_FONT,
                     fontSize:    `${l.buttons.fontSize}rem`,
@@ -407,8 +426,18 @@ function SocialBar({ restaurant }: { restaurant: Restaurant }) {
     <div className="mt-10 flex items-center justify-center gap-5">
       {links.map(({ url, Icon, label }) => (
         <a key={label} href={url!} target="_blank" rel="noopener noreferrer" aria-label={label}
-          className="transition-opacity hover:opacity-50" style={{ color: `${t.socials.color}99` }}>
-          <Icon />
+          className="transition-opacity hover:opacity-50"
+          style={{
+            color:         t.socials.style === 'minimal' || t.socials.style === 'outline' ? `${t.socials.color}99` : t.socials.color,
+            background:    t.socials.style === 'circle' || t.socials.style === 'box' ? `${t.socials.color}20` : 'transparent',
+            border:        t.socials.style === 'outline' ? `1px solid ${t.socials.color}60` : 'none',
+            borderRadius:  t.socials.style === 'circle' || t.socials.style === 'outline' ? '50%' : t.socials.style === 'box' ? 4 : 0,
+            padding:       t.socials.style !== 'minimal' ? 8 : 0,
+            display:       'flex', alignItems: 'center', justifyContent: 'center',
+            width:         t.socials.style !== 'minimal' ? `${t.socials.size * 1.6 + 1}rem` : undefined,
+            height:        t.socials.style !== 'minimal' ? `${t.socials.size * 1.6 + 1}rem` : undefined,
+          }}>
+          <span style={{ fontSize: `${t.socials.size}rem`, lineHeight: 1, display: 'flex' }}><Icon /></span>
         </a>
       ))}
     </div>

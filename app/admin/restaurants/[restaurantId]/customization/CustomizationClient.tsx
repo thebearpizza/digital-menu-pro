@@ -606,7 +606,7 @@ export default function CustomizationClient({
               {/* ── LANDING: Accento ── */}
               <Accordion title="Accento & Social" defaultOpen>
                 <ColorRow label="Colore accento (bottoni, bordi)" value={l.accent}        onChange={v => setL({ accent: v })} />
-                <ColorRow label="Icone social"                     value={l.socials.color} onChange={v => setL({ socials: { color: v } })} />
+                <ColorRow label="Icone social"                     value={l.socials.color} onChange={v => setL({ socials: { ...l.socials, color: v } })} />
               </Accordion>
 
               {/* ── LANDING: Logo ── */}

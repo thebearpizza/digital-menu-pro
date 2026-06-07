@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { formatAllergensFull } from '@/lib/allergens'
 import { fontStack, formatPrice, landingButtonRadius } from '@/lib/theme'
-import type { RestaurantTheme } from '@/lib/theme'
+import type { CardTheme, RestaurantTheme } from '@/lib/theme'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -32,17 +32,33 @@ interface Props {
 // ── Component ──────────────────────────────────────────────────────────────────
 
 export default function DishModal({ activeDish, allDishes, isNested, onClose, onBack, onOpenDish, theme }: Props) {
-  const mn          = theme?.menu
-  const ACCENT      = mn?.accent                                    ?? '#c9a96e'
-  const PRICE_COLOR = mn?.prices.color                              ?? ACCENT
-  const FONT_SERIF  = fontStack(mn?.dishes.titleFont  ?? 'Cormorant Garamond', 'serif')
-  const FONT_SANS   = fontStack(mn?.descriptions.font ?? 'DM Sans', 'sans')
-  const CARD_RADIUS = landingButtonRadius(theme?.landing.buttons.shape ?? 'flat')
-  const TEXT_ALIGN  = mn?.layout.dishAlignment === 'center' ? 'center'
-                    : mn?.layout.dishAlignment === 'right'  ? 'right' : 'left'
-  const ALRG_COLOR  = mn?.allergens.color   ?? ACCENT
-  const ALRG_BG     = mn?.allergens.bgColor ?? '#181208'
-  const ALRG_BADGE  = mn?.allergens.style === 'badge'
+  const mn   = theme?.menu
+  const card = theme?.card
+  // Card-specific: use card theme if available, fall back to menu theme
+  const CARD_BG      = card?.bgColor       ?? '#111111'
+  const CARD_LAYOUT  = card?.layout        ?? 'photo-top'
+  const FONT_SERIF   = fontStack(card?.title.font       ?? mn?.dishes.titleFont  ?? 'Cormorant Garamond', 'serif')
+  const FONT_SANS    = fontStack(card?.description.font ?? mn?.descriptions.font ?? 'DM Sans',            'sans')
+  const TITLE_COLOR  = card?.title.color   ?? '#ede8e0'
+  const TITLE_SIZE   = card?.title.size    ?? mn?.dishes.titleSize   ?? 1.75
+  const TITLE_WEIGHT = card?.title.weight  ?? 'light'
+  const DESC_COLOR   = card?.description.color ?? mn?.descriptions.color ?? '#a09080'
+  const DESC_SIZE    = card?.description.size  ?? mn?.descriptions.size  ?? 0.875
+  const PRICE_COLOR  = card?.price.color   ?? mn?.prices.color  ?? mn?.accent ?? '#c9a96e'
+  const PRICE_SIZE   = card?.price.size    ?? mn?.prices.size   ?? 1.1
+  const PRICE_FORMAT = card?.price.format  ?? mn?.prices.format ?? 'symbol-left'
+  const ALRG_COLOR   = card?.allergens.color   ?? mn?.allergens.color   ?? '#c9a96e'
+  const ALRG_BG      = card?.allergens.bgColor ?? mn?.allergens.bgColor ?? '#181208'
+  const ALRG_BADGE   = (card?.allergens.style  ?? mn?.allergens.style)  === 'badge'
+  const CLOSE_COLOR  = card?.closeButton.color    ?? '#555555'
+  const CLOSE_POS    = card?.closeButton.position ?? 'top-right'
+  const CLOSE_SHAPE  = card?.closeButton.shape    ?? 'none'
+  const CARD_RADIUS  = landingButtonRadius(theme?.landing.buttons.shape ?? 'flat')
+  const TEXT_ALIGN   = (mn?.layout.dishAlignment === 'center' ? 'center' : mn?.layout.dishAlignment === 'right' ? 'right' : 'left') as 'left' | 'center' | 'right'
+
+  // Derived accent for decorative elements (still uses menu accent)
+  const ACCENT = mn?.accent ?? '#c9a96e'
+
   const startIdx = allDishes.findIndex(d => d.id === activeDish.id)
 
   const [idx,        setIdx]        = useState(startIdx >= 0 ? startIdx : 0)
@@ -129,6 +145,15 @@ export default function DishModal({ activeDish, allDishes, isNested, onClose, on
     ? allDishes.find(d => d.id === dish.pairing_dish_id)
     : null
 
+  // ── Close button style ────────────────────────────────────────────────────
+
+  const closeButtonStyle: React.CSSProperties =
+    CLOSE_SHAPE === 'circle'
+      ? { color: CLOSE_COLOR, background: CLOSE_COLOR + '22', borderRadius: '50%', width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center' }
+      : CLOSE_SHAPE === 'square'
+      ? { color: CLOSE_COLOR, background: CLOSE_COLOR + '22', borderRadius: 4, width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center' }
+      : { color: CLOSE_COLOR }
+
   // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
@@ -151,7 +176,7 @@ export default function DishModal({ activeDish, allDishes, isNested, onClose, on
       <div
         className="relative w-full sm:max-w-md flex flex-col modal-card overflow-hidden"
         style={{
-          background:   '#111111',
+          background:   CARD_BG,
           border:       `1px solid ${ACCENT}22`,
           borderRadius: CARD_RADIUS,
           maxHeight:    '88dvh',
@@ -167,7 +192,7 @@ export default function DishModal({ activeDish, allDishes, isNested, onClose, on
         </div>
 
         {/* Header row: back button (nested) or empty, close button */}
-        <div className="absolute top-3 left-0 right-0 flex items-center justify-between px-4 z-10">
+        <div className={`absolute top-3 left-0 right-0 flex items-center ${CLOSE_POS === 'top-left' ? 'flex-row-reverse' : ''} justify-between px-4 z-10`}>
           {onBack ? (
             <button
               onClick={onBack}
@@ -184,14 +209,14 @@ export default function DishModal({ activeDish, allDishes, isNested, onClose, on
             onClick={onClose}
             aria-label="Chiudi"
             className="text-xl leading-none transition-opacity hover:opacity-60 select-none"
-            style={{ color: '#555555' }}
+            style={closeButtonStyle}
           >
             ×
           </button>
         </div>
 
-        {/* Hero image — 16:9 aspect ratio */}
-        {dish.image_url && (
+        {/* Hero image — 16:9 aspect ratio (photo-top layout only) */}
+        {CARD_LAYOUT === 'photo-top' && dish.image_url && (
           <div className="shrink-0 w-full aspect-video overflow-hidden" style={{ background: '#1a1a1a' }}>
             <img
               src={dish.image_url}
@@ -220,36 +245,72 @@ export default function DishModal({ activeDish, allDishes, isNested, onClose, on
             {dish.category}
           </p>
 
-          {/* Name + price */}
-          <div className={`flex gap-4 mb-3 ${TEXT_ALIGN === 'center' ? 'flex-col items-center' : 'items-start justify-between'}`}>
-            <h2
-              style={{
-                fontFamily: FONT_SERIF,
-                fontSize:   'var(--font-size-title, 1.75rem)',
-                color:      '#ede8e0',
-                fontWeight: 400,
-                lineHeight: 1.2,
-                textAlign:  TEXT_ALIGN,
-              }}
-            >
-              {dish.name}
-            </h2>
-            {dish.price != null && (
-              <span
-                className={`tabular-nums ${TEXT_ALIGN === 'center' ? '' : 'shrink-0'}`}
-                style={{ color: PRICE_COLOR, fontSize: 'var(--font-size-price, 1.1rem)', fontWeight: 600, paddingTop: TEXT_ALIGN === 'center' ? 0 : 4 }}
+          {/* Name + price — photo-side wraps with thumbnail on the right */}
+          {CARD_LAYOUT === 'photo-side' ? (
+            <div className="flex items-start gap-3 mb-3">
+              <div className="flex-1 min-w-0">
+                {/* Category chip already rendered above; name + price inside */}
+                <div className={`flex gap-4 ${TEXT_ALIGN === 'center' ? 'flex-col items-center' : 'items-start justify-between'}`}>
+                  <h2
+                    style={{
+                      fontFamily: FONT_SERIF,
+                      fontSize:   `${TITLE_SIZE}rem`,
+                      color:      TITLE_COLOR,
+                      fontWeight: TITLE_WEIGHT === 'bold' ? 700 : TITLE_WEIGHT === 'normal' ? 400 : 300,
+                      lineHeight: 1.2,
+                      textAlign:  TEXT_ALIGN,
+                    }}
+                  >
+                    {dish.name}
+                  </h2>
+                  {dish.price != null && (
+                    <span
+                      className={`tabular-nums ${TEXT_ALIGN === 'center' ? '' : 'shrink-0'}`}
+                      style={{ color: PRICE_COLOR, fontSize: `${PRICE_SIZE}rem`, fontWeight: 600, paddingTop: TEXT_ALIGN === 'center' ? 0 : 4 }}
+                    >
+                      {formatPrice(dish.price, PRICE_FORMAT)}
+                    </span>
+                  )}
+                </div>
+              </div>
+              {dish.image_url && (
+                <div className="shrink-0 w-20 h-20 rounded overflow-hidden" style={{ background: '#1a1a1a' }}>
+                  <img src={dish.image_url} alt={dish.name} className="w-full h-full object-cover" draggable={false} />
+                </div>
+              )}
+            </div>
+          ) : (
+            /* photo-top and minimal: standard name + price row */
+            <div className={`flex gap-4 mb-3 ${TEXT_ALIGN === 'center' ? 'flex-col items-center' : 'items-start justify-between'}`}>
+              <h2
+                style={{
+                  fontFamily: FONT_SERIF,
+                  fontSize:   `${TITLE_SIZE}rem`,
+                  color:      TITLE_COLOR,
+                  fontWeight: TITLE_WEIGHT === 'bold' ? 700 : TITLE_WEIGHT === 'normal' ? 400 : 300,
+                  lineHeight: 1.2,
+                  textAlign:  TEXT_ALIGN,
+                }}
               >
-                {formatPrice(dish.price, mn?.prices.format ?? 'symbol-left')}
-              </span>
-            )}
-          </div>
+                {dish.name}
+              </h2>
+              {dish.price != null && (
+                <span
+                  className={`tabular-nums ${TEXT_ALIGN === 'center' ? '' : 'shrink-0'}`}
+                  style={{ color: PRICE_COLOR, fontSize: `${PRICE_SIZE}rem`, fontWeight: 600, paddingTop: TEXT_ALIGN === 'center' ? 0 : 4 }}
+                >
+                  {formatPrice(dish.price, PRICE_FORMAT)}
+                </span>
+              )}
+            </div>
+          )}
 
           {/* Gold rule */}
           <div style={{ height: 0.5, background: `${ACCENT}28`, marginBottom: 14 }} />
 
           {/* Description — pre-wrap preserves \n line-breaks entered in the admin */}
           {dish.description && (
-            <p className="w-full max-w-full break-words" style={{ color: mn?.descriptions.color ?? '#a09080', fontFamily: FONT_SANS, fontSize: 'var(--font-size-base, 0.875rem)', lineHeight: 1.7, marginBottom: 18, whiteSpace: 'pre-wrap', textAlign: TEXT_ALIGN }}>
+            <p className="w-full max-w-full break-words" style={{ color: DESC_COLOR, fontFamily: FONT_SANS, fontSize: `${DESC_SIZE}rem`, lineHeight: 1.7, marginBottom: 18, whiteSpace: 'pre-wrap', textAlign: TEXT_ALIGN }}>
               {dish.description}
             </p>
           )}
