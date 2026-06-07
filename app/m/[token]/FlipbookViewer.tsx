@@ -123,14 +123,16 @@ export default function FlipbookViewer({
   const navBgComputed = catStyle === 'transparent-blur' ? 'rgba(0,0,0,0.35)' : (mn?.stickyCategories.bgColor ?? menuConfig.theme.navBg)
   const theme = {
     ...menuConfig.theme,
-    appBg:      mn?.background.color ?? menuConfig.theme.pageBg,
-    accent:     mn?.accent            ?? menuConfig.theme.accent,
-    textPrimary:themeProp?.landing.title.color ?? menuConfig.theme.textPrimary,
-    textMuted:  mn?.stickyCategories.textColor ?? menuConfig.theme.textMuted,
-    navBg:      navBgComputed,
-    navActive:  mn?.accent            ?? menuConfig.theme.navActive,
-    fontSerif:  fontStack(mn?.dishes.titleFont ?? 'Cormorant Garamond', 'serif'),
-    fontSans:   fontStack(mn?.stickyCategories.font ?? 'DM Sans', 'sans'),
+    appBg:       mn?.background.color          ?? menuConfig.theme.pageBg,
+    accent:      mn?.accent                    ?? menuConfig.theme.accent,
+    textPrimary: themeProp?.landing.title.color ?? menuConfig.theme.textPrimary,
+    textMuted:   mn?.stickyCategories.textColor ?? menuConfig.theme.textMuted,
+    navBg:       navBgComputed,
+    navActive:   mn?.accent                    ?? menuConfig.theme.navActive,
+    navInactive: mn?.stickyCategories.textColor ?? menuConfig.theme.navInactive,
+    navColor:    mn?.navigation.color           ?? menuConfig.theme.textMuted,
+    fontSerif:   fontStack(mn?.dishes.titleFont       ?? 'Cormorant Garamond', 'serif'),
+    fontSans:    fontStack(mn?.stickyCategories.font  ?? 'DM Sans', 'sans'),
   }
   const bookRef = useRef<HTMLDivElement>(null)
 
@@ -663,7 +665,7 @@ export default function FlipbookViewer({
               <span
                 className="pointer-events-none absolute bottom-3 left-2 z-50 text-[10px] uppercase tracking-[0.2em] select-none"
                 style={{
-                  color:      theme.textMuted,
+                  color:      theme.navColor,
                   opacity:    atFirst ? 0 : 0.6,
                   transition: 'opacity 0.25s ease',
                   fontFamily: theme.fontSans,
@@ -676,7 +678,7 @@ export default function FlipbookViewer({
               <span
                 className="pointer-events-none absolute bottom-3 right-2 z-50 text-[10px] uppercase tracking-[0.2em] select-none"
                 style={{
-                  color:      theme.textMuted,
+                  color:      theme.navColor,
                   opacity:    atLast ? 0 : 0.6,
                   transition: 'opacity 0.25s ease',
                   fontFamily: theme.fontSans,
@@ -711,10 +713,10 @@ export default function FlipbookViewer({
               onClick={onBack}
               className="sticky left-0 shrink-0 px-4 py-3 text-[10px] uppercase tracking-[0.22em] transition-opacity duration-200 hover:opacity-50"
               style={{
-                color:      theme.textMuted,
+                color:      theme.navColor,
                 fontFamily: theme.fontSans,
                 background: catStyle === 'transparent-blur' ? 'transparent' : theme.navBg,
-                borderRight:`1px solid ${theme.textMuted}1a`,
+                borderRight:`1px solid ${theme.navColor}1a`,
               }}
             >
               ← Menù
@@ -742,10 +744,10 @@ export default function FlipbookViewer({
               <span
                 className="sticky right-0 shrink-0 px-4 py-3 text-[10px] tabular-nums self-center ml-auto"
                 style={{
-                  color:       theme.textMuted,
+                  color:       theme.navColor,
                   fontFamily:  theme.fontSans,
                   background:  catStyle === 'transparent-blur' ? 'transparent' : theme.navBg,
-                  borderLeft: `1px solid ${theme.textMuted}1a`,
+                  borderLeft: `1px solid ${theme.navColor}1a`,
                 }}
               >
                 {currentPage}/{totalPages}

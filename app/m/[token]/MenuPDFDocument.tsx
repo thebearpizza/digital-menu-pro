@@ -142,7 +142,7 @@ function makeStyles(theme: RestaurantTheme) {
     },
     // ── Boxed layout ─────────────────────────────────────────────────────────
     boxedItem: {
-      border:        `0.5pt solid ${divColor}`,
+      border:        `${m.layout.boxedBorderWidth ?? 1}pt solid ${divColor}`,
       padding:       compact ? 7 : 10,
       marginBottom:  compact ? 6 : 10,
     },

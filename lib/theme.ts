@@ -104,10 +104,11 @@ export interface MenuTheme {
   pageBackground: string
   pdfLayout:      'classic' | 'compact'
   layout: {
-    dishLayout:    'list' | 'grid-2' | 'boxed-card' | 'minimal-row'
-    dishAlignment: 'left' | 'center' | 'right'
-    dishSpacing:   number
-    divider:       { type: 'none' | 'solid' | 'dashed' | 'dotted' | 'double'; color: string }
+    dishLayout:       'list' | 'grid-2' | 'boxed-card' | 'minimal-row'
+    dishAlignment:    'left' | 'center' | 'right'
+    dishSpacing:      number
+    boxedBorderWidth: number
+    divider:          { type: 'none' | 'solid' | 'dashed' | 'dotted' | 'double'; color: string }
   }
   dishes:       { titleFont: string; titleSize: number; titleColor: string }
   descriptions: { font: string; size: number; color: string }
@@ -157,10 +158,11 @@ export const DEFAULT_THEME: RestaurantTheme = {
     pageBackground: '#ffffff',
     pdfLayout:      'classic',
     layout: {
-      dishLayout:    'list',
-      dishAlignment: 'left',
-      dishSpacing:   0,
-      divider:       { type: 'solid', color: '#ece6da' },
+      dishLayout:       'list',
+      dishAlignment:    'left',
+      dishSpacing:      0,
+      boxedBorderWidth: 1,
+      divider:          { type: 'solid', color: '#ece6da' },
     },
     dishes:       { titleFont: 'Cormorant Garamond', titleSize: 1.75, titleColor: '#ede8e0' },
     descriptions: { font: 'DM Sans', size: 0.875, color: '#a09080' },
@@ -279,10 +281,11 @@ function parseNested(r: Record<string, unknown>): RestaurantTheme {
       pageBackground: str(m.pageBackground, d.menu.pageBackground),
       pdfLayout:      one(m.pdfLayout, ['classic','compact'] as const, d.menu.pdfLayout),
       layout: {
-        dishLayout:    one(ml.dishLayout, ['list','grid-2','boxed-card','minimal-row'] as const, d.menu.layout.dishLayout),
-        dishAlignment: one(ml.dishAlignment, ['left','center','right'] as const, d.menu.layout.dishAlignment),
-        dishSpacing:   num(ml.dishSpacing, d.menu.layout.dishSpacing),
-        divider:       { type: one(md.type, ['none','solid','dashed','dotted','double'] as const, d.menu.layout.divider.type), color: str(md.color, d.menu.layout.divider.color) },
+        dishLayout:       one(ml.dishLayout, ['list','grid-2','boxed-card','minimal-row'] as const, d.menu.layout.dishLayout),
+        dishAlignment:    one(ml.dishAlignment, ['left','center','right'] as const, d.menu.layout.dishAlignment),
+        dishSpacing:      num(ml.dishSpacing, d.menu.layout.dishSpacing),
+        boxedBorderWidth: num(ml.boxedBorderWidth, d.menu.layout.boxedBorderWidth),
+        divider:          { type: one(md.type, ['none','solid','dashed','dotted','double'] as const, d.menu.layout.divider.type), color: str(md.color, d.menu.layout.divider.color) },
       },
       dishes:       { titleFont: str(mi.titleFont, d.menu.dishes.titleFont), titleSize: num(mi.titleSize, d.menu.dishes.titleSize), titleColor: str(mi.titleColor, d.menu.dishes.titleColor) },
       descriptions: { font: str(me.font, d.menu.descriptions.font), size: num(me.size, d.menu.descriptions.size), color: str(me.color, d.menu.descriptions.color) },
@@ -401,7 +404,7 @@ export function migrateFlat(r: Record<string, unknown>): RestaurantTheme {
       pageBackground: str(r.pageBackground, d.menu.pageBackground),
       pdfLayout:      r.pdfLayout === 'compact' ? 'compact' : 'classic',
       layout: {
-        dishLayout, dishAlignment, dishSpacing: 0,
+        dishLayout, dishAlignment, dishSpacing: 0, boxedBorderWidth: 1,
         divider: { type: dividerType, color: '#ece6da' },
       },
       dishes:       { titleFont: fontSerif, titleSize: num(fs.title, d.menu.dishes.titleSize), titleColor: '#ede8e0' },
@@ -422,11 +425,19 @@ export function migrateFlat(r: Record<string, unknown>): RestaurantTheme {
 export const SERIF_FONTS = [
   'Cormorant Garamond', 'Playfair Display', 'Bodoni Moda',
   'EB Garamond', 'Lora', 'Libre Baskerville', 'Josefin Slab',
+  'Crimson Text', 'Spectral', 'Della Respira', 'Cardo',
+  'Merriweather', 'Sorts Mill Goudy',
 ]
 
 export const SANS_FONTS = [
   'DM Sans', 'Inter', 'Montserrat', 'Poppins',
   'Raleway', 'Josefin Sans', 'Oswald', 'Roboto',
+  'Nunito', 'Outfit', 'Syne', 'Barlow',
+]
+
+export const DISPLAY_FONTS = [
+  'Abril Fatface', 'Bebas Neue', 'Anton', 'Righteous',
+  'Cinzel', 'Yeseva One',
 ]
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

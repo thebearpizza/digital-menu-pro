@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { saveTheme, createBanner, deleteBanner } from './actions'
 import {
-  DEFAULT_THEME, SERIF_FONTS, SANS_FONTS, PAGINATION_OPTIONS,
+  DEFAULT_THEME, SERIF_FONTS, SANS_FONTS, DISPLAY_FONTS, PAGINATION_OPTIONS,
   MENU_BG_EFFECTS, MENU_BG_EFFECT_LABELS,
   THEME_PRESETS,
   googleFontsUrl, allThemeFonts, fontStack, formatPrice,
@@ -709,7 +709,7 @@ export default function CustomizationClient({
 
               {/* ── LANDING: Titolo ── */}
               <Accordion title="Titolo ristorante">
-                <FontSelector label="Font" value={l.title.font} curated={SERIF_FONTS} category="serif"
+                <FontSelector label="Font" value={l.title.font} curated={[...SERIF_FONTS, ...DISPLAY_FONTS]} category="serif"
                   onChange={v => setLTitle({ font: v })} />
                 <FontSizeSlider label="Dimensione" value={l.title.size} min={1.0} max={4.0} step={0.1}
                   previewFont={SERIF_STACK} onChange={v => setLTitle({ size: v })} />
@@ -839,6 +839,17 @@ export default function CustomizationClient({
                     onChange={e => setMLayout({ dishSpacing: Number(e.target.value) })}
                     className="w-full accent-gray-900" />
                 </div>
+                {m.layout.dishLayout === 'boxed-card' && (
+                  <div>
+                    <div className="flex justify-between items-center mb-1">
+                      <label className="text-xs text-gray-600">Spessore bordo (boxed)</label>
+                      <span className="text-[10px] font-mono text-gray-400">{m.layout.boxedBorderWidth}pt</span>
+                    </div>
+                    <input type="range" min={0.5} max={4} step={0.5} value={m.layout.boxedBorderWidth}
+                      onChange={e => setMLayout({ boxedBorderWidth: Number(e.target.value) })}
+                      className="w-full accent-gray-900" />
+                  </div>
+                )}
               </Accordion>
 
               {/* ── MENU: Divisori ── */}
@@ -859,7 +870,7 @@ export default function CustomizationClient({
 
               {/* ── MENU: Nomi piatti ── */}
               <Accordion title="Nomi piatti">
-                <FontSelector label="Font nomi" value={m.dishes.titleFont} curated={SERIF_FONTS} category="serif"
+                <FontSelector label="Font nomi" value={m.dishes.titleFont} curated={[...SERIF_FONTS, ...DISPLAY_FONTS]} category="serif"
                   onChange={v => setMDishes({ titleFont: v })} />
                 <FontSizeSlider label="Dimensione" value={m.dishes.titleSize} min={1.0} max={2.5} step={0.05}
                   previewFont={fontStack(m.dishes.titleFont, 'serif')}
@@ -914,7 +925,7 @@ export default function CustomizationClient({
 
               {/* ── MENU: Categorie ── */}
               <Accordion title="Titoli categorie">
-                <FontSelector label="Font" value={m.categories.font} curated={SERIF_FONTS} category="serif"
+                <FontSelector label="Font" value={m.categories.font} curated={[...SERIF_FONTS, ...DISPLAY_FONTS]} category="serif"
                   onChange={v => setMCats({ font: v })} />
                 <ColorRow label="Colore" value={m.categories.color} onChange={v => setMCats({ color: v })} />
               </Accordion>
@@ -1005,7 +1016,7 @@ export default function CustomizationClient({
 
               {/* ── CARD: Titolo piatto ── */}
               <Accordion title="Titolo piatto (in card)" defaultOpen>
-                <FontSelector label="Font" value={theme.card.title.font} curated={SERIF_FONTS} category="serif"
+                <FontSelector label="Font" value={theme.card.title.font} curated={[...SERIF_FONTS, ...DISPLAY_FONTS]} category="serif"
                   onChange={v => setCardTitle({ font: v })} />
                 <FontSizeSlider label="Dimensione" value={theme.card.title.size} min={1.0} max={3.0} step={0.05}
                   previewFont={fontStack(theme.card.title.font, 'serif')}
