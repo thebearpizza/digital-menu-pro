@@ -5,7 +5,7 @@
 import { Document, Page, Text, View, StyleSheet } from '@react-pdf/renderer'
 import { formatAllergensShort } from '@/lib/allergens'
 import type { RestaurantTheme } from '@/lib/theme'
-import { DEFAULT_THEME, lightenHex, formatPrice } from '@/lib/theme'
+import { DEFAULT_THEME, lightenHex, formatPrice, fontStack } from '@/lib/theme'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -58,21 +58,20 @@ export function groupByCategory(dishes: PDFDish[]): Array<{ name: string; dishes
 // ── Dynamic styles ────────────────────────────────────────────────────────────
 
 function makeStyles(theme: RestaurantTheme) {
-  const compact      = theme.pdfLayout === 'compact'
-  const catLineColor = lightenHex(theme.accent, 0.55)
-  const isDashed     = theme.dividerStyle === 'dashed'
-  const noDivider    = theme.dividerStyle === 'none'
+  const m         = theme.menu
+  const compact   = m.pdfLayout === 'compact'
+  const catLineColor = lightenHex(m.accent, 0.55)
+  const isDashed  = m.layout.divider.type === 'dashed' || m.layout.divider.type === 'dotted'
+  const noDivider = m.layout.divider.type === 'none'
+  const divColor  = m.layout.divider.color
 
-  // Font sizes scale relative to the admin's theme.fontSizes, so the sliders in
-  // the customization panel actually change the generated PDF's dish typography.
-  // Each PDF base size is multiplied by the ratio of chosen / default rem.
-  const titleScale = theme.fontSizes.title / DEFAULT_THEME.fontSizes.title
-  const baseScale  = theme.fontSizes.base  / DEFAULT_THEME.fontSizes.base
-  const priceScale = theme.fontSizes.price / DEFAULT_THEME.fontSizes.price
+  const titleScale = m.dishes.titleSize   / DEFAULT_THEME.menu.dishes.titleSize
+  const baseScale  = m.descriptions.size  / DEFAULT_THEME.menu.descriptions.size
+  const priceScale = m.prices.size        / DEFAULT_THEME.menu.prices.size
 
   return StyleSheet.create({
     page: {
-      backgroundColor:   theme.pageBackground,
+      backgroundColor:   m.pageBackground,
       paddingTop:        compact ? 36 : 52,
       paddingBottom:     compact ? 24 : 40,
       paddingHorizontal: compact ? 42 : 54,
@@ -80,7 +79,7 @@ function makeStyles(theme: RestaurantTheme) {
     catTitle: {
       fontFamily:    'Times-Bold',
       fontSize:      (compact ? 13 : 18) * titleScale,
-      color:         '#1a1a1a',
+      color:         m.categories.color,
       textTransform: 'uppercase',
       letterSpacing: compact ? 1.5 : 2,
       marginBottom:  compact ? 5 : 8,
@@ -100,7 +99,7 @@ function makeStyles(theme: RestaurantTheme) {
     dishName: {
       fontFamily:    'Helvetica-Bold',
       fontSize:      (compact ? 9 : 10) * titleScale,
-      color:         '#1a1a1a',
+      color:         m.dishes.titleColor === '#ede8e0' ? '#1a1a1a' : m.dishes.titleColor,
       textTransform: 'uppercase',
       letterSpacing: compact ? 0.4 : 0.6,
       flex:          1,
@@ -114,7 +113,7 @@ function makeStyles(theme: RestaurantTheme) {
     dishDesc: {
       fontFamily:   'Helvetica-Oblique',
       fontSize:     (compact ? 7.5 : 8.5) * baseScale,
-      color:        '#4a4a4a',
+      color:        '#4a4a4a',  // descriptions always dark in print
       lineHeight:   1.55,
       marginBottom: compact ? 2 : 3,
     },
@@ -126,7 +125,7 @@ function makeStyles(theme: RestaurantTheme) {
     },
     dishDivider: noDivider ? { height: compact ? 8 : 12 } : {
       height:          0.3,
-      backgroundColor: '#ece6da',
+      backgroundColor: divColor,
       borderStyle:     isDashed ? 'dashed' : 'solid',
       marginVertical:  compact ? 8 : 12,
     },
@@ -143,7 +142,7 @@ function makeStyles(theme: RestaurantTheme) {
     },
     // ── Boxed layout ─────────────────────────────────────────────────────────
     boxedItem: {
-      border:        `0.5pt solid ${catLineColor}`,
+      border:        `0.5pt solid ${divColor}`,
       padding:       compact ? 7 : 10,
       marginBottom:  compact ? 6 : 10,
     },
@@ -163,16 +162,18 @@ interface Props {
 
 export function MenuPDFDocument({ restaurant, menu, theme: themeProp }: Props) {
   const theme      = themeProp ?? DEFAULT_THEME
+  const m          = theme.menu
   const s          = makeStyles(theme)
   const categories = groupByCategory(menu.dishes)
-  const compact    = theme.pdfLayout === 'compact'
-  const isGrid     = theme.dishLayout === 'grid'
-  const isBoxed    = theme.dishLayout === 'boxed'
+  const compact    = m.pdfLayout === 'compact'
+  const isGrid     = m.layout.dishLayout === 'grid-2'
+  const isBoxed    = m.layout.dishLayout === 'boxed-card'
+  const isMinimal  = m.layout.dishLayout === 'minimal-row'
 
   function renderDish(dish: PDFDish, isLast: boolean) {
-    const priceStr    = dish.price != null ? formatPrice(dish.price, theme.priceFormat) : null
+    const priceStr    = dish.price != null ? formatPrice(dish.price, m.prices.format) : null
     const allergenStr = dish.allergens.length > 0 ? 'Allergeni: ' + formatAllergensShort(dish.allergens) : null
-    const showDivider = !isLast && theme.dividerStyle !== 'none'
+    const showDivider = !isLast && m.layout.divider.type !== 'none'
 
     if (isBoxed) {
       return (
@@ -193,8 +194,8 @@ export function MenuPDFDocument({ restaurant, menu, theme: themeProp }: Props) {
           <Text style={s.dishName}>{dish.name}</Text>
           {priceStr && <Text style={s.dishPrice}>{priceStr}</Text>}
         </View>
-        {dish.description ? <Text style={s.dishDesc}>{dish.description}</Text> : null}
-        {allergenStr ? <Text style={s.dishAllergens}>{allergenStr}</Text> : null}
+        {!isMinimal && dish.description ? <Text style={s.dishDesc}>{dish.description}</Text> : null}
+        {!isMinimal && allergenStr ? <Text style={s.dishAllergens}>{allergenStr}</Text> : null}
         {showDivider && <View style={s.dishDivider} />}
       </View>
     )
@@ -219,7 +220,7 @@ export function MenuPDFDocument({ restaurant, menu, theme: themeProp }: Props) {
               // 2-column grid: pairs of dishes side by side
               <View style={s.gridRow}>
                 {cat.dishes.map((dish) => {
-                  const priceStr    = dish.price != null ? formatPrice(dish.price, theme.priceFormat) : null
+                  const priceStr    = dish.price != null ? formatPrice(dish.price, m.prices.format) : null
                   const allergenStr = dish.allergens.length > 0 ? 'Allergeni: ' + formatAllergensShort(dish.allergens) : null
                   return (
                     <View key={dish.id} style={s.gridCell} wrap={false}>

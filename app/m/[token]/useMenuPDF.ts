@@ -186,9 +186,12 @@ export function useMenuPDF(
     // typography/layout/price sliders are reflected in the generated document.
   }, [
     menu?.id, restaurant?.name,
-    theme?.accent, theme?.pageBackground, theme?.pdfLayout, theme?.dishLayout,
-    theme?.priceFormat, theme?.dividerStyle,
-    theme?.fontSizes.title, theme?.fontSizes.base, theme?.fontSizes.price,
+    theme?.menu.accent, theme?.menu.pageBackground, theme?.menu.pdfLayout,
+    theme?.menu.layout.dishLayout, theme?.menu.prices.format,
+    theme?.menu.layout.divider.type, theme?.menu.layout.divider.color,
+    theme?.menu.layout.dishSpacing,
+    theme?.menu.dishes.titleSize, theme?.menu.descriptions.size, theme?.menu.prices.size,
+    theme?.menu.categories.color, theme?.menu.dishes.titleColor,
   ]) // eslint-disable-line react-hooks/exhaustive-deps
 
   return result

@@ -1,104 +1,68 @@
 'use client'
 // ─────────────────────────────────────────────────────────────────────────────
-// PublicMenuView — client wrapper for /m/[token].
+// PublicMenuView — landing + flipbook in a single DOM tree.
+// Both layers are always mounted after the menu is first opened; visibility is
+// toggled via opacity so the background video never needs to re-initialize.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useState, useEffect, useRef } from 'react'
 import FlipbookViewer  from './FlipbookViewer'
 import { useMenuPDF }  from './useMenuPDF'
 import {
-  googleFontsUrl, fontStack, borderRadiusPx, hexToRgb, parseTheme,
+  googleFontsUrl, allThemeFonts, fontStack,
+  hexToRgb, landingButtonRadius, landingTextureCss, menuBackgroundCss,
+  parseTheme,
 } from '@/lib/theme'
 import type { RestaurantTheme } from '@/lib/theme'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export interface Dish {
-  id:              string
-  name:            string
-  description:     string | null
-  price:           number | null
-  category:        string
-  image_url:       string | null
-  allergens:       number[]
-  pairing_dish_id: string | null
-  pairing_label:   string | null
+  id: string; name: string; description: string | null; price: number | null
+  category: string; image_url: string | null; allergens: number[]
+  pairing_dish_id: string | null; pairing_label: string | null
 }
-
-export interface Menu {
-  id:     string
-  name:   string
-  dishes: Dish[]
-}
-
+export interface Menu   { id: string; name: string; dishes: Dish[] }
+export interface Banner { id: string; media_url: string | null; media_type: string; title: string | null; subtitle: string | null }
+export interface Info   { title: string | null; content: string | null }
 export interface Restaurant {
-  name:            string
-  description:     string | null
-  logo_url:        string | null
-  instagram_url:   string | null
-  facebook_url:    string | null
-  website_url:     string | null
-  tripadvisor_url: string | null
+  name: string; description: string | null; logo_url: string | null
+  instagram_url: string | null; facebook_url: string | null
+  website_url: string | null; tripadvisor_url: string | null
   google_maps_url: string | null
-  visibility:      Record<string, boolean> | null
-  theme:           RestaurantTheme
-}
-
-export interface Banner {
-  id:         string
-  media_url:  string | null
-  media_type: string
-  title:      string | null
-  subtitle:   string | null
-}
-
-export interface Info {
-  title:   string | null
-  content: string | null
+  visibility: Record<string, boolean> | null
+  theme: RestaurantTheme
 }
 
 interface Props {
-  restaurant:     Restaurant
-  menus:          Menu[]
-  banners:        Banner[]
-  info:           Info | null
-  defaultMenuId?: string | null
+  restaurant: Restaurant; menus: Menu[]; banners: Banner[]
+  info: Info | null; defaultMenuId?: string | null
 }
 
-// ── Visibility ────────────────────────────────────────────────────────────────
+type VisKey = 'name'|'description'|'logo'|'instagram'|'facebook'|'website'|'tripadvisor'|'google_maps'
+function isVis(v: Record<string,boolean>|null, k: VisKey) { return !v || v[k] !== false }
 
-type VisKey = 'name' | 'description' | 'logo' | 'instagram' | 'facebook' | 'website' | 'tripadvisor' | 'google_maps'
-
-function isVis(visibility: Record<string, boolean> | null, key: VisKey): boolean {
-  if (!visibility) return true
-  return visibility[key] !== false
-}
-
-// ── ThemeInjector — writes CSS custom properties on <html> for globals.css ───
+// ── CSS vars injected on <html> so globals.css and FlipbookViewer can read them
 
 function ThemeInjector({ theme }: { theme: RestaurantTheme }) {
   useEffect(() => {
     const root = document.documentElement
-    root.style.setProperty('--theme-accent',     theme.accent)
-    root.style.setProperty('--theme-accent-rgb', hexToRgb(theme.accent))
-    root.style.setProperty('--theme-bg',         theme.appBg)
-    root.style.setProperty('--page-background',  theme.pageBackground)
-    root.style.setProperty('--theme-text',       theme.textPrimary)
-    root.style.setProperty('--theme-muted',      theme.textMuted)
-    root.style.setProperty('--theme-nav',        theme.navBg)
-    root.style.setProperty('--theme-radius',     borderRadiusPx(theme.borderRadius))
-    root.style.setProperty('--font-size-title',  `${theme.fontSizes.title}rem`)
-    root.style.setProperty('--font-size-base',   `${theme.fontSizes.base}rem`)
-    root.style.setProperty('--font-size-price',  `${theme.fontSizes.price}rem`)
+    const l = theme.landing; const m = theme.menu
+    root.style.setProperty('--theme-accent',     l.accent)
+    root.style.setProperty('--menu-accent',      m.accent)
+    root.style.setProperty('--theme-accent-rgb', hexToRgb(m.accent))
+    root.style.setProperty('--page-background',  m.pageBackground)
+    root.style.setProperty('--font-size-title',  `${m.dishes.titleSize}rem`)
+    root.style.setProperty('--font-size-base',   `${m.descriptions.size}rem`)
+    root.style.setProperty('--font-size-price',  `${m.prices.size}rem`)
   }, [theme])
   return null
 }
 
-// ── Google Fonts loader ───────────────────────────────────────────────────────
-
-function ThemeFontLoader({ fontSerif, fontSans }: { fontSerif: string; fontSans: string }) {
+function ThemeFontLoader({ theme }: { theme: RestaurantTheme }) {
   useEffect(() => {
-    const href = googleFontsUrl(fontSerif, fontSans)
+    const href = googleFontsUrl(allThemeFonts(theme))
+    if (!href) return
     let link = document.querySelector('link[data-theme-fonts]') as HTMLLinkElement | null
     if (!link) {
       link = document.createElement('link')
@@ -107,381 +71,346 @@ function ThemeFontLoader({ fontSerif, fontSans }: { fontSerif: string; fontSans:
       document.head.appendChild(link)
     }
     link.href = href
-  }, [fontSerif, fontSans])
+  }, [theme])
   return null
-}
-
-// ── Banner carousel ───────────────────────────────────────────────────────────
-
-function BannerCarousel({ banners, accent }: { banners: Banner[]; accent: string }) {
-  const [idx,   setIdx]   = useState(0)
-  const [phase, setPhase] = useState<'in' | 'out'>('in')
-
-  useEffect(() => {
-    if (banners.length <= 1) return
-    const t = setInterval(() => {
-      setPhase('out')
-      const swap = setTimeout(() => {
-        setIdx(i => (i + 1) % banners.length)
-        setPhase('in')
-      }, 450)
-      return () => clearTimeout(swap)
-    }, 5000)
-    return () => clearInterval(t)
-  }, [banners.length])
-
-  const banner = banners[idx]
-  if (!banner?.media_url) return null
-
-  return (
-    <div className="w-full mb-8 relative overflow-hidden" style={{ borderRadius: 4, aspectRatio: '16/6' }}>
-      <img
-        key={banner.id + idx}
-        src={banner.media_url}
-        alt={banner.title ?? ''}
-        className={`absolute inset-0 w-full h-full object-cover ${phase === 'in' ? 'banner-in' : 'banner-out'}`}
-      />
-      {(banner.title || banner.subtitle) && (
-        <div className="absolute inset-0 flex flex-col justify-end p-4"
-          style={{ background: 'linear-gradient(to top, rgba(0,0,0,0.65), transparent)' }}>
-          {banner.title    && <p className="text-white text-sm font-medium leading-tight">{banner.title}</p>}
-          {banner.subtitle && <p className="text-xs mt-0.5" style={{ color: 'rgba(255,255,255,0.65)' }}>{banner.subtitle}</p>}
-        </div>
-      )}
-      {banners.length > 1 && (
-        <div className="absolute bottom-2 left-0 right-0 flex justify-center gap-1.5">
-          {banners.map((_, i) => (
-            <div key={i} className="w-1.5 h-1.5 rounded-full transition-colors duration-300"
-              style={{ background: i === idx ? accent : `${accent}50` }} />
-          ))}
-        </div>
-      )}
-    </div>
-  )
 }
 
 // ── Social icons ──────────────────────────────────────────────────────────────
 
-function InstagramIcon() {
-  return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5"><rect x="2" y="2" width="20" height="20" rx="5" ry="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="1" fill="currentColor" stroke="none"/></svg>
-}
-function FacebookIcon() {
-  return <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5"><path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/></svg>
-}
-function GlobeIcon() {
-  return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
-}
-function MapPinIcon() {
-  return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
-}
-function CompassIcon() {
-  return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5"><circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/></svg>
-}
+function InstagramIcon() { return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5"><rect x="2" y="2" width="20" height="20" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="1" fill="currentColor" stroke="none"/></svg> }
+function FacebookIcon()  { return <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5"><path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/></svg> }
+function GlobeIcon()     { return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg> }
+function MapPinIcon()    { return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg> }
+function CompassIcon()   { return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5"><circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/></svg> }
 
-function SocialBar({ restaurant }: { restaurant: Restaurant }) {
-  const vis = restaurant.visibility
-  const t   = restaurant.theme
-  const links = [
-    { key: 'instagram'   as VisKey, url: restaurant.instagram_url,   Icon: InstagramIcon, label: 'Instagram'   },
-    { key: 'facebook'    as VisKey, url: restaurant.facebook_url,    Icon: FacebookIcon,  label: 'Facebook'    },
-    { key: 'website'     as VisKey, url: restaurant.website_url,     Icon: GlobeIcon,     label: 'Sito web'    },
-    { key: 'tripadvisor' as VisKey, url: restaurant.tripadvisor_url, Icon: CompassIcon,   label: 'TripAdvisor' },
-    { key: 'google_maps' as VisKey, url: restaurant.google_maps_url, Icon: MapPinIcon,    label: 'Google Maps' },
-  ].filter(({ key, url }) => url && isVis(vis, key))
-  if (links.length === 0) return null
+// ── Banner carousel ───────────────────────────────────────────────────────────
+
+function BannerCarousel({ banners, accent }: { banners: Banner[]; accent: string }) {
+  const [idx, setIdx]   = useState(0)
+  const [phase, setPhase] = useState<'in'|'out'>('in')
+  useEffect(() => {
+    if (banners.length <= 1) return
+    const t = setInterval(() => {
+      setPhase('out')
+      const s = setTimeout(() => { setIdx(i => (i+1)%banners.length); setPhase('in') }, 450)
+      return () => clearTimeout(s)
+    }, 5000)
+    return () => clearInterval(t)
+  }, [banners.length])
+  const b = banners[idx]
+  if (!b?.media_url) return null
   return (
-    <div className="mt-10 flex items-center justify-center gap-5">
-      {links.map(({ url, Icon, label }) => (
-        <a key={label} href={url!} target="_blank" rel="noopener noreferrer" aria-label={label}
-          className="transition-opacity duration-200 hover:opacity-50"
-          style={{ color: `${t.accent}99` }}>
-          <Icon />
-        </a>
-      ))}
+    <div className="w-full mb-8 relative overflow-hidden" style={{ borderRadius: 4, aspectRatio: '16/6' }}>
+      <img key={b.id+idx} src={b.media_url} alt={b.title??''} className={`absolute inset-0 w-full h-full object-cover ${phase==='in'?'banner-in':'banner-out'}`} />
+      {(b.title||b.subtitle) && (
+        <div className="absolute inset-0 flex flex-col justify-end p-4" style={{ background: 'linear-gradient(to top,rgba(0,0,0,0.65),transparent)' }}>
+          {b.title    && <p className="text-white text-sm font-medium leading-tight">{b.title}</p>}
+          {b.subtitle && <p className="text-xs mt-0.5" style={{ color: 'rgba(255,255,255,0.65)' }}>{b.subtitle}</p>}
+        </div>
+      )}
+      {banners.length > 1 && (
+        <div className="absolute bottom-2 left-0 right-0 flex justify-center gap-1.5">
+          {banners.map((_,i) => <div key={i} className="w-1.5 h-1.5 rounded-full transition-colors duration-300" style={{ background: i===idx ? accent : `${accent}50` }} />)}
+        </div>
+      )}
     </div>
   )
 }
 
-// ── Main component ─────────────────────────────────────────────────────────────
+// ── Main ──────────────────────────────────────────────────────────────────────
 
 export default function PublicMenuView({ restaurant, menus, banners, defaultMenuId }: Props) {
+  // selectedMenuId: what the user has chosen to view (null = landing)
   const [selectedMenuId, setSelectedMenuId] = useState<string | null>(defaultMenuId ?? null)
-  const selectedMenu = selectedMenuId ? menus.find(m => m.id === selectedMenuId) ?? null : null
+  // pendingMenuId: set during immersive video transition (PDF generation starts early)
+  const [pendingMenuId, setPendingMenuId]   = useState<string | null>(null)
 
-  // ── Live theme ────────────────────────────────────────────────────────────
-  // In normal use the theme comes straight from the DB-loaded prop. When the
-  // page runs inside the admin preview iframe (?preview), the admin pushes
-  // unsaved theme changes via postMessage and we re-render them in real time.
+  // liveTheme: updated via postMessage from admin preview iframe
   const [liveTheme, setLiveTheme] = useState<RestaurantTheme>(restaurant.theme)
   const t = liveTheme
+  const l = t.landing
+  const m = t.menu
 
-  // ── Immersive video transition ──────────────────────────────────────────────
-  // When theme.immersiveTransition + theme.bgVideo are set, tapping a menu
-  // button fades the landing UI out, plays the video once, and only opens the
-  // menu on the video's `ended` event. Otherwise selection is immediate.
-  const [pendingMenuId, setPendingMenuId] = useState<string | null>(null)
-  const transitioning = pendingMenuId !== null
-  const videoRef = useRef<HTMLVideoElement>(null)
-
-  // Poster is visible initially. For looping wallpaper it cross-fades to the
-  // video on `canplay`. For immersive mode we drop it when the transition fires.
+  const videoRef      = useRef<HTMLVideoElement>(null)
   const [posterVisible, setPosterVisible] = useState(true)
 
-  function handleCanPlay() {
-    if (!t.immersiveTransition) setPosterVisible(false)
-  }
-
-  // Restore poster whenever the landing re-mounts so the JPEG fills any
-  // buffering gap the next time the user sees the landing screen.
+  // ── Admin preview bridge ───────────────────────────────────────────────────
   useEffect(() => {
-    if (!selectedMenuId) setPosterVisible(true)
-  }, [selectedMenuId])
+    if (typeof window === 'undefined') return
+    const isPreview = new URLSearchParams(window.location.search).has('preview')
+    if (!isPreview) return
+    function onMessage(e: MessageEvent) {
+      if (e.origin !== window.location.origin) return
+      const d = e.data
+      if (!d || typeof d !== 'object') return
+      if (d.type === 'dmp-theme' && d.theme)  setLiveTheme(parseTheme(d.theme))
+      if (d.type === 'dmp-nav') {
+        if (d.view === 'landing') { setPendingMenuId(null); setSelectedMenuId(null) }
+        else if (d.view === 'menu') setSelectedMenuId(p => p ?? menus[0]?.id ?? null)
+      }
+    }
+    window.addEventListener('message', onMessage)
+    try { window.parent?.postMessage({ type: 'dmp-preview-ready' }, window.location.origin) } catch {}
+    return () => window.removeEventListener('message', onMessage)
+  }, [menus])
 
+  // ── PDF generation — driven by selected or pending menu ───────────────────
+  const activeMenuId = selectedMenuId ?? pendingMenuId
+  const activeMenu   = activeMenuId ? menus.find(m => m.id === activeMenuId) ?? null : null
+  const { pdfUrl, categories, isGenerating, error } = useMenuPDF(
+    { name: restaurant.name },
+    activeMenu ? {
+      id: activeMenu.id, name: activeMenu.name,
+      dishes: activeMenu.dishes.map(d => ({
+        id: d.id, name: d.name, description: d.description,
+        price: d.price, category: d.category||'Menu', allergens: d.allergens,
+      })),
+    } : null,
+    t,
+  )
+
+  // ── Derived visibility flags ───────────────────────────────────────────────
+  const transitioning = pendingMenuId !== null
+  const menuVisible   = selectedMenuId !== null
+  const menuReady     = menuVisible && !!pdfUrl
+
+  // ── Poster / video logic ───────────────────────────────────────────────────
+  function handleCanPlay() {
+    if (!l.background.immersiveTransition) setPosterVisible(false)
+  }
+  // Restore poster whenever landing re-appears
+  useEffect(() => { if (!menuVisible) setPosterVisible(true) }, [menuVisible])
+
+  // ── Immersive transition driver ────────────────────────────────────────────
   function openMenu(menuId: string) {
-    if (t.immersiveTransition && t.bgVideo) {
+    if (l.background.immersiveTransition && l.background.type === 'video') {
       setPendingMenuId(menuId)
     } else {
       setSelectedMenuId(menuId)
     }
   }
 
-  // Drive the immersive video once a transition starts.
   useEffect(() => {
     if (!transitioning) return
     const v = videoRef.current
-    if (!v) { setSelectedMenuId(pendingMenuId); return }
+    if (!v) { setSelectedMenuId(pendingMenuId); setPendingMenuId(null); return }
     v.currentTime = 0
-    setPosterVisible(false)   // drop poster: video fills the full screen during immersion
-    const finish = () => setSelectedMenuId(pendingMenuId)
+    setPosterVisible(false)
+    const finish = () => { setSelectedMenuId(pendingMenuId); setPendingMenuId(null) }
     v.addEventListener('ended', finish, { once: true })
-    // Safety net: if the video can't play (blocked/missing), don't trap the user.
     const fallback = setTimeout(finish, 8000)
     const p = v.play()
-    if (p && typeof p.catch === 'function') p.catch(() => finish())
+    if (p?.catch) p.catch(() => finish())
     return () => { v.removeEventListener('ended', finish); clearTimeout(fallback) }
   }, [transitioning, pendingMenuId])
 
-  // ── Admin preview bridge (postMessage) ───────────────────────────────────────
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-    const isPreview = new URLSearchParams(window.location.search).has('preview')
-    if (!isPreview) return
+  // ── Fonts ─────────────────────────────────────────────────────────────────
+  const TITLE_FONT    = fontStack(l.title.font,   'serif')
+  const DESC_FONT     = fontStack(l.description.font, 'sans')
+  const BUTTON_FONT   = fontStack(l.buttons.font, 'sans')
+  const BUTTON_RADIUS = landingButtonRadius(l.buttons.shape)
+  const vis           = restaurant.visibility
 
-    function onMessage(e: MessageEvent) {
-      // Same-origin only: the admin iframe and the public page share the domain.
-      if (e.origin !== window.location.origin) return
-      const d = e.data
-      if (!d || typeof d !== 'object') return
-      if (d.type === 'dmp-theme' && d.theme) {
-        setLiveTheme(parseTheme(d.theme))
-      } else if (d.type === 'dmp-nav') {
-        if (d.view === 'landing') { setPendingMenuId(null); setSelectedMenuId(null) }
-        else if (d.view === 'menu') setSelectedMenuId(prev => prev ?? menus[0]?.id ?? null)
-      }
-    }
-    window.addEventListener('message', onMessage)
-    // Tell the parent we're ready so it can push the current draft theme.
-    try { window.parent?.postMessage({ type: 'dmp-preview-ready' }, window.location.origin) } catch {}
-    return () => window.removeEventListener('message', onMessage)
-  }, [menus])
+  // ── Background landing layer styles ───────────────────────────────────────
+  const bgIsVideo = l.background.type === 'video' || l.background.type === 'gif'
+  const bgIsImage = l.background.type === 'image'
+  const bgColor   = l.background.type === 'color' ? l.background.value : '#0d0d0d'
+  const textureBg = landingTextureCss(l.background.texture)
 
-  const { pdfUrl, categories, isGenerating, error } = useMenuPDF(
-    { name: restaurant.name },
-    selectedMenu ? {
-      id:     selectedMenu.id,
-      name:   selectedMenu.name,
-      dishes: selectedMenu.dishes.map(d => ({
-        id:          d.id,
-        name:        d.name,
-        description: d.description,
-        price:       d.price,
-        category:    d.category || 'Menu',
-        allergens:   d.allergens,
-      })),
-    } : null,
-    t,
-  )
+  return (
+    <div className="fixed inset-0 h-[100dvh]">
+      <ThemeInjector theme={t} />
+      <ThemeFontLoader theme={t} />
 
-  const vis    = restaurant.visibility
-  const SERIF  = fontStack(t.fontSerif, 'serif')
-  const SANS   = fontStack(t.fontSans, 'sans')
-  const RADIUS = borderRadiusPx(t.borderRadius)
+      {/* ── LANDING LAYER — always in DOM so video keeps playing ─────────── */}
+      <div
+        className="absolute inset-0 flex flex-col items-center justify-center overflow-y-auto"
+        style={{
+          background:   bgColor,
+          opacity:      menuVisible && menuReady ? 0 : 1,
+          pointerEvents:menuVisible && menuReady ? 'none' : 'auto',
+          transition:   'opacity 0.5s ease',
+          fontFamily:   DESC_FONT,
+        }}
+      >
+        {/* Image background */}
+        {bgIsImage && (
+          <div className="absolute inset-0 pointer-events-none"
+            style={{ backgroundImage: `url(${l.background.value})`, backgroundSize: 'cover', backgroundPosition: 'center',
+              opacity: l.background.opacity/100 }} />
+        )}
 
-  // ── 1. Landing ────────────────────────────────────────────────────────────
-  if (!selectedMenuId || !selectedMenu) {
-    const showLogo = !!restaurant.logo_url && isVis(vis, 'logo')
-    const showName = isVis(vis, 'name')
-    const showDesc = !!restaurant.description && isVis(vis, 'description')
+        {/* Texture overlay */}
+        {textureBg && (
+          <div className="absolute inset-0 pointer-events-none" style={{ backgroundImage: textureBg, backgroundSize: '200px 200px' }} />
+        )}
 
-    return (
-      <>
-        <ThemeInjector theme={t} />
-        <ThemeFontLoader fontSerif={t.fontSerif} fontSans={t.fontSans} />
-        <div className="fixed inset-0 h-[100dvh] flex flex-col items-center justify-center overflow-y-auto"
-          style={{ background: t.appBg, fontFamily: SANS }}>
-
-          {/* Background image overlay (only when no video is set) */}
-          {t.bgImage && !t.bgVideo && (
-            <div className="absolute inset-0 pointer-events-none"
-              style={{ backgroundImage: `url(${t.bgImage})`, backgroundSize: 'cover',
-                backgroundPosition: 'center', opacity: (t.bgImageOpacity ?? 30) / 100 }} />
-          )}
-
-          {/* Background / immersive video.
-              A JPEG poster (first frame, extracted at upload time) is shown
-              instantly while the full video buffers, then cross-fades out on
-              `canplay`. Non-immersive: looping muted wallpaper. Immersive:
-              pre-buffered via preload="auto", plays on menu tap, menu opens
-              on `ended`. The outer div owns overall opacity + z-index; the
-              inner poster↔video pair owns the cross-fade between themselves. */}
-          {t.bgVideo && (
-            <div
-              className="absolute inset-0 pointer-events-none"
-              style={{
-                opacity:    transitioning ? 1 : (t.bgImageOpacity ?? 30) / 100,
-                zIndex:     transitioning ? 40 : 0,
-                transition: 'opacity 0.8s ease',
-              }}
-            >
-              {/* Poster: JPEG first-frame — appears in <50ms, covers buffering gap */}
-              {t.bgVideoPoster && (
-                <img
-                  src={t.bgVideoPoster}
-                  alt=""
-                  className="absolute inset-0 w-full h-full object-cover"
-                  style={{ opacity: posterVisible ? 1 : 0, transition: 'opacity 0.6s ease' }}
-                />
-              )}
-              {/* Video: invisible while poster is up, cross-fades in on canplay.
-                  preload="auto" tells the browser to eagerly buffer so the cross-
-                  fade fires quickly and immersive playback starts without stutter. */}
-              <video
-                ref={videoRef}
-                src={t.bgVideo}
-                muted
-                playsInline
-                preload="auto"
-                autoPlay={!t.immersiveTransition}
-                loop={!t.immersiveTransition}
+        {/* Video / immersive background */}
+        {bgIsVideo && (
+          <div className="absolute inset-0 pointer-events-none"
+            style={{ opacity: transitioning ? 1 : l.background.opacity/100, zIndex: transitioning ? 40 : 0, transition: 'opacity 0.8s ease' }}>
+            {l.background.poster && (
+              <img src={l.background.poster} alt=""
                 className="absolute inset-0 w-full h-full object-cover"
-                style={{
-                  opacity:    (t.bgVideoPoster && posterVisible) ? 0 : 1,
-                  transition: 'opacity 0.6s ease',
-                }}
-                onCanPlay={handleCanPlay}
-              />
-            </div>
+                style={{ opacity: posterVisible ? 1 : 0, transition: 'opacity 0.6s ease' }} />
+            )}
+            <video ref={videoRef} src={l.background.value} muted playsInline preload="auto"
+              autoPlay={!l.background.immersiveTransition}
+              loop={!l.background.immersiveTransition && l.background.loopMode === 'loop'}
+              className="absolute inset-0 w-full h-full object-cover"
+              style={{ opacity: (l.background.poster && posterVisible) ? 0 : 1, transition: 'opacity 0.6s ease' }}
+              onCanPlay={handleCanPlay}
+            />
+          </div>
+        )}
+
+        {/* Gold top rule */}
+        <div className="absolute top-0 inset-x-0 h-px"
+          style={{ background: `linear-gradient(90deg,transparent,${l.accent}55,transparent)` }} />
+
+        {/* Content — fades during immersive transition */}
+        <div className="relative flex flex-col items-center text-center px-10 w-full max-w-xs py-12"
+          style={{ opacity: transitioning ? 0 : 1, transition: 'opacity 0.6s ease', pointerEvents: transitioning ? 'none' : 'auto' }}>
+
+          <BannerCarousel banners={banners} accent={l.accent} />
+
+          {restaurant.logo_url && isVis(vis, 'logo') && (
+            <img src={restaurant.logo_url} alt={restaurant.name}
+              className="object-contain"
+              style={{
+                height: `${l.logo.size * 0.75}rem`,
+                mixBlendMode: l.logo.mixBlend as any,
+                opacity: 0.88,
+                marginBottom: isVis(vis,'name') ? '1.5rem' : '2.5rem',
+              }} />
           )}
 
-          <div className="absolute top-0 inset-x-0 h-px"
-            style={{ background: `linear-gradient(90deg,transparent,${t.accent}55,transparent)` }} />
+          {!restaurant.logo_url && isVis(vis,'name') && (
+            <div className="w-10 h-px mb-7" style={{ background: l.accent }} />
+          )}
 
-          <div className="relative flex flex-col items-center text-center px-10 w-full max-w-xs py-12"
-            style={{ opacity: transitioning ? 0 : 1, transition: 'opacity 0.6s ease',
-              pointerEvents: transitioning ? 'none' : 'auto' }}>
+          {isVis(vis,'name') && (
+            <h1 className="uppercase leading-none"
+              style={{
+                color: l.title.color, fontFamily: TITLE_FONT,
+                fontSize: `clamp(1.4rem,5vw,${l.title.size}rem)`,
+                letterSpacing: '0.22em',
+                fontWeight: l.title.weight === 'bold' ? 700 : l.title.weight === 'normal' ? 400 : 300,
+              }}>
+              {restaurant.name}
+            </h1>
+          )}
 
-            <BannerCarousel banners={banners} accent={t.accent} />
+          {restaurant.description && isVis(vis,'description') && (
+            <p style={{ color: l.description.color, fontFamily: DESC_FONT, fontSize: `${l.description.size}rem`, letterSpacing: '0.2em', textTransform: 'uppercase', marginTop: '0.6rem' }}>
+              {restaurant.description}
+            </p>
+          )}
 
-            {showLogo && (
-              <img src={restaurant.logo_url!} alt={restaurant.name} className="h-14 object-contain"
-                style={{ opacity: 0.88, marginBottom: showName || showDesc ? '1.5rem' : '2.5rem' }} />
+          {!restaurant.logo_url && (isVis(vis,'name') || isVis(vis,'description')) && (
+            <div className="w-10 h-px mt-7" style={{ background: l.accent }} />
+          )}
+
+          {/* Menu buttons */}
+          <div className="mt-10 flex flex-col gap-3 w-full">
+            {menus.length === 0 ? (
+              <p className="text-[10px] uppercase tracking-[0.25em]" style={{ color: l.title.color }}>Menu in aggiornamento.</p>
+            ) : (
+              menus.map(menu => (
+                <button key={menu.id} onClick={() => openMenu(menu.id)}
+                  className="group relative px-10 py-3 overflow-hidden transition-colors duration-300"
+                  style={{
+                    color:       l.buttons.textColor,
+                    background:  l.buttons.bgColor,
+                    border:      l.buttons.borderStyle === 'none' ? 'none' : `1px ${l.buttons.borderStyle} ${l.buttons.borderColor}50`,
+                    borderRadius:BUTTON_RADIUS,
+                    fontFamily:  BUTTON_FONT,
+                    fontSize:    `${l.buttons.fontSize}rem`,
+                    letterSpacing:'0.28em',
+                    textTransform:'uppercase',
+                  }}>
+                  <span className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
+                    style={{ background: `${l.buttons.borderColor}14` }} />
+                  <span className="relative">{`Sfoglia il menu ${menu.name}`}</span>
+                </button>
+              ))
             )}
-
-            {!showLogo && showName && (
-              <div className="w-10 h-px mb-7" style={{ background: t.accent }} />
-            )}
-
-            {showName && (
-              <h1 className="font-light uppercase leading-none"
-                style={{ color: t.textPrimary, fontFamily: SERIF,
-                  fontSize: 'clamp(1.6rem,5vw,2.4rem)', letterSpacing: '0.22em' }}>
-                {restaurant.name}
-              </h1>
-            )}
-
-            {showDesc && (
-              <p style={{ color: `${t.accent}80`, fontFamily: SANS, fontSize: '0.6rem',
-                letterSpacing: '0.2em', textTransform: 'uppercase', marginTop: '0.6rem' }}>
-                {restaurant.description}
-              </p>
-            )}
-
-            {!showLogo && (showName || showDesc) && (
-              <div className="w-10 h-px mt-7" style={{ background: t.accent }} />
-            )}
-
-            <div className="mt-10 flex flex-col gap-3 w-full">
-              {menus.length === 0 ? (
-                <p className="text-[10px] uppercase tracking-[0.25em]" style={{ color: t.textMuted }}>
-                  Menu in aggiornamento.
-                </p>
-              ) : (
-                menus.map(m => (
-                  <button key={m.id} onClick={() => openMenu(m.id)}
-                    className="group relative px-10 py-3 overflow-hidden transition-colors duration-300"
-                    style={{ color: t.textPrimary, border: `1px solid ${t.accent}50`,
-                      borderRadius: RADIUS, fontFamily: SANS,
-                      fontSize: '0.625rem', letterSpacing: '0.28em', textTransform: 'uppercase' }}>
-                    <span className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
-                      style={{ background: `${t.accent}14` }} />
-                    <span className="relative">{`Sfoglia il menu ${m.name}`}</span>
-                  </button>
-                ))
-              )}
-            </div>
-
-            <SocialBar restaurant={restaurant} />
           </div>
 
-          <p className="absolute bottom-6 text-[8px] uppercase tracking-[0.35em]" style={{ color: t.textMuted }}>
-            menu digitale
-          </p>
-          <div className="absolute bottom-0 inset-x-0 h-px"
-            style={{ background: `linear-gradient(90deg,transparent,${t.accent}55,transparent)` }} />
+          {/* Social links */}
+          <SocialBar restaurant={restaurant} />
         </div>
-      </>
-    )
-  }
 
-  // ── 2. Generating ─────────────────────────────────────────────────────────
-  if (isGenerating || !pdfUrl) {
-    return (
-      <>
-        <ThemeInjector theme={t} />
-        <div className="fixed inset-0 h-[100dvh] flex flex-col items-center justify-center"
-          style={{ background: t.appBg }}>
+        {/* Footer label */}
+        <p className="absolute bottom-6 text-[8px] uppercase tracking-[0.35em]" style={{ color: l.title.color + '44' }}>
+          menu digitale
+        </p>
+        <div className="absolute bottom-0 inset-x-0 h-px"
+          style={{ background: `linear-gradient(90deg,transparent,${l.accent}55,transparent)` }} />
+      </div>
+
+      {/* ── LOADING OVERLAY — shown while PDF is generating ──────────────── */}
+      {menuVisible && !menuReady && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center"
+          style={{ ...menuBackgroundCss(m.background) }}>
           {error ? (
             <div className="text-center px-8 flex flex-col items-center gap-4">
               <p className="text-xs text-red-400">Impossibile generare il menu.</p>
               <button onClick={() => setSelectedMenuId(null)}
                 className="text-[10px] uppercase tracking-[0.25em] underline underline-offset-4"
-                style={{ color: t.textMuted, fontFamily: SANS }}>
+                style={{ color: m.navigation.color, fontFamily: fontStack(m.stickyCategories.font,'sans') }}>
                 ← torna
               </button>
             </div>
           ) : (
-            <p className="text-[10px] uppercase tracking-[0.3em]" style={{ color: t.textMuted, fontFamily: SANS }}>
+            <p className="text-[10px] uppercase tracking-[0.3em]"
+              style={{ color: m.navigation.color, fontFamily: fontStack(m.stickyCategories.font,'sans') }}>
               Preparazione menu…
             </p>
           )}
         </div>
-      </>
-    )
-  }
+      )}
 
-  // ── 3. Flipbook ───────────────────────────────────────────────────────────
+      {/* ── FLIPBOOK LAYER — mounted once PDF is ready, stays mounted ────── */}
+      {pdfUrl && (
+        <div className="absolute inset-0"
+          style={{ opacity: menuReady ? 1 : 0, pointerEvents: menuReady ? 'auto' : 'none', transition: 'opacity 0.5s ease' }}>
+          <FlipbookViewer
+            pdfUrl={pdfUrl}
+            restaurantName={restaurant.name}
+            restaurantLogo={restaurant.logo_url}
+            onBack={() => setSelectedMenuId(null)}
+            categories={categories.length > 0 ? categories : undefined}
+            dishes={activeMenu?.dishes ?? []}
+            theme={t}
+          />
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── SocialBar ─────────────────────────────────────────────────────────────────
+
+function SocialBar({ restaurant }: { restaurant: Restaurant }) {
+  const vis = restaurant.visibility
+  const t   = restaurant.theme.landing
+  const links = [
+    { key:'instagram'   as VisKey, url: restaurant.instagram_url,   Icon: InstagramIcon, label:'Instagram'   },
+    { key:'facebook'    as VisKey, url: restaurant.facebook_url,    Icon: FacebookIcon,  label:'Facebook'    },
+    { key:'website'     as VisKey, url: restaurant.website_url,     Icon: GlobeIcon,     label:'Sito web'    },
+    { key:'tripadvisor' as VisKey, url: restaurant.tripadvisor_url, Icon: CompassIcon,   label:'TripAdvisor' },
+    { key:'google_maps' as VisKey, url: restaurant.google_maps_url, Icon: MapPinIcon,    label:'Google Maps' },
+  ].filter(({ key, url }) => url && isVis(vis, key))
+  if (!links.length) return null
   return (
-    <>
-      <ThemeInjector theme={t} />
-      <FlipbookViewer
-        pdfUrl={pdfUrl}
-        restaurantName={restaurant.name}
-        restaurantLogo={restaurant.logo_url}
-        onBack={() => setSelectedMenuId(null)}
-        categories={categories.length > 0 ? categories : undefined}
-        dishes={selectedMenu.dishes}
-        theme={t}
-      />
-    </>
+    <div className="mt-10 flex items-center justify-center gap-5">
+      {links.map(({ url, Icon, label }) => (
+        <a key={label} href={url!} target="_blank" rel="noopener noreferrer" aria-label={label}
+          className="transition-opacity hover:opacity-50" style={{ color: `${t.socials.color}99` }}>
+          <Icon />
+        </a>
+      ))}
+    </div>
   )
 }

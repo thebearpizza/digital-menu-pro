@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { formatAllergensFull } from '@/lib/allergens'
-import { borderRadiusPx, fontStack, formatPrice } from '@/lib/theme'
+import { fontStack, formatPrice, landingButtonRadius } from '@/lib/theme'
 import type { RestaurantTheme } from '@/lib/theme'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -32,11 +32,17 @@ interface Props {
 // ── Component ──────────────────────────────────────────────────────────────────
 
 export default function DishModal({ activeDish, allDishes, isNested, onClose, onBack, onOpenDish, theme }: Props) {
-  const ACCENT      = theme?.accent        ?? '#c9a96e'
-  const FONT_SERIF  = fontStack(theme?.fontSerif  ?? 'Cormorant Garamond', 'serif')
-  const FONT_SANS   = fontStack(theme?.fontSans   ?? 'DM Sans', 'sans')
-  const CARD_RADIUS = borderRadiusPx(theme?.borderRadius ?? 'none')
-  const TEXT_ALIGN  = theme?.dishAlignment === 'center' ? 'center' : 'left'
+  const mn          = theme?.menu
+  const ACCENT      = mn?.accent                                    ?? '#c9a96e'
+  const PRICE_COLOR = mn?.prices.color                              ?? ACCENT
+  const FONT_SERIF  = fontStack(mn?.dishes.titleFont  ?? 'Cormorant Garamond', 'serif')
+  const FONT_SANS   = fontStack(mn?.descriptions.font ?? 'DM Sans', 'sans')
+  const CARD_RADIUS = landingButtonRadius(theme?.landing.buttons.shape ?? 'flat')
+  const TEXT_ALIGN  = mn?.layout.dishAlignment === 'center' ? 'center'
+                    : mn?.layout.dishAlignment === 'right'  ? 'right' : 'left'
+  const ALRG_COLOR  = mn?.allergens.color   ?? ACCENT
+  const ALRG_BG     = mn?.allergens.bgColor ?? '#181208'
+  const ALRG_BADGE  = mn?.allergens.style === 'badge'
   const startIdx = allDishes.findIndex(d => d.id === activeDish.id)
 
   const [idx,        setIdx]        = useState(startIdx >= 0 ? startIdx : 0)
@@ -231,9 +237,9 @@ export default function DishModal({ activeDish, allDishes, isNested, onClose, on
             {dish.price != null && (
               <span
                 className={`tabular-nums ${TEXT_ALIGN === 'center' ? '' : 'shrink-0'}`}
-                style={{ color: ACCENT, fontSize: 'var(--font-size-price, 1.1rem)', fontWeight: 600, paddingTop: TEXT_ALIGN === 'center' ? 0 : 4 }}
+                style={{ color: PRICE_COLOR, fontSize: 'var(--font-size-price, 1.1rem)', fontWeight: 600, paddingTop: TEXT_ALIGN === 'center' ? 0 : 4 }}
               >
-                {formatPrice(dish.price, theme?.priceFormat ?? 'before')}
+                {formatPrice(dish.price, mn?.prices.format ?? 'symbol-left')}
               </span>
             )}
           </div>
@@ -243,7 +249,7 @@ export default function DishModal({ activeDish, allDishes, isNested, onClose, on
 
           {/* Description — pre-wrap preserves \n line-breaks entered in the admin */}
           {dish.description && (
-            <p className="w-full max-w-full break-words" style={{ color: '#a09080', fontSize: 'var(--font-size-base, 0.875rem)', lineHeight: 1.7, marginBottom: 18, whiteSpace: 'pre-wrap', textAlign: TEXT_ALIGN }}>
+            <p className="w-full max-w-full break-words" style={{ color: mn?.descriptions.color ?? '#a09080', fontFamily: FONT_SANS, fontSize: 'var(--font-size-base, 0.875rem)', lineHeight: 1.7, marginBottom: 18, whiteSpace: 'pre-wrap', textAlign: TEXT_ALIGN }}>
               {dish.description}
             </p>
           )}
@@ -253,17 +259,15 @@ export default function DishModal({ activeDish, allDishes, isNested, onClose, on
             <div
               style={{
                 marginBottom: 16,
-                padding:      '10px 14px',
-                background:   '#181208',
-                border:       `1px solid ${ACCENT}20`,
-                borderRadius: 6,
+                padding:      ALRG_BADGE ? '4px 10px' : '10px 14px',
+                background:   ALRG_BG,
+                border:       `1px solid ${ALRG_COLOR}20`,
+                borderRadius: ALRG_BADGE ? 20 : 6,
               }}
             >
-              <p style={{ color: ACCENT, fontSize: 8, letterSpacing: '0.26em', textTransform: 'uppercase', marginBottom: 6 }}>
-                Allergeni
-              </p>
-              <p style={{ color: '#7a6a4a', fontSize: '0.75rem', lineHeight: 1.6 }}>
-                {formatAllergensFull(dish.allergens)}
+              {!ALRG_BADGE && <p style={{ color: ALRG_COLOR, fontSize: 8, letterSpacing: '0.26em', textTransform: 'uppercase', marginBottom: 6 }}>Allergeni</p>}
+              <p style={{ color: ALRG_BADGE ? ALRG_COLOR : '#7a6a4a', fontSize: '0.75rem', lineHeight: 1.6 }}>
+                {ALRG_BADGE ? '⚠ ' : ''}{formatAllergensFull(dish.allergens)}
               </p>
             </div>
           )}

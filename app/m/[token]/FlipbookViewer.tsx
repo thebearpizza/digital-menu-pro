@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react'
 import DishModal, { DishData } from './DishModal'
-import { fontStack, hexToRgb, PAGINATION_OPTIONS } from '@/lib/theme'
+import { fontStack, hexToRgb, PAGINATION_OPTIONS, menuBackgroundCss } from '@/lib/theme'
 import type { RestaurantTheme } from '@/lib/theme'
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -117,17 +117,20 @@ export default function FlipbookViewer({
 }: Props) {
   // Merge incoming theme over menuConfig defaults so existing callers without
   // a theme prop keep working with the hardcoded palette.
-  const pageBgColor  = themeProp?.pageBackground ?? menuConfig.flipbook.pageBackground
+  const mn           = themeProp?.menu      ?? null
+  const pageBgColor  = mn?.pageBackground ?? menuConfig.flipbook.pageBackground
+  const catStyle     = mn?.stickyCategories.style ?? 'solid'
+  const navBgComputed = catStyle === 'transparent-blur' ? 'rgba(0,0,0,0.35)' : (mn?.stickyCategories.bgColor ?? menuConfig.theme.navBg)
   const theme = {
     ...menuConfig.theme,
-    appBg:      themeProp?.appBg       ?? menuConfig.theme.pageBg,
-    accent:     themeProp?.accent      ?? menuConfig.theme.accent,
-    textPrimary:themeProp?.textPrimary ?? menuConfig.theme.textPrimary,
-    textMuted:  themeProp?.textMuted   ?? menuConfig.theme.textMuted,
-    navBg:      themeProp?.navBg       ?? menuConfig.theme.navBg,
-    navActive:  themeProp?.accent      ?? menuConfig.theme.navActive,
-    fontSerif:  fontStack(themeProp?.fontSerif ?? 'Cormorant Garamond', 'serif'),
-    fontSans:   fontStack(themeProp?.fontSans  ?? 'DM Sans', 'sans'),
+    appBg:      mn?.background.color ?? menuConfig.theme.pageBg,
+    accent:     mn?.accent            ?? menuConfig.theme.accent,
+    textPrimary:themeProp?.landing.title.color ?? menuConfig.theme.textPrimary,
+    textMuted:  mn?.stickyCategories.textColor ?? menuConfig.theme.textMuted,
+    navBg:      navBgComputed,
+    navActive:  mn?.accent            ?? menuConfig.theme.navActive,
+    fontSerif:  fontStack(mn?.dishes.titleFont ?? 'Cormorant Garamond', 'serif'),
+    fontSans:   fontStack(mn?.stickyCategories.font ?? 'DM Sans', 'sans'),
   }
   const bookRef = useRef<HTMLDivElement>(null)
 
@@ -581,11 +584,9 @@ export default function FlipbookViewer({
     window.$(el).turn('page', targetPage)
   }, [])
 
-  const atFirst   = currentPage <= 1
-  const atLast    = totalPages > 0 && currentPage >= totalPages
-  const pagOpt    = PAGINATION_OPTIONS[themeProp?.paginationStyle ?? 'prec_succ']
-  const catStyle  = themeProp?.stickyCategoryStyle ?? 'solid'
-  const navBgComputed = catStyle === 'transparent-blur' ? 'rgba(0,0,0,0.35)' : theme.navBg
+  const atFirst = currentPage <= 1
+  const atLast  = totalPages > 0 && currentPage >= totalPages
+  const pagOpt  = PAGINATION_OPTIONS[mn?.navigation.style ?? 'prec_succ']
 
   // ═══════════════════════════════════════════════════════════════════════════
   // RENDER
@@ -594,10 +595,10 @@ export default function FlipbookViewer({
     <div
       className="fixed inset-0 h-[100dvh] overflow-hidden select-none outline-none [-webkit-tap-highlight-color:transparent] [&_*]:[-webkit-tap-highlight-color:transparent]"
       style={{
-        background:  theme.appBg,
+        ...(mn ? menuBackgroundCss(mn.background) : { background: theme.appBg }),
         touchAction: 'none',
         fontFamily:  theme.fontSans,
-        '--theme-accent-rgb': hexToRgb(themeProp?.accent ?? '#c9a96e'),
+        '--theme-accent-rgb': hexToRgb(mn?.accent ?? '#c9a96e'),
       } as React.CSSProperties}
     >
 
