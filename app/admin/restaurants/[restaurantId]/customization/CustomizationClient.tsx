@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { saveTheme, createBanner, deleteBanner } from './actions'
 import {
@@ -8,6 +8,7 @@ import {
   MENU_BG_EFFECTS, MENU_BG_EFFECT_LABELS,
   googleFontsUrl, allThemeFonts, fontStack, formatPrice,
 } from '@/lib/theme'
+import { ALL_GOOGLE_FONTS } from '@/lib/googleFontsCatalog'
 import type {
   RestaurantTheme, LandingTheme, LandingBackground, MenuTheme, CardTheme,
   MenuBgEffect, PaginationStyle,
@@ -86,6 +87,36 @@ function usePreviewFonts(theme: RestaurantTheme) {
   }, [fontsKey]) // eslint-disable-line react-hooks/exhaustive-deps
 }
 
+// ── Fill-height hook ───────────────────────────────────────────────────────────
+// Measures the wrapper's distance from the top of the viewport and stretches it
+// to the bottom edge (minus a small margin) so the preview always uses every
+// available pixel — no fixed-offset guessing, no leftover bottom gap, no scroll.
+
+function useFillHeight() {
+  const ref = useRef<HTMLDivElement>(null)
+  const [height, setHeight] = useState<number | null>(null)
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const measure = () => {
+      const top = el.getBoundingClientRect().top
+      setHeight(Math.max(window.innerHeight - top - 12, 360))
+    }
+    measure()
+    // rAF catches the post-layout position once fonts/chrome settle.
+    const raf = requestAnimationFrame(measure)
+    window.addEventListener('resize', measure)
+    const ro = new ResizeObserver(measure)
+    ro.observe(document.body)
+    return () => {
+      cancelAnimationFrame(raf)
+      window.removeEventListener('resize', measure)
+      ro.disconnect()
+    }
+  }, [])
+  return { ref, height }
+}
+
 // ── UI Atoms ──────────────────────────────────────────────────────────────────
 
 function Accordion({ title, defaultOpen = false, children }: {
@@ -140,34 +171,80 @@ function PillGroup<T extends string>({
   )
 }
 
+// Searchable font picker — spans the full Google Fonts catalog (1500+ families)
+// plus a curated shortlist shown first. Renders inline (no absolute dropdown) so
+// it never gets clipped by the sidebar's overflow containers. Each visible option
+// is previewed in its own font, loaded on demand.
+
 function FontSelector({ label, value, curated, category, onChange }: {
   label: string; value: string; curated: string[]; category: 'serif' | 'sans'; onChange: (v: string) => void
 }) {
-  const isCustom = !curated.includes(value)
-  const [customMode, setCustomMode] = useState(isCustom)
-  const [customVal,  setCustomVal]  = useState(isCustom ? value : '')
+  const [open,  setOpen]  = useState(false)
+  const [query, setQuery] = useState('')
+
+  const q = query.trim().toLowerCase()
+  const results = useMemo(() => {
+    if (!q) {
+      const rest = ALL_GOOGLE_FONTS.filter(f => !curated.includes(f))
+      return [...curated, ...rest].slice(0, 80)
+    }
+    return ALL_GOOGLE_FONTS.filter(f => f.toLowerCase().includes(q)).slice(0, 80)
+  }, [q, curated])
+
+  // Load the fonts currently visible in the list so each option previews itself.
+  // Debounced so fast typing doesn't fire a fetch per keystroke.
+  useEffect(() => {
+    if (!open) return
+    const id = setTimeout(() => {
+      const href = googleFontsUrl(results)
+      if (!href) return
+      let link = document.querySelector('link[data-font-search]') as HTMLLinkElement | null
+      if (!link) {
+        link = document.createElement('link')
+        link.rel = 'stylesheet'
+        link.setAttribute('data-font-search', '1')
+        document.head.appendChild(link)
+      }
+      link.href = href
+    }, 250)
+    return () => clearTimeout(id)
+  }, [open, results])
 
   return (
     <div>
       <label className="block text-xs text-gray-600 mb-1">{label}</label>
-      {!customMode ? (
-        <select value={value}
-          onChange={e => { if (e.target.value === '__custom__') { setCustomMode(true); return } onChange(e.target.value) }}
-          className="w-full px-2 py-1.5 border border-gray-200 text-xs bg-white focus:outline-none focus:border-gray-400">
-          {curated.map(f => <option key={f} value={f}>{f}</option>)}
-          <option value="__custom__">Altro Google Font…</option>
-        </select>
-      ) : (
-        <div className="flex gap-1">
-          <input type="text" value={customVal} onChange={e => setCustomVal(e.target.value)}
-            placeholder="es. Abril Fatface"
-            className="flex-1 px-2 py-1.5 border border-gray-200 text-xs focus:outline-none focus:border-gray-400"
-            onBlur={() => { if (customVal.trim()) onChange(customVal.trim()) }}
-            onKeyDown={e => { if (e.key === 'Enter' && customVal.trim()) onChange(customVal.trim()) }} />
-          <button type="button" onClick={() => { setCustomMode(false); onChange(curated[0]) }}
-            className="text-[10px] text-gray-400 hover:text-gray-600 px-1">&#x2715;</button>
+      <button type="button" onClick={() => setOpen(o => !o)}
+        className="w-full flex items-center justify-between px-2 py-1.5 border border-gray-200 text-xs bg-white hover:border-gray-400 transition-colors">
+        <span className="truncate" style={{ fontFamily: fontStack(value, category) }}>{value}</span>
+        <span className="text-gray-300 ml-2 shrink-0">{open ? '▴' : '▾'}</span>
+      </button>
+
+      {open && (
+        <div className="mt-1 border border-gray-200 rounded-sm bg-white">
+          <div className="p-2 border-b border-gray-100">
+            <input autoFocus type="text" value={query} onChange={e => setQuery(e.target.value)}
+              placeholder={`Cerca tra ${ALL_GOOGLE_FONTS.length} font…`}
+              className="w-full px-2 py-1.5 border border-gray-200 text-xs focus:outline-none focus:border-gray-400" />
+          </div>
+          <div className="max-h-56 overflow-y-auto">
+            {results.length === 0 && (
+              <p className="px-3 py-3 text-[11px] text-gray-400">Nessun font trovato.</p>
+            )}
+            {results.map(f => (
+              <button key={f} type="button"
+                onClick={() => { onChange(f); setOpen(false); setQuery('') }}
+                className={`w-full text-left px-3 py-1.5 text-sm hover:bg-gray-50 transition-colors ${f === value ? 'bg-gray-100' : ''}`}
+                style={{ fontFamily: fontStack(f, category) }}>
+                {f}
+              </button>
+            ))}
+            {!q && results.length >= 80 && (
+              <p className="px-3 py-2 text-[10px] text-gray-300">Digita per cercare tra tutti i {ALL_GOOGLE_FONTS.length} font…</p>
+            )}
+          </div>
         </div>
       )}
+
       <p className="mt-1 text-[11px]" style={{ fontFamily: fontStack(value, category), color: '#888' }}>
         {value} — Il tuo menù in questo font
       </p>
@@ -667,7 +744,6 @@ function LivePreview({ qrToken, theme, previewMode, editMode = false, showDummyD
           title="Anteprima menu"
           src={`/m/${qrToken}?preview=1`}
           className="w-full h-full border-0"
-          style={{ pointerEvents: editMode ? 'none' : 'auto' }}
         />
       </div>
     </div>
@@ -771,6 +847,7 @@ export default function CustomizationClient({
   useEffect(() => { if (!editMode) { setActiveEditor(null); setShowDummyData(false) } }, [editMode])
 
   usePreviewFonts(theme)
+  const { ref: fillRef, height: fillHeight } = useFillHeight()
 
   // ── Typed patch helpers ──────────────────────────────────────────────────────
 
@@ -914,11 +991,11 @@ export default function CustomizationClient({
 
 
   return (
-    /* The outer div uses an absolute viewport height calculation so the preview
-       fills the screen without relying on the ancestor chain. The vertical offset
-       accounts for: AdminShell padding (64px) + RestaurantLayout padding + title (48px)
-       + breadcrumb (32px) + TabNav (44px) + control-bar (52px) ≈ 270px total.     */
-    <div className="flex flex-col" style={{ height: 'calc(100dvh - 270px)', minHeight: 480 }}>
+    /* useFillHeight measures this wrapper's real top offset and stretches it to
+       the bottom of the viewport, so the preview fills all available space with
+       no fixed-offset guessing and no leftover bottom gap. */
+    <div ref={fillRef} className="flex flex-col"
+      style={{ height: fillHeight ? fillHeight : 'calc(100dvh - 270px)', minHeight: 360 }}>
 
       {/* ── Control bar ─────────────────────────────────────────────────── */}
       <div className="flex items-center gap-2 sm:gap-3 pb-3 mb-3 border-b border-gray-100 flex-wrap shrink-0">

@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { formatAllergensFull } from '@/lib/allergens'
 import { fontStack, formatPrice, landingButtonRadius } from '@/lib/theme'
 import type { CardTheme, RestaurantTheme } from '@/lib/theme'
+import { EditHandle } from './EditHandle'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -26,12 +27,13 @@ interface Props {
   onClose:     () => void
   onBack?:     () => void
   onOpenDish:  (dish: DishData) => void
+  editMode?:   boolean
   theme?:      RestaurantTheme
 }
 
 // ── Component ──────────────────────────────────────────────────────────────────
 
-export default function DishModal({ activeDish, allDishes, isNested, onClose, onBack, onOpenDish, theme }: Props) {
+export default function DishModal({ activeDish, allDishes, isNested, onClose, onBack, onOpenDish, editMode = false, theme }: Props) {
   const mn   = theme?.menu
   const card = theme?.card
   // Card-specific: use card theme if available, fall back to menu theme
@@ -251,25 +253,29 @@ export default function DishModal({ activeDish, allDishes, isNested, onClose, on
               <div className="flex-1 min-w-0">
                 {/* Category chip already rendered above; name + price inside */}
                 <div className={`flex gap-4 ${TEXT_ALIGN === 'center' ? 'flex-col items-center' : 'items-start justify-between'}`}>
-                  <h2
-                    style={{
-                      fontFamily: FONT_SERIF,
-                      fontSize:   `${TITLE_SIZE}rem`,
-                      color:      TITLE_COLOR,
-                      fontWeight: TITLE_WEIGHT === 'bold' ? 700 : TITLE_WEIGHT === 'normal' ? 400 : 300,
-                      lineHeight: 1.2,
-                      textAlign:  TEXT_ALIGN,
-                    }}
-                  >
-                    {dish.name}
-                  </h2>
-                  {dish.price != null && (
-                    <span
-                      className={`tabular-nums ${TEXT_ALIGN === 'center' ? '' : 'shrink-0'}`}
-                      style={{ color: PRICE_COLOR, fontSize: `${PRICE_SIZE}rem`, fontWeight: 600, paddingTop: TEXT_ALIGN === 'center' ? 0 : 4 }}
+                  <EditHandle target="dish-title" editMode={editMode}>
+                    <h2
+                      style={{
+                        fontFamily: FONT_SERIF,
+                        fontSize:   `${TITLE_SIZE}rem`,
+                        color:      TITLE_COLOR,
+                        fontWeight: TITLE_WEIGHT === 'bold' ? 700 : TITLE_WEIGHT === 'normal' ? 400 : 300,
+                        lineHeight: 1.2,
+                        textAlign:  TEXT_ALIGN,
+                      }}
                     >
-                      {formatPrice(dish.price, PRICE_FORMAT)}
-                    </span>
+                      {dish.name}
+                    </h2>
+                  </EditHandle>
+                  {dish.price != null && (
+                    <EditHandle target="dish-price" editMode={editMode} className={TEXT_ALIGN === 'center' ? '' : 'shrink-0'}>
+                      <span
+                        className="tabular-nums"
+                        style={{ color: PRICE_COLOR, fontSize: `${PRICE_SIZE}rem`, fontWeight: 600, paddingTop: TEXT_ALIGN === 'center' ? 0 : 4 }}
+                      >
+                        {formatPrice(dish.price, PRICE_FORMAT)}
+                      </span>
+                    </EditHandle>
                   )}
                 </div>
               </div>
@@ -282,25 +288,29 @@ export default function DishModal({ activeDish, allDishes, isNested, onClose, on
           ) : (
             /* photo-top and minimal: standard name + price row */
             <div className={`flex gap-4 mb-3 ${TEXT_ALIGN === 'center' ? 'flex-col items-center' : 'items-start justify-between'}`}>
-              <h2
-                style={{
-                  fontFamily: FONT_SERIF,
-                  fontSize:   `${TITLE_SIZE}rem`,
-                  color:      TITLE_COLOR,
-                  fontWeight: TITLE_WEIGHT === 'bold' ? 700 : TITLE_WEIGHT === 'normal' ? 400 : 300,
-                  lineHeight: 1.2,
-                  textAlign:  TEXT_ALIGN,
-                }}
-              >
-                {dish.name}
-              </h2>
-              {dish.price != null && (
-                <span
-                  className={`tabular-nums ${TEXT_ALIGN === 'center' ? '' : 'shrink-0'}`}
-                  style={{ color: PRICE_COLOR, fontSize: `${PRICE_SIZE}rem`, fontWeight: 600, paddingTop: TEXT_ALIGN === 'center' ? 0 : 4 }}
+              <EditHandle target="dish-title" editMode={editMode}>
+                <h2
+                  style={{
+                    fontFamily: FONT_SERIF,
+                    fontSize:   `${TITLE_SIZE}rem`,
+                    color:      TITLE_COLOR,
+                    fontWeight: TITLE_WEIGHT === 'bold' ? 700 : TITLE_WEIGHT === 'normal' ? 400 : 300,
+                    lineHeight: 1.2,
+                    textAlign:  TEXT_ALIGN,
+                  }}
                 >
-                  {formatPrice(dish.price, PRICE_FORMAT)}
-                </span>
+                  {dish.name}
+                </h2>
+              </EditHandle>
+              {dish.price != null && (
+                <EditHandle target="dish-price" editMode={editMode} className={TEXT_ALIGN === 'center' ? '' : 'shrink-0'}>
+                  <span
+                    className="tabular-nums"
+                    style={{ color: PRICE_COLOR, fontSize: `${PRICE_SIZE}rem`, fontWeight: 600, paddingTop: TEXT_ALIGN === 'center' ? 0 : 4 }}
+                  >
+                    {formatPrice(dish.price, PRICE_FORMAT)}
+                  </span>
+                </EditHandle>
               )}
             </div>
           )}
@@ -310,9 +320,11 @@ export default function DishModal({ activeDish, allDishes, isNested, onClose, on
 
           {/* Description — pre-wrap preserves \n line-breaks entered in the admin */}
           {dish.description && (
-            <p className="w-full max-w-full break-words" style={{ color: DESC_COLOR, fontFamily: FONT_SANS, fontSize: `${DESC_SIZE}rem`, lineHeight: 1.7, marginBottom: 18, whiteSpace: 'pre-wrap', textAlign: TEXT_ALIGN }}>
-              {dish.description}
-            </p>
+            <EditHandle target="dish-description" editMode={editMode}>
+              <p className="w-full max-w-full break-words" style={{ color: DESC_COLOR, fontFamily: FONT_SANS, fontSize: `${DESC_SIZE}rem`, lineHeight: 1.7, marginBottom: 18, whiteSpace: 'pre-wrap', textAlign: TEXT_ALIGN }}>
+                {dish.description}
+              </p>
+            </EditHandle>
           )}
 
           {/* Allergens */}

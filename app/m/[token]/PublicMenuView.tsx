@@ -9,6 +9,7 @@ import { useState, useEffect, useRef } from 'react'
 import FlipbookViewer  from './FlipbookViewer'
 import DishModal       from './DishModal'
 import type { DishData } from './DishModal'
+import { EditHandle, sendEdit } from './EditHandle'
 import { useMenuPDF }  from './useMenuPDF'
 import {
   googleFontsUrl, allThemeFonts, fontStack,
@@ -80,30 +81,6 @@ function ThemeFontLoader({ theme }: { theme: RestaurantTheme }) {
     link.href = href
   }, [theme])
   return null
-}
-
-// ── Edit-mode helpers (used when page is loaded inside admin iframe) ──────────
-
-function sendEdit(target: string) {
-  try { window.parent?.postMessage({ type: 'dmp-element-clicked', target }, window.location.origin) } catch {}
-}
-
-function EditHandle({
-  target, children, editMode: em, className = '', style,
-}: {
-  target: string; children: React.ReactNode; editMode: boolean
-  className?: string; style?: React.CSSProperties
-}) {
-  if (!em) return <>{children}</>
-  return (
-    <div className={`relative ${className}`}
-      style={{ ...style, cursor: 'pointer' }}
-      onClick={e => { e.stopPropagation(); sendEdit(target) }}
-      role="button" tabIndex={0} aria-label={`Edit ${target}`}>
-      {children}
-      <div className="absolute inset-0 border-2 border-dashed border-blue-400/60 rounded pointer-events-none" />
-    </div>
-  )
 }
 
 // ── Social icons ──────────────────────────────────────────────────────────────
@@ -487,14 +464,10 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
             dishes={activeMenu?.dishes ?? []}
             theme={t}
           />
-          {/* Background/layout edit handle — only in admin preview */}
-          {editMode && (
-            <button
-              className="absolute top-3 right-3 z-[300] flex items-center gap-1.5 px-2.5 py-1 bg-blue-500 text-white rounded-full text-[11px] shadow-lg"
-              onClick={() => sendEdit('background-layout')}>
-              <span>✏</span><span>Sfondo & Layout</span>
-            </button>
-          )}
+          {/* Edit palette — clickable chips for every menu element (the menu is a
+              rendered PDF, so its text can't be wrapped individually). Only in
+              admin preview. */}
+          {editMode && <MenuEditPalette />}
         </div>
       )}
 
@@ -506,10 +479,37 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
             allDishes={allDishesFlat.length ? allDishesFlat.map(d => ({ ...d, allergens: d.allergens ?? [] })) : [DUMMY_DISH]}
             onClose={() => setCardPreviewOpen(false)}
             onOpenDish={() => {}}
+            editMode={editMode}
             theme={t}
           />
         </div>
       )}
+    </div>
+  )
+}
+
+// ── Menu edit palette ───────────────────────────────────────────────────────
+// The flipbook menu is a rendered PDF, so individual dish/category texts aren't
+// real DOM nodes we can wrap. Instead we surface a labelled chip for each menu
+// target; clicking a chip opens its editor panel in the admin sidebar.
+
+function MenuEditPalette() {
+  const chips: [string, string][] = [
+    ['category-title',    'Categoria'],
+    ['dish-title',        'Titolo piatto'],
+    ['dish-description',  'Descrizione'],
+    ['dish-price',        'Prezzo'],
+    ['background-layout', 'Sfondo & Layout'],
+  ]
+  return (
+    <div className="absolute top-3 left-1/2 -translate-x-1/2 z-[300] flex flex-wrap items-center justify-center gap-1.5 px-2"
+      style={{ maxWidth: '95%' }}>
+      {chips.map(([target, label]) => (
+        <button key={target} onClick={() => sendEdit(target)}
+          className="px-2.5 py-1 bg-blue-500/90 hover:bg-blue-600 text-white rounded-full text-[10px] font-medium shadow-md backdrop-blur-sm transition-colors">
+          {label}
+        </button>
+      ))}
     </div>
   )
 }
