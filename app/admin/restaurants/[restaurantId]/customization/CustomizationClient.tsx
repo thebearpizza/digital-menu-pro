@@ -225,10 +225,365 @@ const EDITOR_TARGETS: Record<string, { title: string; hint: string }> = {
   'background-layout': { title: 'Sfondo & Layout',    hint: 'Sfondo menu, paginazione, spaziatura' },
 }
 
-// ── Editor sidebar placeholder (Step 3 will fill with real controls) ──────────
+// ── Sidebar setters interface ─────────────────────────────────────────────────
 
-function EditorSidebar({ target, onClose }: { target: string; onClose: () => void }) {
+interface SidebarSetters {
+  setLBg:            (p: Partial<LandingBackground>) => void
+  setLLogo:          (p: Partial<LandingTheme['logo']>) => void
+  setLTitle:         (p: Partial<LandingTheme['title']>) => void
+  setLDesc:          (p: Partial<LandingTheme['description']>) => void
+  setLBu:            (p: Partial<LandingTheme['buttons']>) => void
+  setL:              (p: Partial<LandingTheme>) => void
+  setMDishes:        (p: Partial<MenuTheme['dishes']>) => void
+  setMDescs:         (p: Partial<MenuTheme['descriptions']>) => void
+  setMPrices:        (p: Partial<MenuTheme['prices']>) => void
+  setMCats:          (p: Partial<MenuTheme['categories']>) => void
+  setMLayout:        (p: Partial<MenuTheme['layout']>) => void
+  setMDivider:       (p: Partial<MenuTheme['layout']['divider']>) => void
+  setMBg:            (p: Partial<MenuTheme['background']>) => void
+  setMNav:           (p: Partial<MenuTheme['navigation']>) => void
+  setM:              (p: Partial<MenuTheme>) => void
+  setCardTitle:      (p: Partial<CardTheme['title']>) => void
+  setCardDesc:       (p: Partial<CardTheme['description']>) => void
+  setCardPrice:      (p: Partial<CardTheme['price']>) => void
+  handleBgUpload:    (f: File) => void
+  handleVideoUpload: (f: File) => void
+  bgUploading:       boolean
+  vidUploading:      boolean
+}
+
+// ── Buttons panel — own state for transparent-bg toggle ───────────────────────
+
+function ButtonsPanel({ l, setLBu }: {
+  l: LandingTheme; setLBu: (p: Partial<LandingTheme['buttons']>) => void
+}) {
+  const [bgTransparent, setBgTransparent] = useState(l.buttons.bgColor === 'transparent')
+  const [bgHex, setBgHex] = useState(l.buttons.bgColor === 'transparent' ? '#000000' : l.buttons.bgColor)
+  return (
+    <div className="space-y-4">
+      <div>
+        <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Forma</p>
+        <PillGroup
+          options={[{ label:'Flat', value:'flat' },{ label:'Arrotondato', value:'rounded' },{ label:'Pill', value:'pill' }]}
+          value={l.buttons.shape} onChange={v => setLBu({ shape: v })} />
+      </div>
+      <div>
+        <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Bordo</p>
+        <PillGroup
+          options={[{ label:'Nessuno', value:'none' },{ label:'Solido', value:'solid' },{ label:'Tratteggiato', value:'dashed' }]}
+          value={l.buttons.borderStyle} onChange={v => setLBu({ borderStyle: v })} />
+      </div>
+      {l.buttons.borderStyle !== 'none' && (<>
+        <div>
+          <div className="flex justify-between items-center mb-1">
+            <label className="text-xs text-gray-600">Spessore bordo</label>
+            <span className="text-[10px] font-mono text-gray-400">{l.buttons.borderWidth}px</span>
+          </div>
+          <input type="range" min={0} max={5} step={0.5} value={l.buttons.borderWidth}
+            onChange={e => setLBu({ borderWidth: Number(e.target.value) })}
+            className="w-full accent-gray-900" />
+        </div>
+        <ColorRow label="Colore bordo" value={l.buttons.borderColor} onChange={v => setLBu({ borderColor: v })} />
+      </>)}
+      <ColorRow label="Colore testo" value={l.buttons.textColor} onChange={v => setLBu({ textColor: v })} />
+      <div>
+        <label className="flex items-center gap-2 mb-2 cursor-pointer select-none">
+          <input type="checkbox" checked={bgTransparent}
+            onChange={e => { setBgTransparent(e.target.checked); setLBu({ bgColor: e.target.checked ? 'transparent' : bgHex }) }}
+            className="accent-gray-900 w-3.5 h-3.5" />
+          <span className="text-xs text-gray-600">Sfondo trasparente</span>
+        </label>
+        {!bgTransparent && (
+          <ColorRow label="Colore sfondo" value={bgHex}
+            onChange={v => { setBgHex(v); setLBu({ bgColor: v }) }} />
+        )}
+      </div>
+      <FontSelector label="Font bottoni" value={l.buttons.font} curated={SANS_FONTS} category="sans"
+        onChange={v => setLBu({ font: v })} />
+      <FontSizeSlider label="Dimensione testo" value={l.buttons.fontSize}
+        min={0.5} max={1.2} step={0.025} previewFont={fontStack(l.buttons.font, 'sans')}
+        onChange={v => setLBu({ fontSize: v })} />
+    </div>
+  )
+}
+
+// ── Editor sidebar ────────────────────────────────────────────────────────────
+
+function EditorSidebar({ target, theme, setters, onClose }: {
+  target: string; theme: RestaurantTheme; setters: SidebarSetters; onClose: () => void
+}) {
   const info = EDITOR_TARGETS[target]
+  const l    = theme.landing
+  const m    = theme.menu
+  const c    = theme.card
+  const bgFileRef    = useRef<HTMLInputElement>(null)
+  const videoFileRef = useRef<HTMLInputElement>(null)
+
+  function renderControls() {
+    switch (target) {
+
+      case 'landing-bg': return (
+        <div className="space-y-4">
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Tipo</p>
+            <PillGroup
+              options={[{ label:'Colore', value:'color' },{ label:'Immagine', value:'image' },{ label:'Video', value:'video' },{ label:'GIF', value:'gif' }]}
+              value={l.background.type} onChange={v => setters.setLBg({ type: v })} />
+          </div>
+          {l.background.type === 'color' && (
+            <ColorRow label="Colore sfondo" value={l.background.value}
+              onChange={v => setters.setLBg({ value: v })} />
+          )}
+          {(l.background.type === 'image' || l.background.type === 'gif') && (
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5">File</p>
+              {l.background.value?.startsWith('http') && (
+                <img src={l.background.value} alt="" className="w-full h-20 object-cover border border-gray-200 mb-2 rounded" />
+              )}
+              <input ref={bgFileRef} type="file" accept="image/*"
+                onChange={e => { const f = e.target.files?.[0]; if (f) setters.handleBgUpload(f) }}
+                className="block text-xs text-gray-500 file:mr-2 file:py-1 file:px-3 file:border file:border-gray-200 file:text-xs file:bg-white file:text-gray-600 hover:file:bg-gray-50 cursor-pointer w-full" />
+              {setters.bgUploading && <p className="text-xs text-gray-400 mt-1">Caricamento…</p>}
+            </div>
+          )}
+          {l.background.type === 'video' && (
+            <div className="space-y-3">
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5">File video</p>
+                <input ref={videoFileRef} type="file" accept="video/*"
+                  onChange={e => { const f = e.target.files?.[0]; if (f) setters.handleVideoUpload(f) }}
+                  className="block text-xs text-gray-500 file:mr-2 file:py-1 file:px-3 file:border file:border-gray-200 file:text-xs file:bg-white file:text-gray-600 hover:file:bg-gray-50 cursor-pointer w-full" />
+                {setters.vidUploading && <p className="text-xs text-gray-400 mt-1">Caricamento…</p>}
+              </div>
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Loop</p>
+                <PillGroup
+                  options={[{ label:'Loop', value:'loop' },{ label:'Una volta', value:'once' },{ label:'Ping-pong', value:'pingpong' }]}
+                  value={l.background.loopMode} onChange={v => setters.setLBg({ loopMode: v })} />
+              </div>
+            </div>
+          )}
+          <div>
+            <div className="flex justify-between items-center mb-1">
+              <label className="text-xs text-gray-600">Opacità overlay</label>
+              <span className="text-[10px] font-mono text-gray-400">{l.background.opacity}%</span>
+            </div>
+            <input type="range" min={0} max={100} step={1} value={l.background.opacity}
+              onChange={e => setters.setLBg({ opacity: Number(e.target.value) })}
+              className="w-full accent-gray-900" />
+          </div>
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Texture</p>
+            <PillGroup
+              options={[{ label:'Nessuna', value:'none' },{ label:'Rumore', value:'noise' },{ label:'Grana', value:'grain' },{ label:'Legno', value:'wood' },{ label:'Marmo', value:'marble' }]}
+              value={l.background.texture} onChange={v => setters.setLBg({ texture: v })} />
+          </div>
+          <label className="flex items-center gap-2 cursor-pointer select-none">
+            <Toggle checked={l.background.immersiveTransition}
+              onChange={v => setters.setLBg({ immersiveTransition: v })} />
+            <span className="text-xs text-gray-600">Transizione immersiva</span>
+          </label>
+        </div>
+      )
+
+      case 'landing-logo': return (
+        <div className="space-y-4">
+          <FontSizeSlider label="Dimensione logo" value={l.logo.size}
+            min={1} max={8} step={0.25} previewFont="inherit"
+            onChange={v => setters.setLLogo({ size: v })} />
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Blend mode</p>
+            <PillGroup
+              options={[{ label:'Normale', value:'normal' },{ label:'Multiply', value:'multiply' },{ label:'Screen', value:'screen' }]}
+              value={l.logo.mixBlend} onChange={v => setters.setLLogo({ mixBlend: v })} />
+          </div>
+        </div>
+      )
+
+      case 'landing-title': return (
+        <div className="space-y-4">
+          <FontSelector label="Font" value={l.title.font}
+            curated={[...SERIF_FONTS, ...DISPLAY_FONTS]} category="serif"
+            onChange={v => setters.setLTitle({ font: v })} />
+          <FontSizeSlider label="Dimensione" value={l.title.size}
+            min={0.8} max={5} step={0.1} previewFont={fontStack(l.title.font, 'serif')}
+            onChange={v => setters.setLTitle({ size: v })} />
+          <ColorRow label="Colore" value={l.title.color} onChange={v => setters.setLTitle({ color: v })} />
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Peso</p>
+            <PillGroup
+              options={[{ label:'Light', value:'light' },{ label:'Normal', value:'normal' },{ label:'Bold', value:'bold' }]}
+              value={l.title.weight} onChange={v => setters.setLTitle({ weight: v })} />
+          </div>
+        </div>
+      )
+
+      case 'landing-desc': return (
+        <div className="space-y-4">
+          <FontSelector label="Font" value={l.description.font}
+            curated={SANS_FONTS} category="sans"
+            onChange={v => setters.setLDesc({ font: v })} />
+          <FontSizeSlider label="Dimensione" value={l.description.size}
+            min={0.4} max={1.4} step={0.05} previewFont={fontStack(l.description.font, 'sans')}
+            onChange={v => setters.setLDesc({ size: v })} />
+          <ColorRow label="Colore" value={l.description.color.slice(0, 7)}
+            onChange={v => setters.setLDesc({ color: v })} />
+        </div>
+      )
+
+      case 'landing-buttons': return (
+        <ButtonsPanel l={l} setLBu={setters.setLBu} />
+      )
+
+      case 'landing-socials': return (
+        <div className="space-y-4">
+          <ColorRow label="Colore accento" value={l.accent}
+            onChange={v => setters.setL({ accent: v, socials: { ...l.socials, color: v } })} />
+          <ColorRow label="Colore icone" value={l.socials.color}
+            onChange={v => setters.setL({ socials: { ...l.socials, color: v } })} />
+          <FontSizeSlider label="Dimensione icone" value={l.socials.size}
+            min={0.8} max={2.5} step={0.05} previewFont="inherit"
+            onChange={v => setters.setL({ socials: { ...l.socials, size: v } })} />
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Stile</p>
+            <PillGroup
+              options={[{ label:'Minimal', value:'minimal' },{ label:'Cerchio', value:'circle' },{ label:'Box', value:'box' },{ label:'Outline', value:'outline' }]}
+              value={l.socials.style}
+              onChange={v => setters.setL({ socials: { ...l.socials, style: v } })} />
+          </div>
+        </div>
+      )
+
+      case 'dish-title': return (
+        <div className="space-y-4">
+          <FontSelector label="Font" value={c.title.font}
+            curated={[...SERIF_FONTS, ...DISPLAY_FONTS]} category="serif"
+            onChange={v => { setters.setCardTitle({ font: v }); setters.setMDishes({ titleFont: v }) }} />
+          <FontSizeSlider label="Dimensione" value={c.title.size}
+            min={1.0} max={3.0} step={0.1} previewFont={fontStack(c.title.font, 'serif')}
+            onChange={v => { setters.setCardTitle({ size: v }); setters.setMDishes({ titleSize: v }) }} />
+          <ColorRow label="Colore" value={c.title.color}
+            onChange={v => { setters.setCardTitle({ color: v }); setters.setMDishes({ titleColor: v }) }} />
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Peso</p>
+            <PillGroup
+              options={[{ label:'Light', value:'light' },{ label:'Normal', value:'normal' },{ label:'Bold', value:'bold' }]}
+              value={c.title.weight} onChange={v => setters.setCardTitle({ weight: v })} />
+          </div>
+        </div>
+      )
+
+      case 'dish-description': return (
+        <div className="space-y-4">
+          <FontSelector label="Font" value={c.description.font}
+            curated={SANS_FONTS} category="sans"
+            onChange={v => { setters.setCardDesc({ font: v }); setters.setMDescs({ font: v }) }} />
+          <FontSizeSlider label="Dimensione" value={c.description.size}
+            min={0.6} max={1.4} step={0.05} previewFont={fontStack(c.description.font, 'sans')}
+            onChange={v => { setters.setCardDesc({ size: v }); setters.setMDescs({ size: v }) }} />
+          <ColorRow label="Colore" value={c.description.color}
+            onChange={v => { setters.setCardDesc({ color: v }); setters.setMDescs({ color: v }) }} />
+        </div>
+      )
+
+      case 'dish-price': return (
+        <div className="space-y-4">
+          <FontSelector label="Font" value={c.price.font}
+            curated={SANS_FONTS} category="sans"
+            onChange={v => { setters.setCardPrice({ font: v }); setters.setMPrices({ font: v }) }} />
+          <FontSizeSlider label="Dimensione" value={c.price.size}
+            min={0.7} max={2.0} step={0.05} previewFont={fontStack(c.price.font, 'sans')}
+            onChange={v => { setters.setCardPrice({ size: v }); setters.setMPrices({ size: v }) }} />
+          <ColorRow label="Colore" value={c.price.color}
+            onChange={v => { setters.setCardPrice({ color: v }); setters.setMPrices({ color: v }) }} />
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Formato</p>
+            <PillGroup
+              options={[{ label:'€ 12.00', value:'symbol-left' },{ label:'12.00 €', value:'symbol-right' },{ label:'12.00', value:'no-symbol' }]}
+              value={c.price.format}
+              onChange={v => { setters.setCardPrice({ format: v }); setters.setMPrices({ format: v }) }} />
+          </div>
+        </div>
+      )
+
+      case 'category-title': return (
+        <div className="space-y-4">
+          <FontSelector label="Font" value={m.categories.font}
+            curated={[...SERIF_FONTS, ...DISPLAY_FONTS]} category="serif"
+            onChange={v => setters.setMCats({ font: v })} />
+          <ColorRow label="Colore" value={m.categories.color}
+            onChange={v => setters.setMCats({ color: v })} />
+        </div>
+      )
+
+      case 'background-layout': return (
+        <div className="space-y-4">
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-2">Sfondo menu</p>
+            <div className="space-y-2.5">
+              <ColorRow label="Colore primario" value={m.background.color}
+                onChange={v => setters.setMBg({ color: v })} />
+              <ColorRow label="Colore secondario" value={m.background.color2}
+                onChange={v => setters.setMBg({ color2: v })} />
+              <div>
+                <label className="text-xs text-gray-600 mb-1 block">Effetto</label>
+                <select value={m.background.effect}
+                  onChange={e => setters.setMBg({ effect: e.target.value as MenuBgEffect })}
+                  className="w-full px-2 py-1.5 border border-gray-200 text-xs bg-white focus:outline-none focus:border-gray-400">
+                  {MENU_BG_EFFECTS.map(ef => (
+                    <option key={ef} value={ef}>{MENU_BG_EFFECT_LABELS[ef]}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          </div>
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Divisore</p>
+            <PillGroup
+              options={[{ label:'Nessuno', value:'none' },{ label:'Solido', value:'solid' },{ label:'Tratteg.', value:'dashed' },{ label:'Punteg.', value:'dotted' }]}
+              value={m.layout.divider.type} onChange={v => setters.setMDivider({ type: v })} />
+            {m.layout.divider.type !== 'none' && (
+              <div className="mt-2">
+                <ColorRow label="Colore divisore" value={m.layout.divider.color}
+                  onChange={v => setters.setMDivider({ color: v })} />
+              </div>
+            )}
+          </div>
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Layout piatti</p>
+            <PillGroup
+              options={[{ label:'Lista', value:'list' },{ label:'Griglia', value:'grid-2' },{ label:'Card', value:'boxed-card' },{ label:'Minimal', value:'minimal-row' }]}
+              value={m.layout.dishLayout} onChange={v => setters.setMLayout({ dishLayout: v })} />
+          </div>
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Allineamento</p>
+            <PillGroup
+              options={[{ label:'Sx', value:'left' },{ label:'Centro', value:'center' },{ label:'Dx', value:'right' }]}
+              value={m.layout.dishAlignment} onChange={v => setters.setMLayout({ dishAlignment: v })} />
+          </div>
+          <div>
+            <label className="text-xs text-gray-600 mb-1 block">Paginazione</label>
+            <select value={m.navigation.style}
+              onChange={e => setters.setMNav({ style: e.target.value as PaginationStyle })}
+              className="w-full px-2 py-1.5 border border-gray-200 text-xs bg-white focus:outline-none focus:border-gray-400">
+              {(Object.keys(PAGINATION_OPTIONS) as PaginationStyle[]).map(k => (
+                <option key={k} value={k}>{PAGINATION_OPTIONS[k].label}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Layout PDF</p>
+            <PillGroup
+              options={[{ label:'Classic', value:'classic' },{ label:'Compact', value:'compact' }]}
+              value={m.pdfLayout} onChange={v => setters.setM({ pdfLayout: v })} />
+          </div>
+        </div>
+      )
+
+      default: return <p className="text-xs text-gray-400">Nessun controllo disponibile.</p>
+    }
+  }
+
   return (
     <div className="flex flex-col h-full">
       <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 shrink-0">
@@ -236,10 +591,13 @@ function EditorSidebar({ target, onClose }: { target: string; onClose: () => voi
           <p className="text-xs font-semibold text-gray-800">{info?.title ?? target}</p>
           {info?.hint && <p className="text-[10px] text-gray-400 mt-0.5">{info.hint}</p>}
         </div>
-        <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-lg leading-none w-7 h-7 flex items-center justify-center">&#xD7;</button>
+        <button onClick={onClose}
+          className="text-gray-400 hover:text-gray-600 text-lg leading-none w-7 h-7 flex items-center justify-center">
+          &#xD7;
+        </button>
       </div>
-      <div className="flex-1 flex items-center justify-center p-6 text-center">
-        <p className="text-xs text-gray-400">Controlli in arrivo (Step 3)</p>
+      <div className="flex-1 overflow-y-auto px-4 py-4">
+        {renderControls()}
       </div>
     </div>
   )
@@ -544,19 +902,13 @@ export default function CustomizationClient({
     finally { setSaving(false) }
   }
 
-  // ── Derived values (used by Step 3 sidebar controls) ─────────────────────────
-
-  const l    = theme.landing
-  const m    = theme.menu
-  const SERIF_STACK = fontStack(l.title.font,   'serif')
-  const SANS_STACK  = fontStack(l.buttons.font, 'sans')
-  // Keep these to prevent TS "unused variable" warnings until Step 3.
-  void m; void SERIF_STACK; void SANS_STACK; void setL; void setM; void setC
-  void setCardTitle; void setCardDesc; void setCardPrice; void setCardAllergens; void setCardClose
-  void setLBg; void setLLogo; void setLTitle; void setLDesc; void setLBu
-  void setMLayout; void setMDivider; void setMDishes; void setMDescs; void setMAllergens
-  void setMPrices; void setMCats; void setMSticky; void setMNav; void setMBg
-  void handleBgUpload; void handleVideoUpload; void bgUploading; void vidUploading
+  const setters: SidebarSetters = {
+    setLBg, setLLogo, setLTitle, setLDesc, setLBu, setL,
+    setMDishes, setMDescs, setMPrices, setMCats, setMLayout, setMDivider, setMBg, setMNav, setM,
+    setCardTitle, setCardDesc, setCardPrice,
+    handleBgUpload, handleVideoUpload, bgUploading, vidUploading,
+  }
+  void setC; void setCardAllergens; void setCardClose; void setMAllergens; void setMSticky
 
   const sidebarOpen = editMode && activeEditor !== null
 
@@ -645,7 +997,7 @@ export default function CustomizationClient({
           className="shrink-0 bg-white border-l border-gray-200 overflow-hidden transition-all duration-300 ease-out hidden md:block"
           style={{ width: sidebarOpen ? 340 : 0 }}>
           {sidebarOpen && (
-            <EditorSidebar target={activeEditor!} onClose={() => setActiveEditor(null)} />
+            <EditorSidebar target={activeEditor!} theme={theme} setters={setters} onClose={() => setActiveEditor(null)} />
           )}
         </aside>
       </div>
@@ -663,7 +1015,7 @@ export default function CustomizationClient({
               <div className="w-9 h-1 rounded-full bg-gray-300" />
             </div>
             <div className="overflow-y-auto" style={{ maxHeight: 'calc(65dvh - 20px)' }}>
-              <EditorSidebar target={activeEditor!} onClose={() => setActiveEditor(null)} />
+              <EditorSidebar target={activeEditor!} theme={theme} setters={setters} onClose={() => setActiveEditor(null)} />
             </div>
           </div>
         </>
