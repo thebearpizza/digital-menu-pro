@@ -1057,11 +1057,14 @@ export default function CustomizationClient({
         </button>
       </div>
 
-      {/* ── Main: preview + contextual sidebar ─────────────────────────── */}
+      {/* ── Main: preview (left) + contextual editor panel (right) ──────────
+          The panel is always part of the flex row: when an element is selected
+          it animates its width open and the preview shrinks to make room — a
+          smooth side-by-side, no overlay and no blur over the iframe. */}
       <div className="flex-1 flex min-h-0 rounded-lg overflow-hidden border border-gray-200">
 
-        {/* Preview — flex-1 so it shrinks proportionally when the sidebar opens */}
-        <div className="flex-1 min-w-0 flex items-center justify-center bg-gradient-to-br from-gray-100 to-gray-200 transition-all duration-300 ease-out p-4 sm:p-6">
+        {/* Preview — flex-1 so it shrinks proportionally as the panel opens */}
+        <div className="flex-1 min-w-0 flex items-center justify-center bg-gradient-to-br from-gray-100 to-gray-200 transition-all duration-300 ease-out p-3 sm:p-5">
           <LivePreview
             qrToken={qrToken} theme={theme} previewMode={previewMode}
             editMode={editMode} showDummyData={showDummyData}
@@ -1069,34 +1072,19 @@ export default function CustomizationClient({
           />
         </div>
 
-        {/* Desktop contextual sidebar — width animates 0 ↔ 340px, phone mockup scales */}
+        {/* Contextual editor panel — pinned right, width animates open/closed.
+            Responsive width keeps both panel and preview usable on tablets. */}
         <aside
-          className="shrink-0 bg-white border-l border-gray-200 overflow-hidden transition-all duration-300 ease-out hidden md:block"
-          style={{ width: sidebarOpen ? 340 : 0 }}>
+          className={`shrink-0 bg-white overflow-hidden transition-[width] duration-300 ease-out ${
+            sidebarOpen ? 'w-[88vw] sm:w-[46vw] md:w-[380px] border-l border-gray-200' : 'w-0'
+          }`}>
           {sidebarOpen && (
-            <EditorSidebar target={activeEditor!} theme={theme} setters={setters} onClose={() => setActiveEditor(null)} />
+            <div className="h-full w-[88vw] sm:w-[46vw] md:w-[380px]">
+              <EditorSidebar target={activeEditor!} theme={theme} setters={setters} onClose={() => setActiveEditor(null)} />
+            </div>
           )}
         </aside>
       </div>
-
-      {/* ── Mobile bottom sheet — slides up when an element is selected ── */}
-      {sidebarOpen && (
-        <>
-          {/* Backdrop */}
-          <div className="md:hidden fixed inset-0 z-40 bg-black/25 backdrop-blur-[1px]"
-            onClick={() => setActiveEditor(null)} />
-          {/* Sheet */}
-          <div className="md:hidden fixed bottom-0 inset-x-0 z-50 bg-white rounded-t-2xl shadow-2xl"
-            style={{ maxHeight: '65dvh' }}>
-            <div className="flex justify-center pt-2.5 pb-1 shrink-0">
-              <div className="w-9 h-1 rounded-full bg-gray-300" />
-            </div>
-            <div className="overflow-y-auto" style={{ maxHeight: 'calc(65dvh - 20px)' }}>
-              <EditorSidebar target={activeEditor!} theme={theme} setters={setters} onClose={() => setActiveEditor(null)} />
-            </div>
-          </div>
-        </>
-      )}
 
     </div>
   )

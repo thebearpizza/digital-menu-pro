@@ -140,17 +140,39 @@ export function useMenuPDF(
     ;(async () => {
       try {
         // Dynamic imports — keeps @react-pdf/renderer out of the server bundle.
-        const [{ createElement }, { pdf }, { MenuPDFDocument }] = await Promise.all([
+        const [{ createElement }, reactPdf, { MenuPDFDocument }, { registerThemeFonts }] = await Promise.all([
           import('react'),
           import('@react-pdf/renderer'),
           import('./MenuPDFDocument'),
+          import('@/lib/pdfFonts'),
         ])
         if (cancelled) return
+        const { pdf, Font } = reactPdf as any
+
+        // Embed the real Google fonts chosen in the theme so the PDF typography
+        // matches the editor. Falls back to built-ins for anything unavailable.
+        const registeredFonts = theme
+          ? registerThemeFonts(Font, [
+              theme.menu.dishes.titleFont,
+              theme.menu.descriptions.font,
+              theme.menu.prices.font,
+              theme.menu.categories.font,
+            ])
+          : new Set<string>()
 
         // ── Generate PDF blob ──────────────────────────────────────────────────
-        const blob = await (pdf as any)(
-          createElement(MenuPDFDocument, { restaurant, menu, theme })
-        ).toBlob()
+        // Try with the embedded Google fonts first; if a font fails to load
+        // (network/CORS), fall back to built-in fonts so the menu always renders.
+        let blob: Blob
+        try {
+          blob = await (pdf as any)(
+            createElement(MenuPDFDocument, { restaurant, menu, theme, registeredFonts })
+          ).toBlob()
+        } catch {
+          blob = await (pdf as any)(
+            createElement(MenuPDFDocument, { restaurant, menu, theme, registeredFonts: new Set<string>() })
+          ).toBlob()
+        }
         if (cancelled) return
 
         const newUrl = URL.createObjectURL(blob)
@@ -192,6 +214,10 @@ export function useMenuPDF(
     theme?.menu.layout.dishSpacing,
     theme?.menu.dishes.titleSize, theme?.menu.descriptions.size, theme?.menu.prices.size,
     theme?.menu.categories.color, theme?.menu.dishes.titleColor,
+    theme?.menu.descriptions.color, theme?.menu.prices.color,
+    theme?.menu.dishes.titleFont, theme?.menu.descriptions.font,
+    theme?.menu.prices.font, theme?.menu.categories.font,
+    theme?.menu.layout.dishAlignment,
   ]) // eslint-disable-line react-hooks/exhaustive-deps
 
   return result

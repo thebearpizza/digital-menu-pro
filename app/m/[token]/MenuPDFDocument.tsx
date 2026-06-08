@@ -5,7 +5,7 @@
 import { Document, Page, Text, View, StyleSheet } from '@react-pdf/renderer'
 import { formatAllergensShort } from '@/lib/allergens'
 import type { RestaurantTheme } from '@/lib/theme'
-import { DEFAULT_THEME, lightenHex, formatPrice, fontStack } from '@/lib/theme'
+import { DEFAULT_THEME, lightenHex, formatPrice } from '@/lib/theme'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -55,15 +55,60 @@ export function groupByCategory(dishes: PDFDish[]): Array<{ name: string; dishes
   return Array.from(map.entries()).map(([name, dishes]) => ({ name, dishes }))
 }
 
+// ── Colour helpers ──────────────────────────────────────────────────────────
+// The theme's default text colours are tuned for the dark card/landing, but the
+// PDF page defaults to white paper. These helpers keep text legible: a colour is
+// used as-is when it has enough contrast with the page, otherwise it is swapped
+// for near-black/near-white. User-chosen colours with real contrast always win.
+
+function parseHex(hex: string): [number, number, number] | null {
+  let h = hex.trim().replace('#', '')
+  if (h.length === 3) h = h.split('').map(c => c + c).join('')
+  if (h.length === 8) h = h.slice(0, 6)
+  if (h.length !== 6) return null
+  const n = parseInt(h, 16)
+  if (Number.isNaN(n)) return null
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255]
+}
+
+function luminance(hex: string): number {
+  const rgb = parseHex(hex)
+  if (!rgb) return 0.5
+  const [r, g, b] = rgb.map(v => {
+    const s = v / 255
+    return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4)
+  })
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b
+}
+
+function readableOn(textColor: string, bgColor: string): string {
+  const lt = luminance(textColor)
+  const lb = luminance(bgColor)
+  const ratio = (Math.max(lt, lb) + 0.05) / (Math.min(lt, lb) + 0.05)
+  if (ratio >= 1.8) return textColor          // enough contrast → honour it
+  return lb > 0.5 ? '#1a1a1a' : '#ede8e0'     // otherwise stay legible
+}
+
 // ── Dynamic styles ────────────────────────────────────────────────────────────
 
-function makeStyles(theme: RestaurantTheme) {
+function makeStyles(theme: RestaurantTheme, registered: Set<string>) {
   const m         = theme.menu
   const compact   = m.pdfLayout === 'compact'
   const catLineColor = lightenHex(m.accent, 0.55)
   const isDashed  = m.layout.divider.type === 'dashed' || m.layout.divider.type === 'dotted'
   const noDivider = m.layout.divider.type === 'none'
   const divColor  = m.layout.divider.color
+  const bg        = m.pageBackground
+  const align     = m.layout.dishAlignment === 'center' ? 'center' : m.layout.dishAlignment === 'right' ? 'right' : 'left'
+
+  // Real font if it registered successfully, otherwise a built-in fallback.
+  const titleFamily = registered.has(m.dishes.titleFont)   ? m.dishes.titleFont   : 'Helvetica-Bold'
+  const descFamily  = registered.has(m.descriptions.font)  ? m.descriptions.font  : 'Helvetica'
+  const priceFamily = registered.has(m.prices.font)        ? m.prices.font        : 'Helvetica-Bold'
+  const catFamily   = registered.has(m.categories.font)    ? m.categories.font    : 'Times-Bold'
+  const titleBold   = registered.has(m.dishes.titleFont)   ? 700 : undefined
+  const priceBold   = registered.has(m.prices.font)        ? 700 : undefined
+  const catBold     = registered.has(m.categories.font)    ? 700 : undefined
 
   const titleScale = m.dishes.titleSize   / DEFAULT_THEME.menu.dishes.titleSize
   const baseScale  = m.descriptions.size  / DEFAULT_THEME.menu.descriptions.size
@@ -71,18 +116,20 @@ function makeStyles(theme: RestaurantTheme) {
 
   return StyleSheet.create({
     page: {
-      backgroundColor:   m.pageBackground,
+      backgroundColor:   bg,
       paddingTop:        compact ? 36 : 52,
       paddingBottom:     compact ? 24 : 40,
       paddingHorizontal: compact ? 42 : 54,
     },
     catTitle: {
-      fontFamily:    'Times-Bold',
+      fontFamily:    catFamily,
+      fontWeight:    catBold,
       fontSize:      (compact ? 13 : 18) * titleScale,
-      color:         m.categories.color,
+      color:         readableOn(m.categories.color, bg),
       textTransform: 'uppercase',
       letterSpacing: compact ? 1.5 : 2,
       marginBottom:  compact ? 5 : 8,
+      textAlign:     align,
     },
     catLine: {
       height:          0.5,
@@ -92,30 +139,33 @@ function makeStyles(theme: RestaurantTheme) {
     // ── List layout ─────────────────────────────────────────────────────────
     dishRow: {
       flexDirection:  'row',
-      justifyContent: 'space-between',
+      justifyContent: align === 'center' ? 'center' : align === 'right' ? 'flex-end' : 'space-between',
       alignItems:     'flex-start',
       marginBottom:   compact ? 2 : 3,
     },
     dishName: {
-      fontFamily:    'Helvetica-Bold',
+      fontFamily:    titleFamily,
+      fontWeight:    titleBold,
       fontSize:      (compact ? 9 : 10) * titleScale,
-      color:         m.dishes.titleColor === '#ede8e0' ? '#1a1a1a' : m.dishes.titleColor,
+      color:         readableOn(m.dishes.titleColor, bg),
       textTransform: 'uppercase',
       letterSpacing: compact ? 0.4 : 0.6,
-      flex:          1,
-      marginRight:   14,
+      flex:          align === 'left' ? 1 : undefined,
+      marginRight:   align === 'left' ? 14 : 8,
     },
     dishPrice: {
-      fontFamily: 'Helvetica-Bold',
+      fontFamily: priceFamily,
+      fontWeight: priceBold,
       fontSize:   (compact ? 9 : 10) * priceScale,
-      color:      '#1a1a1a',
+      color:      readableOn(m.prices.color, bg),
     },
     dishDesc: {
-      fontFamily:   'Helvetica-Oblique',
+      fontFamily:   descFamily,
       fontSize:     (compact ? 7.5 : 8.5) * baseScale,
-      color:        '#4a4a4a',  // descriptions always dark in print
+      color:        readableOn(m.descriptions.color, bg),
       lineHeight:   1.55,
       marginBottom: compact ? 2 : 3,
+      textAlign:    align,
     },
     dishAllergens: {
       fontFamily:    'Helvetica',
@@ -155,15 +205,16 @@ function makeStyles(theme: RestaurantTheme) {
 // ── Component ──────────────────────────────────────────────────────────────────
 
 interface Props {
-  restaurant: PDFRestaurant
-  menu:       PDFMenu
-  theme?:     RestaurantTheme
+  restaurant:      PDFRestaurant
+  menu:            PDFMenu
+  theme?:          RestaurantTheme
+  registeredFonts?: Set<string>
 }
 
-export function MenuPDFDocument({ restaurant, menu, theme: themeProp }: Props) {
+export function MenuPDFDocument({ restaurant, menu, theme: themeProp, registeredFonts }: Props) {
   const theme      = themeProp ?? DEFAULT_THEME
   const m          = theme.menu
-  const s          = makeStyles(theme)
+  const s          = makeStyles(theme, registeredFonts ?? new Set())
   const categories = groupByCategory(menu.dishes)
   const compact    = m.pdfLayout === 'compact'
   const isGrid     = m.layout.dishLayout === 'grid-2'
