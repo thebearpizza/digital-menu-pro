@@ -7,6 +7,8 @@
 
 import { useState, useEffect, useRef } from 'react'
 import FlipbookViewer  from './FlipbookViewer'
+import DishModal       from './DishModal'
+import type { DishData } from './DishModal'
 import { useMenuPDF }  from './useMenuPDF'
 import {
   googleFontsUrl, allThemeFonts, fontStack,
@@ -94,12 +96,12 @@ function EditHandle({
 }) {
   if (!em) return <>{children}</>
   return (
-    <div className={`relative ${className}`} style={style}
+    <div className={`relative ${className}`}
+      style={{ ...style, cursor: 'pointer' }}
       onClick={e => { e.stopPropagation(); sendEdit(target) }}
       role="button" tabIndex={0} aria-label={`Edit ${target}`}>
       {children}
       <div className="absolute inset-0 border-2 border-dashed border-blue-400/60 rounded pointer-events-none" />
-      <span className="absolute -top-3 -right-3 z-[300] w-6 h-6 bg-blue-500 text-white rounded-full shadow-lg flex items-center justify-center text-[11px] pointer-events-none select-none">✏</span>
     </div>
   )
 }
@@ -160,9 +162,10 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
   const l = t.landing
   const m = t.menu
 
-  // editMode / showDummyData: driven by dmp-editor-state from admin
-  const [editMode,      setEditMode]      = useState(false)
-  const [showDummyData, setShowDummyData] = useState(false)
+  // editMode / showDummyData / cardPreviewOpen: driven by dmp-editor-state + dmp-nav
+  const [editMode,        setEditMode]        = useState(false)
+  const [showDummyData,   setShowDummyData]   = useState(false)
+  const [cardPreviewOpen, setCardPreviewOpen] = useState(false)
 
   const videoRef      = useRef<HTMLVideoElement>(null)
   const [posterVisible, setPosterVisible] = useState(true)
@@ -178,8 +181,13 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
       if (!d || typeof d !== 'object') return
       if (d.type === 'dmp-theme' && d.theme)  setLiveTheme(parseTheme(d.theme))
       if (d.type === 'dmp-nav') {
-        if (d.view === 'landing') { setPendingMenuId(null); setSelectedMenuId(null) }
-        else if (d.view === 'menu') setSelectedMenuId(p => p ?? menus[0]?.id ?? null)
+        if (d.view === 'landing') {
+          setPendingMenuId(null); setSelectedMenuId(null); setCardPreviewOpen(false)
+        } else if (d.view === 'menu') {
+          setSelectedMenuId(p => p ?? menus[0]?.id ?? null); setCardPreviewOpen(false)
+        } else if (d.view === 'card') {
+          setSelectedMenuId(p => p ?? menus[0]?.id ?? null); setCardPreviewOpen(true)
+        }
       }
       if (d.type === 'dmp-editor-state') {
         setEditMode(!!d.editMode)
@@ -274,6 +282,18 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
     facebook_url:  restaurant.facebook_url  || '#',
     website_url:   restaurant.website_url   || '#',
   } : restaurant
+
+  // Card preview: first real dish if available, else a rich dummy
+  const DUMMY_DISH: DishData = {
+    id: 'preview', name: 'Tagliolini al Tartufo Nero',
+    description: 'Tagliolini freschi al tartufo nero di Norcia, burro mantecato e Parmigiano Reggiano stagionato 24 mesi.',
+    price: 24, category: 'Primi', image_url: null, allergens: [1, 7],
+    pairing_dish_id: null, pairing_label: null,
+  }
+  const allDishesFlat = menus.flatMap(m => m.dishes)
+  const cardPreviewDish: DishData = allDishesFlat[0]
+    ? { ...allDishesFlat[0], allergens: allDishesFlat[0].allergens ?? [] }
+    : DUMMY_DISH
 
   // ── Background landing layer styles ───────────────────────────────────────
   const bgIsVideo = l.background.type === 'video' || l.background.type === 'gif'
@@ -475,6 +495,19 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
               <span>✏</span><span>Sfondo & Layout</span>
             </button>
           )}
+        </div>
+      )}
+
+      {/* ── CARD PREVIEW — DishModal aperta dall'admin in tab Card ───────── */}
+      {cardPreviewOpen && (
+        <div className="absolute inset-0" style={{ zIndex: 200 }}>
+          <DishModal
+            activeDish={cardPreviewDish}
+            allDishes={allDishesFlat.length ? allDishesFlat.map(d => ({ ...d, allergens: d.allergens ?? [] })) : [DUMMY_DISH]}
+            onClose={() => setCardPreviewOpen(false)}
+            onOpenDish={() => {}}
+            theme={t}
+          />
         </div>
       )}
     </div>

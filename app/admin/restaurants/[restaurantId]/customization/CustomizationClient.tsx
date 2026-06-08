@@ -264,7 +264,7 @@ function LivePreview({ qrToken, theme, previewMode, editMode = false, showDummyD
       if (e.data?.type === 'dmp-preview-ready') {
         readyRef.current = true
         post({ type: 'dmp-theme', theme })
-        post({ type: 'dmp-nav', view: previewMode === 'card' ? 'menu' : previewMode })
+        post({ type: 'dmp-nav', view: previewMode })
         post({ type: 'dmp-editor-state', editMode, showDummyData })
       }
       if (e.data?.type === 'dmp-element-clicked' && e.data.target) {
@@ -283,7 +283,7 @@ function LivePreview({ qrToken, theme, previewMode, editMode = false, showDummyD
 
   useEffect(() => {
     if (!readyRef.current) return
-    post({ type: 'dmp-nav', view: previewMode === 'card' ? 'menu' : previewMode })
+    post({ type: 'dmp-nav', view: previewMode })
   }, [previewMode]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
