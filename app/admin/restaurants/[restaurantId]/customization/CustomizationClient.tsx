@@ -6,7 +6,6 @@ import { saveTheme, createBanner, deleteBanner } from './actions'
 import {
   DEFAULT_THEME, SERIF_FONTS, SANS_FONTS, DISPLAY_FONTS, PAGINATION_OPTIONS,
   MENU_BG_EFFECTS, MENU_BG_EFFECT_LABELS,
-  THEME_PRESETS,
   googleFontsUrl, allThemeFonts, fontStack, formatPrice,
 } from '@/lib/theme'
 import type {
@@ -197,10 +196,60 @@ function FontSizeSlider({ label, value, min, max, step, previewFont, onChange }:
   )
 }
 
+// ── iOS-style toggle ─────────────────────────────────────────────────────────
+
+function Toggle({ checked, onChange, disabled = false }: { checked: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
+  return (
+    <button role="switch" aria-checked={checked} onClick={() => !disabled && onChange(!checked)}
+      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+        disabled ? 'bg-gray-200 cursor-not-allowed' : checked ? 'bg-gray-900' : 'bg-gray-300'
+      }`}>
+      <span className={`inline-block h-4 w-4 rounded-full bg-white shadow transition-transform ${checked ? 'translate-x-6' : 'translate-x-1'}`} />
+    </button>
+  )
+}
+
+// ── Editor target registry ────────────────────────────────────────────────────
+
+const EDITOR_TARGETS: Record<string, { title: string; hint: string }> = {
+  'landing-bg':        { title: 'Sfondo Landing',     hint: 'Tipo, immagine, video, colore, texture, opacità' },
+  'landing-logo':      { title: 'Logo',               hint: 'Dimensione, blend mode' },
+  'landing-title':     { title: 'Nome Ristorante',    hint: 'Font, colore, dimensione, peso' },
+  'landing-desc':      { title: 'Slogan',             hint: 'Font, colore, dimensione' },
+  'landing-buttons':   { title: 'Bottoni Menu',       hint: 'Colori, bordo, font, forma' },
+  'landing-socials':   { title: 'Social & Accento',   hint: 'Colore accento, icone social, dimensione' },
+  'dish-title':        { title: 'Titolo Piatto',      hint: 'Font, colore, dimensione' },
+  'dish-description':  { title: 'Descrizione Piatto', hint: 'Font, colore, dimensione' },
+  'dish-price':        { title: 'Prezzo',             hint: 'Font, colore, formato' },
+  'category-title':    { title: 'Titolo Categoria',   hint: 'Font, colore, dimensione, allineamento' },
+  'background-layout': { title: 'Sfondo & Layout',    hint: 'Sfondo menu, paginazione, spaziatura' },
+}
+
+// ── Editor sidebar placeholder (Step 3 will fill with real controls) ──────────
+
+function EditorSidebar({ target, onClose }: { target: string; onClose: () => void }) {
+  const info = EDITOR_TARGETS[target]
+  return (
+    <div className="flex flex-col h-full">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 shrink-0">
+        <div>
+          <p className="text-xs font-semibold text-gray-800">{info?.title ?? target}</p>
+          {info?.hint && <p className="text-[10px] text-gray-400 mt-0.5">{info.hint}</p>}
+        </div>
+        <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-lg leading-none w-7 h-7 flex items-center justify-center">&#xD7;</button>
+      </div>
+      <div className="flex-1 flex items-center justify-center p-6 text-center">
+        <p className="text-xs text-gray-400">Controlli in arrivo (Step 3)</p>
+      </div>
+    </div>
+  )
+}
+
 // ── Live preview iframe ───────────────────────────────────────────────────────
 
-function LivePreview({ qrToken, theme, previewMode }: {
+function LivePreview({ qrToken, theme, previewMode, editMode = false, showDummyData = false, onElementClick }: {
   qrToken: string | null; theme: RestaurantTheme; previewMode: 'landing' | 'menu' | 'card'
+  editMode?: boolean; showDummyData?: boolean; onElementClick?: (target: string) => void
 }) {
   const iframeRef = useRef<HTMLIFrameElement>(null)
   const readyRef  = useRef(false)
@@ -216,11 +265,15 @@ function LivePreview({ qrToken, theme, previewMode }: {
         readyRef.current = true
         post({ type: 'dmp-theme', theme })
         post({ type: 'dmp-nav', view: previewMode === 'card' ? 'menu' : previewMode })
+        post({ type: 'dmp-editor-state', editMode, showDummyData })
+      }
+      if (e.data?.type === 'dmp-element-clicked' && e.data.target) {
+        onElementClick?.(e.data.target)
       }
     }
     window.addEventListener('message', onMsg)
     return () => window.removeEventListener('message', onMsg)
-  }, [theme, previewMode]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [theme, previewMode, editMode, showDummyData]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!readyRef.current) return
@@ -232,6 +285,11 @@ function LivePreview({ qrToken, theme, previewMode }: {
     if (!readyRef.current) return
     post({ type: 'dmp-nav', view: previewMode === 'card' ? 'menu' : previewMode })
   }, [previewMode]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!readyRef.current) return
+    post({ type: 'dmp-editor-state', editMode, showDummyData })
+  }, [editMode, showDummyData]) // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!qrToken) {
     return (
@@ -251,6 +309,7 @@ function LivePreview({ qrToken, theme, previewMode }: {
           title="Anteprima menu"
           src={`/m/${qrToken}?preview=1`}
           className="w-full h-full border-0"
+          style={{ pointerEvents: editMode ? 'none' : 'auto' }}
         />
       </div>
     </div>
@@ -347,7 +406,11 @@ export default function CustomizationClient({
   const [bgUploading,  setBgUploading]  = useState(false)
   const [vidUploading, setVidUploading] = useState(false)
   const [previewMode,  setPreviewMode]  = useState<'landing' | 'menu' | 'card'>('landing')
-  const [previewOpen,  setPreviewOpen]  = useState(false)
+  const [editMode,     setEditMode]     = useState(false)
+  const [showDummyData,setShowDummyData]= useState(false)
+  const [activeEditor, setActiveEditor] = useState<string | null>(null)
+
+  useEffect(() => { if (!editMode) { setActiveEditor(null); setShowDummyData(false) } }, [editMode])
 
   usePreviewFonts(theme)
 
@@ -481,59 +544,37 @@ export default function CustomizationClient({
     finally { setSaving(false) }
   }
 
-  // ── Derived values ───────────────────────────────────────────────────────────
+  // ── Derived values (used by Step 3 sidebar controls) ─────────────────────────
 
   const l    = theme.landing
   const m    = theme.menu
   const SERIF_STACK = fontStack(l.title.font,   'serif')
   const SANS_STACK  = fontStack(l.buttons.font, 'sans')
+  // Keep these to prevent TS "unused variable" warnings until Step 3.
+  void m; void SERIF_STACK; void SANS_STACK; void setL; void setM; void setC
+  void setCardTitle; void setCardDesc; void setCardPrice; void setCardAllergens; void setCardClose
+  void setLBg; void setLLogo; void setLTitle; void setLDesc; void setLBu
+  void setMLayout; void setMDivider; void setMDishes; void setMDescs; void setMAllergens
+  void setMPrices; void setMCats; void setMSticky; void setMNav; void setMBg
+  void handleBgUpload; void handleVideoUpload; void bgUploading; void vidUploading
+
+  const sidebarOpen = editMode && activeEditor !== null
+
 
   return (
-    <div>
-      {/* ── Header ─────────────────────────────────────────────────────────── */}
-      <div className="flex items-center justify-between mb-6 pb-4 border-b border-gray-100">
-        <div>
-          <h2 className="text-sm font-semibold text-gray-800">Personalizzazione</h2>
-          <p className="text-xs text-gray-400 mt-0.5">
-            Anteprima dal vivo a destra. Le modifiche si applicano dopo il salvataggio.
-          </p>
-        </div>
-        <div className="flex items-center gap-3">
-          {saved && <span className="text-xs text-green-600">Salvato.</span>}
-          {error && <span className="text-xs text-red-500 max-w-[200px] truncate">{error}</span>}
-          <button type="button"
-            onClick={() => { if (confirm('Ripristinare il tema predefinito?')) { setTheme(DEFAULT_THEME); setSaved(false) } }}
-            className="text-xs text-gray-400 hover:text-gray-600">
-            Ripristina
-          </button>
-          <button type="button" onClick={handleSave} disabled={saving}
-            className="bg-gray-900 text-white text-xs font-medium px-4 py-2 hover:bg-gray-700 disabled:opacity-50 transition-colors">
-            {saving ? 'Salvataggio…' : 'Salva modifiche'}
-          </button>
-        </div>
-      </div>
+    /* The outer div uses an absolute viewport height calculation so the preview
+       fills the screen without relying on the ancestor chain. The vertical offset
+       accounts for: AdminShell padding (64px) + RestaurantLayout padding + title (48px)
+       + breadcrumb (32px) + TabNav (44px) + control-bar (52px) ≈ 270px total.     */
+    <div className="flex flex-col" style={{ height: 'calc(100dvh - 270px)', minHeight: 480 }}>
 
-      {/* ── Preset themes ────────────────────────────────────────────────────── */}
-      <div className="mb-6 pb-4 border-b border-gray-100">
-        <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-gray-400 mb-2">
-          Temi predefiniti
-        </p>
-        <div className="flex gap-1 flex-wrap">
-          {THEME_PRESETS.map(preset => (
-            <button key={preset.name} type="button"
-              onClick={() => { setTheme(preset.theme); setSaved(false) }}
-              className="px-2.5 py-1 text-[10px] border border-gray-200 text-gray-500 hover:border-gray-400 hover:text-gray-700 transition-colors">
-              {preset.name}
-            </button>
-          ))}
-        </div>
-      </div>
+      {/* ── Control bar ─────────────────────────────────────────────────── */}
+      <div className="flex items-center gap-2 sm:gap-3 pb-3 mb-3 border-b border-gray-100 flex-wrap shrink-0">
 
-      {/* ── Mode toggle ────────────────────────────────────────────────────── */}
-      <div className="flex gap-1 mb-6">
+        {/* Mode tabs */}
         {(['landing', 'menu', 'card'] as const).map(mode => (
           <button key={mode} type="button" onClick={() => setPreviewMode(mode)}
-            className={`px-4 py-2 text-[10px] font-semibold uppercase tracking-wider border transition-colors ${
+            className={`px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider border transition-colors ${
               previewMode === mode
                 ? 'bg-gray-900 text-white border-gray-900'
                 : 'bg-white text-gray-500 border-gray-200 hover:border-gray-400'
@@ -541,636 +582,91 @@ export default function CustomizationClient({
             {mode === 'landing' ? 'Landing' : mode === 'menu' ? 'Menu' : 'Card'}
           </button>
         ))}
-        <span className="ml-2 text-[10px] text-gray-400 self-center hidden sm:inline">
-          {previewMode === 'landing' ? 'Schermata di benvenuto clienti' : previewMode === 'menu' ? 'Pagine menù e flipbook' : 'Modale dettaglio piatto'}
-        </span>
+
+        <div className="hidden sm:block w-px h-5 bg-gray-200 mx-1 shrink-0" />
+
+        {/* Pencil toggle */}
+        <label className="flex items-center gap-2 cursor-pointer select-none">
+          <Toggle checked={editMode} onChange={setEditMode} />
+          <span className="flex items-center gap-1.5 text-xs font-medium text-gray-700">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5 shrink-0">
+              <path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+            </svg>
+            <span className="hidden sm:inline">Modifica</span>
+          </span>
+        </label>
+
+        {/* Dummy data checkbox — only enabled in edit mode */}
+        <label className={`flex items-center gap-1.5 select-none text-xs ${editMode ? 'cursor-pointer text-gray-600' : 'cursor-not-allowed text-gray-300'}`}>
+          <input type="checkbox" disabled={!editMode} checked={showDummyData}
+            onChange={e => setShowDummyData(e.target.checked)}
+            className="accent-gray-900 w-3.5 h-3.5" />
+          <span className="hidden sm:inline">Dati fittizi</span>
+          <span className="sm:hidden">Fittizi</span>
+        </label>
+
+        {editMode && (
+          <span className="hidden md:inline ml-1 text-[10px] text-gray-400">
+            {activeEditor ? `Modifica: ${EDITOR_TARGETS[activeEditor]?.title ?? activeEditor}` : 'Clicca un elemento per modificarlo'}
+          </span>
+        )}
+
+        {/* Spacer */}
+        <div className="flex-1" />
+
+        {/* Status + save */}
+        {saved  && <span className="text-xs text-green-600 shrink-0">Salvato</span>}
+        {error  && <span className="text-xs text-red-500 truncate max-w-[120px] shrink-0">{error}</span>}
+        <button type="button"
+          onClick={() => { if (confirm('Ripristinare il tema predefinito?')) { setTheme(DEFAULT_THEME); setSaved(false) } }}
+          className="hidden sm:inline text-[10px] text-gray-400 hover:text-gray-600 shrink-0">
+          Ripristina
+        </button>
+        <button type="button" onClick={handleSave} disabled={saving}
+          className="bg-gray-900 text-white text-xs font-medium px-4 py-2 hover:bg-gray-700 disabled:opacity-50 transition-colors shrink-0">
+          {saving ? '…' : 'Salva'}
+        </button>
       </div>
 
-      {/* ── 30/70 grid ─────────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-1 lg:grid-cols-[380px_1fr] gap-8 items-start">
+      {/* ── Main: preview + contextual sidebar ─────────────────────────── */}
+      <div className="flex-1 flex min-h-0 rounded-lg overflow-hidden border border-gray-200">
 
-        {/* ── Controls ───────────────────────────────────────────────────── */}
-        <div className="space-y-2 lg:pr-2">
+        {/* Preview — flex-1 so it shrinks proportionally when the sidebar opens */}
+        <div className="flex-1 min-w-0 flex items-center justify-center bg-gradient-to-br from-gray-100 to-gray-200 transition-all duration-300 ease-out p-4 sm:p-6">
+          <LivePreview
+            qrToken={qrToken} theme={theme} previewMode={previewMode}
+            editMode={editMode} showDummyData={showDummyData}
+            onElementClick={setActiveEditor}
+          />
+        </div>
 
-          {previewMode === 'landing' ? (
-            <>
-              {/* ── LANDING: Sfondo ── */}
-              <Accordion title="Sfondo landing" defaultOpen>
-                <div>
-                  <p className="text-xs text-gray-600 mb-2">Tipo</p>
-                  <PillGroup options={[
-                    { label: 'Colore',    value: 'color' as const },
-                    { label: 'Immagine',  value: 'image' as const },
-                    { label: 'Video',     value: 'video' as const },
-                  ]} value={l.background.type} onChange={v => setLBg({ type: v })} />
-                </div>
-
-                {l.background.type === 'color' && (
-                  <ColorRow label="Colore sfondo" value={l.background.value} onChange={v => setLBg({ value: v })} />
-                )}
-
-                {l.background.type === 'image' && (
-                  <>
-                    {l.background.value && l.background.value.startsWith('http') && (
-                      <div className="relative inline-block">
-                        <img src={l.background.value} alt="Sfondo" className="w-24 h-16 object-cover border border-gray-200" />
-                        <button type="button"
-                          onClick={() => setLBg({ type: 'color', value: '#0d0d0d' })}
-                          className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 text-white text-xs rounded-full flex items-center justify-center">&#xD7;</button>
-                      </div>
-                    )}
-                    <input type="file" accept="image/*"
-                      onChange={e => e.target.files?.[0] && handleBgUpload(e.target.files[0])}
-                      className="block text-xs text-gray-500 file:mr-2 file:py-1 file:px-3 file:border file:border-gray-200 file:text-xs file:bg-white file:text-gray-600 hover:file:bg-gray-50 cursor-pointer" />
-                    {bgUploading && <p className="text-xs text-gray-400">Caricamento…</p>}
-                    <div>
-                      <label className="block text-xs text-gray-500 mb-1">
-                        Opacità overlay: <span className="font-medium text-gray-700">{l.background.opacity}%</span>
-                      </label>
-                      <input type="range" min={5} max={100} step={5} value={l.background.opacity}
-                        onChange={e => setLBg({ opacity: Number(e.target.value) })}
-                        className="w-full accent-gray-900" />
-                    </div>
-                  </>
-                )}
-
-                {l.background.type === 'video' && (
-                  <>
-                    {l.background.value && l.background.value.startsWith('http') && (
-                      <div className="relative inline-block">
-                        {l.background.poster
-                          ? <img src={l.background.poster} alt="" className="w-32 h-20 object-cover border border-gray-200" />
-                          : <video src={l.background.value} muted className="w-32 h-20 object-cover border border-gray-200 bg-black" />
-                        }
-                        <button type="button"
-                          onClick={() => setLBg({ type: 'color', value: '#0d0d0d', poster: undefined })}
-                          className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 text-white text-xs rounded-full flex items-center justify-center">&#xD7;</button>
-                      </div>
-                    )}
-                    <input type="file" accept="video/*"
-                      onChange={e => e.target.files?.[0] && handleVideoUpload(e.target.files[0])}
-                      className="block text-xs text-gray-500 file:mr-2 file:py-1 file:px-3 file:border file:border-gray-200 file:text-xs file:bg-white file:text-gray-600 hover:file:bg-gray-50 cursor-pointer" />
-                    {vidUploading && <p className="text-xs text-gray-400">Caricamento e estrazione poster…</p>}
-                    <p className="text-[10px] text-gray-400">Max 5MB. MP4/WebM consigliati.</p>
-                    <label className={`flex items-start gap-2 pt-2 border-t border-gray-50 ${l.background.value ? 'cursor-pointer' : 'opacity-50 cursor-not-allowed'}`}>
-                      <input type="checkbox" disabled={!l.background.value}
-                        checked={l.background.immersiveTransition}
-                        onChange={e => setLBg({ immersiveTransition: e.target.checked })}
-                        className="mt-0.5 accent-gray-900" />
-                      <span className="text-xs text-gray-600">
-                        Transizione immersiva
-                        <span className="block text-[10px] text-gray-400">
-                          Al tap su un menù la UI svanisce, il video parte e al termine si apre il menù.
-                        </span>
-                      </span>
-                    </label>
-                  </>
-                )}
-
-                <div>
-                  <p className="text-xs text-gray-600 mb-2">Texture overlay</p>
-                  <PillGroup options={[
-                    { label: 'Nessuna', value: 'none'  as const },
-                    { label: 'Rumore', value: 'noise' as const },
-                    { label: 'Grana',  value: 'grain' as const },
-                    { label: 'Marmo',  value: 'marble' as const },
-                  ]} value={l.background.texture} onChange={v => setLBg({ texture: v })} />
-                </div>
-
-                {/* Loop mode — only shown for video type */}
-                {l.background.type === 'video' && (
-                  <div>
-                    <p className="text-xs text-gray-600 mb-2">Modalità loop video</p>
-                    <PillGroup options={[
-                      { label: 'Loop',      value: 'loop'     as const },
-                      { label: 'Stop',      value: 'once'     as const },
-                      { label: 'Pingpong',  value: 'pingpong' as const },
-                    ]} value={l.background.loopMode} onChange={v => setLBg({ loopMode: v })} />
-                    <p className="text-[10px] text-gray-400 mt-1">
-                      {l.background.loopMode === 'pingpong' ? 'Riproduce avanti e indietro in alternanza.' :
-                       l.background.loopMode === 'once'     ? 'Si ferma al termine.' :
-                                                              'Ricomincia dall\'inizio.'}
-                    </p>
-                  </div>
-                )}
-              </Accordion>
-
-              {/* ── LANDING: Accento ── */}
-              <Accordion title="Accento & Social" defaultOpen>
-                <ColorRow label="Colore accento (bottoni, bordi)" value={l.accent} onChange={v => setL({ accent: v })} />
-                <ColorRow label="Colore icone" value={l.socials.color}
-                  onChange={v => setL({ socials: { ...l.socials, color: v } })} />
-                <div>
-                  <div className="flex justify-between items-center mb-1">
-                    <label className="text-xs text-gray-600">Dimensione</label>
-                    <span className="text-[10px] font-mono text-gray-400">{l.socials.size.toFixed(2)}rem</span>
-                  </div>
-                  <input type="range" min={0.75} max={2.5} step={0.25} value={l.socials.size}
-                    onChange={e => setL({ socials: { ...l.socials, size: Number(e.target.value) } })}
-                    className="w-full accent-gray-900" />
-                </div>
-                <div>
-                  <p className="text-xs text-gray-600 mb-2">Stile</p>
-                  <PillGroup options={[
-                    { label: 'Minimal',  value: 'minimal' as const },
-                    { label: 'Cerchio',  value: 'circle'  as const },
-                    { label: 'Box',      value: 'box'     as const },
-                    { label: 'Outline',  value: 'outline' as const },
-                  ]} value={l.socials.style}
-                    onChange={v => setL({ socials: { ...l.socials, style: v } })} />
-                </div>
-              </Accordion>
-
-              {/* ── LANDING: Logo ── */}
-              <Accordion title="Logo">
-                <div>
-                  <div className="flex justify-between items-center mb-1">
-                    <label className="text-xs text-gray-600">Dimensione logo</label>
-                    <span className="text-[10px] font-mono text-gray-400">{l.logo.size.toFixed(1)}rem</span>
-                  </div>
-                  <input type="range" min={1.5} max={8} step={0.5} value={l.logo.size}
-                    onChange={e => setLLogo({ size: Number(e.target.value) })}
-                    className="w-full accent-gray-900" />
-                </div>
-                <div>
-                  <p className="text-xs text-gray-600 mb-2">Blend mode logo</p>
-                  <PillGroup options={[
-                    { label: 'Normale',    value: 'normal'   as const },
-                    { label: 'Moltiplica', value: 'multiply' as const },
-                    { label: 'Screen',     value: 'screen'   as const },
-                  ]} value={l.logo.mixBlend} onChange={v => setLLogo({ mixBlend: v })} />
-                  <p className="text-[10px] text-gray-400 mt-1">
-                    {l.logo.mixBlend === 'multiply' ? 'Rimuove lo sfondo bianco del logo.' :
-                     l.logo.mixBlend === 'screen'   ? 'Rimuove lo sfondo scuro del logo.' :
-                                                      'Logo con sfondo opaco.'}
-                  </p>
-                </div>
-              </Accordion>
-
-              {/* ── LANDING: Titolo ── */}
-              <Accordion title="Titolo ristorante">
-                <FontSelector label="Font" value={l.title.font} curated={[...SERIF_FONTS, ...DISPLAY_FONTS]} category="serif"
-                  onChange={v => setLTitle({ font: v })} />
-                <FontSizeSlider label="Dimensione" value={l.title.size} min={1.0} max={4.0} step={0.1}
-                  previewFont={SERIF_STACK} onChange={v => setLTitle({ size: v })} />
-                <ColorRow label="Colore" value={l.title.color} onChange={v => setLTitle({ color: v })} />
-                <div>
-                  <p className="text-xs text-gray-600 mb-2">Peso</p>
-                  <PillGroup options={[
-                    { label: 'Light',     value: 'light'  as const },
-                    { label: 'Normale',   value: 'normal' as const },
-                    { label: 'Grassetto', value: 'bold'   as const },
-                  ]} value={l.title.weight} onChange={v => setLTitle({ weight: v })} />
-                </div>
-              </Accordion>
-
-              {/* ── LANDING: Descrizione ── */}
-              <Accordion title="Descrizione / Slogan">
-                <FontSelector label="Font" value={l.description.font} curated={SANS_FONTS} category="sans"
-                  onChange={v => setLDesc({ font: v })} />
-                <FontSizeSlider label="Dimensione" value={l.description.size} min={0.4} max={1.2} step={0.05}
-                  previewFont={SANS_STACK} onChange={v => setLDesc({ size: v })} />
-                <ColorRow label="Colore" value={l.description.color.slice(0, 7)} onChange={v => setLDesc({ color: v })} />
-              </Accordion>
-
-              {/* ── LANDING: Bottoni ── */}
-              <Accordion title="Bottoni menu">
-                <div>
-                  <p className="text-xs text-gray-600 mb-2">Forma</p>
-                  <PillGroup options={[
-                    { label: 'Netto',       value: 'flat'    as const },
-                    { label: 'Arrotondato', value: 'rounded' as const },
-                    { label: 'Pill',        value: 'pill'    as const },
-                  ]} value={l.buttons.shape} onChange={v => setLBu({ shape: v })} />
-                </div>
-                <ColorRow label="Colore testo"  value={l.buttons.textColor}   onChange={v => setLBu({ textColor: v })} />
-                <div className="flex items-center justify-between gap-3">
-                  <label className="text-xs text-gray-600 flex-1">Colore sfondo</label>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <button type="button"
-                      onClick={() => setLBu({ bgColor: l.buttons.bgColor === 'transparent' ? '#000000' : 'transparent' })}
-                      className={`text-[10px] px-2 py-0.5 border transition-colors ${l.buttons.bgColor === 'transparent' ? 'bg-gray-900 text-white border-gray-900' : 'bg-white text-gray-400 border-gray-200 hover:border-gray-400'}`}>
-                      Trasparente
-                    </button>
-                    {l.buttons.bgColor !== 'transparent' && (
-                      <>
-                        <span className="text-[10px] text-gray-400 font-mono w-16 text-right">{l.buttons.bgColor.slice(0, 7)}</span>
-                        <div className="relative w-8 h-8 border border-gray-200 overflow-hidden rounded-sm">
-                          <input type="color" value={l.buttons.bgColor.startsWith('#') && l.buttons.bgColor.length >= 7 ? l.buttons.bgColor.slice(0,7) : '#000000'}
-                            onChange={e => setLBu({ bgColor: e.target.value })}
-                            className="absolute inset-0 w-[150%] h-[150%] -top-1 -left-1 cursor-pointer border-0 p-0 bg-transparent" />
-                        </div>
-                      </>
-                    )}
-                  </div>
-                </div>
-                <ColorRow label="Colore bordo"  value={l.buttons.borderColor} onChange={v => setLBu({ borderColor: v })} />
-                <div>
-                  <p className="text-xs text-gray-600 mb-2">Stile bordo</p>
-                  <PillGroup options={[
-                    { label: 'Nessuno',   value: 'none'   as const },
-                    { label: 'Continuo',  value: 'solid'  as const },
-                    { label: 'Tratteg.',  value: 'dashed' as const },
-                  ]} value={l.buttons.borderStyle} onChange={v => setLBu({ borderStyle: v })} />
-                </div>
-                <FontSelector label="Font" value={l.buttons.font} curated={SANS_FONTS} category="sans"
-                  onChange={v => setLBu({ font: v })} />
-                <FontSizeSlider label="Dimensione font" value={l.buttons.fontSize} min={0.4} max={1.0} step={0.025}
-                  previewFont={SANS_STACK} onChange={v => setLBu({ fontSize: v })} />
-                {/* Border width */}
-                <div>
-                  <div className="flex justify-between items-center mb-1">
-                    <label className="text-xs text-gray-600">Spessore bordo</label>
-                    <span className="text-[10px] font-mono text-gray-400">{l.buttons.borderWidth}px</span>
-                  </div>
-                  <input type="range" min={1} max={4} step={1} value={l.buttons.borderWidth}
-                    onChange={e => setLBu({ borderWidth: Number(e.target.value) })}
-                    className="w-full accent-gray-900" />
-                </div>
-              </Accordion>
-
-              {/* ── LANDING: Banner ── */}
-              <Accordion title="Banner promozionali">
-                <p className="text-xs text-gray-400">Appaiono nella landing sopra i bottoni menu.</p>
-                <BannerManager restaurantId={restaurantId} initialBanners={initialBanners} />
-              </Accordion>
-            </>
-          ) : previewMode === 'menu' ? (
-            <>
-              {/* ── MENU: Sfondo ── */}
-              <Accordion title="Sfondo menù" defaultOpen>
-                <ColorRow label="Colore base" value={m.background.color} onChange={v => setMBg({ color: v })} />
-                <div>
-                  <label className="block text-xs text-gray-600 mb-1">Effetto sfondo</label>
-                  <select value={m.background.effect}
-                    onChange={e => setMBg({ effect: e.target.value as MenuBgEffect })}
-                    className="w-full px-2 py-1.5 border border-gray-200 text-xs bg-white focus:outline-none focus:border-gray-400">
-                    {MENU_BG_EFFECTS.map(e => (
-                      <option key={e} value={e}>{MENU_BG_EFFECT_LABELS[e]}</option>
-                    ))}
-                  </select>
-                </div>
-                {/* Second color — only shown for gradient effects */}
-                {(m.background.effect === 'linear-gradient' || m.background.effect === 'radial-gradient' ||
-                  m.background.effect === 'slate' || m.background.effect === 'leather' ||
-                  m.background.effect === 'velvet') && (
-                  <ColorRow label="Secondo colore (sfumatura)" value={m.background.color2}
-                    onChange={v => setMBg({ color2: v })} />
-                )}
-              </Accordion>
-
-              {/* ── MENU: Accento ── */}
-              <Accordion title="Accento menù" defaultOpen>
-                <ColorRow label="Colore accento (prezzi, icone)" value={m.accent} onChange={v => setM({ accent: v })} />
-              </Accordion>
-
-              {/* ── MENU: Layout piatti ── */}
-              <Accordion title="Layout piatti" defaultOpen>
-                <div>
-                  <p className="text-xs text-gray-600 mb-2">Disposizione</p>
-                  <PillGroup options={[
-                    { label: 'Lista',    value: 'list'        as const },
-                    { label: 'Griglia',  value: 'grid-2'      as const },
-                    { label: 'Boxed',    value: 'boxed-card'  as const },
-                    { label: 'Minimale', value: 'minimal-row' as const },
-                  ]} value={m.layout.dishLayout} onChange={v => setMLayout({ dishLayout: v })} />
-                  <p className="text-[10px] text-gray-400 mt-1">
-                    {m.layout.dishLayout === 'grid-2'      ? '2 colonne — compatto, menù lunghi.' :
-                     m.layout.dishLayout === 'boxed-card'  ? 'Riquadro per piatto.' :
-                     m.layout.dishLayout === 'minimal-row' ? 'Solo nome e prezzo, nessuna descrizione.' :
-                                                              'Lista verticale classica.'}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-xs text-gray-600 mb-2">Allineamento</p>
-                  <PillGroup options={[
-                    { label: 'Sinistra', value: 'left'   as const },
-                    { label: 'Centro',   value: 'center' as const },
-                    { label: 'Destra',   value: 'right'  as const },
-                  ]} value={m.layout.dishAlignment} onChange={v => setMLayout({ dishAlignment: v })} />
-                </div>
-                <div>
-                  <div className="flex justify-between items-center mb-1">
-                    <label className="text-xs text-gray-600">Spaziatura tra piatti</label>
-                    <span className="text-[10px] font-mono text-gray-400">{m.layout.dishSpacing}px</span>
-                  </div>
-                  <input type="range" min={0} max={24} step={2} value={m.layout.dishSpacing}
-                    onChange={e => setMLayout({ dishSpacing: Number(e.target.value) })}
-                    className="w-full accent-gray-900" />
-                </div>
-                {m.layout.dishLayout === 'boxed-card' && (
-                  <div>
-                    <div className="flex justify-between items-center mb-1">
-                      <label className="text-xs text-gray-600">Spessore bordo (boxed)</label>
-                      <span className="text-[10px] font-mono text-gray-400">{m.layout.boxedBorderWidth}pt</span>
-                    </div>
-                    <input type="range" min={0.5} max={4} step={0.5} value={m.layout.boxedBorderWidth}
-                      onChange={e => setMLayout({ boxedBorderWidth: Number(e.target.value) })}
-                      className="w-full accent-gray-900" />
-                  </div>
-                )}
-              </Accordion>
-
-              {/* ── MENU: Divisori ── */}
-              <Accordion title="Divisori tra piatti">
-                <div>
-                  <p className="text-xs text-gray-600 mb-2">Tipo</p>
-                  <PillGroup options={[
-                    { label: 'Nessuno',  value: 'none'   as const },
-                    { label: 'Linea',    value: 'solid'  as const },
-                    { label: 'Tratteg.', value: 'dashed' as const },
-                    { label: 'Puntini',  value: 'dotted' as const },
-                  ]} value={m.layout.divider.type} onChange={v => setMDivider({ type: v })} />
-                </div>
-                {m.layout.divider.type !== 'none' && (
-                  <ColorRow label="Colore divisore" value={m.layout.divider.color} onChange={v => setMDivider({ color: v })} />
-                )}
-              </Accordion>
-
-              {/* ── MENU: Nomi piatti ── */}
-              <Accordion title="Nomi piatti">
-                <p className="text-[10px] text-amber-600 bg-amber-50 border border-amber-100 px-2 py-1.5 leading-snug">
-                  Il font non si applica al PDF (usa Helvetica incorporato). La dimensione e il colore sì.
-                </p>
-                <FontSelector label="Font nomi" value={m.dishes.titleFont} curated={[...SERIF_FONTS, ...DISPLAY_FONTS]} category="serif"
-                  onChange={v => setMDishes({ titleFont: v })} />
-                <FontSizeSlider label="Dimensione" value={m.dishes.titleSize} min={1.0} max={2.5} step={0.05}
-                  previewFont={fontStack(m.dishes.titleFont, 'serif')}
-                  onChange={v => setMDishes({ titleSize: v })} />
-                <ColorRow label="Colore" value={m.dishes.titleColor} onChange={v => setMDishes({ titleColor: v })} />
-              </Accordion>
-
-              {/* ── MENU: Descrizioni ── */}
-              <Accordion title="Descrizioni">
-                <p className="text-[10px] text-amber-600 bg-amber-50 border border-amber-100 px-2 py-1.5 leading-snug">
-                  Font e colore non si applicano al PDF. Usali per il colore nella card espansa.
-                </p>
-                <FontSelector label="Font" value={m.descriptions.font} curated={SANS_FONTS} category="sans"
-                  onChange={v => setMDescs({ font: v })} />
-                <FontSizeSlider label="Dimensione" value={m.descriptions.size} min={0.6} max={1.3} step={0.05}
-                  previewFont={fontStack(m.descriptions.font, 'sans')}
-                  onChange={v => setMDescs({ size: v })} />
-                <ColorRow label="Colore" value={m.descriptions.color} onChange={v => setMDescs({ color: v })} />
-              </Accordion>
-
-              {/* ── MENU: Allergeni ── */}
-              <Accordion title="Allergeni">
-                <div>
-                  <p className="text-xs text-gray-600 mb-2">Stile visualizzazione</p>
-                  <PillGroup options={[
-                    { label: 'Testo', value: 'text'  as const },
-                    { label: 'Badge', value: 'badge' as const },
-                  ]} value={m.allergens.style} onChange={v => setMAllergens({ style: v })} />
-                  <p className="text-[10px] text-gray-400 mt-1">
-                    {m.allergens.style === 'badge' ? 'Pill compatto con ⚠.' : 'Riquadro con intestazione "Allergeni".'}
-                  </p>
-                </div>
-                <ColorRow label="Colore testo" value={m.allergens.color}   onChange={v => setMAllergens({ color: v })} />
-                <ColorRow label="Sfondo"       value={m.allergens.bgColor} onChange={v => setMAllergens({ bgColor: v })} />
-              </Accordion>
-
-              {/* ── MENU: Prezzi ── */}
-              <Accordion title="Prezzi">
-                <p className="text-[10px] text-amber-600 bg-amber-50 border border-amber-100 px-2 py-1.5 leading-snug">
-                  Font e colore si applicano alla card espansa, non al PDF (sempre nero in stampa).
-                </p>
-                <div>
-                  <p className="text-xs text-gray-600 mb-2">Formato</p>
-                  <PillGroup options={[
-                    { label: '€ 12,50', value: 'symbol-left'  as const },
-                    { label: '12,50 €', value: 'symbol-right' as const },
-                    { label: '12.50',   value: 'no-symbol'    as const },
-                  ]} value={m.prices.format} onChange={v => setMPrices({ format: v })} />
-                  <p className="text-[10px] font-mono text-gray-400 mt-1">{formatPrice(12.50, m.prices.format)}</p>
-                </div>
-                <FontSelector label="Font prezzi" value={m.prices.font} curated={SANS_FONTS} category="sans"
-                  onChange={v => setMPrices({ font: v })} />
-                <FontSizeSlider label="Dimensione" value={m.prices.size} min={0.7} max={1.8} step={0.05}
-                  previewFont={fontStack(m.prices.font, 'sans')}
-                  onChange={v => setMPrices({ size: v })} />
-                <ColorRow label="Colore" value={m.prices.color} onChange={v => setMPrices({ color: v })} />
-              </Accordion>
-
-              {/* ── MENU: Categorie ── */}
-              <Accordion title="Titoli categorie">
-                <FontSelector label="Font" value={m.categories.font} curated={[...SERIF_FONTS, ...DISPLAY_FONTS]} category="serif"
-                  onChange={v => setMCats({ font: v })} />
-                <ColorRow label="Colore" value={m.categories.color} onChange={v => setMCats({ color: v })} />
-              </Accordion>
-
-              {/* ── MENU: Barra sticky ── */}
-              <Accordion title="Barra categorie sticky">
-                <div>
-                  <p className="text-xs text-gray-600 mb-2">Stile</p>
-                  <PillGroup options={[
-                    { label: 'Solida',     value: 'solid'            as const },
-                    { label: 'Vetro blur', value: 'transparent-blur' as const },
-                    { label: 'Nascosta',   value: 'none'             as const },
-                  ]} value={m.stickyCategories.style} onChange={v => setMSticky({ style: v })} />
-                  <p className="text-[10px] text-gray-400 mt-1">
-                    {m.stickyCategories.style === 'transparent-blur' ? 'Effetto vetro smerigliato (backdrop-blur).' :
-                     m.stickyCategories.style === 'none'             ? 'Barra nascosta — solo sfoglio manuale.' :
-                                                                       'Barra opaca con colore navigazione.'}
-                  </p>
-                </div>
-                {m.stickyCategories.style !== 'none' && (
-                  <>
-                    <ColorRow label="Sfondo barra"  value={m.stickyCategories.bgColor}   onChange={v => setMSticky({ bgColor: v })} />
-                    <ColorRow label="Colore testo"  value={m.stickyCategories.textColor} onChange={v => setMSticky({ textColor: v })} />
-                    <FontSelector label="Font" value={m.stickyCategories.font} curated={SANS_FONTS} category="sans"
-                      onChange={v => setMSticky({ font: v })} />
-                  </>
-                )}
-              </Accordion>
-
-              {/* ── MENU: Navigazione flipbook ── */}
-              <Accordion title="Navigazione flipbook">
-                <div>
-                  <label className="block text-xs text-gray-600 mb-1">Stile indicatori pagina</label>
-                  <select value={m.navigation.style}
-                    onChange={e => setMNav({ style: e.target.value as PaginationStyle })}
-                    className="w-full px-2 py-1.5 border border-gray-200 text-xs bg-white focus:outline-none focus:border-gray-400">
-                    {(Object.entries(PAGINATION_OPTIONS) as [PaginationStyle, { label: string; prev: string; next: string }][]).map(
-                      ([key, opt]) => <option key={key} value={key}>{opt.label}</option>
-                    )}
-                  </select>
-                  {m.navigation.style !== 'hidden' && (
-                    <p className="text-[10px] font-mono text-gray-400 mt-1">
-                      {PAGINATION_OPTIONS[m.navigation.style].prev}{'  ···  '}{PAGINATION_OPTIONS[m.navigation.style].next}
-                    </p>
-                  )}
-                </div>
-                <ColorRow label="Colore navigazione" value={m.navigation.color} onChange={v => setMNav({ color: v })} />
-              </Accordion>
-
-              {/* ── MENU: Impaginazione PDF ── */}
-              <Accordion title="Impaginazione PDF">
-                <div>
-                  <p className="text-xs text-gray-600 mb-2">Layout pagine</p>
-                  <PillGroup options={[
-                    { label: 'Classic', value: 'classic' as const },
-                    { label: 'Compact', value: 'compact' as const },
-                  ]} value={m.pdfLayout} onChange={v => setM({ pdfLayout: v })} />
-                  <p className="text-[11px] text-gray-400 mt-1">
-                    {m.pdfLayout === 'classic' ? '1 categoria/pagina. Margini ampi.' : 'Flow continuo. Più dense.'}
-                  </p>
-                </div>
-                <ColorRow label="Colore pagine (stampa)" value={m.pageBackground} onChange={v => setM({ pageBackground: v })} />
-                <p className="text-[10px] text-gray-400">
-                  Su carta stampata si usa bianco o avorio (es. <span className="font-mono">#fffff5</span>).
-                </p>
-              </Accordion>
-            </>
-          ) : (
-            <>
-              {/* ── CARD: Sfondo ── */}
-              <Accordion title="Sfondo card" defaultOpen>
-                <ColorRow label="Colore sfondo modale" value={theme.card.bgColor}
-                  onChange={v => setC({ bgColor: v })} />
-                <div>
-                  <p className="text-xs text-gray-600 mb-2">Layout foto</p>
-                  <PillGroup options={[
-                    { label: 'Foto in alto',  value: 'photo-top'  as const },
-                    { label: 'Foto laterale', value: 'photo-side' as const },
-                    { label: 'Senza foto',    value: 'minimal'    as const },
-                  ]} value={theme.card.layout} onChange={v => setC({ layout: v })} />
-                  <p className="text-[10px] text-gray-400 mt-1">
-                    {theme.card.layout === 'photo-top'  ? 'Immagine a piena larghezza nella parte alta.' :
-                     theme.card.layout === 'photo-side' ? 'Miniatura thumbnail a destra del nome.' :
-                                                          'Solo testo, nessuna immagine.'}
-                  </p>
-                </div>
-              </Accordion>
-
-              {/* ── CARD: Titolo piatto ── */}
-              <Accordion title="Titolo piatto (in card)" defaultOpen>
-                <FontSelector label="Font" value={theme.card.title.font} curated={[...SERIF_FONTS, ...DISPLAY_FONTS]} category="serif"
-                  onChange={v => setCardTitle({ font: v })} />
-                <FontSizeSlider label="Dimensione" value={theme.card.title.size} min={1.0} max={3.0} step={0.05}
-                  previewFont={fontStack(theme.card.title.font, 'serif')}
-                  onChange={v => setCardTitle({ size: v })} />
-                <ColorRow label="Colore" value={theme.card.title.color} onChange={v => setCardTitle({ color: v })} />
-                <div>
-                  <p className="text-xs text-gray-600 mb-2">Peso</p>
-                  <PillGroup options={[
-                    { label: 'Light',     value: 'light'  as const },
-                    { label: 'Normale',   value: 'normal' as const },
-                    { label: 'Grassetto', value: 'bold'   as const },
-                  ]} value={theme.card.title.weight} onChange={v => setCardTitle({ weight: v })} />
-                </div>
-              </Accordion>
-
-              {/* ── CARD: Descrizione ── */}
-              <Accordion title="Descrizione (in card)">
-                <FontSelector label="Font" value={theme.card.description.font} curated={SANS_FONTS} category="sans"
-                  onChange={v => setCardDesc({ font: v })} />
-                <FontSizeSlider label="Dimensione" value={theme.card.description.size} min={0.6} max={1.4} step={0.05}
-                  previewFont={fontStack(theme.card.description.font, 'sans')}
-                  onChange={v => setCardDesc({ size: v })} />
-                <ColorRow label="Colore" value={theme.card.description.color} onChange={v => setCardDesc({ color: v })} />
-              </Accordion>
-
-              {/* ── CARD: Prezzo ── */}
-              <Accordion title="Prezzo (in card)">
-                <div>
-                  <p className="text-xs text-gray-600 mb-2">Formato</p>
-                  <PillGroup options={[
-                    { label: '€ 12,50', value: 'symbol-left'  as const },
-                    { label: '12,50 €', value: 'symbol-right' as const },
-                    { label: '12.50',   value: 'no-symbol'    as const },
-                  ]} value={theme.card.price.format} onChange={v => setCardPrice({ format: v })} />
-                </div>
-                <FontSelector label="Font" value={theme.card.price.font} curated={SANS_FONTS} category="sans"
-                  onChange={v => setCardPrice({ font: v })} />
-                <FontSizeSlider label="Dimensione" value={theme.card.price.size} min={0.7} max={2.0} step={0.05}
-                  previewFont={fontStack(theme.card.price.font, 'sans')}
-                  onChange={v => setCardPrice({ size: v })} />
-                <ColorRow label="Colore" value={theme.card.price.color} onChange={v => setCardPrice({ color: v })} />
-              </Accordion>
-
-              {/* ── CARD: Allergeni ── */}
-              <Accordion title="Allergeni (in card)">
-                <div>
-                  <p className="text-xs text-gray-600 mb-2">Stile</p>
-                  <PillGroup options={[
-                    { label: 'Testo', value: 'text'  as const },
-                    { label: 'Badge', value: 'badge' as const },
-                  ]} value={theme.card.allergens.style} onChange={v => setCardAllergens({ style: v })} />
-                </div>
-                <ColorRow label="Colore testo" value={theme.card.allergens.color}   onChange={v => setCardAllergens({ color: v })} />
-                <ColorRow label="Sfondo"       value={theme.card.allergens.bgColor} onChange={v => setCardAllergens({ bgColor: v })} />
-              </Accordion>
-
-              {/* ── CARD: Tasto chiusura ── */}
-              <Accordion title="Tasto chiusura (X)">
-                <ColorRow label="Colore" value={theme.card.closeButton.color} onChange={v => setCardClose({ color: v })} />
-                <div>
-                  <p className="text-xs text-gray-600 mb-2">Posizione</p>
-                  <PillGroup options={[
-                    { label: 'Destra',   value: 'top-right' as const },
-                    { label: 'Sinistra', value: 'top-left'  as const },
-                  ]} value={theme.card.closeButton.position} onChange={v => setCardClose({ position: v })} />
-                </div>
-                <div>
-                  <p className="text-xs text-gray-600 mb-2">Forma</p>
-                  <PillGroup options={[
-                    { label: 'Nessuna',  value: 'none'   as const },
-                    { label: 'Cerchio',  value: 'circle' as const },
-                    { label: 'Quadrato', value: 'square' as const },
-                  ]} value={theme.card.closeButton.shape} onChange={v => setCardClose({ shape: v })} />
-                </div>
-              </Accordion>
-            </>
+        {/* Desktop contextual sidebar — width animates 0 ↔ 340px, phone mockup scales */}
+        <aside
+          className="shrink-0 bg-white border-l border-gray-200 overflow-hidden transition-all duration-300 ease-out hidden md:block"
+          style={{ width: sidebarOpen ? 340 : 0 }}>
+          {sidebarOpen && (
+            <EditorSidebar target={activeEditor!} onClose={() => setActiveEditor(null)} />
           )}
-        </div>
-
-        {/* ── Live preview — sticky (desktop) ────────────────────────────── */}
-        <div className="hidden lg:flex lg:sticky lg:top-4 flex-col" style={{ height: 'calc(100vh - 2rem)' }}>
-          <div className="flex-1 min-h-0 flex items-center justify-center bg-gradient-to-br from-gray-100 to-gray-200 border border-gray-200 rounded-lg overflow-hidden p-6">
-            <LivePreview qrToken={qrToken} theme={theme} previewMode={previewMode} />
-          </div>
-          <p className="text-[10px] text-center text-gray-400 mt-2 shrink-0">
-            Anteprima dal vivo · modifiche non salvate visibili solo qui
-          </p>
-        </div>
-
+        </aside>
       </div>
 
-      {/* ── Mobile FAB ─────────────────────────────────────────────────────────── */}
-      <button type="button" onClick={() => setPreviewOpen(true)}
-        className="lg:hidden fixed bottom-6 right-6 z-50 bg-gray-900 text-white text-xs font-semibold px-5 py-3.5 rounded-full shadow-2xl hover:bg-gray-700 active:scale-95 transition-all flex items-center gap-2">
-        <span>Vedi Anteprima</span>
-      </button>
-
-      {/* ── Mobile full-screen preview ─────────────────────────────────────────── */}
-      {previewOpen && (
-        <div className="lg:hidden fixed inset-0 z-[9999] bg-gray-950 flex flex-col">
-          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-800 shrink-0">
-            <div className="flex gap-1">
-              {(['landing', 'menu', 'card'] as const).map(mode => (
-                <button key={mode} type="button" onClick={() => setPreviewMode(mode)}
-                  className={`px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider border transition-colors ${
-                    previewMode === mode
-                      ? 'bg-white text-gray-900 border-white'
-                      : 'bg-transparent text-gray-400 border-gray-700 hover:border-gray-500'
-                  }`}>
-                  {mode === 'landing' ? 'Landing' : mode === 'menu' ? 'Menu' : 'Card'}
-                </button>
-              ))}
+      {/* ── Mobile bottom sheet — slides up when an element is selected ── */}
+      {sidebarOpen && (
+        <>
+          {/* Backdrop */}
+          <div className="md:hidden fixed inset-0 z-40 bg-black/25 backdrop-blur-[1px]"
+            onClick={() => setActiveEditor(null)} />
+          {/* Sheet */}
+          <div className="md:hidden fixed bottom-0 inset-x-0 z-50 bg-white rounded-t-2xl shadow-2xl"
+            style={{ maxHeight: '65dvh' }}>
+            <div className="flex justify-center pt-2.5 pb-1 shrink-0">
+              <div className="w-9 h-1 rounded-full bg-gray-300" />
             </div>
-            <button type="button" onClick={() => setPreviewOpen(false)}
-              className="text-gray-400 hover:text-white text-2xl leading-none transition-colors w-10 h-10 flex items-center justify-center"
-              aria-label="Chiudi anteprima">
-              &#xD7;
-            </button>
+            <div className="overflow-y-auto" style={{ maxHeight: 'calc(65dvh - 20px)' }}>
+              <EditorSidebar target={activeEditor!} onClose={() => setActiveEditor(null)} />
+            </div>
           </div>
-          <div className="flex-1 min-h-0 flex items-center justify-center p-4">
-            <LivePreview qrToken={qrToken} theme={theme} previewMode={previewMode} />
-          </div>
-          <p className="text-[10px] text-center text-gray-600 pb-4 shrink-0">
-            Anteprima dal vivo · modifiche non ancora salvate
-          </p>
-        </div>
+        </>
       )}
 
     </div>

@@ -80,6 +80,30 @@ function ThemeFontLoader({ theme }: { theme: RestaurantTheme }) {
   return null
 }
 
+// ── Edit-mode helpers (used when page is loaded inside admin iframe) ──────────
+
+function sendEdit(target: string) {
+  try { window.parent?.postMessage({ type: 'dmp-element-clicked', target }, window.location.origin) } catch {}
+}
+
+function EditHandle({
+  target, children, editMode: em, className = '', style,
+}: {
+  target: string; children: React.ReactNode; editMode: boolean
+  className?: string; style?: React.CSSProperties
+}) {
+  if (!em) return <>{children}</>
+  return (
+    <div className={`relative ${className}`} style={style}
+      onClick={e => { e.stopPropagation(); sendEdit(target) }}
+      role="button" tabIndex={0} aria-label={`Edit ${target}`}>
+      {children}
+      <div className="absolute inset-0 border-2 border-dashed border-blue-400/60 rounded pointer-events-none" />
+      <span className="absolute -top-3 -right-3 z-[300] w-6 h-6 bg-blue-500 text-white rounded-full shadow-lg flex items-center justify-center text-[11px] pointer-events-none select-none">✏</span>
+    </div>
+  )
+}
+
 // ── Social icons ──────────────────────────────────────────────────────────────
 
 function InstagramIcon() { return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" style={{ width: '1em', height: '1em' }}><rect x="2" y="2" width="20" height="20" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="1" fill="currentColor" stroke="none"/></svg> }
@@ -136,6 +160,10 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
   const l = t.landing
   const m = t.menu
 
+  // editMode / showDummyData: driven by dmp-editor-state from admin
+  const [editMode,      setEditMode]      = useState(false)
+  const [showDummyData, setShowDummyData] = useState(false)
+
   const videoRef      = useRef<HTMLVideoElement>(null)
   const [posterVisible, setPosterVisible] = useState(true)
 
@@ -152,6 +180,10 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
       if (d.type === 'dmp-nav') {
         if (d.view === 'landing') { setPendingMenuId(null); setSelectedMenuId(null) }
         else if (d.view === 'menu') setSelectedMenuId(p => p ?? menus[0]?.id ?? null)
+      }
+      if (d.type === 'dmp-editor-state') {
+        setEditMode(!!d.editMode)
+        setShowDummyData(!!d.showDummyData)
       }
     }
     window.addEventListener('message', onMessage)
@@ -188,6 +220,7 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
 
   // ── Immersive transition driver ────────────────────────────────────────────
   function openMenu(menuId: string) {
+    if (editMode) return
     if (l.background.immersiveTransition && l.background.type === 'video') {
       setPendingMenuId(menuId)
     } else {
@@ -229,6 +262,18 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
   const BUTTON_FONT   = fontStack(l.buttons.font, 'sans')
   const BUTTON_RADIUS = landingButtonRadius(l.buttons.shape)
   const vis           = restaurant.visibility
+
+  // ── Dummy data for admin preview (fills empty fields when showDummyData=true) ─
+  const displayDesc = restaurant.description || (showDummyData ? 'Alta cucina italiana · dal 1987' : null)
+  const displayMenus = (showDummyData && menus.length === 0)
+    ? [{ id: 'dummy-pranzo', name: 'Pranzo', dishes: [] as Dish[] }, { id: 'dummy-cena', name: 'Cena', dishes: [] as Dish[] }]
+    : menus
+  const displayRestaurant: Restaurant = showDummyData ? {
+    ...restaurant,
+    instagram_url: restaurant.instagram_url || '#',
+    facebook_url:  restaurant.facebook_url  || '#',
+    website_url:   restaurant.website_url   || '#',
+  } : restaurant
 
   // ── Background landing layer styles ───────────────────────────────────────
   const bgIsVideo = l.background.type === 'video' || l.background.type === 'gif'
@@ -287,77 +332,96 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
         <div className="absolute top-0 inset-x-0 h-px"
           style={{ background: `linear-gradient(90deg,transparent,${l.accent}55,transparent)` }} />
 
+        {/* Background edit handle — top-right corner badge (edit mode only) */}
+        {editMode && (
+          <button
+            className="absolute top-3 right-3 z-[300] flex items-center gap-1.5 px-2.5 py-1 bg-blue-500 text-white rounded-full text-[11px] shadow-lg"
+            onClick={() => sendEdit('landing-bg')}>
+            <span>✏</span><span>Sfondo</span>
+          </button>
+        )}
+
         {/* Content — fades during immersive transition */}
         <div className="relative flex flex-col items-center text-center px-10 w-full max-w-xs py-12"
           style={{ opacity: transitioning ? 0 : 1, transition: 'opacity 0.6s ease', pointerEvents: transitioning ? 'none' : 'auto' }}>
 
           <BannerCarousel banners={banners} accent={l.accent} />
 
-          {restaurant.logo_url && isVis(vis, 'logo') && (
-            <img src={restaurant.logo_url} alt={restaurant.name}
-              className="object-contain"
-              style={{
-                height: `${l.logo.size * 0.75}rem`,
-                mixBlendMode: l.logo.mixBlend as any,
-                opacity: 0.88,
-                marginBottom: isVis(vis,'name') ? '1.5rem' : '2.5rem',
-              }} />
-          )}
+          <EditHandle target="landing-logo" editMode={editMode}>
+            {restaurant.logo_url && isVis(vis, 'logo') && (
+              <img src={restaurant.logo_url} alt={restaurant.name}
+                className="object-contain"
+                style={{
+                  height: `${l.logo.size * 0.75}rem`,
+                  mixBlendMode: l.logo.mixBlend as any,
+                  opacity: 0.88,
+                  marginBottom: isVis(vis,'name') ? '1.5rem' : '2.5rem',
+                }} />
+            )}
+          </EditHandle>
 
           {!restaurant.logo_url && isVis(vis,'name') && (
             <div className="w-10 h-px mb-7" style={{ background: l.accent }} />
           )}
 
-          {isVis(vis,'name') && (
-            <h1 className="uppercase leading-none"
-              style={{
-                color: l.title.color, fontFamily: TITLE_FONT,
-                fontSize: `clamp(1.4rem,5vw,${l.title.size}rem)`,
-                letterSpacing: '0.22em',
-                fontWeight: l.title.weight === 'bold' ? 700 : l.title.weight === 'normal' ? 400 : 300,
-              }}>
-              {restaurant.name}
-            </h1>
-          )}
+          <EditHandle target="landing-title" editMode={editMode}>
+            {isVis(vis,'name') && (
+              <h1 className="uppercase leading-none"
+                style={{
+                  color: l.title.color, fontFamily: TITLE_FONT,
+                  fontSize: `clamp(1.4rem,5vw,${l.title.size}rem)`,
+                  letterSpacing: '0.22em',
+                  fontWeight: l.title.weight === 'bold' ? 700 : l.title.weight === 'normal' ? 400 : 300,
+                }}>
+                {restaurant.name}
+              </h1>
+            )}
+          </EditHandle>
 
-          {restaurant.description && isVis(vis,'description') && (
-            <p style={{ color: l.description.color, fontFamily: DESC_FONT, fontSize: `${l.description.size}rem`, letterSpacing: '0.2em', textTransform: 'uppercase', marginTop: '0.6rem' }}>
-              {restaurant.description}
-            </p>
-          )}
+          <EditHandle target="landing-desc" editMode={editMode}>
+            {displayDesc && isVis(vis,'description') && (
+              <p style={{ color: l.description.color, fontFamily: DESC_FONT, fontSize: `${l.description.size}rem`, letterSpacing: '0.2em', textTransform: 'uppercase', marginTop: '0.6rem' }}>
+                {displayDesc}
+              </p>
+            )}
+          </EditHandle>
 
           {!restaurant.logo_url && (isVis(vis,'name') || isVis(vis,'description')) && (
             <div className="w-10 h-px mt-7" style={{ background: l.accent }} />
           )}
 
           {/* Menu buttons */}
-          <div className="mt-10 flex flex-col gap-3 w-full">
-            {menus.length === 0 ? (
-              <p className="text-[10px] uppercase tracking-[0.25em]" style={{ color: l.title.color }}>Menu in aggiornamento.</p>
-            ) : (
-              menus.map(menu => (
-                <button key={menu.id} onClick={() => openMenu(menu.id)}
-                  className="group relative px-10 py-3 overflow-hidden transition-colors duration-300"
-                  style={{
-                    color:       l.buttons.textColor,
-                    background:  l.buttons.bgColor,
-                    border:      l.buttons.borderStyle === 'none' ? 'none' : `${l.buttons.borderWidth ?? 1}px ${l.buttons.borderStyle} ${l.buttons.borderColor}50`,
-                    borderRadius:BUTTON_RADIUS,
-                    fontFamily:  BUTTON_FONT,
-                    fontSize:    `${l.buttons.fontSize}rem`,
-                    letterSpacing:'0.28em',
-                    textTransform:'uppercase',
-                  }}>
-                  <span className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
-                    style={{ background: `${l.buttons.borderColor}14` }} />
-                  <span className="relative">{`Sfoglia il menu ${menu.name}`}</span>
-                </button>
-              ))
-            )}
-          </div>
+          <EditHandle target="landing-buttons" editMode={editMode} className="w-full mt-10">
+            <div className="flex flex-col gap-3 w-full">
+              {displayMenus.length === 0 ? (
+                <p className="text-[10px] uppercase tracking-[0.25em]" style={{ color: l.title.color }}>Menu in aggiornamento.</p>
+              ) : (
+                displayMenus.map(menu => (
+                  <button key={menu.id} onClick={() => openMenu(menu.id)}
+                    className="group relative px-10 py-3 overflow-hidden transition-colors duration-300"
+                    style={{
+                      color:       l.buttons.textColor,
+                      background:  l.buttons.bgColor,
+                      border:      l.buttons.borderStyle === 'none' ? 'none' : `${l.buttons.borderWidth ?? 1}px ${l.buttons.borderStyle} ${l.buttons.borderColor}50`,
+                      borderRadius:BUTTON_RADIUS,
+                      fontFamily:  BUTTON_FONT,
+                      fontSize:    `${l.buttons.fontSize}rem`,
+                      letterSpacing:'0.28em',
+                      textTransform:'uppercase',
+                    }}>
+                    <span className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
+                      style={{ background: `${l.buttons.borderColor}14` }} />
+                    <span className="relative">{`Sfoglia il menu ${menu.name}`}</span>
+                  </button>
+                ))
+              )}
+            </div>
+          </EditHandle>
 
           {/* Social links */}
-          <SocialBar restaurant={restaurant} />
+          <EditHandle target="landing-socials" editMode={editMode}>
+            <SocialBar restaurant={displayRestaurant} editMode={editMode} />
+          </EditHandle>
         </div>
 
         {/* Footer label */}
@@ -403,6 +467,14 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
             dishes={activeMenu?.dishes ?? []}
             theme={t}
           />
+          {/* Background/layout edit handle — only in admin preview */}
+          {editMode && (
+            <button
+              className="absolute top-3 right-3 z-[300] flex items-center gap-1.5 px-2.5 py-1 bg-blue-500 text-white rounded-full text-[11px] shadow-lg"
+              onClick={() => sendEdit('background-layout')}>
+              <span>✏</span><span>Sfondo & Layout</span>
+            </button>
+          )}
         </div>
       )}
     </div>
@@ -411,7 +483,7 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
 
 // ── SocialBar ─────────────────────────────────────────────────────────────────
 
-function SocialBar({ restaurant }: { restaurant: Restaurant }) {
+function SocialBar({ restaurant, editMode = false }: { restaurant: Restaurant; editMode?: boolean }) {
   const vis = restaurant.visibility
   const t   = restaurant.theme.landing
   const links = [
@@ -425,7 +497,9 @@ function SocialBar({ restaurant }: { restaurant: Restaurant }) {
   return (
     <div className="mt-10 flex items-center justify-center gap-5">
       {links.map(({ url, Icon, label }) => (
-        <a key={label} href={url!} target="_blank" rel="noopener noreferrer" aria-label={label}
+        <a key={label} href={editMode ? undefined : url!}
+          target={editMode ? undefined : '_blank'}
+          rel="noopener noreferrer" aria-label={label}
           className="transition-opacity hover:opacity-50"
           style={{
             color:         t.socials.style === 'minimal' || t.socials.style === 'outline' ? `${t.socials.color}99` : t.socials.color,
