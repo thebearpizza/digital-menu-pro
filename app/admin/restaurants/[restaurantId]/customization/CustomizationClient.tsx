@@ -468,8 +468,10 @@ interface SidebarSetters {
 function ButtonsPanel({ l, setLBu }: {
   l: LandingTheme; setLBu: (p: Partial<LandingTheme['buttons']>) => void
 }) {
-  const [bgTransparent, setBgTransparent] = useState(l.buttons.bgColor === 'transparent')
-  const [bgHex, setBgHex] = useState(l.buttons.bgColor === 'transparent' ? '#000000' : l.buttons.bgColor)
+  // Derived from the theme so it stays in sync after "Ripristina" / preset loads;
+  // bgHex only remembers the last hex while the transparent checkbox is on.
+  const bgTransparent = l.buttons.bgColor === 'transparent'
+  const [bgHex, setBgHex] = useState(bgTransparent ? '#000000' : l.buttons.bgColor)
   return (
     <div className="space-y-4">
       <div>
@@ -500,12 +502,12 @@ function ButtonsPanel({ l, setLBu }: {
       <div>
         <label className="flex items-center gap-2 mb-2 cursor-pointer select-none">
           <input type="checkbox" checked={bgTransparent}
-            onChange={e => { setBgTransparent(e.target.checked); setLBu({ bgColor: e.target.checked ? 'transparent' : bgHex }) }}
+            onChange={e => setLBu({ bgColor: e.target.checked ? 'transparent' : bgHex })}
             className="accent-gray-900 w-3.5 h-3.5" />
           <span className="text-xs text-gray-600">Sfondo trasparente</span>
         </label>
         {!bgTransparent && (
-          <ColorRow label="Colore sfondo" value={bgHex}
+          <ColorRow label="Colore sfondo" value={l.buttons.bgColor}
             onChange={v => { setBgHex(v); setLBu({ bgColor: v }) }} />
         )}
       </div>
@@ -545,7 +547,14 @@ function EditorSidebar({ target, theme, setters, previewMode, onClose }: {
             <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Tipo</p>
             <PillGroup
               options={[{ label:'Colore', value:'color' },{ label:'Immagine', value:'image' },{ label:'Video', value:'video' },{ label:'GIF', value:'gif' }]}
-              value={l.background.type} onChange={v => setters.setLBg({ type: v })} />
+              value={l.background.type}
+              onChange={v => setters.setLBg(
+                // Switching back to color with a leftover media URL would make the
+                // value an invalid CSS color — reset to the default hex.
+                v === 'color' && !l.background.value.startsWith('#')
+                  ? { type: v, value: '#0d0d0d' }
+                  : { type: v }
+              )} />
           </div>
           {l.background.type === 'color' && (
             <ColorRow label="Colore sfondo" value={l.background.value}
@@ -572,12 +581,16 @@ function EditorSidebar({ target, theme, setters, previewMode, onClose }: {
                   className="block text-xs text-gray-500 file:mr-2 file:py-1 file:px-3 file:border file:border-gray-200 file:text-xs file:bg-white file:text-gray-600 hover:file:bg-gray-50 cursor-pointer w-full" />
                 {setters.vidUploading && <p className="text-xs text-gray-400 mt-1">Caricamento…</p>}
               </div>
-              <div>
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Loop</p>
-                <PillGroup
-                  options={[{ label:'Loop', value:'loop' },{ label:'Una volta', value:'once' },{ label:'Ping-pong', value:'pingpong' }]}
-                  value={l.background.loopMode} onChange={v => setters.setLBg({ loopMode: v })} />
-              </div>
+              {/* Loop is irrelevant in immersive mode (the video plays once as a
+                  transition), so hide it to avoid a dead control. */}
+              {!l.background.immersiveTransition && (
+                <div>
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Loop</p>
+                  <PillGroup
+                    options={[{ label:'Loop', value:'loop' },{ label:'Una volta', value:'once' },{ label:'Ping-pong', value:'pingpong' }]}
+                    value={l.background.loopMode} onChange={v => setters.setLBg({ loopMode: v })} />
+                </div>
+              )}
             </div>
           )}
           {/* Opacity is meaningful only for image/video/gif overlays, not plain colors */}
@@ -1429,7 +1442,9 @@ export default function CustomizationClient({
       .from('restaurant-assets').upload(path, file, { upsert: true })
     if (!err && data) {
       const { data: pub } = supabase.storage.from('restaurant-assets').getPublicUrl(data.path)
-      setLBg({ type: 'image', value: `${pub.publicUrl}?v=${Date.now()}` })
+      // Keep the gif type for animated GIFs so the selected pill stays coherent.
+      const type = file.type === 'image/gif' ? 'gif' as const : 'image' as const
+      setLBg({ type, value: `${pub.publicUrl}?v=${Date.now()}` })
     } else if (err) setError('Upload: ' + err.message)
     setBgUploading(false)
   }

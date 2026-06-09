@@ -375,8 +375,10 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
     : [DUMMY_DISH, DUMMY_WINE]
 
   // ── Background landing layer styles ───────────────────────────────────────
-  const bgIsVideo = l.background.type === 'video' || l.background.type === 'gif'
-  const bgIsImage = l.background.type === 'image'
+  // GIFs are image files: a <video> element cannot decode them (black screen),
+  // so they render through the image layer where they animate natively.
+  const bgIsVideo = l.background.type === 'video'
+  const bgIsImage = l.background.type === 'image' || l.background.type === 'gif'
   const bgColor   = l.background.type === 'color' ? l.background.value : '#0d0d0d'
   const textureBg = landingTextureCss(l.background.texture)
   const hasPoster = !!l.background.poster && !posterBroken
@@ -404,11 +406,6 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
               opacity: l.background.opacity/100 }} />
         )}
 
-        {/* Texture overlay */}
-        {textureBg && (
-          <div className="absolute inset-0 pointer-events-none" style={textureBg} />
-        )}
-
         {/* Video / immersive background */}
         {bgIsVideo && (
           <div className="absolute inset-0 pointer-events-none"
@@ -428,6 +425,11 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
               onCanPlay={handleCanPlay}
             />
           </div>
+        )}
+
+        {/* Texture overlay — after image/video layers so it paints on top of both */}
+        {textureBg && (
+          <div className="absolute inset-0 pointer-events-none" style={textureBg} />
         )}
 
         {/* Gold top rule */}
