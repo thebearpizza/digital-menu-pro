@@ -217,6 +217,7 @@ export function useMenuPDF(
     theme?.menu.descriptions.color, theme?.menu.prices.color,
     theme?.menu.dishes.titleFont, theme?.menu.descriptions.font,
     theme?.menu.prices.font, theme?.menu.categories.font,
+    theme?.menu.categories.size,
     theme?.menu.layout.dishAlignment,
   ]) // eslint-disable-line react-hooks/exhaustive-deps
 

@@ -56,7 +56,8 @@ export const MENU_BG_EFFECT_LABELS: Record<MenuBgEffect, string> = {
 // ── Card sub-theme ────────────────────────────────────────────────────────────
 
 export interface CardTheme {
-  bgColor:     string        // '#111111'
+  bgColor:      string        // '#111111'
+  borderRadius: 'none' | 'sm' | 'md'   // 0 / 8 / 16px
   layout:      'photo-top' | 'photo-side' | 'minimal'
   title:       { font: string; size: number; color: string; weight: 'light' | 'normal' | 'bold' }
   description: { font: string; size: number; color: string }
@@ -114,7 +115,7 @@ export interface MenuTheme {
   descriptions: { font: string; size: number; color: string }
   allergens:    { style: 'text' | 'badge'; color: string; bgColor: string }
   prices:       { font: string; size: number; color: string; format: 'symbol-left' | 'symbol-right' | 'no-symbol' }
-  categories:   { font: string; color: string }
+  categories:   { font: string; color: string; size: number }
   stickyCategories: {
     style:     'transparent-blur' | 'solid' | 'none'
     bgColor:   string
@@ -168,7 +169,7 @@ export const DEFAULT_THEME: RestaurantTheme = {
     descriptions: { font: 'DM Sans', size: 0.875, color: '#a09080' },
     allergens:    { style: 'text', color: '#c9a96e', bgColor: '#181208' },
     prices:       { font: 'DM Sans', size: 1.1, color: '#c9a96e', format: 'symbol-left' },
-    categories:   { font: 'Cormorant Garamond', color: '#1a1a1a' },
+    categories:   { font: 'Cormorant Garamond', color: '#1a1a1a', size: 1.3 },
     stickyCategories: {
       style: 'solid', bgColor: 'rgba(7,7,7,0.96)', textColor: '#4f4f4f', font: 'DM Sans',
     },
@@ -176,7 +177,8 @@ export const DEFAULT_THEME: RestaurantTheme = {
     banners:    { position: 'inline' },
   },
   card: {
-    bgColor: '#111111',
+    bgColor:      '#111111',
+    borderRadius: 'sm',
     layout:  'photo-top',
     title:       { font: 'Cormorant Garamond', size: 1.75, color: '#ede8e0', weight: 'light' },
     description: { font: 'DM Sans', size: 0.875, color: '#a09080' },
@@ -291,7 +293,7 @@ function parseNested(r: Record<string, unknown>): RestaurantTheme {
       descriptions: { font: str(me.font, d.menu.descriptions.font), size: num(me.size, d.menu.descriptions.size), color: str(me.color, d.menu.descriptions.color) },
       allergens:    { style: one(ma.style, ['text','badge'] as const, d.menu.allergens.style), color: str(ma.color, d.menu.allergens.color), bgColor: str(ma.bgColor, d.menu.allergens.bgColor) },
       prices:       { font: str(mp.font, d.menu.prices.font), size: num(mp.size, d.menu.prices.size), color: str(mp.color, d.menu.prices.color), format: one(mp.format, ['symbol-left','symbol-right','no-symbol'] as const, d.menu.prices.format) },
-      categories:   { font: str(mc.font, d.menu.categories.font), color: str(mc.color, d.menu.categories.color) },
+      categories:   { font: str(mc.font, d.menu.categories.font), color: str(mc.color, d.menu.categories.color), size: num(mc.size, d.menu.categories.size) },
       stickyCategories: {
         style:     one(ms.style, ['transparent-blur','solid','none'] as const, d.menu.stickyCategories.style),
         bgColor:   str(ms.bgColor, d.menu.stickyCategories.bgColor),
@@ -305,8 +307,9 @@ function parseNested(r: Record<string, unknown>): RestaurantTheme {
       banners: { position: one(mbn.position, ['inline','dedicated-page'] as const, d.menu.banners.position) },
     },
     card: {
-      bgColor: str(ca.bgColor, d.card.bgColor),
-      layout:  one(ca.layout, ['photo-top','photo-side','minimal'] as const, d.card.layout),
+      bgColor:      str(ca.bgColor, d.card.bgColor),
+      borderRadius: one(ca.borderRadius, ['none','sm','md'] as const, d.card.borderRadius),
+      layout:       one(ca.layout, ['photo-top','photo-side','minimal'] as const, d.card.layout),
       title: {
         font:   str(cat.font, d.card.title.font),
         size:   num(cat.size, d.card.title.size),
@@ -411,7 +414,7 @@ export function migrateFlat(r: Record<string, unknown>): RestaurantTheme {
       descriptions: { font: fontSans, size: num(fs.base, d.menu.descriptions.size), color: '#a09080' },
       allergens:    { style: 'text', color: accent, bgColor: '#181208' },
       prices:       { font: fontSans, size: num(fs.price, d.menu.prices.size), color: accent, format: priceFormat },
-      categories:   { font: fontSerif, color: '#1a1a1a' },
+      categories:   { font: fontSerif, color: '#1a1a1a', size: 1.3 },
       stickyCategories: { style: stickyCatStyle, bgColor: navBg, textColor: textMuted, font: fontSans },
       navigation:   { style: paginationStyle, color: textMuted },
       banners:      { position: 'inline' },
@@ -471,6 +474,10 @@ export function landingButtonRadius(shape: LandingTheme['buttons']['shape']): st
   return shape === 'pill' ? '9999px' : shape === 'rounded' ? '8px' : '0px'
 }
 
+export function cardBorderRadius(shape: CardTheme['borderRadius']): string {
+  return shape === 'md' ? '16px' : shape === 'sm' ? '8px' : '0px'
+}
+
 export function menuBackgroundCss(bg: MenuTheme['background']): Record<string, string> {
   const c  = bg.color
   const c2 = bg.color2 || lightenHex(c, 0.08)
@@ -493,13 +500,31 @@ export function menuBackgroundCss(bg: MenuTheme['background']): Record<string, s
   }
 }
 
-export function landingTextureCss(texture: LandingBackground['texture']): string {
+export function landingTextureCss(texture: LandingBackground['texture']): Record<string,string> | null {
+  // feColorMatrix row A = "0.18 0 0 0 0" → alpha = 0.18 × turbulence-R, producing
+  // white pixels whose opacity varies with the noise → a visible grain on dark bgs.
   switch (texture) {
-    case 'noise':  return `url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><filter id='n'><feTurbulence baseFrequency='0.65' numOctaves='3'/><feColorMatrix type='saturate' values='0'/></filter><rect width='200' height='200' filter='url(%23n)' opacity='0.06'/></svg>")`
-    case 'grain':  return `url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4'/><feColorMatrix type='saturate' values='0'/></filter><rect width='200' height='200' filter='url(%23n)' opacity='0.05'/></svg>")`
-    case 'wood':   return `repeating-linear-gradient(95deg,transparent,transparent 1px,rgba(255,200,100,0.02) 1px,rgba(255,200,100,0.02) 3px)`
-    case 'marble': return `radial-gradient(ellipse at 20% 50%,rgba(255,255,255,0.04) 0%,transparent 40%),radial-gradient(ellipse at 80% 20%,rgba(255,255,255,0.03) 0%,transparent 35%)`
-    default:       return ''
+    case 'noise':
+      return {
+        backgroundImage: `url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.72' numOctaves='4'/><feColorMatrix values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0.18 0 0 0 0'/></filter><rect width='200' height='200' filter='url(%23n)'/></svg>")`,
+        backgroundSize: '200px 200px',
+      }
+    case 'grain':
+      return {
+        backgroundImage: `url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><filter id='n'><feTurbulence type='turbulence' baseFrequency='0.9' numOctaves='2'/><feColorMatrix values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0.22 0 0 0 0'/></filter><rect width='200' height='200' filter='url(%23n)'/></svg>")`,
+        backgroundSize: '200px 200px',
+      }
+    case 'wood':
+      return {
+        backgroundImage: `repeating-linear-gradient(92deg,transparent 0px,transparent 2px,rgba(180,130,50,0.06) 2px,rgba(180,130,50,0.06) 3px,transparent 3px,transparent 8px,rgba(180,130,50,0.04) 8px,rgba(180,130,50,0.04) 9px),repeating-linear-gradient(4deg,transparent 0,transparent 50px,rgba(180,130,50,0.03) 50px,rgba(180,130,50,0.03) 51px)`,
+        backgroundSize: 'auto',
+      }
+    case 'marble':
+      return {
+        backgroundImage: `radial-gradient(ellipse 220% 70% at 18% 48%,rgba(255,255,255,0.09) 0%,transparent 48%),radial-gradient(ellipse 160% 55% at 82% 18%,rgba(255,255,255,0.07) 0%,transparent 42%),repeating-linear-gradient(34deg,transparent,transparent 12px,rgba(255,255,255,0.025) 12px,rgba(255,255,255,0.025) 13px)`,
+        backgroundSize: 'auto',
+      }
+    default: return null
   }
 }
 

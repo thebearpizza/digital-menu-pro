@@ -48,6 +48,78 @@ async function extractVideoPoster(file: File): Promise<Blob | null> {
   })
 }
 
+// ── Video compression ─────────────────────────────────────────────────────────
+// Re-encodes a video in-browser by drawing each frame onto a downscaled canvas and
+// recording the canvas stream with MediaRecorder at a capped bitrate. Returns the
+// original file untouched if the browser can't re-encode (no MediaRecorder/codec).
+
+async function compressVideoFile(
+  file: File,
+  onProgress?: (pct: number) => void,
+): Promise<File> {
+  if (typeof MediaRecorder === 'undefined') return file
+
+  // Pick a supported codec, preferring VP9 → VP8 → default webm.
+  const mimeCandidates = ['video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm']
+  const mimeType = mimeCandidates.find(m => MediaRecorder.isTypeSupported(m))
+  if (!mimeType) return file
+
+  return new Promise<File>(resolve => {
+    const video = document.createElement('video')
+    const url   = URL.createObjectURL(file)
+    video.src = url; video.muted = true; video.playsInline = true
+
+    const done = (result: File) => { URL.revokeObjectURL(url); resolve(result) }
+
+    video.addEventListener('loadedmetadata', () => {
+      const maxW   = 1280
+      const ratio  = Math.min(maxW / (video.videoWidth || maxW), 1)
+      const canvas = document.createElement('canvas')
+      canvas.width  = Math.round((video.videoWidth  || 1280) * ratio)
+      canvas.height = Math.round((video.videoHeight || 720)  * ratio)
+      const ctx = canvas.getContext('2d')
+      if (!ctx) { done(file); return }
+
+      let stream: MediaStream
+      try { stream = (canvas as any).captureStream(30) } catch { done(file); return }
+
+      const chunks: BlobPart[] = []
+      let recorder: MediaRecorder
+      try {
+        recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 2_200_000 })
+      } catch { done(file); return }
+
+      recorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data) }
+      recorder.onstop = () => {
+        const blob = new Blob(chunks, { type: 'video/webm' })
+        // If compression didn't actually shrink it, keep the original.
+        if (blob.size === 0 || blob.size >= file.size) { done(file); return }
+        const name = file.name.replace(/\.[^.]+$/, '') + '.webm'
+        done(new File([blob], name, { type: 'video/webm' }))
+      }
+
+      const duration = video.duration || 0
+      const drawLoop = () => {
+        if (video.ended || video.paused) return
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+        if (duration && onProgress) onProgress(Math.min(99, Math.round((video.currentTime / duration) * 100)))
+        requestAnimationFrame(drawLoop)
+      }
+
+      video.addEventListener('ended', () => { try { recorder.stop() } catch {} }, { once: true })
+      // Safety cap: stop after 30s of source even if 'ended' never fires.
+      const cap = setTimeout(() => { try { recorder.stop() } catch {} }, Math.min((duration || 30) * 1000 + 2000, 32000))
+      recorder.onerror = () => { clearTimeout(cap); done(file) }
+
+      recorder.start(250)
+      video.play().then(() => requestAnimationFrame(drawLoop)).catch(() => { clearTimeout(cap); done(file) })
+    }, { once: true })
+
+    video.addEventListener('error', () => done(file), { once: true })
+    video.load()
+  })
+}
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface AdminBanner {
@@ -320,6 +392,7 @@ interface SidebarSetters {
   setMBg:            (p: Partial<MenuTheme['background']>) => void
   setMNav:           (p: Partial<MenuTheme['navigation']>) => void
   setM:              (p: Partial<MenuTheme>) => void
+  setC:              (p: Partial<CardTheme>) => void
   setCardTitle:      (p: Partial<CardTheme['title']>) => void
   setCardDesc:       (p: Partial<CardTheme['description']>) => void
   setCardPrice:      (p: Partial<CardTheme['price']>) => void
@@ -440,26 +513,32 @@ function EditorSidebar({ target, theme, setters, onClose }: {
               </div>
             </div>
           )}
-          <div>
-            <div className="flex justify-between items-center mb-1">
-              <label className="text-xs text-gray-600">Opacità overlay</label>
-              <span className="text-[10px] font-mono text-gray-400">{l.background.opacity}%</span>
+          {/* Opacity is meaningful only for image/video/gif overlays, not plain colors */}
+          {l.background.type !== 'color' && (
+            <div>
+              <div className="flex justify-between items-center mb-1">
+                <label className="text-xs text-gray-600">Opacità</label>
+                <span className="text-[10px] font-mono text-gray-400">{l.background.opacity}%</span>
+              </div>
+              <input type="range" min={0} max={100} step={1} value={l.background.opacity}
+                onChange={e => setters.setLBg({ opacity: Number(e.target.value) })}
+                className="w-full accent-gray-900" />
             </div>
-            <input type="range" min={0} max={100} step={1} value={l.background.opacity}
-              onChange={e => setters.setLBg({ opacity: Number(e.target.value) })}
-              className="w-full accent-gray-900" />
-          </div>
+          )}
           <div>
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Texture</p>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Texture overlay</p>
             <PillGroup
               options={[{ label:'Nessuna', value:'none' },{ label:'Rumore', value:'noise' },{ label:'Grana', value:'grain' },{ label:'Legno', value:'wood' },{ label:'Marmo', value:'marble' }]}
               value={l.background.texture} onChange={v => setters.setLBg({ texture: v })} />
           </div>
-          <label className="flex items-center gap-2 cursor-pointer select-none">
-            <Toggle checked={l.background.immersiveTransition}
-              onChange={v => setters.setLBg({ immersiveTransition: v })} />
-            <span className="text-xs text-gray-600">Transizione immersiva</span>
-          </label>
+          {/* Immersive transition only makes sense for video */}
+          {l.background.type === 'video' && (
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <Toggle checked={l.background.immersiveTransition}
+                onChange={v => setters.setLBg({ immersiveTransition: v })} />
+              <span className="text-xs text-gray-600">Transizione immersiva</span>
+            </label>
+          )}
         </div>
       )
 
@@ -532,53 +611,106 @@ function EditorSidebar({ target, theme, setters, onClose }: {
       )
 
       case 'dish-title': return (
-        <div className="space-y-4">
-          <FontSelector label="Font" value={c.title.font}
-            curated={[...SERIF_FONTS, ...DISPLAY_FONTS]} category="serif"
-            onChange={v => { setters.setCardTitle({ font: v }); setters.setMDishes({ titleFont: v }) }} />
-          <FontSizeSlider label="Dimensione" value={c.title.size}
-            min={1.0} max={3.0} step={0.1} previewFont={fontStack(c.title.font, 'serif')}
-            onChange={v => { setters.setCardTitle({ size: v }); setters.setMDishes({ titleSize: v }) }} />
-          <ColorRow label="Colore" value={c.title.color}
-            onChange={v => { setters.setCardTitle({ color: v }); setters.setMDishes({ titleColor: v }) }} />
-          <div>
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Peso</p>
-            <PillGroup
-              options={[{ label:'Light', value:'light' },{ label:'Normal', value:'normal' },{ label:'Bold', value:'bold' }]}
-              value={c.title.weight} onChange={v => setters.setCardTitle({ weight: v })} />
+        <div className="space-y-5">
+          <div className="space-y-3">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 border-b border-gray-100 pb-1">Card espansa</p>
+            <FontSelector label="Font" value={c.title.font}
+              curated={[...SERIF_FONTS, ...DISPLAY_FONTS]} category="serif"
+              onChange={v => setters.setCardTitle({ font: v })} />
+            <FontSizeSlider label="Dimensione" value={c.title.size}
+              min={1.0} max={3.5} step={0.1} previewFont={fontStack(c.title.font, 'serif')}
+              onChange={v => setters.setCardTitle({ size: v })} />
+            <ColorRow label="Colore" value={c.title.color}
+              onChange={v => setters.setCardTitle({ color: v })} />
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Peso</p>
+              <PillGroup
+                options={[{ label:'Light', value:'light' },{ label:'Normal', value:'normal' },{ label:'Bold', value:'bold' }]}
+                value={c.title.weight} onChange={v => setters.setCardTitle({ weight: v })} />
+            </div>
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Bordi card</p>
+              <PillGroup
+                options={[{ label:'Netti', value:'none' },{ label:'Soft', value:'sm' },{ label:'Arrotondati', value:'md' }]}
+                value={c.borderRadius} onChange={v => setters.setC({ borderRadius: v })} />
+            </div>
+          </div>
+          <div className="space-y-3">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 border-b border-gray-100 pb-1">Menu PDF (flipbook)</p>
+            <FontSelector label="Font" value={m.dishes.titleFont}
+              curated={[...SERIF_FONTS, ...DISPLAY_FONTS]} category="serif"
+              onChange={v => setters.setMDishes({ titleFont: v })} />
+            <FontSizeSlider label="Dimensione" value={m.dishes.titleSize}
+              min={0.8} max={3.5} step={0.1} previewFont={fontStack(m.dishes.titleFont, 'serif')}
+              onChange={v => setters.setMDishes({ titleSize: v })} />
+            <ColorRow label="Colore" value={m.dishes.titleColor}
+              onChange={v => setters.setMDishes({ titleColor: v })} />
           </div>
         </div>
       )
 
       case 'dish-description': return (
-        <div className="space-y-4">
-          <FontSelector label="Font" value={c.description.font}
-            curated={SANS_FONTS} category="sans"
-            onChange={v => { setters.setCardDesc({ font: v }); setters.setMDescs({ font: v }) }} />
-          <FontSizeSlider label="Dimensione" value={c.description.size}
-            min={0.6} max={1.4} step={0.05} previewFont={fontStack(c.description.font, 'sans')}
-            onChange={v => { setters.setCardDesc({ size: v }); setters.setMDescs({ size: v }) }} />
-          <ColorRow label="Colore" value={c.description.color}
-            onChange={v => { setters.setCardDesc({ color: v }); setters.setMDescs({ color: v }) }} />
+        <div className="space-y-5">
+          <div className="space-y-3">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 border-b border-gray-100 pb-1">Card espansa</p>
+            <FontSelector label="Font" value={c.description.font}
+              curated={SANS_FONTS} category="sans"
+              onChange={v => setters.setCardDesc({ font: v })} />
+            <FontSizeSlider label="Dimensione" value={c.description.size}
+              min={0.6} max={1.6} step={0.05} previewFont={fontStack(c.description.font, 'sans')}
+              onChange={v => setters.setCardDesc({ size: v })} />
+            <ColorRow label="Colore" value={c.description.color}
+              onChange={v => setters.setCardDesc({ color: v })} />
+          </div>
+          <div className="space-y-3">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 border-b border-gray-100 pb-1">Menu PDF (flipbook)</p>
+            <FontSelector label="Font" value={m.descriptions.font}
+              curated={SANS_FONTS} category="sans"
+              onChange={v => setters.setMDescs({ font: v })} />
+            <FontSizeSlider label="Dimensione" value={m.descriptions.size}
+              min={0.5} max={1.6} step={0.05} previewFont={fontStack(m.descriptions.font, 'sans')}
+              onChange={v => setters.setMDescs({ size: v })} />
+            <ColorRow label="Colore" value={m.descriptions.color}
+              onChange={v => setters.setMDescs({ color: v })} />
+          </div>
         </div>
       )
 
       case 'dish-price': return (
-        <div className="space-y-4">
-          <FontSelector label="Font" value={c.price.font}
-            curated={SANS_FONTS} category="sans"
-            onChange={v => { setters.setCardPrice({ font: v }); setters.setMPrices({ font: v }) }} />
-          <FontSizeSlider label="Dimensione" value={c.price.size}
-            min={0.7} max={2.0} step={0.05} previewFont={fontStack(c.price.font, 'sans')}
-            onChange={v => { setters.setCardPrice({ size: v }); setters.setMPrices({ size: v }) }} />
-          <ColorRow label="Colore" value={c.price.color}
-            onChange={v => { setters.setCardPrice({ color: v }); setters.setMPrices({ color: v }) }} />
-          <div>
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Formato</p>
-            <PillGroup
-              options={[{ label:'€ 12.00', value:'symbol-left' },{ label:'12.00 €', value:'symbol-right' },{ label:'12.00', value:'no-symbol' }]}
-              value={c.price.format}
-              onChange={v => { setters.setCardPrice({ format: v }); setters.setMPrices({ format: v }) }} />
+        <div className="space-y-5">
+          <div className="space-y-3">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 border-b border-gray-100 pb-1">Card espansa</p>
+            <FontSelector label="Font" value={c.price.font}
+              curated={SANS_FONTS} category="sans"
+              onChange={v => setters.setCardPrice({ font: v })} />
+            <FontSizeSlider label="Dimensione" value={c.price.size}
+              min={0.7} max={2.5} step={0.05} previewFont={fontStack(c.price.font, 'sans')}
+              onChange={v => setters.setCardPrice({ size: v })} />
+            <ColorRow label="Colore" value={c.price.color}
+              onChange={v => setters.setCardPrice({ color: v })} />
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Formato</p>
+              <PillGroup
+                options={[{ label:'€ 12.00', value:'symbol-left' },{ label:'12.00 €', value:'symbol-right' },{ label:'12.00', value:'no-symbol' }]}
+                value={c.price.format} onChange={v => setters.setCardPrice({ format: v })} />
+            </div>
+          </div>
+          <div className="space-y-3">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 border-b border-gray-100 pb-1">Menu PDF (flipbook)</p>
+            <FontSelector label="Font" value={m.prices.font}
+              curated={SANS_FONTS} category="sans"
+              onChange={v => setters.setMPrices({ font: v })} />
+            <FontSizeSlider label="Dimensione" value={m.prices.size}
+              min={0.7} max={2.5} step={0.05} previewFont={fontStack(m.prices.font, 'sans')}
+              onChange={v => setters.setMPrices({ size: v })} />
+            <ColorRow label="Colore" value={m.prices.color}
+              onChange={v => setters.setMPrices({ color: v })} />
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Formato</p>
+              <PillGroup
+                options={[{ label:'€ 12.00', value:'symbol-left' },{ label:'12.00 €', value:'symbol-right' },{ label:'12.00', value:'no-symbol' }]}
+                value={m.prices.format} onChange={v => setters.setMPrices({ format: v })} />
+            </div>
           </div>
         </div>
       )
@@ -588,6 +720,9 @@ function EditorSidebar({ target, theme, setters, onClose }: {
           <FontSelector label="Font" value={m.categories.font}
             curated={[...SERIF_FONTS, ...DISPLAY_FONTS]} category="serif"
             onChange={v => setters.setMCats({ font: v })} />
+          <FontSizeSlider label="Dimensione" value={m.categories.size}
+            min={0.8} max={3.0} step={0.1} previewFont={fontStack(m.categories.font, 'serif')}
+            onChange={v => setters.setMCats({ size: v })} />
           <ColorRow label="Colore" value={m.categories.color}
             onChange={v => setters.setMCats({ color: v })} />
         </div>
@@ -938,9 +1073,21 @@ export default function CustomizationClient({
     setBgUploading(false)
   }
 
-  async function handleVideoUpload(file: File) {
-    if (file.size > MAX_MEDIA_BYTES) { setError('Video troppo grande (max 5MB).'); return }
+  async function handleVideoUpload(rawFile: File) {
     setVidUploading(true); setError(null)
+
+    // Compress oversized videos in-browser before upload (re-encode + downscale).
+    let file = rawFile
+    if (rawFile.size > MAX_MEDIA_BYTES) {
+      setError('Compressione video in corso…')
+      file = await compressVideoFile(rawFile)
+      if (file.size > MAX_MEDIA_BYTES) {
+        setError(`Video ancora troppo grande dopo la compressione (${(file.size / 1024 / 1024).toFixed(1)}MB, max 5MB). Usa un video più corto.`)
+        setVidUploading(false); return
+      }
+      setError(null)
+    }
+
     const supabase = createClient()
     const ext  = file.name.split('.').pop() ?? 'mp4'
     const path = `${restaurantId}/theme-video.${ext}`
@@ -982,10 +1129,10 @@ export default function CustomizationClient({
   const setters: SidebarSetters = {
     setLBg, setLLogo, setLTitle, setLDesc, setLBu, setL,
     setMDishes, setMDescs, setMPrices, setMCats, setMLayout, setMDivider, setMBg, setMNav, setM,
-    setCardTitle, setCardDesc, setCardPrice,
+    setC, setCardTitle, setCardDesc, setCardPrice,
     handleBgUpload, handleVideoUpload, bgUploading, vidUploading,
   }
-  void setC; void setCardAllergens; void setCardClose; void setMAllergens; void setMSticky
+  void setCardAllergens; void setCardClose; void setMAllergens; void setMSticky
 
   const sidebarOpen = editMode && activeEditor !== null
 

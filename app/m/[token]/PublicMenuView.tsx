@@ -260,17 +260,26 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
     website_url:   restaurant.website_url   || '#',
   } : restaurant
 
-  // Card preview: first real dish if available, else a rich dummy
+  // Card preview: first real dish if available, else rich dummy data (allergens + pairing)
   const DUMMY_DISH: DishData = {
     id: 'preview', name: 'Tagliolini al Tartufo Nero',
     description: 'Tagliolini freschi al tartufo nero di Norcia, burro mantecato e Parmigiano Reggiano stagionato 24 mesi.',
-    price: 24, category: 'Primi', image_url: null, allergens: [1, 7],
+    price: 24, category: 'Primi', image_url: null, allergens: [1, 3, 7],
+    pairing_dish_id: 'preview-wine', pairing_label: 'Abbinamento vino consigliato',
+  }
+  const DUMMY_WINE: DishData = {
+    id: 'preview-wine', name: 'Barolo Riserva 2018',
+    description: 'Nebbiolo di Serralunga d\'Alba, 13.5% vol.',
+    price: 18, category: 'Vini', image_url: null, allergens: [],
     pairing_dish_id: null, pairing_label: null,
   }
   const allDishesFlat = menus.flatMap(m => m.dishes)
   const cardPreviewDish: DishData = allDishesFlat[0]
     ? { ...allDishesFlat[0], allergens: allDishesFlat[0].allergens ?? [] }
     : DUMMY_DISH
+  const cardPreviewAllDishes: DishData[] = allDishesFlat.length
+    ? allDishesFlat.map(d => ({ ...d, allergens: d.allergens ?? [] }))
+    : [DUMMY_DISH, DUMMY_WINE]
 
   // ── Background landing layer styles ───────────────────────────────────────
   const bgIsVideo = l.background.type === 'video' || l.background.type === 'gif'
@@ -303,7 +312,7 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
 
         {/* Texture overlay */}
         {textureBg && (
-          <div className="absolute inset-0 pointer-events-none" style={{ backgroundImage: textureBg, backgroundSize: '200px 200px' }} />
+          <div className="absolute inset-0 pointer-events-none" style={textureBg} />
         )}
 
         {/* Video / immersive background */}
@@ -366,7 +375,7 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
               <h1 className="uppercase leading-none"
                 style={{
                   color: l.title.color, fontFamily: TITLE_FONT,
-                  fontSize: `clamp(1.4rem,5vw,${l.title.size}rem)`,
+                  fontSize: `${l.title.size}rem`,
                   letterSpacing: '0.22em',
                   fontWeight: l.title.weight === 'bold' ? 700 : l.title.weight === 'normal' ? 400 : 300,
                 }}>
@@ -417,7 +426,7 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
 
           {/* Social links */}
           <EditHandle target="landing-socials" editMode={editMode}>
-            <SocialBar restaurant={displayRestaurant} editMode={editMode} />
+            <SocialBar restaurant={displayRestaurant} editMode={editMode} liveLanding={l} />
           </EditHandle>
         </div>
 
@@ -476,7 +485,7 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
         <div className="absolute inset-0" style={{ zIndex: 200 }}>
           <DishModal
             activeDish={cardPreviewDish}
-            allDishes={allDishesFlat.length ? allDishesFlat.map(d => ({ ...d, allergens: d.allergens ?? [] })) : [DUMMY_DISH]}
+            allDishes={cardPreviewAllDishes}
             onClose={() => setCardPreviewOpen(false)}
             onOpenDish={() => {}}
             editMode={editMode}
@@ -494,7 +503,7 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
 // target; clicking a chip opens its editor panel in the admin sidebar.
 
 function MenuEditPalette() {
-  const chips: [string, string][] = [
+  const zones: [string, string][] = [
     ['category-title',    'Categoria'],
     ['dish-title',        'Titolo piatto'],
     ['dish-description',  'Descrizione'],
@@ -502,11 +511,11 @@ function MenuEditPalette() {
     ['background-layout', 'Sfondo & Layout'],
   ]
   return (
-    <div className="absolute top-3 left-1/2 -translate-x-1/2 z-[300] flex flex-wrap items-center justify-center gap-1.5 px-2"
-      style={{ maxWidth: '95%' }}>
-      {chips.map(([target, label]) => (
+    <div className="absolute bottom-14 inset-x-0 z-[300] flex flex-wrap items-center justify-center gap-2 px-3 pointer-events-none">
+      {zones.map(([target, label]) => (
         <button key={target} onClick={() => sendEdit(target)}
-          className="px-2.5 py-1 bg-blue-500/90 hover:bg-blue-600 text-white rounded-full text-[10px] font-medium shadow-md backdrop-blur-sm transition-colors">
+          className="pointer-events-auto border-2 border-dashed border-blue-400/65 px-3 py-1.5 text-[10px] font-medium text-blue-300/90 transition-all hover:border-blue-400 hover:text-blue-300 hover:bg-blue-500/15"
+          style={{ background: 'rgba(2,8,22,0.55)', backdropFilter: 'blur(4px)' }}>
           {label}
         </button>
       ))}
@@ -516,9 +525,11 @@ function MenuEditPalette() {
 
 // ── SocialBar ─────────────────────────────────────────────────────────────────
 
-function SocialBar({ restaurant, editMode = false }: { restaurant: Restaurant; editMode?: boolean }) {
+function SocialBar({ restaurant, editMode = false, liveLanding }: {
+  restaurant: Restaurant; editMode?: boolean; liveLanding?: RestaurantTheme['landing']
+}) {
   const vis = restaurant.visibility
-  const t   = restaurant.theme.landing
+  const t   = liveLanding ?? restaurant.theme.landing
   const links = [
     { key:'instagram'   as VisKey, url: restaurant.instagram_url,   Icon: InstagramIcon, label:'Instagram'   },
     { key:'facebook'    as VisKey, url: restaurant.facebook_url,    Icon: FacebookIcon,  label:'Facebook'    },

@@ -113,6 +113,7 @@ function makeStyles(theme: RestaurantTheme, registered: Set<string>) {
   const titleScale = m.dishes.titleSize   / DEFAULT_THEME.menu.dishes.titleSize
   const baseScale  = m.descriptions.size  / DEFAULT_THEME.menu.descriptions.size
   const priceScale = m.prices.size        / DEFAULT_THEME.menu.prices.size
+  const catScale   = m.categories.size    / DEFAULT_THEME.menu.categories.size
 
   return StyleSheet.create({
     page: {
@@ -124,7 +125,7 @@ function makeStyles(theme: RestaurantTheme, registered: Set<string>) {
     catTitle: {
       fontFamily:    catFamily,
       fontWeight:    catBold,
-      fontSize:      (compact ? 13 : 18) * titleScale,
+      fontSize:      (compact ? 13 : 18) * catScale,
       color:         readableOn(m.categories.color, bg),
       textTransform: 'uppercase',
       letterSpacing: compact ? 1.5 : 2,

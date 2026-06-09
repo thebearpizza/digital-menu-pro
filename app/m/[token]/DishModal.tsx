@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { formatAllergensFull } from '@/lib/allergens'
-import { fontStack, formatPrice, landingButtonRadius } from '@/lib/theme'
+import { fontStack, formatPrice, cardBorderRadius } from '@/lib/theme'
 import type { CardTheme, RestaurantTheme } from '@/lib/theme'
 import { EditHandle } from './EditHandle'
 
@@ -55,7 +55,7 @@ export default function DishModal({ activeDish, allDishes, isNested, onClose, on
   const CLOSE_COLOR  = card?.closeButton.color    ?? '#555555'
   const CLOSE_POS    = card?.closeButton.position ?? 'top-right'
   const CLOSE_SHAPE  = card?.closeButton.shape    ?? 'none'
-  const CARD_RADIUS  = landingButtonRadius(theme?.landing.buttons.shape ?? 'flat')
+  const CARD_RADIUS  = cardBorderRadius(card?.borderRadius ?? 'sm')
   const TEXT_ALIGN   = (mn?.layout.dishAlignment === 'center' ? 'center' : mn?.layout.dishAlignment === 'right' ? 'right' : 'left') as 'left' | 'center' | 'right'
 
   // Derived accent for decorative elements (still uses menu accent)
