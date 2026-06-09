@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { formatAllergens } from '@/lib/allergens'
-import { fontStack, formatPrice, cardBorderRadius } from '@/lib/theme'
+import { fontStack, formatPrice, cardBorderRadius, cardNavColors } from '@/lib/theme'
 import type { CardTheme, RestaurantTheme } from '@/lib/theme'
 import { EditHandle, sendEdit } from './EditHandle'
 
@@ -65,6 +65,10 @@ export default function DishModal({ activeDish, allDishes, isNested, onClose, on
 
   // Decorative accent: card-owned, with menu accent only as legacy fallback
   const ACCENT = card?.accent ?? mn?.accent ?? '#c9a96e'
+
+  // Prev/next + page-counter colors, kept within the same neutral gray tone
+  // but boosted for legibility against the active card background.
+  const NAV_COLORS = cardNavColors(CARD_BG)
 
   const startIdx = allDishes.findIndex(d => d.id === activeDish.id)
 
@@ -408,14 +412,14 @@ export default function DishModal({ activeDish, allDishes, isNested, onClose, on
         {!isNested && total > 1 && (
           <div
             className="shrink-0 flex items-center justify-between px-5"
-            style={{ borderTop: '1px solid #1c1c1c', paddingTop: 12, paddingBottom: 20 }}
+            style={{ borderTop: `1px solid ${NAV_COLORS.divider}`, paddingTop: 12, paddingBottom: 20 }}
           >
             <button
               onClick={() => goTo(idx - 1, 'left')}
               disabled={idx === 0}
               className="transition-opacity"
               style={{
-                color:         idx === 0 ? '#2a2a2a' : '#6a6a6a',
+                color:         idx === 0 ? NAV_COLORS.disabled : NAV_COLORS.active,
                 fontSize:      11,
                 letterSpacing: '0.18em',
                 textTransform: 'uppercase',
@@ -425,7 +429,7 @@ export default function DishModal({ activeDish, allDishes, isNested, onClose, on
               ‹ prec.
             </button>
             <span
-              style={{ color: '#303030', fontSize: 10, letterSpacing: '0.15em', fontFamily: FONT_SANS }}
+              style={{ color: NAV_COLORS.counter, fontSize: 10, letterSpacing: '0.15em', fontFamily: FONT_SANS }}
             >
               {idx + 1} / {total}
             </span>
@@ -434,7 +438,7 @@ export default function DishModal({ activeDish, allDishes, isNested, onClose, on
               disabled={idx === total - 1}
               className="transition-opacity"
               style={{
-                color:         idx === total - 1 ? '#2a2a2a' : '#6a6a6a',
+                color:         idx === total - 1 ? NAV_COLORS.disabled : NAV_COLORS.active,
                 fontSize:      11,
                 letterSpacing: '0.18em',
                 textTransform: 'uppercase',

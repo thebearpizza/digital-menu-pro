@@ -211,6 +211,10 @@ function makeStyles(theme: RestaurantTheme, registered: Set<string>, flipped = f
     // Spacing between the stacked price and name so they never touch.
     stackPrice: { marginBottom: 2 },
     stackPriceBelow: { marginTop: 2 },
+    // dishName normally uses flex:1 to push the price to the row's far edge,
+    // but inside a column (price above/below) flex:1 + flexBasis:0 collapses
+    // the name's height to 0, making the description overlap/merge with it.
+    stackName: { flex: 0, flexGrow: 0, flexShrink: 0, marginRight: 0 },
     dishName: {
       fontFamily:    titleFamily,
       fontWeight:    titleBold,
@@ -393,8 +397,12 @@ export function MenuPDFDocument({ restaurant, menu, theme: themeProp, registered
     const nameEl  = <Text style={st.dishName}>{dish.name}</Text>
     const priceEl = priceStr ? <Text style={st.dishPrice}>{priceStr}</Text> : null
     if (!priceEl) return <View style={st.dishRow}>{nameEl}</View>
-    if (pos === 'above') return <View style={st.dishStack}><Text style={[st.dishPrice, st.stackPrice]}>{priceStr}</Text>{nameEl}</View>
-    if (pos === 'below') return <View style={st.dishStack}>{nameEl}<Text style={[st.dishPrice, st.stackPriceBelow]}>{priceStr}</Text></View>
+    if (pos === 'above' || pos === 'below') {
+      const stackNameEl = <Text style={[st.dishName, st.stackName]}>{dish.name}</Text>
+      return pos === 'above'
+        ? <View style={st.dishStack}><Text style={[st.dishPrice, st.stackPrice]}>{priceStr}</Text>{stackNameEl}</View>
+        : <View style={st.dishStack}>{stackNameEl}<Text style={[st.dishPrice, st.stackPriceBelow]}>{priceStr}</Text></View>
+    }
     if (pos === 'left')  return <View style={st.dishRow}>{priceEl}{nameEl}</View>
     return <View style={st.dishRow}>{nameEl}{priceEl}</View>  // 'right' (default)
   }

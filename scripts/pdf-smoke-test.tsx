@@ -40,6 +40,8 @@ const cases: Array<[string, RestaurantTheme]> = [
   ['boxed + ornament',        themeWith(t => { t.menu.layout.dishLayout = 'boxed-card' as DishLayout; t.menu.layout.divider.type = 'ornament' })],
   ['elegant + price above',   themeWith(t => { t.menu.layout.dishLayout = 'elegant' as DishLayout; t.menu.prices.position = 'above' })],
   ['minimal + wavy + right',  themeWith(t => { t.menu.layout.dishLayout = 'minimal-row' as DishLayout; t.menu.layout.divider.type = 'wavy'; t.menu.layout.dishAlignment = 'right' })],
+  ['list + price above',      themeWith(t => { t.menu.prices.position = 'above' })],
+  ['list + price below',      themeWith(t => { t.menu.prices.position = 'below' })],
 ]
 
 async function main() {

@@ -645,6 +645,25 @@ export function toOpaqueColor(color: string): string {
   return color
 }
 
+function relativeLuminance(color: string): number {
+  const parts = hexToRgb(color.startsWith('#') ? color : '#000000').split(',').map(Number)
+  const [r, g, b] = parts.map(v => {
+    const c = v / 255
+    return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4)
+  })
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b
+}
+
+// Neutral grayscale colors for prev/next nav and the page counter in the dish
+// card, picked to keep enough contrast against the card background while
+// staying within the same gray "tone" used by the rest of the card chrome.
+export function cardNavColors(bgColor: string): { active: string; disabled: string; counter: string; divider: string } {
+  const dark = relativeLuminance(bgColor) < 0.4
+  return dark
+    ? { active: '#9a9a9a', disabled: '#3c3c3c', counter: '#707070', divider: '#262626' }
+    : { active: '#5c5c5c', disabled: '#c4c4c4', counter: '#7e7e7e', divider: '#dcdcdc' }
+}
+
 // ── Theme Presets ─────────────────────────────────────────────────────────────
 
 export interface ThemePreset { name: string; theme: RestaurantTheme }
