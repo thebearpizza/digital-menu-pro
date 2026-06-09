@@ -9,6 +9,7 @@ import {
   googleFontsUrl, allThemeFonts, fontStack, formatPrice,
 } from '@/lib/theme'
 import { ALL_GOOGLE_FONTS } from '@/lib/googleFontsCatalog'
+import { removeUniformBackground } from '@/lib/imageBackground'
 import type {
   RestaurantTheme, LandingTheme, LandingBackground, MenuTheme, CardTheme,
   MenuBgEffect, PaginationStyle, AlignOpt, AllergenDisplay, PricePosition, DividerType,
@@ -1629,10 +1630,17 @@ export default function CustomizationClient({
     if (file.size > MAX_MEDIA_BYTES) { setError('Immagine troppo grande (max 5MB).'); return }
     setLogoUploading(true); setError(null)
     const supabase = createClient()
-    const ext  = file.name.split('.').pop() ?? 'png'
+    // Cut out a uniform background color so the logo fuses with the landing
+    // background instead of showing a solid box around it.
+    let blob: Blob = file
+    let ext = file.name.split('.').pop() ?? 'png'
+    try {
+      const cut = await removeUniformBackground(file)
+      if (cut !== (file as Blob)) { blob = cut; ext = 'png' }
+    } catch { /* fall back to original file */ }
     const path = `${restaurantId}/logo.${ext}`
     const { data, error: err } = await supabase.storage
-      .from('restaurant-assets').upload(path, file, { upsert: true })
+      .from('restaurant-assets').upload(path, blob, { upsert: true, contentType: blob.type || file.type })
     if (!err && data) {
       const { data: pub } = supabase.storage.from('restaurant-assets').getPublicUrl(data.path)
       setLLogo({ image: `${pub.publicUrl}?v=${Date.now()}` })
