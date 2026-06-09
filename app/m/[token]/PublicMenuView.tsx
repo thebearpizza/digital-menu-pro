@@ -206,8 +206,16 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
   function handleCanPlay() {
     if (!l.background.immersiveTransition) setPosterVisible(false)
   }
-  // Restore poster whenever landing re-appears
-  useEffect(() => { if (!menuVisible) setPosterVisible(true) }, [menuVisible])
+  // Restore poster when landing re-appears, but only if the video isn't actively
+  // playing — in loop/pingpong mode the video runs continuously behind the menu
+  // and should reappear immediately without the poster covering it.
+  useEffect(() => {
+    if (!menuVisible) {
+      const v = videoRef.current
+      const playing = v && !v.paused && !v.ended && v.readyState > 2
+      setPosterVisible(!playing)
+    }
+  }, [menuVisible])
 
   // ── Immersive transition driver ────────────────────────────────────────────
   function openMenu(menuId: string) {
