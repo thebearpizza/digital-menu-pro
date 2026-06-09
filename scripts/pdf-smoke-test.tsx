@@ -42,6 +42,7 @@ const cases: Array<[string, RestaurantTheme]> = [
   ['minimal + wavy + right',  themeWith(t => { t.menu.layout.dishLayout = 'minimal-row' as DishLayout; t.menu.layout.divider.type = 'wavy'; t.menu.layout.dishAlignment = 'right' })],
   ['list + price above',      themeWith(t => { t.menu.prices.position = 'above' })],
   ['list + price below',      themeWith(t => { t.menu.prices.position = 'below' })],
+  ['compact perPage=2 no-orphan', themeWith(t => { t.menu.pdfLayout = 'compact'; t.menu.layout.dishesPerPage = 2 })],
 ]
 
 async function main() {

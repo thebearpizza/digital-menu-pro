@@ -515,8 +515,21 @@ export function MenuPDFDocument({ restaurant, menu, theme: themeProp, registered
           // per-page dish counter so "N per pagina" counts from that page.
           if (!compact) dishCounter = 0
 
+          // Compact mode: avoid leaving a single "orphan" dish of a category
+          // at the bottom of a page. If fewer than 2 slots remain before the
+          // next forced break and the category has more than one dish, push
+          // the whole category to the next page (leaving the rest blank).
+          let forceBreakCategory = false
+          if (compact && perPage > 0 && !isGrid && catIdx > 0) {
+            const remaining = perPage - (dishCounter % perPage)
+            if (remaining === 1 && cat.dishes.length > 1) {
+              forceBreakCategory = true
+              dishCounter = 0
+            }
+          }
+
           return (
-            <View key={cat.name} break={!compact && catIdx > 0}>
+            <View key={cat.name} break={(!compact && catIdx > 0) || forceBreakCategory}>
 
               {compact && catIdx > 0 && <View style={s.catSpacer} />}
 
