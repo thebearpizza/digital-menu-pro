@@ -391,6 +391,23 @@ function Toggle({ checked, onChange, disabled = false }: { checked: boolean; onC
   )
 }
 
+// ── Mobile chip bar config ────────────────────────────────────────────────────
+
+const MOBILE_TARGETS: Record<'landing' | 'menu' | 'card', string[]> = {
+  landing: ['landing-bg','landing-logo','landing-title','landing-desc','landing-buttons','landing-socials'],
+  menu:    ['category-title','dish-title','dish-description','dish-price','allergens','background-layout','sticky-categories'],
+  card:    ['card-style','dish-title','dish-description','dish-price','allergens'],
+}
+const MOBILE_LABELS: Record<string, string> = {
+  'landing-bg':       'Sfondo',    'landing-logo':     'Logo',
+  'landing-title':    'Nome',      'landing-desc':     'Slogan',
+  'landing-buttons':  'Bottoni',   'landing-socials':  'Social',
+  'dish-title':       'Titolo',    'dish-description': 'Descr.',
+  'dish-price':       'Prezzo',    'allergens':        'Allergeni',
+  'category-title':   'Categoria', 'background-layout':'Layout',
+  'sticky-categories':'Barra',     'card-style':       'Stile Card',
+}
+
 // ── Editor target registry ────────────────────────────────────────────────────
 
 const EDITOR_TARGETS: Record<string, { title: string; hint: string }> = {
@@ -1114,12 +1131,14 @@ function EditorSidebar({ target, theme, setters, previewMode, onClose }: {
 
 // ── Live preview iframe ───────────────────────────────────────────────────────
 
-function LivePreview({ qrToken, theme, previewMode, editMode = false, showDummyData = false, onElementClick }: {
+function LivePreview({ qrToken, theme, previewMode, editMode = false, showDummyData = false, onElementClick, zoom = 1 }: {
   qrToken: string | null; theme: RestaurantTheme; previewMode: 'landing' | 'menu' | 'card'
   editMode?: boolean; showDummyData?: boolean; onElementClick?: (target: string) => void
+  zoom?: number
 }) {
-  const iframeRef = useRef<HTMLIFrameElement>(null)
-  const readyRef  = useRef(false)
+  const iframeRef    = useRef<HTMLIFrameElement>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
+  const readyRef     = useRef(false)
 
   function post(msg: object) {
     iframeRef.current?.contentWindow?.postMessage(msg, window.location.origin)
@@ -1133,6 +1152,8 @@ function LivePreview({ qrToken, theme, previewMode, editMode = false, showDummyD
         post({ type: 'dmp-theme', theme })
         post({ type: 'dmp-nav', view: previewMode })
         post({ type: 'dmp-editor-state', editMode, showDummyData })
+        const w = containerRef.current?.getBoundingClientRect().width ?? 0
+        if (w > 0) post({ type: 'dmp-font-scale', fontSize: Math.round((w / 390) * 16 * 10) / 10 })
       }
       if (e.data?.type === 'dmp-element-clicked' && e.data.target) {
         onElementClick?.(e.data.target)
@@ -1141,6 +1162,18 @@ function LivePreview({ qrToken, theme, previewMode, editMode = false, showDummyD
     window.addEventListener('message', onMsg)
     return () => window.removeEventListener('message', onMsg)
   }, [theme, previewMode, editMode, showDummyData]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Resend font scale whenever the preview container resizes (sidebar open/close)
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+    const ro = new ResizeObserver(entries => {
+      const w = entries[0]?.contentRect.width ?? 0
+      if (w > 0 && readyRef.current) post({ type: 'dmp-font-scale', fontSize: Math.round((w / 390) * 16 * 10) / 10 })
+    })
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!readyRef.current) return
@@ -1169,7 +1202,8 @@ function LivePreview({ qrToken, theme, previewMode, editMode = false, showDummyD
   }
 
   return (
-    <div className="relative mx-auto h-full" style={{ aspectRatio: '9/19.5', maxWidth: '100%' }}>
+    <div ref={containerRef} className="relative mx-auto h-full"
+      style={{ aspectRatio: '9/19.5', maxWidth: '100%', transform: zoom !== 1 ? `scale(${zoom})` : undefined, transformOrigin: 'top center' }}>
       <div className="absolute inset-0 rounded-[2rem] overflow-hidden border border-gray-300 shadow-xl bg-black">
         <iframe
           ref={iframeRef}
@@ -1276,6 +1310,7 @@ export default function CustomizationClient({
   const [editMode,     setEditMode]     = useState(false)
   const [showDummyData,setShowDummyData]= useState(false)
   const [activeEditor, setActiveEditor] = useState<string | null>(null)
+  const [previewZoom,  setPreviewZoom]  = useState(1)
 
   useEffect(() => { if (!editMode) { setActiveEditor(null); setShowDummyData(false) } }, [editMode])
 
@@ -1505,6 +1540,18 @@ export default function CustomizationClient({
         {/* Status + save */}
         {saved  && <span className="text-xs text-green-600 shrink-0">Salvato</span>}
         {error  && <span className="text-xs text-red-500 truncate max-w-[120px] shrink-0">{error}</span>}
+
+        {/* Zoom control */}
+        <div className="flex items-center gap-0.5 shrink-0">
+          <button type="button"
+            onClick={() => setPreviewZoom(z => Math.max(0.5, Math.round((z - 0.1) * 10) / 10))}
+            className="w-6 h-6 flex items-center justify-center border border-gray-200 text-gray-500 hover:border-gray-400 hover:text-gray-800 leading-none select-none text-base">−</button>
+          <span className="text-[10px] font-mono text-gray-400 w-9 text-center select-none">{Math.round(previewZoom * 100)}%</span>
+          <button type="button"
+            onClick={() => setPreviewZoom(z => Math.min(2, Math.round((z + 0.1) * 10) / 10))}
+            className="w-6 h-6 flex items-center justify-center border border-gray-200 text-gray-500 hover:border-gray-400 hover:text-gray-800 leading-none select-none text-base">+</button>
+        </div>
+
         <button type="button"
           onClick={() => { if (confirm('Ripristinare il tema predefinito?')) { setTheme(DEFAULT_THEME); setSaved(false) } }}
           className="hidden sm:inline text-[10px] text-gray-400 hover:text-gray-600 shrink-0">
@@ -1516,29 +1563,57 @@ export default function CustomizationClient({
         </button>
       </div>
 
-      {/* ── Main: preview (left) + contextual editor panel (right) ──────────
-          The panel is always part of the flex row: when an element is selected
-          it animates its width open and the preview shrinks to make room — a
-          smooth side-by-side, no overlay and no blur over the iframe. */}
-      <div className="flex-1 flex min-h-0 rounded-lg overflow-hidden border border-gray-200">
+      {/* ── Main: preview + contextual editor panel ────────────────────────
+          Desktop: side-by-side (preview shrinks as panel opens).
+          Mobile:  full-width preview with chip bar above; dropdown overlays
+                   the top portion of the iframe leaving most of it visible. */}
+      <div className="flex-1 flex min-h-0 rounded-lg border border-gray-200" style={{ overflow: 'visible' }}>
 
-        {/* Preview — flex-1 so it shrinks proportionally as the panel opens */}
-        <div className="flex-1 min-w-0 flex items-center justify-center bg-gradient-to-br from-gray-100 to-gray-200 transition-all duration-300 ease-out p-3 sm:p-5">
-          <LivePreview
-            qrToken={qrToken} theme={theme} previewMode={previewMode}
-            editMode={editMode} showDummyData={showDummyData}
-            onElementClick={setActiveEditor}
-          />
+        {/* Preview column — chip bar + iframe stacked on mobile */}
+        <div className="flex-1 min-w-0 flex flex-col min-h-0 relative">
+
+          {/* Mobile chip bar: sm:hidden, scrollable chips for current tab's targets */}
+          <div className="sm:hidden shrink-0 bg-white border-b border-gray-100 relative z-20">
+            <div className="flex gap-1.5 px-3 py-2 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
+              {MOBILE_TARGETS[previewMode].map(target => (
+                <button key={target} type="button"
+                  onClick={() => setActiveEditor(prev => prev === target ? null : target)}
+                  className={`shrink-0 px-3 py-1.5 text-[11px] font-medium rounded-full border transition-colors whitespace-nowrap ${
+                    activeEditor === target
+                      ? 'bg-gray-900 text-white border-gray-900'
+                      : 'bg-white text-gray-600 border-gray-200'
+                  }`}>
+                  {MOBILE_LABELS[target] ?? target}
+                </button>
+              ))}
+            </div>
+            {/* Dropdown editor panel — overlays iframe from top, max 48dvh */}
+            {activeEditor !== null && MOBILE_TARGETS[previewMode].includes(activeEditor) && (
+              <div className="absolute top-full left-0 right-0 bg-white shadow-xl z-50 overflow-y-auto"
+                style={{ maxHeight: '48dvh', borderBottom: '1px solid #e5e7eb' }}>
+                <EditorSidebar target={activeEditor} theme={theme} setters={setters}
+                  previewMode={previewMode} onClose={() => setActiveEditor(null)} />
+              </div>
+            )}
+          </div>
+
+          {/* Preview iframe area — fills remaining height, centers phone mockup */}
+          <div className="flex-1 flex items-center justify-center bg-gradient-to-br from-gray-100 to-gray-200 transition-all duration-300 ease-out p-3 sm:p-5 min-h-0">
+            <LivePreview
+              qrToken={qrToken} theme={theme} previewMode={previewMode}
+              editMode={editMode} showDummyData={showDummyData}
+              onElementClick={setActiveEditor} zoom={previewZoom}
+            />
+          </div>
         </div>
 
-        {/* Contextual editor panel — pinned right, width animates open/closed.
-            Responsive width keeps both panel and preview usable on tablets. */}
+        {/* Desktop sidebar — hidden on mobile, animates width open/closed */}
         <aside
-          className={`shrink-0 bg-white overflow-hidden transition-[width] duration-300 ease-out ${
-            sidebarOpen ? 'w-[88vw] sm:w-[46vw] md:w-[380px] border-l border-gray-200' : 'w-0'
+          className={`hidden sm:block shrink-0 bg-white overflow-hidden transition-[width] duration-300 ease-out ${
+            sidebarOpen ? 'sm:w-[46vw] md:w-[380px] border-l border-gray-200' : 'w-0'
           }`}>
           {sidebarOpen && (
-            <div className="h-full w-[88vw] sm:w-[46vw] md:w-[380px]">
+            <div className="h-full sm:w-[46vw] md:w-[380px]">
               <EditorSidebar target={activeEditor!} theme={theme} setters={setters} previewMode={previewMode} onClose={() => setActiveEditor(null)} />
             </div>
           )}

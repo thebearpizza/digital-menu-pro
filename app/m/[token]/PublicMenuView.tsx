@@ -170,10 +170,16 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
         setEditMode(!!d.editMode)
         setShowDummyData(!!d.showDummyData)
       }
+      if (d.type === 'dmp-font-scale' && typeof d.fontSize === 'number') {
+        document.documentElement.style.fontSize = `${d.fontSize}px`
+      }
     }
     window.addEventListener('message', onMessage)
     try { window.parent?.postMessage({ type: 'dmp-preview-ready' }, window.location.origin) } catch {}
-    return () => window.removeEventListener('message', onMessage)
+    return () => {
+      window.removeEventListener('message', onMessage)
+      document.documentElement.style.fontSize = ''
+    }
   }, [menus])
 
   // ── PDF generation — driven by selected or pending menu ───────────────────
