@@ -731,10 +731,11 @@ export default function FlipbookViewer({
           </div>
         </div>
 
-        {/* ── Edit toolbar — admin preview only, between book and category nav ── */}
+        {/* ── Edit toolbar — admin preview only, between book and category nav.
+             Hidden on mobile: the chip bar already exposes these same targets. ── */}
         {editMode && pagesReady && (
           <div
-            className="shrink-0 flex items-center gap-2 px-3 overflow-x-auto"
+            className="hidden sm:flex shrink-0 items-center gap-2 px-3 overflow-x-auto"
             style={{
               height: 36,
               background: 'rgba(2,6,18,0.94)',

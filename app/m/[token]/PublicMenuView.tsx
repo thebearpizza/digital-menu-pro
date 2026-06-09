@@ -451,10 +451,11 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
         <div className="absolute top-0 inset-x-0 h-px"
           style={{ background: `linear-gradient(90deg,transparent,${l.accent}55,transparent)` }} />
 
-        {/* Background edit handle — top-right corner badge (edit mode only) */}
+        {/* Background edit handle — top-right corner badge (edit mode only).
+            Hidden on mobile: the chip bar already exposes a "Sfondo" target. */}
         {editMode && (
           <button
-            className="absolute top-3 right-3 z-[300] flex items-center gap-1.5 px-2.5 py-1 bg-blue-500 text-white rounded-full text-[11px] shadow-lg"
+            className="hidden sm:flex absolute top-3 right-3 z-[300] items-center gap-1.5 px-2.5 py-1 bg-blue-500 text-white rounded-full text-[11px] shadow-lg"
             onClick={() => sendEdit('landing-bg')}>
             <span>✏</span><span>Sfondo</span>
           </button>

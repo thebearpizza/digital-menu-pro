@@ -226,10 +226,11 @@ export default function DishModal({ activeDish, allDishes, isNested, onClose, on
           </button>
         </div>
 
-        {/* Card background edit badge — admin preview only */}
+        {/* Card background edit badge — admin preview only.
+            Hidden on mobile: the chip bar already exposes a "Stile Card" target. */}
         {editMode && (
           <button
-            className="absolute top-3 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1.5 px-2.5 py-1 bg-blue-500 text-white rounded-full text-[11px] shadow-lg"
+            className="hidden sm:flex absolute top-3 left-1/2 -translate-x-1/2 z-20 items-center gap-1.5 px-2.5 py-1 bg-blue-500 text-white rounded-full text-[11px] shadow-lg"
             onClick={() => sendEdit('card-style')}>
             <span>✏</span><span>Sfondo card</span>
           </button>

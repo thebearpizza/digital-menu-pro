@@ -1496,6 +1496,17 @@ export default function CustomizationClient({
   const [showDummyData,setShowDummyData]= useState(false)
   const [activeEditor, setActiveEditor] = useState<string | null>(null)
   const [previewZoom,  setPreviewZoom]  = useState(1)
+  const [isMobile,     setIsMobile]     = useState(false)
+
+  // On mobile there's no separate "preview vs edit" mode — the chip bar is
+  // the only way to open editors, so the iframe should always be tappable.
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 639px)')
+    const update = () => setIsMobile(mq.matches)
+    update()
+    mq.addEventListener('change', update)
+    return () => mq.removeEventListener('change', update)
+  }, [])
 
   useEffect(() => { if (!editMode) { setActiveEditor(null); setShowDummyData(false) } }, [editMode])
 
@@ -1845,7 +1856,7 @@ export default function CustomizationClient({
           <div className="flex-1 flex items-center justify-center bg-gradient-to-br from-gray-100 to-gray-200 transition-all duration-300 ease-out p-3 sm:p-5 min-h-0">
             <LivePreview
               qrToken={qrToken} theme={theme} previewMode={previewMode}
-              editMode={editMode} showDummyData={showDummyData}
+              editMode={editMode || isMobile} showDummyData={showDummyData}
               onElementClick={setActiveEditor} onViewChange={setPreviewMode} zoom={previewZoom}
             />
           </div>
