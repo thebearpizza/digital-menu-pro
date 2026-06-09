@@ -506,17 +506,15 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
             categories={categories.length > 0 ? categories : undefined}
             dishes={activeMenu?.dishes ?? []}
             theme={t}
+            editMode={editMode && !cardPreviewOpen}
+            onEditTarget={sendEdit}
           />
-          {/* Edit palette — clickable chips for every menu element (the menu is a
-              rendered PDF, so its text can't be wrapped individually). Only in
-              admin preview. */}
-          {editMode && <MenuEditPalette />}
         </div>
       )}
 
       {/* ── CARD PREVIEW — DishModal aperta dall'admin in tab Card ───────── */}
       {cardPreviewOpen && (
-        <div className="absolute inset-0" style={{ zIndex: 200 }}>
+        <div className="absolute inset-0" style={{ zIndex: 500 }}>
           <DishModal
             activeDish={cardPreviewDish}
             allDishes={cardPreviewAllDishes}
@@ -534,29 +532,6 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
 // ── Menu edit palette ───────────────────────────────────────────────────────
 // The flipbook menu is a rendered PDF, so individual dish/category texts aren't
 // real DOM nodes we can wrap. Instead we surface a labelled chip for each menu
-// target; clicking a chip opens its editor panel in the admin sidebar.
-
-function MenuEditPalette() {
-  const zones: [string, string][] = [
-    ['category-title',    'Categoria'],
-    ['dish-title',        'Titolo piatto'],
-    ['dish-description',  'Descrizione'],
-    ['dish-price',        'Prezzo'],
-    ['background-layout', 'Sfondo & Layout'],
-  ]
-  return (
-    <div className="absolute bottom-14 inset-x-0 z-[300] flex flex-wrap items-center justify-center gap-2 px-3 pointer-events-none">
-      {zones.map(([target, label]) => (
-        <button key={target} onClick={() => sendEdit(target)}
-          className="pointer-events-auto border-2 border-dashed border-blue-400/65 px-3 py-1.5 text-[10px] font-medium text-blue-300/90 transition-all hover:border-blue-400 hover:text-blue-300 hover:bg-blue-500/15"
-          style={{ background: 'rgba(2,8,22,0.55)', backdropFilter: 'blur(4px)' }}>
-          {label}
-        </button>
-      ))}
-    </div>
-  )
-}
-
 // ── SocialBar ─────────────────────────────────────────────────────────────────
 
 function SocialBar({ restaurant, editMode = false, liveLanding }: {

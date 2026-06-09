@@ -667,12 +667,6 @@ function EditorSidebar({ target, theme, setters, onClose }: {
                 options={[{ label:'Light', value:'light' },{ label:'Normal', value:'normal' },{ label:'Bold', value:'bold' }]}
                 value={c.title.weight} onChange={v => setters.setCardTitle({ weight: v })} />
             </div>
-            <div>
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Bordi card</p>
-              <PillGroup
-                options={[{ label:'Netti', value:'none' },{ label:'Soft', value:'sm' },{ label:'Arrotondati', value:'md' }]}
-                value={c.borderRadius} onChange={v => setters.setC({ borderRadius: v })} />
-            </div>
           </div>
           <div className="space-y-3">
             <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 border-b border-gray-100 pb-1">Menu PDF (flipbook)</p>
@@ -826,12 +820,6 @@ function EditorSidebar({ target, theme, setters, onClose }: {
         <div className="space-y-4">
           <ColorRow label="Sfondo card" value={c.bgColor}
             onChange={v => setters.setC({ bgColor: v })} />
-          <div>
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Bordi card</p>
-            <PillGroup
-              options={[{ label:'Netti', value:'none' },{ label:'Soft', value:'sm' },{ label:'Arrotondati', value:'md' }]}
-              value={c.borderRadius} onChange={v => setters.setC({ borderRadius: v })} />
-          </div>
           <ColorRow label="Colore accento" value={m.accent}
             onChange={v => setters.setM({ accent: v })} />
           <div>
