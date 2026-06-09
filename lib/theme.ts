@@ -87,6 +87,8 @@ export const CURRENCY_OPTIONS = ['€', '$', '£', '¥', 'CHF', 'kr'] as const
 
 export interface CardTheme {
   bgColor:      string        // '#111111'
+  accent:       string        // accento decorativo della card (separatori, frecce)
+  align:        'left' | 'center' | 'right'  // allineamento testo della card
   borderRadius: 'none' | 'sm' | 'md'   // 0 / 8 / 16px
   layout:      'photo-top' | 'photo-side' | 'minimal'
   title:       { font: string; size: number; color: string; weight: 'light' | 'normal' | 'bold' }
@@ -222,6 +224,8 @@ export const DEFAULT_THEME: RestaurantTheme = {
   },
   card: {
     bgColor:      '#111111',
+    accent:       '#c9a96e',
+    align:        'left',
     borderRadius: 'sm',
     layout:  'photo-top',
     title:       { font: 'Cormorant Garamond', size: 1.75, color: '#ede8e0', weight: 'light' },
@@ -360,6 +364,11 @@ function parseNested(r: Record<string, unknown>): RestaurantTheme {
     },
     card: {
       bgColor:      str(ca.bgColor, d.card.bgColor),
+      // Back-compat: i temi salvati prima dell'introduzione di accent/align sulla card
+      // ereditano i valori correnti del menu al primo parse, poi restano indipendenti.
+      accent:       str(ca.accent, str(m.accent, d.menu.accent)),
+      align:        one(ca.align, ['left','center','right'] as const,
+                        one(ml.dishAlignment, ['left','center','right'] as const, d.menu.layout.dishAlignment)),
       borderRadius: one(ca.borderRadius, ['none','sm','md'] as const, d.card.borderRadius),
       layout:       one(ca.layout, ['photo-top','photo-side','minimal'] as const, d.card.layout),
       title: {
@@ -476,7 +485,7 @@ export function migrateFlat(r: Record<string, unknown>): RestaurantTheme {
       navigation:   { style: paginationStyle, color: textMuted },
       banners:      { position: 'inline' },
     },
-    card: structuredClone(d.card),
+    card: { ...structuredClone(d.card), accent, align: dishAlignment },
   }
 }
 

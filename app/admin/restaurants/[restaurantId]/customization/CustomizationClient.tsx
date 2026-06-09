@@ -424,7 +424,7 @@ const EDITOR_TARGETS: Record<string, { title: string; hint: string }> = {
   'allergens':         { title: 'Allergeni',          hint: 'Stile, formato, separatore, colori' },
   'card-style':        { title: 'Stile Card',         hint: 'Sfondo card, bordi, pulsante chiudi, accento' },
   'sticky-categories': { title: 'Barra Categorie',    hint: 'Stile, colori, font della barra categorie' },
-  'background-layout': { title: 'Sfondo & Layout',    hint: 'Sfondo menu, immagine, paginazione, spaziatura' },
+  'background-layout': { title: 'Sfondo & Layout',    hint: 'Accento, sfondo menu, immagine, paginazione, spaziatura' },
 }
 
 // ── Sidebar setters interface ─────────────────────────────────────────────────
@@ -940,8 +940,14 @@ function EditorSidebar({ target, theme, setters, previewMode, onClose }: {
         <div className="space-y-4">
           <ColorRow label="Sfondo card" value={c.bgColor}
             onChange={v => setters.setC({ bgColor: v })} />
-          <ColorRow label="Colore accento" value={m.accent}
-            onChange={v => setters.setM({ accent: v })} />
+          <ColorRow label="Colore accento" value={c.accent}
+            onChange={v => setters.setC({ accent: v })} />
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Allineamento testo</p>
+            <PillGroup
+              options={[{ label:'Sinistra', value:'left' },{ label:'Centro', value:'center' },{ label:'Destra', value:'right' }]}
+              value={c.align} onChange={v => setters.setC({ align: v })} />
+          </div>
           <div>
             <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Layout card</p>
             <PillGroup
@@ -1000,6 +1006,8 @@ function EditorSidebar({ target, theme, setters, previewMode, onClose }: {
 
       case 'background-layout': return (
         <div className="space-y-4">
+          <ColorRow label="Colore accento menu" value={m.accent}
+            onChange={v => setters.setM({ accent: v })} />
           <div>
             <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-2">Sfondo menu</p>
             <div className="space-y-2.5">
@@ -1177,9 +1185,10 @@ function EditorSidebar({ target, theme, setters, previewMode, onClose }: {
 
 // ── Live preview iframe ───────────────────────────────────────────────────────
 
-function LivePreview({ qrToken, theme, previewMode, editMode = false, showDummyData = false, onElementClick, zoom = 1 }: {
+function LivePreview({ qrToken, theme, previewMode, editMode = false, showDummyData = false, onElementClick, onViewChange, zoom = 1 }: {
   qrToken: string | null; theme: RestaurantTheme; previewMode: 'landing' | 'menu' | 'card'
   editMode?: boolean; showDummyData?: boolean; onElementClick?: (target: string) => void
+  onViewChange?: (view: 'landing' | 'menu' | 'card') => void
   zoom?: number
 }) {
   const iframeRef    = useRef<HTMLIFrameElement>(null)
@@ -1203,6 +1212,10 @@ function LivePreview({ qrToken, theme, previewMode, editMode = false, showDummyD
       }
       if (e.data?.type === 'dmp-element-clicked' && e.data.target) {
         onElementClick?.(e.data.target)
+      }
+      // Navigazione interna all'anteprima (es. "Sfoglia il menu") → sync dei tab
+      if (e.data?.type === 'dmp-view-changed' && ['landing','menu','card'].includes(e.data.view)) {
+        onViewChange?.(e.data.view)
       }
     }
     window.addEventListener('message', onMsg)
@@ -1667,7 +1680,7 @@ export default function CustomizationClient({
             <LivePreview
               qrToken={qrToken} theme={theme} previewMode={previewMode}
               editMode={editMode} showDummyData={showDummyData}
-              onElementClick={setActiveEditor} zoom={previewZoom}
+              onElementClick={setActiveEditor} onViewChange={setPreviewMode} zoom={previewZoom}
             />
           </div>
         </div>

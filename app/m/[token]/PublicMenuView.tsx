@@ -150,10 +150,12 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
   const [posterBroken,  setPosterBroken]  = useState(false)
 
   // ── Admin preview bridge ───────────────────────────────────────────────────
+  const isPreviewRef = useRef(false)
   useEffect(() => {
     if (typeof window === 'undefined') return
     const isPreview = new URLSearchParams(window.location.search).has('preview')
     if (!isPreview) return
+    isPreviewRef.current = true
     function onMessage(e: MessageEvent) {
       if (e.origin !== window.location.origin) return
       const d = e.data
@@ -183,6 +185,17 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
       document.documentElement.style.fontSize = ''
     }
   }, [menus])
+
+  // Notifica il parent (editor admin) di ogni cambio vista interno, così i tab
+  // Landing/Menu/Card restano sincronizzati anche quando la navigazione parte
+  // dall'interno dell'anteprima (bottone "Sfoglia il menu", back, chiudi card).
+  // I dmp-nav del parent producono lo stesso stato → nessun loop di feedback.
+  const currentView: 'landing' | 'menu' | 'card' =
+    cardPreviewOpen ? 'card' : selectedMenuId !== null ? 'menu' : 'landing'
+  useEffect(() => {
+    if (!isPreviewRef.current) return
+    try { window.parent?.postMessage({ type: 'dmp-view-changed', view: currentView }, window.location.origin) } catch {}
+  }, [currentView])
 
   // ── PDF generation — driven by selected or pending menu ───────────────────
   const activeMenuId = selectedMenuId ?? pendingMenuId

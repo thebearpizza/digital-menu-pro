@@ -61,10 +61,10 @@ export default function DishModal({ activeDish, allDishes, isNested, onClose, on
   const CLOSE_POS    = card?.closeButton.position ?? 'top-right'
   const CLOSE_SHAPE  = card?.closeButton.shape    ?? 'none'
   const CARD_RADIUS  = cardBorderRadius(card?.borderRadius ?? 'sm')
-  const TEXT_ALIGN   = (mn?.layout.dishAlignment === 'center' ? 'center' : mn?.layout.dishAlignment === 'right' ? 'right' : 'left') as 'left' | 'center' | 'right'
+  const TEXT_ALIGN   = (card?.align ?? mn?.layout.dishAlignment ?? 'left') as 'left' | 'center' | 'right'
 
-  // Derived accent for decorative elements (still uses menu accent)
-  const ACCENT = mn?.accent ?? '#c9a96e'
+  // Decorative accent: card-owned, with menu accent only as legacy fallback
+  const ACCENT = card?.accent ?? mn?.accent ?? '#c9a96e'
 
   const startIdx = allDishes.findIndex(d => d.id === activeDish.id)
 
