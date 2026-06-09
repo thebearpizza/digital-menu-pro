@@ -144,7 +144,8 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
   const [showDummyData,   setShowDummyData]   = useState(false)
   const [cardPreviewOpen, setCardPreviewOpen] = useState(false)
 
-  const videoRef      = useRef<HTMLVideoElement>(null)
+  const videoRef        = useRef<HTMLVideoElement>(null)
+  const transitioningRef = useRef(false)
   const [posterVisible, setPosterVisible] = useState(true)
 
   // ── Admin preview bridge ───────────────────────────────────────────────────
@@ -199,6 +200,7 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
 
   // ── Derived visibility flags ───────────────────────────────────────────────
   const transitioning = pendingMenuId !== null
+  transitioningRef.current = transitioning
   const menuVisible   = selectedMenuId !== null
   const menuReady     = menuVisible && !!pdfUrl
 
@@ -208,16 +210,32 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
   }
 
   // In immersive mode the video doesn't autoplay, so the browser shows black.
-  // Seeking to 0.001 forces the first frame to render as a static thumbnail.
-  // We do this both on initial load and every time we return to the landing.
+  // A plain seek isn't enough on iOS Safari (it ignores preload and decodes no
+  // frame until playback starts), so we "prime" the video: play() muted, wait
+  // for the first frame to actually paint, then pause and rewind to 0. The
+  // result is a static first-frame thumbnail on every platform.
   useEffect(() => {
     if (!l.background.immersiveTransition) return
     const v = videoRef.current
     if (!v) return
-    const seek = () => { try { v.currentTime = 0.001 } catch {} }
-    v.addEventListener('loadeddata', seek, { once: true })
-    if (v.readyState >= 2) seek()
-    return () => v.removeEventListener('loadeddata', seek)
+    let cancelled = false
+
+    const prime = () => {
+      if (cancelled || transitioningRef.current) return
+      const p = v.play()
+      if (!p?.then) { try { v.pause(); v.currentTime = 0 } catch {}; return }
+      p.then(() => {
+        // Wait two rAFs so the first frame is actually painted before pausing.
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+          if (cancelled || transitioningRef.current) return
+          try { v.pause(); v.currentTime = 0 } catch {}
+        }))
+      }).catch(() => {})
+    }
+
+    if (v.readyState >= 1) prime()
+    else v.addEventListener('loadedmetadata', prime, { once: true })
+    return () => { cancelled = true; v.removeEventListener('loadedmetadata', prime) }
   }, [l.background.value, l.background.immersiveTransition]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Restore poster when landing re-appears, but only if the video isn't actively
