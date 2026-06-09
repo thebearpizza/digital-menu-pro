@@ -453,12 +453,14 @@ interface SidebarSetters {
   setCardPrice:      (p: Partial<CardTheme['price']>) => void
   setCardAllergens:  (p: Partial<CardTheme['allergens']>) => void
   setCardClose:      (p: Partial<CardTheme['closeButton']>) => void
-  handleBgUpload:    (f: File) => void
-  handleVideoUpload: (f: File) => void
-  handleMenuBgUpload:(f: File) => void
-  bgUploading:       boolean
-  vidUploading:      boolean
-  menuBgUploading:   boolean
+  handleBgUpload:     (f: File) => void
+  handleVideoUpload:  (f: File) => void
+  handleMenuBgUpload: (f: File) => void
+  handlePosterUpload: (f: File) => void
+  bgUploading:        boolean
+  vidUploading:       boolean
+  menuBgUploading:    boolean
+  posterUploading:    boolean
 }
 
 // ── Buttons panel — own state for transparent-bg toggle ───────────────────────
@@ -530,8 +532,9 @@ function EditorSidebar({ target, theme, setters, previewMode, onClose }: {
   // Show only the section that matches the tab the user is editing from.
   const showCard = previewMode === 'card'
   const showMenu = previewMode !== 'card'
-  const bgFileRef    = useRef<HTMLInputElement>(null)
-  const videoFileRef = useRef<HTMLInputElement>(null)
+  const bgFileRef     = useRef<HTMLInputElement>(null)
+  const videoFileRef  = useRef<HTMLInputElement>(null)
+  const posterFileRef = useRef<HTMLInputElement>(null)
 
   function renderControls() {
     switch (target) {
@@ -602,6 +605,30 @@ function EditorSidebar({ target, theme, setters, previewMode, onClose }: {
                 onChange={v => setters.setLBg({ immersiveTransition: v })} />
               <span className="text-xs text-gray-600">Transizione immersiva</span>
             </label>
+          )}
+          {/* Freeze-frame poster — shown when immersive transition is on, since the
+              video doesn't autoplay and a manual still image is the reliable way to
+              avoid a black background before the user taps a menu. */}
+          {l.background.type === 'video' && l.background.immersiveTransition && (
+            <div className="border-l-2 border-gray-200 pl-3 ml-1 space-y-2">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Fermo immagine</p>
+              <p className="text-[11px] text-gray-400 leading-snug">
+                Immagine statica mostrata prima che parta il video (consigliata: il primo fotogramma).
+              </p>
+              {l.background.poster && (
+                <div className="relative">
+                  <img src={l.background.poster} alt="" className="w-full h-20 object-cover border border-gray-200 rounded" />
+                  <button type="button" onClick={() => setters.setLBg({ poster: undefined })}
+                    className="absolute top-1 right-1 w-5 h-5 flex items-center justify-center bg-black/60 text-white text-xs rounded-full hover:bg-black/80">
+                    &#x2715;
+                  </button>
+                </div>
+              )}
+              <input ref={posterFileRef} type="file" accept="image/*"
+                onChange={e => { const f = e.target.files?.[0]; if (f) setters.handlePosterUpload(f) }}
+                className="block text-xs text-gray-500 file:mr-2 file:py-1 file:px-3 file:border file:border-gray-200 file:text-xs file:bg-white file:text-gray-600 hover:file:bg-gray-50 cursor-pointer w-full" />
+              {setters.posterUploading && <p className="text-xs text-gray-400">Caricamento…</p>}
+            </div>
           )}
         </div>
       )
@@ -1306,6 +1333,7 @@ export default function CustomizationClient({
   const [bgUploading,  setBgUploading]  = useState(false)
   const [vidUploading, setVidUploading] = useState(false)
   const [menuBgUploading, setMenuBgUploading] = useState(false)
+  const [posterUploading, setPosterUploading] = useState(false)
   const [previewMode,  setPreviewMode]  = useState<'landing' | 'menu' | 'card'>('landing')
   const [editMode,     setEditMode]     = useState(false)
   const [showDummyData,setShowDummyData]= useState(false)
@@ -1421,6 +1449,21 @@ export default function CustomizationClient({
     setMenuBgUploading(false)
   }
 
+  async function handlePosterUpload(file: File) {
+    if (file.size > MAX_MEDIA_BYTES) { setError('Immagine troppo grande (max 5MB).'); return }
+    setPosterUploading(true); setError(null)
+    const supabase = createClient()
+    const ext  = file.name.split('.').pop() ?? 'jpg'
+    const path = `${restaurantId}/theme-video-poster-custom.${ext}`
+    const { data, error: err } = await supabase.storage
+      .from('restaurant-assets').upload(path, file, { upsert: true })
+    if (!err && data) {
+      const { data: pub } = supabase.storage.from('restaurant-assets').getPublicUrl(data.path)
+      setLBg({ poster: `${pub.publicUrl}?v=${Date.now()}` })
+    } else if (err) setError('Upload: ' + err.message)
+    setPosterUploading(false)
+  }
+
   async function handleVideoUpload(rawFile: File) {
     setVidUploading(true); setError(null)
 
@@ -1478,7 +1521,8 @@ export default function CustomizationClient({
     setLBg, setLLogo, setLTitle, setLDesc, setLBu, setL,
     setMDishes, setMDescs, setMPrices, setMCats, setMLayout, setMDivider, setMBg, setMNav, setMSticky, setMAllergens, setM,
     setC, setCardTitle, setCardDesc, setCardPrice, setCardAllergens, setCardClose,
-    handleBgUpload, handleVideoUpload, handleMenuBgUpload, bgUploading, vidUploading, menuBgUploading,
+    handleBgUpload, handleVideoUpload, handleMenuBgUpload, handlePosterUpload,
+    bgUploading, vidUploading, menuBgUploading, posterUploading,
   }
 
   const sidebarOpen = editMode && activeEditor !== null
