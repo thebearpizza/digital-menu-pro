@@ -5,13 +5,13 @@ import { createClient } from '@/lib/supabase/client'
 import { saveTheme, createBanner, deleteBanner } from './actions'
 import {
   DEFAULT_THEME, SERIF_FONTS, SANS_FONTS, DISPLAY_FONTS, PAGINATION_OPTIONS,
-  MENU_BG_EFFECTS, MENU_BG_EFFECT_LABELS,
+  MENU_BG_EFFECTS, MENU_BG_EFFECT_LABELS, CURRENCY_OPTIONS,
   googleFontsUrl, allThemeFonts, fontStack, formatPrice,
 } from '@/lib/theme'
 import { ALL_GOOGLE_FONTS } from '@/lib/googleFontsCatalog'
 import type {
   RestaurantTheme, LandingTheme, LandingBackground, MenuTheme, CardTheme,
-  MenuBgEffect, PaginationStyle,
+  MenuBgEffect, PaginationStyle, AlignOpt, AllergenDisplay, PricePosition, DividerType,
 } from '@/lib/theme'
 
 const MAX_MEDIA_BYTES = 5 * 1024 * 1024 // 5MB
@@ -243,6 +243,38 @@ function PillGroup<T extends string>({
   )
 }
 
+// Alignment control with an "inherit from general" option.
+function AlignRow({ label, value, onChange, withInherit = true }: {
+  label: string; value: AlignOpt; onChange: (v: AlignOpt) => void; withInherit?: boolean
+}) {
+  const opts: { label: string; value: AlignOpt }[] = [
+    ...(withInherit ? [{ label: 'Generale', value: 'inherit' as AlignOpt }] : []),
+    { label: 'Sx', value: 'left' }, { label: 'Centro', value: 'center' }, { label: 'Dx', value: 'right' },
+  ]
+  return (
+    <div>
+      <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5">{label}</p>
+      <PillGroup options={opts} value={value} onChange={onChange} />
+    </div>
+  )
+}
+
+// Separator picker for allergen lists.
+function SeparatorRow({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const opts = [
+    { label: 'Virgola', value: ', ' },
+    { label: 'Punto', value: ' · ' },
+    { label: 'Barra', value: ' | ' },
+    { label: 'Trattino', value: ' - ' },
+  ]
+  return (
+    <div>
+      <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Separatore</p>
+      <PillGroup options={opts} value={value} onChange={onChange} />
+    </div>
+  )
+}
+
 // Searchable font picker — spans the full Google Fonts catalog (1500+ families)
 // plus a curated shortlist shown first. Renders inline (no absolute dropdown) so
 // it never gets clipped by the sidebar's overflow containers. Each visible option
@@ -367,11 +399,13 @@ const EDITOR_TARGETS: Record<string, { title: string; hint: string }> = {
   'landing-desc':      { title: 'Slogan',             hint: 'Font, colore, dimensione' },
   'landing-buttons':   { title: 'Bottoni Menu',       hint: 'Colori, bordo, font, forma' },
   'landing-socials':   { title: 'Social & Accento',   hint: 'Colore accento, icone social, dimensione' },
-  'dish-title':        { title: 'Titolo Piatto',      hint: 'Font, colore, dimensione' },
-  'dish-description':  { title: 'Descrizione Piatto', hint: 'Font, colore, dimensione' },
-  'dish-price':        { title: 'Prezzo',             hint: 'Font, colore, formato' },
+  'dish-title':        { title: 'Titolo Piatto',      hint: 'Font, colore, dimensione, allineamento' },
+  'dish-description':  { title: 'Descrizione Piatto', hint: 'Font, colore, dimensione, allineamento' },
+  'dish-price':        { title: 'Prezzo',             hint: 'Font, colore, formato, valuta, posizione' },
   'category-title':    { title: 'Titolo Categoria',   hint: 'Font, colore, dimensione, allineamento' },
-  'background-layout': { title: 'Sfondo & Layout',    hint: 'Sfondo menu, paginazione, spaziatura' },
+  'allergens':         { title: 'Allergeni',          hint: 'Stile, formato, separatore, colori' },
+  'card-style':        { title: 'Stile Card',         hint: 'Sfondo card, bordi, pulsante chiudi, accento' },
+  'background-layout': { title: 'Sfondo & Layout',    hint: 'Sfondo menu, immagine, paginazione, spaziatura' },
 }
 
 // ── Sidebar setters interface ─────────────────────────────────────────────────
@@ -391,15 +425,20 @@ interface SidebarSetters {
   setMDivider:       (p: Partial<MenuTheme['layout']['divider']>) => void
   setMBg:            (p: Partial<MenuTheme['background']>) => void
   setMNav:           (p: Partial<MenuTheme['navigation']>) => void
+  setMAllergens:     (p: Partial<MenuTheme['allergens']>) => void
   setM:              (p: Partial<MenuTheme>) => void
   setC:              (p: Partial<CardTheme>) => void
   setCardTitle:      (p: Partial<CardTheme['title']>) => void
   setCardDesc:       (p: Partial<CardTheme['description']>) => void
   setCardPrice:      (p: Partial<CardTheme['price']>) => void
+  setCardAllergens:  (p: Partial<CardTheme['allergens']>) => void
+  setCardClose:      (p: Partial<CardTheme['closeButton']>) => void
   handleBgUpload:    (f: File) => void
   handleVideoUpload: (f: File) => void
+  handleMenuBgUpload:(f: File) => void
   bgUploading:       boolean
   vidUploading:      boolean
+  menuBgUploading:   boolean
 }
 
 // ── Buttons panel — own state for transparent-bg toggle ───────────────────────
@@ -645,6 +684,8 @@ function EditorSidebar({ target, theme, setters, onClose }: {
               onChange={v => setters.setMDishes({ titleSize: v })} />
             <ColorRow label="Colore" value={m.dishes.titleColor}
               onChange={v => setters.setMDishes({ titleColor: v })} />
+            <AlignRow label="Allineamento" value={m.dishes.align}
+              onChange={v => setters.setMDishes({ align: v })} />
           </div>
         </div>
       )
@@ -668,10 +709,12 @@ function EditorSidebar({ target, theme, setters, onClose }: {
               curated={SANS_FONTS} category="sans"
               onChange={v => setters.setMDescs({ font: v })} />
             <FontSizeSlider label="Dimensione" value={m.descriptions.size}
-              min={0.5} max={1.6} step={0.05} previewFont={fontStack(m.descriptions.font, 'sans')}
+              min={0.5} max={2.0} step={0.05} previewFont={fontStack(m.descriptions.font, 'sans')}
               onChange={v => setters.setMDescs({ size: v })} />
             <ColorRow label="Colore" value={m.descriptions.color}
               onChange={v => setters.setMDescs({ color: v })} />
+            <AlignRow label="Allineamento" value={m.descriptions.align}
+              onChange={v => setters.setMDescs({ align: v })} />
           </div>
         </div>
       )
@@ -708,9 +751,23 @@ function EditorSidebar({ target, theme, setters, onClose }: {
             <div>
               <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Formato</p>
               <PillGroup
-                options={[{ label:'€ 12.00', value:'symbol-left' },{ label:'12.00 €', value:'symbol-right' },{ label:'12.00', value:'no-symbol' }]}
+                options={[{ label:'sx 12.00', value:'symbol-left' },{ label:'12.00 dx', value:'symbol-right' },{ label:'Nessun simbolo', value:'no-symbol' }]}
                 value={m.prices.format} onChange={v => setters.setMPrices({ format: v })} />
             </div>
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Valuta</p>
+              <PillGroup
+                options={CURRENCY_OPTIONS.map(cur => ({ label: cur, value: cur }))}
+                value={m.prices.currency} onChange={v => setters.setMPrices({ currency: v })} />
+            </div>
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Posizione prezzo</p>
+              <PillGroup
+                options={[{ label:'Sinistra', value:'left' },{ label:'Destra', value:'right' },{ label:'Sopra', value:'above' },{ label:'Sotto', value:'below' }]}
+                value={m.prices.position} onChange={v => setters.setMPrices({ position: v as PricePosition })} />
+            </div>
+            <AlignRow label="Allineamento" value={m.prices.align}
+              onChange={v => setters.setMPrices({ align: v })} />
           </div>
         </div>
       )
@@ -725,6 +782,78 @@ function EditorSidebar({ target, theme, setters, onClose }: {
             onChange={v => setters.setMCats({ size: v })} />
           <ColorRow label="Colore" value={m.categories.color}
             onChange={v => setters.setMCats({ color: v })} />
+          <AlignRow label="Allineamento proprio" value={m.categories.align}
+            onChange={v => setters.setMCats({ align: v })} />
+        </div>
+      )
+
+      case 'allergens': return (
+        <div className="space-y-5">
+          <div className="space-y-3">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 border-b border-gray-100 pb-1">Card espansa</p>
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Stile</p>
+              <PillGroup
+                options={[{ label:'Testo', value:'text' },{ label:'Badge', value:'badge' }]}
+                value={c.allergens.style} onChange={v => setters.setCardAllergens({ style: v })} />
+            </div>
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Formato nomi</p>
+              <PillGroup
+                options={[{ label:'Completo', value:'full' },{ label:'Breve', value:'short' },{ label:'Numero', value:'number' }]}
+                value={c.allergens.display} onChange={v => setters.setCardAllergens({ display: v as AllergenDisplay })} />
+            </div>
+            <SeparatorRow value={c.allergens.separator} onChange={v => setters.setCardAllergens({ separator: v })} />
+            <ColorRow label="Colore testo" value={c.allergens.color}
+              onChange={v => setters.setCardAllergens({ color: v })} />
+            <ColorRow label="Sfondo" value={c.allergens.bgColor}
+              onChange={v => setters.setCardAllergens({ bgColor: v })} />
+          </div>
+          <div className="space-y-3">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 border-b border-gray-100 pb-1">Menu PDF (flipbook)</p>
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Formato nomi</p>
+              <PillGroup
+                options={[{ label:'Completo', value:'full' },{ label:'Breve', value:'short' },{ label:'Numero', value:'number' }]}
+                value={m.allergens.display} onChange={v => setters.setMAllergens({ display: v as AllergenDisplay })} />
+            </div>
+            <SeparatorRow value={m.allergens.separator} onChange={v => setters.setMAllergens({ separator: v })} />
+          </div>
+        </div>
+      )
+
+      case 'card-style': return (
+        <div className="space-y-4">
+          <ColorRow label="Sfondo card" value={c.bgColor}
+            onChange={v => setters.setC({ bgColor: v })} />
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Bordi card</p>
+            <PillGroup
+              options={[{ label:'Netti', value:'none' },{ label:'Soft', value:'sm' },{ label:'Arrotondati', value:'md' }]}
+              value={c.borderRadius} onChange={v => setters.setC({ borderRadius: v })} />
+          </div>
+          <ColorRow label="Colore accento" value={m.accent}
+            onChange={v => setters.setM({ accent: v })} />
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Layout card</p>
+            <PillGroup
+              options={[{ label:'Foto sopra', value:'photo-top' },{ label:'Foto lato', value:'photo-side' },{ label:'Minimal', value:'minimal' }]}
+              value={c.layout} onChange={v => setters.setC({ layout: v })} />
+          </div>
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Pulsante chiudi</p>
+            <PillGroup
+              options={[{ label:'Nessuno', value:'none' },{ label:'Cerchio', value:'circle' },{ label:'Quadrato', value:'square' }]}
+              value={c.closeButton.shape} onChange={v => setters.setCardClose({ shape: v })} />
+          </div>
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Posizione chiudi</p>
+            <PillGroup
+              options={[{ label:'Alto dx', value:'top-right' },{ label:'Alto sx', value:'top-left' }]}
+              value={c.closeButton.position} onChange={v => setters.setCardClose({ position: v })} />
+          </div>
+          <ColorRow label="Colore chiudi" value={c.closeButton.color}
+            onChange={v => setters.setCardClose({ color: v })} />
         </div>
       )
 
@@ -750,10 +879,41 @@ function EditorSidebar({ target, theme, setters, onClose }: {
             </div>
           </div>
           <div>
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Divisore</p>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Immagine di sfondo</p>
+            {m.background.image
+              ? (
+                <div className="space-y-2">
+                  <img src={m.background.image} alt="" className="w-full h-20 object-cover border border-gray-200 rounded" />
+                  <div className="flex items-center gap-2">
+                    <input type="file" accept="image/*"
+                      onChange={e => { const f = e.target.files?.[0]; if (f) setters.handleMenuBgUpload(f) }}
+                      className="block text-xs text-gray-500 file:mr-2 file:py-1 file:px-3 file:border file:border-gray-200 file:text-xs file:bg-white file:text-gray-600 hover:file:bg-gray-50 cursor-pointer flex-1" />
+                    <button type="button" onClick={() => setters.setMBg({ image: '' })}
+                      className="text-[10px] text-red-400 hover:text-red-600 shrink-0">Rimuovi</button>
+                  </div>
+                  <div>
+                    <div className="flex justify-between items-center mb-1">
+                      <label className="text-xs text-gray-600">Opacità immagine</label>
+                      <span className="text-[10px] font-mono text-gray-400">{m.background.imageOpacity}%</span>
+                    </div>
+                    <input type="range" min={0} max={100} step={1} value={m.background.imageOpacity}
+                      onChange={e => setters.setMBg({ imageOpacity: Number(e.target.value) })}
+                      className="w-full accent-gray-900" />
+                  </div>
+                </div>
+              )
+              : (
+                <input type="file" accept="image/*"
+                  onChange={e => { const f = e.target.files?.[0]; if (f) setters.handleMenuBgUpload(f) }}
+                  className="block text-xs text-gray-500 file:mr-2 file:py-1 file:px-3 file:border file:border-gray-200 file:text-xs file:bg-white file:text-gray-600 hover:file:bg-gray-50 cursor-pointer w-full" />
+              )}
+            {setters.menuBgUploading && <p className="text-xs text-gray-400 mt-1">Caricamento…</p>}
+          </div>
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Divisore (sotto ogni piatto)</p>
             <PillGroup
-              options={[{ label:'Nessuno', value:'none' },{ label:'Solido', value:'solid' },{ label:'Tratteg.', value:'dashed' },{ label:'Punteg.', value:'dotted' }]}
-              value={m.layout.divider.type} onChange={v => setters.setMDivider({ type: v })} />
+              options={[{ label:'Nessuno', value:'none' },{ label:'Solido', value:'solid' },{ label:'Tratteg.', value:'dashed' },{ label:'Punteg.', value:'dotted' },{ label:'Doppio', value:'double' },{ label:'Gradiente', value:'gradient' },{ label:'Ornamento', value:'ornament' }]}
+              value={m.layout.divider.type} onChange={v => setters.setMDivider({ type: v as DividerType })} />
             {m.layout.divider.type !== 'none' && (
               <div className="mt-2">
                 <ColorRow label="Colore divisore" value={m.layout.divider.color}
@@ -974,6 +1134,7 @@ export default function CustomizationClient({
   const [error,        setError]        = useState<string | null>(null)
   const [bgUploading,  setBgUploading]  = useState(false)
   const [vidUploading, setVidUploading] = useState(false)
+  const [menuBgUploading, setMenuBgUploading] = useState(false)
   const [previewMode,  setPreviewMode]  = useState<'landing' | 'menu' | 'card'>('landing')
   const [editMode,     setEditMode]     = useState(false)
   const [showDummyData,setShowDummyData]= useState(false)
@@ -1073,6 +1234,21 @@ export default function CustomizationClient({
     setBgUploading(false)
   }
 
+  async function handleMenuBgUpload(file: File) {
+    if (file.size > MAX_MEDIA_BYTES) { setError('Immagine troppo grande (max 5MB).'); return }
+    setMenuBgUploading(true); setError(null)
+    const supabase = createClient()
+    const ext  = file.name.split('.').pop() ?? 'jpg'
+    const path = `${restaurantId}/menu-bg.${ext}`
+    const { data, error: err } = await supabase.storage
+      .from('restaurant-assets').upload(path, file, { upsert: true })
+    if (!err && data) {
+      const { data: pub } = supabase.storage.from('restaurant-assets').getPublicUrl(data.path)
+      setMBg({ image: `${pub.publicUrl}?v=${Date.now()}` })
+    } else if (err) setError('Upload: ' + err.message)
+    setMenuBgUploading(false)
+  }
+
   async function handleVideoUpload(rawFile: File) {
     setVidUploading(true); setError(null)
 
@@ -1128,11 +1304,11 @@ export default function CustomizationClient({
 
   const setters: SidebarSetters = {
     setLBg, setLLogo, setLTitle, setLDesc, setLBu, setL,
-    setMDishes, setMDescs, setMPrices, setMCats, setMLayout, setMDivider, setMBg, setMNav, setM,
-    setC, setCardTitle, setCardDesc, setCardPrice,
-    handleBgUpload, handleVideoUpload, bgUploading, vidUploading,
+    setMDishes, setMDescs, setMPrices, setMCats, setMLayout, setMDivider, setMBg, setMNav, setMAllergens, setM,
+    setC, setCardTitle, setCardDesc, setCardPrice, setCardAllergens, setCardClose,
+    handleBgUpload, handleVideoUpload, handleMenuBgUpload, bgUploading, vidUploading, menuBgUploading,
   }
-  void setCardAllergens; void setCardClose; void setMAllergens; void setMSticky
+  void setMSticky
 
   const sidebarOpen = editMode && activeEditor !== null
 

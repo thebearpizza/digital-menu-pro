@@ -3,9 +3,9 @@
 // Dynamically imported by useMenuPDF (never SSR-ed).
 // ─────────────────────────────────────────────────────────────────────────────
 import { Document, Page, Text, View, StyleSheet } from '@react-pdf/renderer'
-import { formatAllergensShort } from '@/lib/allergens'
+import { formatAllergens } from '@/lib/allergens'
 import type { RestaurantTheme } from '@/lib/theme'
-import { DEFAULT_THEME, lightenHex, formatPrice } from '@/lib/theme'
+import { DEFAULT_THEME, lightenHex, formatPrice, resolveAlign } from '@/lib/theme'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -95,11 +95,16 @@ function makeStyles(theme: RestaurantTheme, registered: Set<string>) {
   const m         = theme.menu
   const compact   = m.pdfLayout === 'compact'
   const catLineColor = lightenHex(m.accent, 0.55)
-  const isDashed  = m.layout.divider.type === 'dashed' || m.layout.divider.type === 'dotted'
-  const noDivider = m.layout.divider.type === 'none'
+  const dType     = m.layout.divider.type
+  const noDivider = dType === 'none'
   const divColor  = m.layout.divider.color
   const bg        = m.pageBackground
-  const align     = m.layout.dishAlignment === 'center' ? 'center' : m.layout.dishAlignment === 'right' ? 'right' : 'left'
+  // General + per-element alignment ('inherit' falls back to the general value).
+  const general   = m.layout.dishAlignment === 'center' ? 'center' : m.layout.dishAlignment === 'right' ? 'right' : 'left'
+  const catAlign  = resolveAlign(m.categories.align,   general)
+  const nameAlign = resolveAlign(m.dishes.align,       general)
+  const descAlign = resolveAlign(m.descriptions.align, general)
+  const priceAlign= resolveAlign(m.prices.align,       general)
 
   // Real font if it registered successfully, otherwise a built-in fallback.
   const titleFamily = registered.has(m.dishes.titleFont)   ? m.dishes.titleFont   : 'Helvetica-Bold'
@@ -130,7 +135,7 @@ function makeStyles(theme: RestaurantTheme, registered: Set<string>) {
       textTransform: 'uppercase',
       letterSpacing: compact ? 1.5 : 2,
       marginBottom:  compact ? 5 : 8,
-      textAlign:     align,
+      textAlign:     catAlign,
     },
     catLine: {
       height:          0.5,
@@ -140,9 +145,15 @@ function makeStyles(theme: RestaurantTheme, registered: Set<string>) {
     // ── List layout ─────────────────────────────────────────────────────────
     dishRow: {
       flexDirection:  'row',
-      justifyContent: align === 'center' ? 'center' : align === 'right' ? 'flex-end' : 'space-between',
+      justifyContent: nameAlign === 'center' ? 'center' : nameAlign === 'right' ? 'flex-end' : 'space-between',
       alignItems:     'flex-start',
       marginBottom:   compact ? 2 : 3,
+    },
+    // Stacked rows (price above/below the name) follow the name alignment.
+    dishStack: {
+      flexDirection: 'column',
+      alignItems:    nameAlign === 'center' ? 'center' : nameAlign === 'right' ? 'flex-end' : 'flex-start',
+      marginBottom:  compact ? 2 : 3,
     },
     dishName: {
       fontFamily:    titleFamily,
@@ -151,14 +162,15 @@ function makeStyles(theme: RestaurantTheme, registered: Set<string>) {
       color:         readableOn(m.dishes.titleColor, bg),
       textTransform: 'uppercase',
       letterSpacing: compact ? 0.4 : 0.6,
-      flex:          align === 'left' ? 1 : undefined,
-      marginRight:   align === 'left' ? 14 : 8,
+      flex:          nameAlign === 'left' ? 1 : undefined,
+      marginRight:   nameAlign === 'left' ? 14 : 8,
     },
     dishPrice: {
       fontFamily: priceFamily,
       fontWeight: priceBold,
       fontSize:   (compact ? 9 : 10) * priceScale,
       color:      readableOn(m.prices.color, bg),
+      textAlign:  priceAlign,
     },
     dishDesc: {
       fontFamily:   descFamily,
@@ -166,18 +178,25 @@ function makeStyles(theme: RestaurantTheme, registered: Set<string>) {
       color:        readableOn(m.descriptions.color, bg),
       lineHeight:   1.55,
       marginBottom: compact ? 2 : 3,
-      textAlign:    align,
+      textAlign:    descAlign,
     },
     dishAllergens: {
       fontFamily:    'Helvetica',
       fontSize:      compact ? 6.5 : 7,
       color:         '#9a9a9a',
       letterSpacing: 0.2,
+      textAlign:     descAlign,
     },
     dishDivider: noDivider ? { height: compact ? 8 + m.layout.dishSpacing : 12 + m.layout.dishSpacing } : {
-      height:          0.3,
-      backgroundColor: divColor,
-      borderStyle:     isDashed ? 'dashed' : 'solid',
+      // double → two stacked hairlines; dotted/dashed → border style; ornament →
+      // dashed thicker; gradient → solid (react-pdf has no CSS gradient support).
+      height:          dType === 'double' ? 2.5 : 0.5,
+      borderTopWidth:  dType === 'double' ? 0.5 : 0,
+      borderTopColor:  divColor,
+      borderBottomWidth: dType === 'double' ? 0.5 : 0,
+      borderBottomColor: divColor,
+      backgroundColor: dType === 'double' ? undefined : divColor,
+      borderStyle:     dType === 'dotted' ? 'dotted' : (dType === 'dashed' || dType === 'ornament') ? 'dashed' : 'solid',
       marginVertical:  compact ? 8 + m.layout.dishSpacing / 2 : 12 + m.layout.dishSpacing / 2,
     },
     // ── Grid layout (2-column) ───────────────────────────────────────────────
@@ -222,18 +241,29 @@ export function MenuPDFDocument({ restaurant, menu, theme: themeProp, registered
   const isBoxed    = m.layout.dishLayout === 'boxed-card'
   const isMinimal  = m.layout.dishLayout === 'minimal-row'
 
+  const pos = m.prices.position
+
+  // Name + price arranged per the price position setting.
+  function namePriceBlock(dish: PDFDish, priceStr: string | null) {
+    const nameEl  = <Text style={s.dishName}>{dish.name}</Text>
+    const priceEl = priceStr ? <Text style={s.dishPrice}>{priceStr}</Text> : null
+    if (!priceEl) return <View style={s.dishRow}>{nameEl}</View>
+    if (pos === 'above') return <View style={s.dishStack}>{priceEl}{nameEl}</View>
+    if (pos === 'below') return <View style={s.dishStack}>{nameEl}{priceEl}</View>
+    if (pos === 'left')  return <View style={s.dishRow}>{priceEl}{nameEl}</View>
+    return <View style={s.dishRow}>{nameEl}{priceEl}</View>  // 'right' (default)
+  }
+
   function renderDish(dish: PDFDish, isLast: boolean) {
-    const priceStr    = dish.price != null ? formatPrice(dish.price, m.prices.format) : null
-    const allergenStr = dish.allergens.length > 0 ? 'Allergeni: ' + formatAllergensShort(dish.allergens) : null
+    const priceStr    = dish.price != null ? formatPrice(dish.price, m.prices.format, m.prices.currency) : null
+    const allergenStr = dish.allergens.length > 0 ? 'Allergeni: ' + formatAllergens(dish.allergens, m.allergens.display, m.allergens.separator) : null
+    // Divider under EVERY dish (not just between) — except the very last one.
     const showDivider = !isLast && m.layout.divider.type !== 'none'
 
     if (isBoxed) {
       return (
         <View key={dish.id} style={s.boxedItem} wrap={false}>
-          <View style={s.dishRow}>
-            <Text style={s.dishName}>{dish.name}</Text>
-            {priceStr && <Text style={s.dishPrice}>{priceStr}</Text>}
-          </View>
+          {namePriceBlock(dish, priceStr)}
           {dish.description ? <Text style={s.dishDesc}>{dish.description}</Text> : null}
           {allergenStr ? <Text style={s.dishAllergens}>{allergenStr}</Text> : null}
         </View>
@@ -242,10 +272,7 @@ export function MenuPDFDocument({ restaurant, menu, theme: themeProp, registered
 
     return (
       <View key={dish.id} wrap={false}>
-        <View style={s.dishRow}>
-          <Text style={s.dishName}>{dish.name}</Text>
-          {priceStr && <Text style={s.dishPrice}>{priceStr}</Text>}
-        </View>
+        {namePriceBlock(dish, priceStr)}
         {!isMinimal && dish.description ? <Text style={s.dishDesc}>{dish.description}</Text> : null}
         {!isMinimal && allergenStr ? <Text style={s.dishAllergens}>{allergenStr}</Text> : null}
         {showDivider && <View style={s.dishDivider} />}
@@ -272,8 +299,8 @@ export function MenuPDFDocument({ restaurant, menu, theme: themeProp, registered
               // 2-column grid: pairs of dishes side by side
               <View style={s.gridRow}>
                 {cat.dishes.map((dish) => {
-                  const priceStr    = dish.price != null ? formatPrice(dish.price, m.prices.format) : null
-                  const allergenStr = dish.allergens.length > 0 ? 'Allergeni: ' + formatAllergensShort(dish.allergens) : null
+                  const priceStr    = dish.price != null ? formatPrice(dish.price, m.prices.format, m.prices.currency) : null
+                  const allergenStr = dish.allergens.length > 0 ? 'Allergeni: ' + formatAllergens(dish.allergens, m.allergens.display, m.allergens.separator) : null
                   return (
                     <View key={dish.id} style={s.gridCell} wrap={false}>
                       <View style={s.dishRow}>

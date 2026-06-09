@@ -28,15 +28,33 @@ export type MenuBgEffect =
   | 'none' | 'linear-gradient' | 'radial-gradient' | 'parchment' | 'vintage'
   | 'grunge' | 'slate' | 'carbon' | 'linen' | 'leather' | 'sepia'
   | 'minimal-noise' | 'retro-grid' | 'velvet' | 'gold-leaf'
+  // ── New premium effects ──
+  | 'aurora' | 'mesh-warm' | 'mesh-cool' | 'dots' | 'diagonal'
+  | 'honeycomb' | 'waves' | 'spotlight' | 'emerald-mist' | 'fine-grain'
 
 export const MENU_BG_EFFECTS: MenuBgEffect[] = [
-  'none','linear-gradient','radial-gradient','parchment','vintage',
+  'none',
+  // new premium set first — these are the recommended ones
+  'aurora','mesh-warm','mesh-cool','spotlight','emerald-mist',
+  'dots','diagonal','honeycomb','waves','fine-grain',
+  // classic set
+  'linear-gradient','radial-gradient','parchment','vintage',
   'grunge','slate','carbon','linen','leather','sepia',
   'minimal-noise','retro-grid','velvet','gold-leaf',
 ]
 
 export const MENU_BG_EFFECT_LABELS: Record<MenuBgEffect, string> = {
   'none':            'Nessuno',
+  'aurora':          'Aurora',
+  'mesh-warm':       'Mesh caldo',
+  'mesh-cool':       'Mesh freddo',
+  'spotlight':       'Spotlight',
+  'emerald-mist':    'Bruma smeraldo',
+  'dots':            'Pois',
+  'diagonal':        'Diagonali',
+  'honeycomb':       'Favo',
+  'waves':           'Onde',
+  'fine-grain':      'Grana fine',
   'linear-gradient': 'Gradiente lineare',
   'radial-gradient': 'Gradiente radiale',
   'parchment':       'Pergamena',
@@ -53,6 +71,18 @@ export const MENU_BG_EFFECT_LABELS: Record<MenuBgEffect, string> = {
   'gold-leaf':       "Foglia d'oro",
 }
 
+// ── Shared option types ─────────────────────────────────────────────────────────
+
+// Per-element alignment: 'inherit' uses the general dish alignment.
+export type AlignOpt    = 'inherit' | 'left' | 'center' | 'right'
+export type PriceFormat = 'symbol-left' | 'symbol-right' | 'no-symbol'
+// Where the price sits relative to the dish name.
+export type PricePosition = 'left' | 'right' | 'above' | 'below'
+
+export type AllergenDisplay = 'full' | 'short' | 'number'
+
+export const CURRENCY_OPTIONS = ['€', '$', '£', '¥', 'CHF', 'kr'] as const
+
 // ── Card sub-theme ────────────────────────────────────────────────────────────
 
 export interface CardTheme {
@@ -61,8 +91,8 @@ export interface CardTheme {
   layout:      'photo-top' | 'photo-side' | 'minimal'
   title:       { font: string; size: number; color: string; weight: 'light' | 'normal' | 'bold' }
   description: { font: string; size: number; color: string }
-  price:       { font: string; size: number; color: string; format: 'symbol-left' | 'symbol-right' | 'no-symbol' }
-  allergens:   { style: 'text' | 'badge'; color: string; bgColor: string }
+  price:       { font: string; size: number; color: string; format: PriceFormat; currency: string }
+  allergens:   { style: 'text' | 'badge'; color: string; bgColor: string; display: AllergenDisplay; separator: string }
   closeButton: { color: string; position: 'top-right' | 'top-left'; shape: 'none' | 'circle' | 'square' }
 }
 
@@ -99,9 +129,11 @@ export interface LandingTheme {
 
 // ── Menu sub-theme ────────────────────────────────────────────────────────────
 
+export type DividerType = 'none' | 'solid' | 'dashed' | 'dotted' | 'double' | 'gradient' | 'ornament'
+
 export interface MenuTheme {
   accent:         string
-  background:     { color: string; color2: string; effect: MenuBgEffect }
+  background:     { color: string; color2: string; effect: MenuBgEffect; image: string; imageOpacity: number }
   pageBackground: string
   pdfLayout:      'classic' | 'compact'
   layout: {
@@ -109,13 +141,13 @@ export interface MenuTheme {
     dishAlignment:    'left' | 'center' | 'right'
     dishSpacing:      number
     boxedBorderWidth: number
-    divider:          { type: 'none' | 'solid' | 'dashed' | 'dotted' | 'double'; color: string }
+    divider:          { type: DividerType; color: string }
   }
-  dishes:       { titleFont: string; titleSize: number; titleColor: string }
-  descriptions: { font: string; size: number; color: string }
-  allergens:    { style: 'text' | 'badge'; color: string; bgColor: string }
-  prices:       { font: string; size: number; color: string; format: 'symbol-left' | 'symbol-right' | 'no-symbol' }
-  categories:   { font: string; color: string; size: number }
+  dishes:       { titleFont: string; titleSize: number; titleColor: string; align: AlignOpt }
+  descriptions: { font: string; size: number; color: string; align: AlignOpt }
+  allergens:    { style: 'text' | 'badge'; color: string; bgColor: string; display: AllergenDisplay; separator: string }
+  prices:       { font: string; size: number; color: string; format: PriceFormat; currency: string; position: PricePosition; align: AlignOpt }
+  categories:   { font: string; color: string; size: number; align: AlignOpt }
   stickyCategories: {
     style:     'transparent-blur' | 'solid' | 'none'
     bgColor:   string
@@ -155,7 +187,7 @@ export const DEFAULT_THEME: RestaurantTheme = {
   },
   menu: {
     accent:         '#c9a96e',
-    background:     { color: '#0d0d0d', color2: '#1a1a1a', effect: 'none' },
+    background:     { color: '#0d0d0d', color2: '#1a1a1a', effect: 'none', image: '', imageOpacity: 100 },
     pageBackground: '#ffffff',
     pdfLayout:      'classic',
     layout: {
@@ -165,11 +197,11 @@ export const DEFAULT_THEME: RestaurantTheme = {
       boxedBorderWidth: 1,
       divider:          { type: 'solid', color: '#ece6da' },
     },
-    dishes:       { titleFont: 'Cormorant Garamond', titleSize: 1.75, titleColor: '#ede8e0' },
-    descriptions: { font: 'DM Sans', size: 0.875, color: '#a09080' },
-    allergens:    { style: 'text', color: '#c9a96e', bgColor: '#181208' },
-    prices:       { font: 'DM Sans', size: 1.1, color: '#c9a96e', format: 'symbol-left' },
-    categories:   { font: 'Cormorant Garamond', color: '#1a1a1a', size: 1.3 },
+    dishes:       { titleFont: 'Cormorant Garamond', titleSize: 1.75, titleColor: '#ede8e0', align: 'inherit' },
+    descriptions: { font: 'DM Sans', size: 0.875, color: '#a09080', align: 'inherit' },
+    allergens:    { style: 'text', color: '#c9a96e', bgColor: '#181208', display: 'full', separator: ', ' },
+    prices:       { font: 'DM Sans', size: 1.1, color: '#c9a96e', format: 'symbol-left', currency: '€', position: 'right', align: 'inherit' },
+    categories:   { font: 'Cormorant Garamond', color: '#1a1a1a', size: 1.3, align: 'inherit' },
     stickyCategories: {
       style: 'solid', bgColor: 'rgba(7,7,7,0.96)', textColor: '#4f4f4f', font: 'DM Sans',
     },
@@ -182,8 +214,8 @@ export const DEFAULT_THEME: RestaurantTheme = {
     layout:  'photo-top',
     title:       { font: 'Cormorant Garamond', size: 1.75, color: '#ede8e0', weight: 'light' },
     description: { font: 'DM Sans', size: 0.875, color: '#a09080' },
-    price:       { font: 'DM Sans', size: 1.1, color: '#c9a96e', format: 'symbol-left' },
-    allergens:   { style: 'text', color: '#c9a96e', bgColor: '#181208' },
+    price:       { font: 'DM Sans', size: 1.1, color: '#c9a96e', format: 'symbol-left', currency: '€' },
+    allergens:   { style: 'text', color: '#c9a96e', bgColor: '#181208', display: 'full', separator: ', ' },
     closeButton: { color: '#555555', position: 'top-right', shape: 'none' },
   },
 }
@@ -279,6 +311,8 @@ function parseNested(r: Record<string, unknown>): RestaurantTheme {
         color:  str(mb.color, d.menu.background.color),
         color2: str(mb.color2, d.menu.background.color2),
         effect: one(mb.effect, MENU_BG_EFFECTS as readonly MenuBgEffect[], d.menu.background.effect),
+        image:  str(mb.image, d.menu.background.image),
+        imageOpacity: num(mb.imageOpacity, d.menu.background.imageOpacity),
       },
       pageBackground: str(m.pageBackground, d.menu.pageBackground),
       pdfLayout:      one(m.pdfLayout, ['classic','compact'] as const, d.menu.pdfLayout),
@@ -287,13 +321,13 @@ function parseNested(r: Record<string, unknown>): RestaurantTheme {
         dishAlignment:    one(ml.dishAlignment, ['left','center','right'] as const, d.menu.layout.dishAlignment),
         dishSpacing:      num(ml.dishSpacing, d.menu.layout.dishSpacing),
         boxedBorderWidth: num(ml.boxedBorderWidth, d.menu.layout.boxedBorderWidth),
-        divider:          { type: one(md.type, ['none','solid','dashed','dotted','double'] as const, d.menu.layout.divider.type), color: str(md.color, d.menu.layout.divider.color) },
+        divider:          { type: one(md.type, ['none','solid','dashed','dotted','double','gradient','ornament'] as const, d.menu.layout.divider.type), color: str(md.color, d.menu.layout.divider.color) },
       },
-      dishes:       { titleFont: str(mi.titleFont, d.menu.dishes.titleFont), titleSize: num(mi.titleSize, d.menu.dishes.titleSize), titleColor: str(mi.titleColor, d.menu.dishes.titleColor) },
-      descriptions: { font: str(me.font, d.menu.descriptions.font), size: num(me.size, d.menu.descriptions.size), color: str(me.color, d.menu.descriptions.color) },
-      allergens:    { style: one(ma.style, ['text','badge'] as const, d.menu.allergens.style), color: str(ma.color, d.menu.allergens.color), bgColor: str(ma.bgColor, d.menu.allergens.bgColor) },
-      prices:       { font: str(mp.font, d.menu.prices.font), size: num(mp.size, d.menu.prices.size), color: str(mp.color, d.menu.prices.color), format: one(mp.format, ['symbol-left','symbol-right','no-symbol'] as const, d.menu.prices.format) },
-      categories:   { font: str(mc.font, d.menu.categories.font), color: str(mc.color, d.menu.categories.color), size: num(mc.size, d.menu.categories.size) },
+      dishes:       { titleFont: str(mi.titleFont, d.menu.dishes.titleFont), titleSize: num(mi.titleSize, d.menu.dishes.titleSize), titleColor: str(mi.titleColor, d.menu.dishes.titleColor), align: one(mi.align, ['inherit','left','center','right'] as const, d.menu.dishes.align) },
+      descriptions: { font: str(me.font, d.menu.descriptions.font), size: num(me.size, d.menu.descriptions.size), color: str(me.color, d.menu.descriptions.color), align: one(me.align, ['inherit','left','center','right'] as const, d.menu.descriptions.align) },
+      allergens:    { style: one(ma.style, ['text','badge'] as const, d.menu.allergens.style), color: str(ma.color, d.menu.allergens.color), bgColor: str(ma.bgColor, d.menu.allergens.bgColor), display: one(ma.display, ['full','short','number'] as const, d.menu.allergens.display), separator: str(ma.separator, d.menu.allergens.separator) },
+      prices:       { font: str(mp.font, d.menu.prices.font), size: num(mp.size, d.menu.prices.size), color: str(mp.color, d.menu.prices.color), format: one(mp.format, ['symbol-left','symbol-right','no-symbol'] as const, d.menu.prices.format), currency: str(mp.currency, d.menu.prices.currency), position: one(mp.position, ['left','right','above','below'] as const, d.menu.prices.position), align: one(mp.align, ['inherit','left','center','right'] as const, d.menu.prices.align) },
+      categories:   { font: str(mc.font, d.menu.categories.font), color: str(mc.color, d.menu.categories.color), size: num(mc.size, d.menu.categories.size), align: one(mc.align, ['inherit','left','center','right'] as const, d.menu.categories.align) },
       stickyCategories: {
         style:     one(ms.style, ['transparent-blur','solid','none'] as const, d.menu.stickyCategories.style),
         bgColor:   str(ms.bgColor, d.menu.stickyCategories.bgColor),
@@ -322,15 +356,18 @@ function parseNested(r: Record<string, unknown>): RestaurantTheme {
         color: str(cad.color, d.card.description.color),
       },
       price: {
-        font:   str(cap.font, d.card.price.font),
-        size:   num(cap.size, d.card.price.size),
-        color:  str(cap.color, d.card.price.color),
-        format: one(cap.format, ['symbol-left','symbol-right','no-symbol'] as const, d.card.price.format),
+        font:     str(cap.font, d.card.price.font),
+        size:     num(cap.size, d.card.price.size),
+        color:    str(cap.color, d.card.price.color),
+        format:   one(cap.format, ['symbol-left','symbol-right','no-symbol'] as const, d.card.price.format),
+        currency: str(cap.currency, d.card.price.currency),
       },
       allergens: {
-        style:   one(caa.style, ['text','badge'] as const, d.card.allergens.style),
-        color:   str(caa.color, d.card.allergens.color),
-        bgColor: str(caa.bgColor, d.card.allergens.bgColor),
+        style:     one(caa.style, ['text','badge'] as const, d.card.allergens.style),
+        color:     str(caa.color, d.card.allergens.color),
+        bgColor:   str(caa.bgColor, d.card.allergens.bgColor),
+        display:   one(caa.display, ['full','short','number'] as const, d.card.allergens.display),
+        separator: str(caa.separator, d.card.allergens.separator),
       },
       closeButton: {
         color:    str(cab.color, d.card.closeButton.color),
@@ -403,18 +440,18 @@ export function migrateFlat(r: Record<string, unknown>): RestaurantTheme {
     },
     menu: {
       accent,
-      background:     { color: appBg, color2: d.menu.background.color2, effect: 'none' },
+      background:     { color: appBg, color2: d.menu.background.color2, effect: 'none', image: '', imageOpacity: 100 },
       pageBackground: str(r.pageBackground, d.menu.pageBackground),
       pdfLayout:      r.pdfLayout === 'compact' ? 'compact' : 'classic',
       layout: {
         dishLayout, dishAlignment, dishSpacing: 0, boxedBorderWidth: 1,
         divider: { type: dividerType, color: '#ece6da' },
       },
-      dishes:       { titleFont: fontSerif, titleSize: num(fs.title, d.menu.dishes.titleSize), titleColor: '#ede8e0' },
-      descriptions: { font: fontSans, size: num(fs.base, d.menu.descriptions.size), color: '#a09080' },
-      allergens:    { style: 'text', color: accent, bgColor: '#181208' },
-      prices:       { font: fontSans, size: num(fs.price, d.menu.prices.size), color: accent, format: priceFormat },
-      categories:   { font: fontSerif, color: '#1a1a1a', size: 1.3 },
+      dishes:       { titleFont: fontSerif, titleSize: num(fs.title, d.menu.dishes.titleSize), titleColor: '#ede8e0', align: 'inherit' },
+      descriptions: { font: fontSans, size: num(fs.base, d.menu.descriptions.size), color: '#a09080', align: 'inherit' },
+      allergens:    { style: 'text', color: accent, bgColor: '#181208', display: 'full', separator: ', ' },
+      prices:       { font: fontSans, size: num(fs.price, d.menu.prices.size), color: accent, format: priceFormat, currency: '€', position: 'right', align: 'inherit' },
+      categories:   { font: fontSerif, color: '#1a1a1a', size: 1.3, align: 'inherit' },
       stickyCategories: { style: stickyCatStyle, bgColor: navBg, textColor: textMuted, font: fontSans },
       navigation:   { style: paginationStyle, color: textMuted },
       banners:      { position: 'inline' },
@@ -482,6 +519,18 @@ export function menuBackgroundCss(bg: MenuTheme['background']): Record<string, s
   const c  = bg.color
   const c2 = bg.color2 || lightenHex(c, 0.08)
   switch (bg.effect) {
+    // ── New premium effects ──
+    case 'aurora':           return { background: `linear-gradient(125deg,${c} 0%,${c} 30%,${c2} 55%,${c} 80%,${c2} 100%)`, backgroundImage: `radial-gradient(ellipse 80% 60% at 20% 0%,rgba(120,200,255,0.10) 0%,transparent 55%),radial-gradient(ellipse 70% 55% at 85% 25%,rgba(190,120,255,0.10) 0%,transparent 55%),radial-gradient(ellipse 90% 60% at 50% 100%,rgba(120,255,200,0.08) 0%,transparent 55%)` }
+    case 'mesh-warm':        return { background: c, backgroundImage: `radial-gradient(at 18% 22%,rgba(255,180,120,0.14) 0px,transparent 50%),radial-gradient(at 82% 18%,rgba(255,120,140,0.12) 0px,transparent 50%),radial-gradient(at 40% 85%,rgba(255,210,140,0.10) 0px,transparent 50%)` }
+    case 'mesh-cool':        return { background: c, backgroundImage: `radial-gradient(at 20% 20%,rgba(120,170,255,0.14) 0px,transparent 50%),radial-gradient(at 80% 25%,rgba(120,230,220,0.12) 0px,transparent 50%),radial-gradient(at 50% 90%,rgba(160,140,255,0.10) 0px,transparent 50%)` }
+    case 'spotlight':        return { background: c, backgroundImage: `radial-gradient(ellipse 60% 50% at 50% 0%,${lightenHex(c,0.18)} 0%,${c} 60%)` }
+    case 'emerald-mist':     return { background: c, backgroundImage: `radial-gradient(ellipse 70% 55% at 25% 20%,rgba(45,157,90,0.16) 0%,transparent 55%),radial-gradient(ellipse 60% 50% at 80% 80%,rgba(20,120,90,0.12) 0%,transparent 55%)` }
+    case 'dots':             return { background: c, backgroundImage: `radial-gradient(rgba(255,255,255,0.07) 1.2px,transparent 1.2px)`, backgroundSize: '18px 18px' }
+    case 'diagonal':         return { background: c, backgroundImage: `repeating-linear-gradient(45deg,rgba(255,255,255,0.03) 0,rgba(255,255,255,0.03) 1px,transparent 1px,transparent 11px)` }
+    case 'honeycomb':        return { background: c, backgroundImage: `radial-gradient(circle at 50% 0,transparent 8px,rgba(255,255,255,0.04) 9px,transparent 10px),radial-gradient(circle at 0 14px,transparent 8px,rgba(255,255,255,0.04) 9px,transparent 10px),radial-gradient(circle at 100% 14px,transparent 8px,rgba(255,255,255,0.04) 9px,transparent 10px)`, backgroundSize: '28px 28px' }
+    case 'waves':            return { background: c, backgroundImage: `repeating-radial-gradient(circle at 50% 120%,transparent 0,transparent 18px,rgba(255,255,255,0.03) 18px,rgba(255,255,255,0.03) 19px)` }
+    case 'fine-grain':       return { background: c, backgroundImage: `url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='g'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3'/><feColorMatrix values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0.05 0 0 0 0'/></filter><rect width='160' height='160' filter='url(%23g)'/></svg>")`, backgroundSize: '160px 160px' }
+    // ── Classic effects ──
     case 'linear-gradient':  return { background: `linear-gradient(155deg,${c} 0%,${c2} 100%)` }
     case 'radial-gradient':  return { background: `radial-gradient(ellipse at center,${c2} 0%,${c} 70%)` }
     case 'parchment':        return { background: c, backgroundImage: `radial-gradient(ellipse at 30% 30%,rgba(255,235,180,0.07) 0%,transparent 55%)` }
@@ -528,11 +577,19 @@ export function landingTextureCss(texture: LandingBackground['texture']): Record
   }
 }
 
-export function formatPrice(price: number, format: MenuTheme['prices']['format']): string {
+export function formatPrice(price: number, format: PriceFormat, currency = '€'): string {
   const n = price.toFixed(2)
-  if (format === 'symbol-right') return `${n} €`
+  if (format === 'symbol-right') return `${n} ${currency}`
   if (format === 'no-symbol')    return n
-  return `€ ${n}`
+  return `${currency} ${n}`
+}
+
+/** Resolve a per-element alignment, falling back to the general dish alignment. */
+export function resolveAlign(
+  elementAlign: AlignOpt,
+  general: MenuTheme['layout']['dishAlignment'],
+): 'left' | 'center' | 'right' {
+  return elementAlign === 'inherit' ? general : elementAlign
 }
 
 export function hexToRgb(hex: string): string {

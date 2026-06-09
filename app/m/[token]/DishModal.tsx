@@ -1,10 +1,10 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { formatAllergensFull } from '@/lib/allergens'
+import { formatAllergens } from '@/lib/allergens'
 import { fontStack, formatPrice, cardBorderRadius } from '@/lib/theme'
 import type { CardTheme, RestaurantTheme } from '@/lib/theme'
-import { EditHandle } from './EditHandle'
+import { EditHandle, sendEdit } from './EditHandle'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -49,9 +49,12 @@ export default function DishModal({ activeDish, allDishes, isNested, onClose, on
   const PRICE_COLOR  = card?.price.color   ?? mn?.prices.color  ?? mn?.accent ?? '#c9a96e'
   const PRICE_SIZE   = card?.price.size    ?? mn?.prices.size   ?? 1.1
   const PRICE_FORMAT = card?.price.format  ?? mn?.prices.format ?? 'symbol-left'
+  const PRICE_CURR   = card?.price.currency ?? mn?.prices.currency ?? '€'
   const ALRG_COLOR   = card?.allergens.color   ?? mn?.allergens.color   ?? '#c9a96e'
   const ALRG_BG      = card?.allergens.bgColor ?? mn?.allergens.bgColor ?? '#181208'
   const ALRG_BADGE   = (card?.allergens.style  ?? mn?.allergens.style)  === 'badge'
+  const ALRG_DISPLAY = card?.allergens.display   ?? mn?.allergens.display   ?? 'full'
+  const ALRG_SEP     = card?.allergens.separator ?? mn?.allergens.separator ?? ', '
   const CLOSE_COLOR  = card?.closeButton.color    ?? '#555555'
   const CLOSE_POS    = card?.closeButton.position ?? 'top-right'
   const CLOSE_SHAPE  = card?.closeButton.shape    ?? 'none'
@@ -217,6 +220,15 @@ export default function DishModal({ activeDish, allDishes, isNested, onClose, on
           </button>
         </div>
 
+        {/* Card background edit badge — admin preview only */}
+        {editMode && (
+          <button
+            className="absolute top-3 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1.5 px-2.5 py-1 bg-blue-500 text-white rounded-full text-[11px] shadow-lg"
+            onClick={() => sendEdit('card-style')}>
+            <span>✏</span><span>Sfondo card</span>
+          </button>
+        )}
+
         {/* Hero image — 16:9 aspect ratio (photo-top layout only) */}
         {CARD_LAYOUT === 'photo-top' && dish.image_url && (
           <div className="shrink-0 w-full aspect-video overflow-hidden" style={{ background: '#1a1a1a' }}>
@@ -240,12 +252,14 @@ export default function DishModal({ activeDish, allDishes, isNested, onClose, on
           style={{ ...animStyle, padding: '20px 24px 4px', touchAction: 'pan-y' }}
         >
           {/* Category chip */}
-          <p
-            className="uppercase"
-            style={{ color: ACCENT, fontSize: 9, letterSpacing: '0.28em', marginBottom: 10 }}
-          >
-            {dish.category}
-          </p>
+          <EditHandle target="category-title" editMode={editMode}>
+            <p
+              className="uppercase"
+              style={{ color: ACCENT, fontSize: 9, letterSpacing: '0.28em', marginBottom: 10, textAlign: TEXT_ALIGN }}
+            >
+              {dish.category}
+            </p>
+          </EditHandle>
 
           {/* Name + price — photo-side wraps with thumbnail on the right */}
           {CARD_LAYOUT === 'photo-side' ? (
@@ -273,7 +287,7 @@ export default function DishModal({ activeDish, allDishes, isNested, onClose, on
                         className="tabular-nums"
                         style={{ color: PRICE_COLOR, fontSize: `${PRICE_SIZE}rem`, fontWeight: 600, paddingTop: TEXT_ALIGN === 'center' ? 0 : 4 }}
                       >
-                        {formatPrice(dish.price, PRICE_FORMAT)}
+                        {formatPrice(dish.price, PRICE_FORMAT, PRICE_CURR)}
                       </span>
                     </EditHandle>
                   )}
@@ -308,7 +322,7 @@ export default function DishModal({ activeDish, allDishes, isNested, onClose, on
                     className="tabular-nums"
                     style={{ color: PRICE_COLOR, fontSize: `${PRICE_SIZE}rem`, fontWeight: 600, paddingTop: TEXT_ALIGN === 'center' ? 0 : 4 }}
                   >
-                    {formatPrice(dish.price, PRICE_FORMAT)}
+                    {formatPrice(dish.price, PRICE_FORMAT, PRICE_CURR)}
                   </span>
                 </EditHandle>
               )}
@@ -329,57 +343,62 @@ export default function DishModal({ activeDish, allDishes, isNested, onClose, on
 
           {/* Allergens */}
           {dish.allergens?.length > 0 && (
-            <div
-              style={{
-                marginBottom: 16,
-                padding:      ALRG_BADGE ? '4px 10px' : '10px 14px',
-                background:   ALRG_BG,
-                border:       `1px solid ${ALRG_COLOR}20`,
-                borderRadius: ALRG_BADGE ? 20 : 6,
-              }}
-            >
-              {!ALRG_BADGE && <p style={{ color: ALRG_COLOR, fontSize: 8, letterSpacing: '0.26em', textTransform: 'uppercase', marginBottom: 6 }}>Allergeni</p>}
-              <p style={{ color: ALRG_COLOR, fontSize: '0.75rem', lineHeight: 1.6 }}>
-                {ALRG_BADGE ? '⚠ ' : ''}{formatAllergensFull(dish.allergens)}
-              </p>
-            </div>
+            <EditHandle target="allergens" editMode={editMode}>
+              <div
+                style={{
+                  marginBottom: 16,
+                  padding:      ALRG_BADGE ? '4px 10px' : '10px 14px',
+                  background:   ALRG_BG,
+                  border:       `1px solid ${ALRG_COLOR}20`,
+                  borderRadius: ALRG_BADGE ? 20 : 6,
+                }}
+              >
+                {!ALRG_BADGE && <p style={{ color: ALRG_COLOR, fontSize: 8, letterSpacing: '0.26em', textTransform: 'uppercase', marginBottom: 6 }}>Allergeni</p>}
+                <p style={{ color: ALRG_COLOR, fontSize: '0.75rem', lineHeight: 1.6 }}>
+                  {ALRG_BADGE ? '⚠ ' : ''}{formatAllergens(dish.allergens, ALRG_DISPLAY, ALRG_SEP)}
+                </p>
+              </div>
+            </EditHandle>
           )}
 
-          {/* Pairing — clickable, no price shown */}
+          {/* Pairing — clickable, no price shown. In edit mode the EditHandle
+              intercepts the click to open the card-style editor instead. */}
           {pairing && (
-            <button
-              onClick={() => onOpenDish(pairing)}
-              style={{
-                display:      'block',
-                width:        '100%',
-                marginBottom: 16,
-                padding:      '10px 14px',
-                border:       `1px solid ${ACCENT}30`,
-                borderRadius: 6,
-                background:   'transparent',
-                textAlign:    'left',
-                cursor:       'pointer',
-                transition:   'border-color 0.15s ease, background 0.15s ease',
-              }}
-              onMouseEnter={e => {
-                (e.currentTarget as HTMLButtonElement).style.borderColor = `${ACCENT}60`
-                ;(e.currentTarget as HTMLButtonElement).style.background = `${ACCENT}08`
-              }}
-              onMouseLeave={e => {
-                (e.currentTarget as HTMLButtonElement).style.borderColor = `${ACCENT}30`
-                ;(e.currentTarget as HTMLButtonElement).style.background = 'transparent'
-              }}
-            >
-              <p style={{ color: ACCENT, fontSize: 8, letterSpacing: '0.26em', textTransform: 'uppercase', marginBottom: 6 }}>
-                {dish.pairing_label ?? 'Abbinamento consigliato'}
-              </p>
-              <div className="flex items-center justify-between">
-                <p style={{ color: '#8a8a8a', fontSize: '0.8125rem' }}>
-                  {pairing.name}
+            <EditHandle target="card-style" editMode={editMode}>
+              <button
+                onClick={() => onOpenDish(pairing)}
+                style={{
+                  display:      'block',
+                  width:        '100%',
+                  marginBottom: 16,
+                  padding:      '10px 14px',
+                  border:       `1px solid ${ACCENT}30`,
+                  borderRadius: 6,
+                  background:   'transparent',
+                  textAlign:    'left',
+                  cursor:       'pointer',
+                  transition:   'border-color 0.15s ease, background 0.15s ease',
+                }}
+                onMouseEnter={e => {
+                  (e.currentTarget as HTMLButtonElement).style.borderColor = `${ACCENT}60`
+                  ;(e.currentTarget as HTMLButtonElement).style.background = `${ACCENT}08`
+                }}
+                onMouseLeave={e => {
+                  (e.currentTarget as HTMLButtonElement).style.borderColor = `${ACCENT}30`
+                  ;(e.currentTarget as HTMLButtonElement).style.background = 'transparent'
+                }}
+              >
+                <p style={{ color: ACCENT, fontSize: 8, letterSpacing: '0.26em', textTransform: 'uppercase', marginBottom: 6 }}>
+                  {dish.pairing_label ?? 'Abbinamento consigliato'}
                 </p>
-                <span style={{ color: ACCENT, fontSize: 10, letterSpacing: '0.1em' }}>›</span>
-              </div>
-            </button>
+                <div className="flex items-center justify-between">
+                  <p style={{ color: '#8a8a8a', fontSize: '0.8125rem' }}>
+                    {pairing.name}
+                  </p>
+                  <span style={{ color: ACCENT, fontSize: 10, letterSpacing: '0.1em' }}>›</span>
+                </div>
+              </button>
+            </EditHandle>
           )}
         </div>
 

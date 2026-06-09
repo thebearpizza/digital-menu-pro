@@ -1,22 +1,26 @@
 export const ALLERGENS = [
-  { id: 1,  name: 'Cereali e glutine' },
-  { id: 2,  name: 'Crostacei' },
-  { id: 3,  name: 'Uova' },
-  { id: 4,  name: 'Pesce' },
-  { id: 5,  name: 'Arachidi' },
-  { id: 6,  name: 'Soia' },
-  { id: 7,  name: 'Latte e latticini' },
-  { id: 8,  name: 'Frutta a guscio' },
-  { id: 9,  name: 'Sedano' },
-  { id: 10, name: 'Senape' },
-  { id: 11, name: 'Semi di sesamo' },
-  { id: 12, name: 'Anidride solforosa e solfiti' },
-  { id: 13, name: 'Lupini' },
-  { id: 14, name: 'Molluschi' },
+  { id: 1,  name: 'Cereali e glutine',            short: 'Glutine'   },
+  { id: 2,  name: 'Crostacei',                    short: 'Crostacei' },
+  { id: 3,  name: 'Uova',                         short: 'Uova'      },
+  { id: 4,  name: 'Pesce',                        short: 'Pesce'     },
+  { id: 5,  name: 'Arachidi',                     short: 'Arachidi'  },
+  { id: 6,  name: 'Soia',                         short: 'Soia'      },
+  { id: 7,  name: 'Latte e latticini',           short: 'Latte'     },
+  { id: 8,  name: 'Frutta a guscio',             short: 'Frutta secca' },
+  { id: 9,  name: 'Sedano',                       short: 'Sedano'    },
+  { id: 10, name: 'Senape',                       short: 'Senape'    },
+  { id: 11, name: 'Semi di sesamo',              short: 'Sesamo'    },
+  { id: 12, name: 'Anidride solforosa e solfiti', short: 'Solfiti'  },
+  { id: 13, name: 'Lupini',                       short: 'Lupini'    },
+  { id: 14, name: 'Molluschi',                    short: 'Molluschi' },
 ] as const
 
 export function allergenName(id: number): string {
   return ALLERGENS.find(a => a.id === id)?.name ?? `Allergene ${id}`
+}
+
+export function allergenShort(id: number): string {
+  return ALLERGENS.find(a => a.id === id)?.short ?? String(id)
 }
 
 // ── Parsing difensivo ───────────────────────────────────────────────────────────
@@ -51,4 +55,26 @@ export function formatAllergensShort(allergens: unknown): string {
 /** Vista dettaglio (modale) → nomi completi: "Cereali e glutine, Uova". */
 export function formatAllergensFull(allergens: unknown): string {
   return toIds(allergens).map(allergenName).join(', ')
+}
+
+export type AllergenDisplay = 'full' | 'short' | 'number'
+
+/**
+ * Configurable formatter used by the menu/card allergens controls.
+ *   full   → "Cereali e glutine, Uova"
+ *   short  → "Glutine, Uova"
+ *   number → "1, 3"
+ * `separator` is inserted between entries (default ", ").
+ */
+export function formatAllergens(
+  allergens: unknown,
+  display: AllergenDisplay = 'full',
+  separator = ', ',
+): string {
+  const ids = toIds(allergens)
+  const render =
+    display === 'number' ? (id: number) => String(id)
+    : display === 'short' ? allergenShort
+    : allergenName
+  return ids.map(render).join(separator)
 }

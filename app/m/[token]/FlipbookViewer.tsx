@@ -604,6 +604,19 @@ export default function FlipbookViewer({
       } as React.CSSProperties}
     >
 
+      {/* Menu background image layer — sits behind the book, above the effect bg */}
+      {mn?.background.image && (
+        <div
+          className="absolute inset-0 pointer-events-none"
+          style={{
+            backgroundImage:    `url(${mn.background.image})`,
+            backgroundSize:     'cover',
+            backgroundPosition: 'center',
+            opacity:            (mn.background.imageOpacity ?? 100) / 100,
+          }}
+        />
+      )}
+
       {/* ──────────────────────────────────────────────────────────────────────
        *  FLIPBOOK LAYOUT
        *  bookRef è sempre nel DOM — garantisce che il ref sia valido prima

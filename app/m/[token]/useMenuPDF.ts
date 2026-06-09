@@ -219,6 +219,11 @@ export function useMenuPDF(
     theme?.menu.prices.font, theme?.menu.categories.font,
     theme?.menu.categories.size,
     theme?.menu.layout.dishAlignment,
+    // per-element alignment + price position/currency + allergen display
+    theme?.menu.dishes.align, theme?.menu.descriptions.align,
+    theme?.menu.prices.align, theme?.menu.categories.align,
+    theme?.menu.prices.position, theme?.menu.prices.currency,
+    theme?.menu.allergens.display, theme?.menu.allergens.separator,
   ]) // eslint-disable-line react-hooks/exhaustive-deps
 
   return result
