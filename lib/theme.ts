@@ -151,7 +151,7 @@ export interface MenuTheme {
     dishSpacing:      number
     dishesPerPage:    number          // 0 = automatico (flusso naturale)
     boxedBorderWidth: number
-    divider:          { type: DividerType; color: string; width: number }
+    divider:          { type: DividerType; color: string; width: number; widthPercent: number }
   }
   dishes:       { titleFont: string; titleSize: number; titleColor: string; align: AlignOpt }
   descriptions: { font: string; size: number; color: string; align: AlignOpt }
@@ -209,7 +209,7 @@ export const DEFAULT_THEME: RestaurantTheme = {
       dishSpacing:      0,
       dishesPerPage:    0,
       boxedBorderWidth: 1,
-      divider:          { type: 'solid', color: '#ece6da', width: 0.5 },
+      divider:          { type: 'solid', color: '#ece6da', width: 0.5, widthPercent: 100 },
     },
     dishes:       { titleFont: 'Cormorant Garamond', titleSize: 1.75, titleColor: '#ede8e0', align: 'inherit' },
     descriptions: { font: 'DM Sans', size: 0.875, color: '#a09080', align: 'inherit' },
@@ -341,7 +341,7 @@ function parseNested(r: Record<string, unknown>): RestaurantTheme {
         dishSpacing:      num(ml.dishSpacing, d.menu.layout.dishSpacing),
         dishesPerPage:    num(ml.dishesPerPage, d.menu.layout.dishesPerPage),
         boxedBorderWidth: num(ml.boxedBorderWidth, d.menu.layout.boxedBorderWidth),
-        divider:          { type: one(md.type, ['none','solid','dashed','dotted','double','gradient','ornament','wavy'] as const, d.menu.layout.divider.type), color: str(md.color, d.menu.layout.divider.color), width: num(md.width, d.menu.layout.divider.width) },
+        divider:          { type: one(md.type, ['none','solid','dashed','dotted','double','gradient','ornament','wavy'] as const, d.menu.layout.divider.type), color: str(md.color, d.menu.layout.divider.color), width: num(md.width, d.menu.layout.divider.width), widthPercent: num(md.widthPercent, d.menu.layout.divider.widthPercent) },
       },
       dishes:       { titleFont: str(mi.titleFont, d.menu.dishes.titleFont), titleSize: num(mi.titleSize, d.menu.dishes.titleSize), titleColor: str(mi.titleColor, d.menu.dishes.titleColor), align: one(mi.align, ['inherit','left','center','right'] as const, d.menu.dishes.align) },
       descriptions: { font: str(me.font, d.menu.descriptions.font), size: num(me.size, d.menu.descriptions.size), color: str(me.color, d.menu.descriptions.color), align: one(me.align, ['inherit','left','center','right'] as const, d.menu.descriptions.align) },
@@ -474,7 +474,7 @@ export function migrateFlat(r: Record<string, unknown>): RestaurantTheme {
       compactMode:    'linear',
       layout: {
         dishLayout, dishAlignment, dishSpacing: 0, dishesPerPage: 0, boxedBorderWidth: 1,
-        divider: { type: dividerType, color: '#ece6da', width: 0.5 },
+        divider: { type: dividerType, color: '#ece6da', width: 0.5, widthPercent: 100 },
       },
       dishes:       { titleFont: fontSerif, titleSize: num(fs.title, d.menu.dishes.titleSize), titleColor: '#ede8e0', align: 'inherit' },
       descriptions: { font: fontSans, size: num(fs.base, d.menu.descriptions.size), color: '#a09080', align: 'inherit' },
@@ -634,6 +634,15 @@ export function lightenHex(hex: string, amount: number): string {
   const g = Math.round(parseInt(h.slice(2,4),16) + (255-parseInt(h.slice(2,4),16))*amount)
   const b = Math.round(parseInt(h.slice(4,6),16) + (255-parseInt(h.slice(4,6),16))*amount)
   return `#${r.toString(16).padStart(2,'0')}${g.toString(16).padStart(2,'0')}${b.toString(16).padStart(2,'0')}`
+}
+
+// Strips alpha from a color so it can be used as a fully opaque "wall"
+// background (e.g. behind sticky elements that must hide scrolling content).
+export function toOpaqueColor(color: string): string {
+  const rgba = color.match(/^rgba\(([^,]+),([^,]+),([^,]+),[^)]+\)$/)
+  if (rgba) return `rgb(${rgba[1]},${rgba[2]},${rgba[3]})`
+  if (color.startsWith('#') && color.length === 9) return color.slice(0, 7)
+  return color
 }
 
 // ── Theme Presets ─────────────────────────────────────────────────────────────

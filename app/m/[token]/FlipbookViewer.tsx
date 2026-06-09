@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react'
 import DishModal, { DishData } from './DishModal'
-import { fontStack, hexToRgb, PAGINATION_OPTIONS, menuBackgroundCss } from '@/lib/theme'
+import { fontStack, hexToRgb, toOpaqueColor, PAGINATION_OPTIONS, menuBackgroundCss } from '@/lib/theme'
 import type { RestaurantTheme } from '@/lib/theme'
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -125,6 +125,13 @@ export default function FlipbookViewer({
   const pageBgColor  = mn?.pageBackground ?? menuConfig.flipbook.pageBackground
   const catStyle     = mn?.stickyCategories.style ?? 'solid'
   const navBgComputed = catStyle === 'transparent-blur' ? 'rgba(0,0,0,0.35)' : (mn?.stickyCategories.bgColor ?? menuConfig.theme.navBg)
+  // Tasto "Menù" e contatore pagine appartengono allo stesso gruppo visivo delle
+  // categorie sticky: condividono il colore testo (stickyCategories.textColor) e
+  // usano sempre uno sfondo OPACO ("muro"), cosi i nomi categoria che scorrono
+  // sotto non risultano mai visibili attraverso di essi, qualunque sia lo stile
+  // (solido o vetro/blur).
+  const navColorComputed = mn?.stickyCategories.textColor ?? menuConfig.theme.textMuted
+  const navBgOpaque = toOpaqueColor(mn?.stickyCategories.bgColor ?? menuConfig.theme.navBg)
   const theme = {
     ...menuConfig.theme,
     appBg:       mn?.background.color          ?? menuConfig.theme.pageBg,
@@ -132,9 +139,10 @@ export default function FlipbookViewer({
     textPrimary: themeProp?.landing.title.color ?? menuConfig.theme.textPrimary,
     textMuted:   mn?.stickyCategories.textColor ?? menuConfig.theme.textMuted,
     navBg:       navBgComputed,
+    navBgOpaque,
     navActive:   mn?.stickyCategories.activeColor ?? mn?.accent ?? menuConfig.theme.navActive,
     navInactive: mn?.stickyCategories.textColor ?? menuConfig.theme.navInactive,
-    navColor:    mn?.navigation.color           ?? menuConfig.theme.textMuted,
+    navColor:    navColorComputed,
     fontSerif:   fontStack(mn?.dishes.titleFont       ?? 'Cormorant Garamond', 'serif'),
     fontSans:    fontStack(mn?.stickyCategories.font  ?? 'DM Sans', 'sans'),
   }
@@ -788,7 +796,7 @@ export default function FlipbookViewer({
               style={{
                 color:      theme.navColor,
                 fontFamily: theme.fontSans,
-                background: catStyle === 'transparent-blur' ? 'transparent' : theme.navBg,
+                background: theme.navBgOpaque,
                 borderRight:`1px solid ${theme.navColor}1a`,
               }}
             >
@@ -820,7 +828,7 @@ export default function FlipbookViewer({
                 style={{
                   color:       theme.navColor,
                   fontFamily:  theme.fontSans,
-                  background:  catStyle === 'transparent-blur' ? 'transparent' : theme.navBg,
+                  background:  theme.navBgOpaque,
                   borderLeft: `1px solid ${theme.navColor}1a`,
                 }}
               >

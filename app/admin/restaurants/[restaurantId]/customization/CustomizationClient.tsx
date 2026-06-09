@@ -1087,7 +1087,7 @@ function EditorSidebar({ target, theme, setters, previewMode, onClose }: {
               <div className="mt-2 space-y-2">
                 <ColorRow label="Colore divisore" value={m.layout.divider.color}
                   onChange={v => setters.setMDivider({ color: v })} />
-                {(m.layout.divider.type === 'solid' || m.layout.divider.type === 'dashed' || m.layout.divider.type === 'dotted' || m.layout.divider.type === 'double' || m.layout.divider.type === 'gradient') && (
+                {(m.layout.divider.type === 'solid' || m.layout.divider.type === 'dashed' || m.layout.divider.type === 'dotted' || m.layout.divider.type === 'double' || m.layout.divider.type === 'gradient' || m.layout.divider.type === 'wavy') && (
                   <div>
                     <div className="flex justify-between items-center mb-1">
                       <label className="text-xs text-gray-600">Spessore</label>
@@ -1098,6 +1098,15 @@ function EditorSidebar({ target, theme, setters, previewMode, onClose }: {
                       className="w-full accent-gray-900" />
                   </div>
                 )}
+                <div>
+                  <div className="flex justify-between items-center mb-1">
+                    <label className="text-xs text-gray-600">Larghezza</label>
+                    <span className="text-[10px] font-mono text-gray-400">{m.layout.divider.widthPercent}%</span>
+                  </div>
+                  <input type="range" min={10} max={100} step={5} value={m.layout.divider.widthPercent}
+                    onChange={e => setters.setMDivider({ widthPercent: Number(e.target.value) })}
+                    className="w-full accent-gray-900" />
+                </div>
               </div>
             )}
           </div>

@@ -2,10 +2,18 @@
 // MenuPDFDocument — @react-pdf/renderer document for a single restaurant menu.
 // Dynamically imported by useMenuPDF (never SSR-ed).
 // ─────────────────────────────────────────────────────────────────────────────
-import { Document, Page, Text, View, StyleSheet } from '@react-pdf/renderer'
+import { Document, Page, Text, View, StyleSheet, Svg, Path } from '@react-pdf/renderer'
 import { formatAllergens } from '@/lib/allergens'
 import type { RestaurantTheme } from '@/lib/theme'
 import { DEFAULT_THEME, lightenHex, formatPrice, resolveAlign } from '@/lib/theme'
+
+// A smooth repeating sine-like wave across a 240×10 viewBox (12 full periods
+// of 20 units each), used for the "wavy" divider — a true vector wave instead
+// of relying on a glyph (built-in PDF fonts are WinAnsi-encoded and can't
+// render ～/∿ characters).
+const WAVE_PATH = Array.from({ length: 12 })
+  .map((_, i) => `${i === 0 ? 'M0,5' : ''} q5,-5 10,0 q5,5 10,0`)
+  .join(' ')
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -103,6 +111,7 @@ function makeStyles(theme: RestaurantTheme, registered: Set<string>, flipped = f
   const catLineColor = lightenHex(m.accent, 0.55)
   const divColor  = m.layout.divider.color
   const divWidth  = m.layout.divider.width || 0.5
+  const divWidthPct = m.layout.divider.widthPercent || 100
   const bg        = m.pageBackground
   const spacing   = m.layout.dishSpacing || 0
   // Inter-dish gap: identical TOTAL distance whatever the divider type, so the
@@ -237,9 +246,12 @@ function makeStyles(theme: RestaurantTheme, registered: Set<string>, flipped = f
     // Spacer between dishes when no divider is drawn — same TOTAL gap as the
     // divider variants so switching divider type never changes the rhythm.
     dishGap: { height: gapTotal },
-    // Bordered divider lines (solid / dashed / dotted).
+    // Bordered divider lines (solid / dashed / dotted). width controls the
+    // horizontal extent (independent from thickness/color), centred on the page.
     dividerLine: {
       height:         0,
+      width:          `${divWidthPct}%`,
+      alignSelf:      'center',
       borderTopWidth: divWidth,
       borderTopColor: divColor,
       marginVertical: gapTotal / 2,
@@ -247,24 +259,27 @@ function makeStyles(theme: RestaurantTheme, registered: Set<string>, flipped = f
     // Double line.
     dividerDouble: {
       height:            divWidth * 3,
+      width:             `${divWidthPct}%`,
+      alignSelf:         'center',
       borderTopWidth:    divWidth,
       borderTopColor:    divColor,
       borderBottomWidth: divWidth,
       borderBottomColor: divColor,
       marginVertical:    gapTotal / 2,
     },
-    // Gradient → centred short hairline. NOTE: react-pdf has no 'auto' margins,
-    // alignSelf centres the 55%-wide bar instead.
+    // Gradient → centred hairline, width controls the horizontal extent.
     dividerGradient: {
       height:          divWidth,
-      width:           '55%',
+      width:           `${divWidthPct}%`,
       alignSelf:       'center',
       backgroundColor: divColor,
       marginVertical:  gapTotal / 2,
     },
-    // Ornament / wavy → centred decorative row.
+    // Ornament / wavy → centred decorative row, width controls the horizontal extent.
     dividerGlyphWrap: {
       marginVertical: gapTotal / 2,
+      width:          `${divWidthPct}%`,
+      alignSelf:      'center',
       flexDirection:  'row',
       justifyContent: 'center',
       alignItems:     'center',
@@ -277,6 +292,11 @@ function makeStyles(theme: RestaurantTheme, registered: Set<string>, flipped = f
       color:         divColor,
       textAlign:     'center',
       letterSpacing: 2,
+    },
+    // True wavy line, drawn as an SVG path (vector — no font/glyph issues).
+    dividerWave: {
+      height: compact ? 6 : 8,
+      width:  '100%',
     },
     // Vector diamond (rotated square) — WinAnsi-safe replacement for ✦ / ◆.
     diamondShape: {
@@ -358,6 +378,8 @@ export function MenuPDFDocument({ restaurant, menu, theme: themeProp, registered
 
   const pos      = m.prices.position
   const dType    = m.layout.divider.type
+  const divColor = m.layout.divider.color
+  const divWidth = m.layout.divider.width || 0.5
   const perPage  = m.layout.dishesPerPage || 0
 
   // Running dish index on the CURRENT page — drives the "N dishes per page"
@@ -391,7 +413,9 @@ export function MenuPDFDocument({ restaurant, menu, theme: themeProp, registered
     )
     if (dType === 'wavy') return (
       <View key={key} style={s.dividerGlyphWrap}>
-        <Text style={s.dividerGlyph}>~ ~ ~ ~ ~ ~ ~ ~</Text>
+        <Svg style={s.dividerWave} viewBox="0 0 240 10" preserveAspectRatio="none">
+          <Path d={WAVE_PATH} stroke={divColor} strokeWidth={divWidth * 4} fill="none" />
+        </Svg>
       </View>
     )
     // solid / dashed / dotted → a real border line with the chosen style.
