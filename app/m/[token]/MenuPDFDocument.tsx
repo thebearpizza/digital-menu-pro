@@ -91,7 +91,13 @@ function readableOn(textColor: string, bgColor: string): string {
 
 // ── Dynamic styles ────────────────────────────────────────────────────────────
 
-function makeStyles(theme: RestaurantTheme, registered: Set<string>) {
+// Mirror an alignment horizontally — used by the alternating compact mode so a
+// flipped category flips its dishes too, not just the category title.
+function flipAlign(a: 'left' | 'center' | 'right'): 'left' | 'center' | 'right' {
+  return a === 'left' ? 'right' : a === 'right' ? 'left' : 'center'
+}
+
+function makeStyles(theme: RestaurantTheme, registered: Set<string>, flipped = false) {
   const m         = theme.menu
   const compact   = m.pdfLayout === 'compact'
   const catLineColor = lightenHex(m.accent, 0.55)
@@ -99,15 +105,20 @@ function makeStyles(theme: RestaurantTheme, registered: Set<string>) {
   const divWidth  = m.layout.divider.width || 0.5
   const bg        = m.pageBackground
   const spacing   = m.layout.dishSpacing || 0
+  // Inter-dish gap: identical TOTAL distance whatever the divider type, so the
+  // spacing slider behaves uniformly (gapBase + spacing between any two dishes).
+  const gapBase   = compact ? 16 : 24
+  const gapTotal  = gapBase + spacing
   // General + per-element alignment ('inherit' falls back to the general value).
   const general   = m.layout.dishAlignment === 'center' ? 'center' : m.layout.dishAlignment === 'right' ? 'right' : 'left'
-  const catAlign  = resolveAlign(m.categories.align, general)
-  const nameAlign = resolveAlign(m.dishes.align,     general)
+  const maybeFlip = (a: 'left' | 'center' | 'right') => flipped ? flipAlign(a) : a
+  const catAlign  = maybeFlip(resolveAlign(m.categories.align, general))
+  const nameAlign = maybeFlip(resolveAlign(m.dishes.align,     general))
   // Description & allergens inherit from the DISH TITLE alignment (not the
   // general one) so they "follow the title" until explicitly overridden.
-  const descAlign  = m.descriptions.align === 'inherit' ? nameAlign : m.descriptions.align
-  const allgnAlign = m.allergens.align    === 'inherit' ? nameAlign : m.allergens.align
-  const priceAlign = resolveAlign(m.prices.align, general)
+  const descAlign  = m.descriptions.align === 'inherit' ? nameAlign : maybeFlip(m.descriptions.align)
+  const allgnAlign = m.allergens.align    === 'inherit' ? nameAlign : maybeFlip(m.allergens.align)
+  const priceAlign = maybeFlip(resolveAlign(m.prices.align, general))
 
   // Real font if it registered successfully, otherwise a built-in fallback.
   const titleFamily = registered.has(m.dishes.titleFont)   ? m.dishes.titleFont   : 'Helvetica-Bold'
@@ -160,6 +171,14 @@ function makeStyles(theme: RestaurantTheme, registered: Set<string>) {
       fontFamily:    'Helvetica',
       fontSize:      (compact ? 11 : 14) * catScale,
       color:         m.categories.flourishColor,
+      marginHorizontal: 8,
+    },
+    // Vector diamond flourish — ◆ is not WinAnsi-encodable in built-in fonts.
+    flourishDiamond: {
+      width:            (compact ? 6 : 7) * catScale,
+      height:           (compact ? 6 : 7) * catScale,
+      backgroundColor:  m.categories.flourishColor,
+      transform:        'rotate(45deg)',
       marginHorizontal: 8,
     },
     catLine: {
@@ -215,14 +234,15 @@ function makeStyles(theme: RestaurantTheme, registered: Set<string>) {
       letterSpacing: 0.2,
       textAlign:     allgnAlign,
     },
-    // Spacer between dishes when no divider is drawn.
-    dishGap: { height: (compact ? 8 : 12) + spacing },
+    // Spacer between dishes when no divider is drawn — same TOTAL gap as the
+    // divider variants so switching divider type never changes the rhythm.
+    dishGap: { height: gapTotal },
     // Bordered divider lines (solid / dashed / dotted).
     dividerLine: {
       height:         0,
       borderTopWidth: divWidth,
       borderTopColor: divColor,
-      marginVertical: (compact ? 8 : 12) + spacing / 2,
+      marginVertical: gapTotal / 2,
     },
     // Double line.
     dividerDouble: {
@@ -231,26 +251,40 @@ function makeStyles(theme: RestaurantTheme, registered: Set<string>) {
       borderTopColor:    divColor,
       borderBottomWidth: divWidth,
       borderBottomColor: divColor,
-      marginVertical:    (compact ? 8 : 12) + spacing / 2,
+      marginVertical:    gapTotal / 2,
     },
-    // Gradient → centred short hairline (best effort, no CSS gradients in PDF).
+    // Gradient → centred short hairline. NOTE: react-pdf has no 'auto' margins,
+    // alignSelf centres the 55%-wide bar instead.
     dividerGradient: {
       height:          divWidth,
       width:           '55%',
-      marginHorizontal:'auto',
+      alignSelf:       'center',
       backgroundColor: divColor,
-      marginVertical:  (compact ? 8 : 12) + spacing / 2,
+      marginVertical:  gapTotal / 2,
     },
-    // Ornament / wavy → centred glyph string.
+    // Ornament / wavy → centred decorative row.
     dividerGlyphWrap: {
-      marginVertical: (compact ? 7 : 11) + spacing / 2,
+      marginVertical: gapTotal / 2,
+      flexDirection:  'row',
+      justifyContent: 'center',
+      alignItems:     'center',
     },
+    // ASCII-only glyph text: built-in PDF fonts are WinAnsi-encoded, exotic
+    // glyphs (✦ ～ ◆) render as missing glyphs — never use them here.
     dividerGlyph: {
       fontFamily:    'Helvetica',
       fontSize:      compact ? 8 : 9,
       color:         divColor,
       textAlign:     'center',
       letterSpacing: 2,
+    },
+    // Vector diamond (rotated square) — WinAnsi-safe replacement for ✦ / ◆.
+    diamondShape: {
+      width:            compact ? 4 : 5,
+      height:           compact ? 4 : 5,
+      backgroundColor:  divColor,
+      transform:        'rotate(45deg)',
+      marginHorizontal: 6,
     },
     // ── Grid layout ───────────────────────────────────────────────────────────
     gridRow: {
@@ -294,13 +328,26 @@ interface Props {
   registeredFonts?: Set<string>
 }
 
+// Split an array into chunks of n (n<=0 → single chunk).
+function chunk<T>(arr: T[], n: number): T[][] {
+  if (n <= 0) return [arr]
+  const out: T[][] = []
+  for (let i = 0; i < arr.length; i += n) out.push(arr.slice(i, i + n))
+  return out
+}
+
 export function MenuPDFDocument({ restaurant, menu, theme: themeProp, registeredFonts }: Props) {
   const theme      = themeProp ?? DEFAULT_THEME
   const m          = theme.menu
-  const s          = makeStyles(theme, registeredFonts ?? new Set())
-  const categories = groupByCategory(menu.dishes)
+  const reg        = registeredFonts ?? new Set<string>()
   const compact    = m.pdfLayout === 'compact'
   const alternating= compact && m.compactMode === 'alternating'
+  // Two style sets: base and horizontally mirrored. The alternating compact
+  // mode applies the mirrored set to ODD categories so the WHOLE category
+  // (title + dish names + descriptions + allergens + prices) flips coherently.
+  const s          = makeStyles(theme, reg, false)
+  const sFlip      = alternating ? makeStyles(theme, reg, true) : s
+  const categories = groupByCategory(menu.dishes)
   const layout     = m.layout.dishLayout
   const isGrid2    = layout === 'grid-2'
   const isGrid3    = layout === 'grid-3'
@@ -313,29 +360,40 @@ export function MenuPDFDocument({ restaurant, menu, theme: themeProp, registered
   const dType    = m.layout.divider.type
   const perPage  = m.layout.dishesPerPage || 0
 
-  // Global running dish index — drives the optional "N dishes per page" break.
+  // Running dish index on the CURRENT page — drives the "N dishes per page"
+  // break. In classic mode each category already starts a fresh page, so the
+  // counter resets per category; in compact mode the flow is continuous and
+  // the counter runs globally (it resets implicitly at every forced break).
   let dishCounter = 0
 
-  const general  = m.layout.dishAlignment === 'center' ? 'center' : m.layout.dishAlignment === 'right' ? 'right' : 'left'
-
   // Name + price arranged per the price position setting.
-  function namePriceBlock(dish: PDFDish, priceStr: string | null) {
-    const nameEl  = <Text style={s.dishName}>{dish.name}</Text>
-    const priceEl = priceStr ? <Text style={s.dishPrice}>{priceStr}</Text> : null
-    if (!priceEl) return <View style={s.dishRow}>{nameEl}</View>
-    if (pos === 'above') return <View style={s.dishStack}><Text style={[s.dishPrice, s.stackPrice]}>{priceStr}</Text>{nameEl}</View>
-    if (pos === 'below') return <View style={s.dishStack}>{nameEl}<Text style={[s.dishPrice, s.stackPriceBelow]}>{priceStr}</Text></View>
-    if (pos === 'left')  return <View style={s.dishRow}>{priceEl}{nameEl}</View>
-    return <View style={s.dishRow}>{nameEl}{priceEl}</View>  // 'right' (default)
+  function namePriceBlock(dish: PDFDish, priceStr: string | null, st: typeof s) {
+    const nameEl  = <Text style={st.dishName}>{dish.name}</Text>
+    const priceEl = priceStr ? <Text style={st.dishPrice}>{priceStr}</Text> : null
+    if (!priceEl) return <View style={st.dishRow}>{nameEl}</View>
+    if (pos === 'above') return <View style={st.dishStack}><Text style={[st.dishPrice, st.stackPrice]}>{priceStr}</Text>{nameEl}</View>
+    if (pos === 'below') return <View style={st.dishStack}>{nameEl}<Text style={[st.dishPrice, st.stackPriceBelow]}>{priceStr}</Text></View>
+    if (pos === 'left')  return <View style={st.dishRow}>{priceEl}{nameEl}</View>
+    return <View style={st.dishRow}>{nameEl}{priceEl}</View>  // 'right' (default)
   }
 
   // Divider element — its shape genuinely changes per type.
+  // Built-in PDF fonts are WinAnsi-encoded: ornament/wavy use vector shapes and
+  // ASCII glyphs only (✦ ～ ◆ would render as missing glyphs and break layout).
   function divider(key: string) {
     if (dType === 'none') return <View key={key} style={s.dishGap} />
     if (dType === 'double')   return <View key={key} style={s.dividerDouble} />
     if (dType === 'gradient') return <View key={key} style={s.dividerGradient} />
-    if (dType === 'ornament') return <View key={key} style={s.dividerGlyphWrap}><Text style={s.dividerGlyph}>✦  ✦  ✦</Text></View>
-    if (dType === 'wavy')     return <View key={key} style={s.dividerGlyphWrap}><Text style={s.dividerGlyph}>～～～～～～～～</Text></View>
+    if (dType === 'ornament') return (
+      <View key={key} style={s.dividerGlyphWrap}>
+        <View style={s.diamondShape} /><View style={s.diamondShape} /><View style={s.diamondShape} />
+      </View>
+    )
+    if (dType === 'wavy') return (
+      <View key={key} style={s.dividerGlyphWrap}>
+        <Text style={s.dividerGlyph}>~ ~ ~ ~ ~ ~ ~ ~</Text>
+      </View>
+    )
     // solid / dashed / dotted → a real border line with the chosen style.
     const borderStyle = dType === 'dashed' ? 'dashed' : dType === 'dotted' ? 'dotted' : 'solid'
     return <View key={key} style={[s.dividerLine, { borderStyle } as any]} />
@@ -347,7 +405,7 @@ export function MenuPDFDocument({ restaurant, menu, theme: themeProp, registered
       : null
   }
 
-  function renderDish(dish: PDFDish, isLast: boolean) {
+  function renderDish(dish: PDFDish, isLast: boolean, st: typeof s) {
     const priceStr    = dish.price != null ? formatPrice(dish.price, m.prices.format, m.prices.currency) : null
     const allergenStr = allergenText(dish)
     // N-dishes-per-page: force a page break before the dish that starts a new page.
@@ -356,30 +414,30 @@ export function MenuPDFDocument({ restaurant, menu, theme: themeProp, registered
 
     if (isBoxed) {
       return (
-        <View key={dish.id} style={s.boxedItem} wrap={false} break={forceBreak}>
-          {namePriceBlock(dish, priceStr)}
-          {dish.description ? <Text style={s.dishDesc}>{dish.description}</Text> : null}
-          {allergenStr ? <Text style={s.dishAllergens}>{allergenStr}</Text> : null}
+        <View key={dish.id} style={st.boxedItem} wrap={false} break={forceBreak}>
+          {namePriceBlock(dish, priceStr, st)}
+          {dish.description ? <Text style={st.dishDesc}>{dish.description}</Text> : null}
+          {allergenStr ? <Text style={st.dishAllergens}>{allergenStr}</Text> : null}
         </View>
       )
     }
 
     if (isElegant) {
       return (
-        <View key={dish.id} style={s.elegantItem} wrap={false} break={forceBreak}>
-          <Text style={[s.dishName, { textAlign: 'center', marginRight: 0 }]}>{dish.name}</Text>
-          {priceStr ? <Text style={[s.dishPrice, { textAlign: 'center', marginTop: 2 }]}>{priceStr}</Text> : null}
-          {dish.description ? <Text style={[s.dishDesc, { textAlign: 'center' }]}>{dish.description}</Text> : null}
-          {allergenStr ? <Text style={[s.dishAllergens, { textAlign: 'center' }]}>{allergenStr}</Text> : null}
+        <View key={dish.id} style={st.elegantItem} wrap={false} break={forceBreak}>
+          <Text style={[st.dishName, { textAlign: 'center', marginRight: 0 }]}>{dish.name}</Text>
+          {priceStr ? <Text style={[st.dishPrice, { textAlign: 'center', marginTop: 2 }]}>{priceStr}</Text> : null}
+          {dish.description ? <Text style={[st.dishDesc, { textAlign: 'center' }]}>{dish.description}</Text> : null}
+          {allergenStr ? <Text style={[st.dishAllergens, { textAlign: 'center' }]}>{allergenStr}</Text> : null}
         </View>
       )
     }
 
     return (
       <View key={dish.id} wrap={false} break={forceBreak}>
-        {namePriceBlock(dish, priceStr)}
-        {!isMinimal && dish.description ? <Text style={s.dishDesc}>{dish.description}</Text> : null}
-        {!isMinimal && allergenStr ? <Text style={s.dishAllergens}>{allergenStr}</Text> : null}
+        {namePriceBlock(dish, priceStr, st)}
+        {!isMinimal && dish.description ? <Text style={st.dishDesc}>{dish.description}</Text> : null}
+        {!isMinimal && allergenStr ? <Text style={st.dishAllergens}>{allergenStr}</Text> : null}
         {/* Divider under EVERY dish except the last of its category. */}
         {!isLast && divider(dish.id + '-div')}
       </View>
@@ -387,32 +445,26 @@ export function MenuPDFDocument({ restaurant, menu, theme: themeProp, registered
   }
 
   // Category header: title, optionally wrapped with decorative flourishes.
-  function categoryHeader(cat: { name: string }, catIdx: number) {
+  // Alignment (incl. the alternating flip) is baked into the style set.
+  function categoryHeader(cat: { name: string }, st: typeof s) {
     const fl = m.categories.flourish
-    // In alternating compact mode, flip the title alignment on odd categories.
-    const flipped = alternating && catIdx % 2 === 1
-    const align: 'left' | 'center' | 'right' = flipped
-      ? (general === 'left' ? 'right' : general === 'right' ? 'left' : 'center')
-      : resolveAlign(m.categories.align, general)
-
     if (fl !== 'none') {
-      const left  = fl === 'lines'   ? <View style={s.flourishLine} />
-                  : fl === 'dots'    ? <Text style={s.flourishGlyph}>• • •</Text>
-                  :                    <Text style={s.flourishGlyph}>◆</Text>
-      const right = fl === 'lines'   ? <View style={s.flourishLine} />
-                  : fl === 'dots'    ? <Text style={s.flourishGlyph}>• • •</Text>
-                  :                    <Text style={s.flourishGlyph}>◆</Text>
+      const deco = fl === 'lines' ? <View style={st.flourishLine} />
+                 : fl === 'dots'  ? <Text style={st.flourishGlyph}>• • •</Text>
+                 :                   <View style={st.flourishDiamond} />
       return (
-        <View style={s.catFlourishRow}>
-          {left}
-          <Text style={[s.catTitle, { textAlign: 'center' }]}>{cat.name}</Text>
-          {right}
+        <View style={st.catFlourishRow}>
+          {deco}
+          <Text style={[st.catTitle, { textAlign: 'center' }]}>{cat.name}</Text>
+          {fl === 'lines' ? <View style={st.flourishLine} />
+           : fl === 'dots' ? <Text style={st.flourishGlyph}>• • •</Text>
+           : <View style={st.flourishDiamond} />}
         </View>
       )
     }
     return (
-      <View style={s.catTitleWrap}>
-        <Text style={[s.catTitle, { textAlign: align }]}>{cat.name}</Text>
+      <View style={st.catTitleWrap}>
+        <Text style={st.catTitle}>{cat.name}</Text>
       </View>
     )
   }
@@ -424,37 +476,49 @@ export function MenuPDFDocument({ restaurant, menu, theme: themeProp, registered
       creator="Digital Menu Pro"
     >
       <Page size="A4" style={s.page} wrap>
-        {categories.map((cat, catIdx) => (
-          <View key={cat.name} break={!compact && catIdx > 0}>
+        {categories.map((cat, catIdx) => {
+          const flipped = alternating && catIdx % 2 === 1
+          const st      = flipped ? sFlip : s
+          // Classic mode starts every category on a fresh page → reset the
+          // per-page dish counter so "N per pagina" counts from that page.
+          if (!compact) dishCounter = 0
 
-            {compact && catIdx > 0 && <View style={s.catSpacer} />}
+          return (
+            <View key={cat.name} break={!compact && catIdx > 0}>
 
-            {categoryHeader(cat, catIdx)}
-            <View style={s.catLine} />
+              {compact && catIdx > 0 && <View style={s.catSpacer} />}
 
-            {isGrid ? (
-              <View style={s.gridRow}>
-                {cat.dishes.map((dish) => {
-                  const priceStr    = dish.price != null ? formatPrice(dish.price, m.prices.format, m.prices.currency) : null
-                  const allergenStr = allergenText(dish)
-                  return (
-                    <View key={dish.id} style={isGrid3 ? s.gridCell3 : s.gridCell2} wrap={false}>
-                      <View style={s.dishRow}>
-                        <Text style={s.dishName}>{dish.name}</Text>
-                        {priceStr && <Text style={s.dishPrice}>{priceStr}</Text>}
-                      </View>
-                      {dish.description ? <Text style={s.dishDesc}>{dish.description}</Text> : null}
-                      {allergenStr ? <Text style={s.dishAllergens}>{allergenStr}</Text> : null}
-                    </View>
-                  )
-                })}
-              </View>
-            ) : (
-              cat.dishes.map((dish, dishIdx) => renderDish(dish, dishIdx === cat.dishes.length - 1))
-            )}
+              {categoryHeader(cat, st)}
+              <View style={s.catLine} />
 
-          </View>
-        ))}
+              {isGrid ? (
+                // Grids honour "N per pagina" too: cells are chunked and every
+                // chunk after the first starts on a new page.
+                chunk(cat.dishes, perPage).map((dishes, ci) => (
+                  <View key={ci} style={s.gridRow} break={ci > 0}>
+                    {dishes.map((dish) => {
+                      const priceStr    = dish.price != null ? formatPrice(dish.price, m.prices.format, m.prices.currency) : null
+                      const allergenStr = allergenText(dish)
+                      return (
+                        <View key={dish.id} style={isGrid3 ? st.gridCell3 : st.gridCell2} wrap={false}>
+                          <View style={st.dishRow}>
+                            <Text style={st.dishName}>{dish.name}</Text>
+                            {priceStr && <Text style={st.dishPrice}>{priceStr}</Text>}
+                          </View>
+                          {dish.description ? <Text style={st.dishDesc}>{dish.description}</Text> : null}
+                          {allergenStr ? <Text style={st.dishAllergens}>{allergenStr}</Text> : null}
+                        </View>
+                      )
+                    })}
+                  </View>
+                ))
+              ) : (
+                cat.dishes.map((dish, dishIdx) => renderDish(dish, dishIdx === cat.dishes.length - 1, st))
+              )}
+
+            </View>
+          )
+        })}
       </Page>
     </Document>
   )
