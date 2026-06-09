@@ -705,54 +705,46 @@ export default function FlipbookViewer({
               </span>
             )}
 
-            {/* ── Edit zones overlay — admin preview only ──────────────────── */}
-            {/* Zones are pointer-events-none so page-flip clicks pass through. */}
-            {/* Only the small chip badge is pointer-events-auto (clickable).   */}
-            {editMode && pagesReady && (
-              <>
-                {/* TOP: Categoria (top 22%) */}
-                <div className="absolute inset-x-0 top-0 pointer-events-none" style={{ height: '22%', zIndex: 60 }}>
-                  <div className="absolute inset-0 rounded" style={{ border: '2px dashed rgba(96,165,250,0.6)' }} />
-                  <button
-                    className="absolute top-1.5 left-1/2 -translate-x-1/2 pointer-events-auto"
-                    style={{ zIndex: 61, background: 'rgba(37,99,235,0.88)', color: 'white', fontSize: 9, padding: '2px 8px', borderRadius: 3, textTransform: 'uppercase', letterSpacing: '0.1em', whiteSpace: 'nowrap', touchAction: 'auto' }}
-                    onClick={(e) => { e.stopPropagation(); onEditTarget?.('category-title') }}
-                  >Categoria</button>
-                </div>
-
-                {/* MIDDLE-LEFT: Titolo & Descrizione (22–78%, left 65%) */}
-                <div className="absolute left-0 pointer-events-none" style={{ top: '22%', height: '56%', width: '65%', zIndex: 60 }}>
-                  <div className="absolute inset-0 rounded" style={{ border: '2px dashed rgba(96,165,250,0.6)' }} />
-                  <button
-                    className="absolute bottom-2 left-1/2 -translate-x-1/2 pointer-events-auto"
-                    style={{ zIndex: 61, background: 'rgba(37,99,235,0.88)', color: 'white', fontSize: 9, padding: '2px 8px', borderRadius: 3, textTransform: 'uppercase', letterSpacing: '0.1em', whiteSpace: 'nowrap', touchAction: 'auto' }}
-                    onClick={(e) => { e.stopPropagation(); onEditTarget?.('dish-title') }}
-                  >Titolo &amp; Desc</button>
-                </div>
-
-                {/* MIDDLE-RIGHT: Prezzi (22–78%, right 32%) */}
-                <div className="absolute right-0 pointer-events-none" style={{ top: '22%', height: '56%', width: '32%', zIndex: 60 }}>
-                  <div className="absolute inset-0 rounded" style={{ border: '2px dashed rgba(96,165,250,0.6)' }} />
-                  <button
-                    className="absolute bottom-2 left-1/2 -translate-x-1/2 pointer-events-auto"
-                    style={{ zIndex: 61, background: 'rgba(37,99,235,0.88)', color: 'white', fontSize: 9, padding: '2px 8px', borderRadius: 3, textTransform: 'uppercase', letterSpacing: '0.1em', whiteSpace: 'nowrap', touchAction: 'auto' }}
-                    onClick={(e) => { e.stopPropagation(); onEditTarget?.('dish-price') }}
-                  >Prezzi</button>
-                </div>
-
-                {/* BOTTOM: Allergeni (bottom 22%) */}
-                <div className="absolute inset-x-0 bottom-0 pointer-events-none" style={{ height: '22%', zIndex: 60 }}>
-                  <div className="absolute inset-0 rounded" style={{ border: '2px dashed rgba(96,165,250,0.6)' }} />
-                  <button
-                    className="absolute bottom-1.5 left-1/2 -translate-x-1/2 pointer-events-auto"
-                    style={{ zIndex: 61, background: 'rgba(37,99,235,0.88)', color: 'white', fontSize: 9, padding: '2px 8px', borderRadius: 3, textTransform: 'uppercase', letterSpacing: '0.1em', whiteSpace: 'nowrap', touchAction: 'auto' }}
-                    onClick={(e) => { e.stopPropagation(); onEditTarget?.('allergens') }}
-                  >Allergeni</button>
-                </div>
-              </>
-            )}
           </div>
         </div>
+
+        {/* ── Edit toolbar — admin preview only, between book and category nav ── */}
+        {editMode && pagesReady && (
+          <div
+            className="shrink-0 flex items-center gap-2 px-3 overflow-x-auto"
+            style={{
+              height: 36,
+              background: 'rgba(2,6,18,0.94)',
+              borderTop: '1px solid rgba(96,165,250,0.25)',
+              scrollbarWidth: 'none',
+              WebkitOverflowScrolling: 'touch',
+            } as React.CSSProperties}
+          >
+            {([
+              ['category-title',   'Categoria'],
+              ['dish-title',       'Titolo & Desc'],
+              ['dish-price',       'Prezzi'],
+              ['allergens',        'Allergeni'],
+              ['background-layout','Sfondo & Layout'],
+            ] as [string, string][]).map(([target, label]) => (
+              <button
+                key={target}
+                className="shrink-0 px-3 py-1 text-[10px] uppercase tracking-widest transition-colors"
+                style={{
+                  border:       '1.5px dashed rgba(96,165,250,0.6)',
+                  color:        'rgba(147,197,253,0.9)',
+                  background:   'rgba(30,58,138,0.25)',
+                  borderRadius: 3,
+                  whiteSpace:   'nowrap',
+                  touchAction:  'auto',
+                }}
+                onClick={() => onEditTarget?.(target)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
 
         {/* ── B. Barra Categorie — sempre visibile quando il libro è pronto.
              Il tasto ← Menù è il primo elemento (sticky a sinistra) e il
@@ -832,17 +824,6 @@ export default function FlipbookViewer({
             Caricamento…
           </span>
         </div>
-      )}
-
-      {/* Sfondo & Layout badge — top-right corner of viewer, edit mode only */}
-      {editMode && (
-        <button
-          className="absolute top-3 right-3 flex items-center gap-1.5 px-2.5 py-1 bg-blue-600 text-white rounded-full text-[11px] shadow-lg"
-          style={{ zIndex: 200, touchAction: 'auto' }}
-          onClick={() => onEditTarget?.('background-layout')}
-        >
-          <span>✏</span><span>Sfondo &amp; Layout</span>
-        </button>
       )}
 
       {/* Dish modal — rendered outside the flipbook DOM to avoid z-index conflicts.
