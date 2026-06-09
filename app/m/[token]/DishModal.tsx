@@ -47,6 +47,7 @@ export default function DishModal({ activeDish, allDishes, isNested, onClose, on
   const DESC_COLOR   = card?.description.color ?? mn?.descriptions.color ?? '#a09080'
   const DESC_SIZE    = card?.description.size  ?? mn?.descriptions.size  ?? 0.875
   const PRICE_COLOR  = card?.price.color   ?? mn?.prices.color  ?? mn?.accent ?? '#c9a96e'
+  const PRICE_FONT   = fontStack(card?.price.font ?? mn?.prices.font ?? 'DM Sans', 'sans')
   const PRICE_SIZE   = card?.price.size    ?? mn?.prices.size   ?? 1.1
   const PRICE_FORMAT = card?.price.format  ?? mn?.prices.format ?? 'symbol-left'
   const PRICE_CURR   = card?.price.currency ?? mn?.prices.currency ?? '€'
@@ -286,7 +287,7 @@ export default function DishModal({ activeDish, allDishes, isNested, onClose, on
                     <EditHandle target="dish-price" editMode={editMode} className={TEXT_ALIGN === 'center' ? '' : 'shrink-0'}>
                       <span
                         className="tabular-nums"
-                        style={{ color: PRICE_COLOR, fontSize: `${PRICE_SIZE}rem`, fontWeight: 600, paddingTop: TEXT_ALIGN === 'center' ? 0 : 4 }}
+                        style={{ color: PRICE_COLOR, fontFamily: PRICE_FONT, fontSize: `${PRICE_SIZE}rem`, fontWeight: 600, paddingTop: TEXT_ALIGN === 'center' ? 0 : 4 }}
                       >
                         {formatPrice(dish.price, PRICE_FORMAT, PRICE_CURR)}
                       </span>
@@ -321,7 +322,7 @@ export default function DishModal({ activeDish, allDishes, isNested, onClose, on
                 <EditHandle target="dish-price" editMode={editMode} className={TEXT_ALIGN === 'center' ? '' : 'shrink-0'}>
                   <span
                     className="tabular-nums"
-                    style={{ color: PRICE_COLOR, fontSize: `${PRICE_SIZE}rem`, fontWeight: 600, paddingTop: TEXT_ALIGN === 'center' ? 0 : 4 }}
+                    style={{ color: PRICE_COLOR, fontFamily: PRICE_FONT, fontSize: `${PRICE_SIZE}rem`, fontWeight: 600, paddingTop: TEXT_ALIGN === 'center' ? 0 : 4 }}
                   >
                     {formatPrice(dish.price, PRICE_FORMAT, PRICE_CURR)}
                   </span>

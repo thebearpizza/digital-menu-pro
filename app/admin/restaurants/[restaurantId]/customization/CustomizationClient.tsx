@@ -949,6 +949,12 @@ function EditorSidebar({ target, theme, setters, previewMode, onClose }: {
               value={c.layout} onChange={v => setters.setC({ layout: v })} />
           </div>
           <div>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Angoli card</p>
+            <PillGroup
+              options={[{ label:'Netti', value:'none' },{ label:'Arrotondati', value:'sm' },{ label:'Morbidi', value:'md' }]}
+              value={c.borderRadius} onChange={v => setters.setC({ borderRadius: v })} />
+          </div>
+          <div>
             <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Pulsante chiudi</p>
             <PillGroup
               options={[{ label:'Nessuno', value:'none' },{ label:'Cerchio', value:'circle' },{ label:'Quadrato', value:'square' }]}
