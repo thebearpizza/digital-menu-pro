@@ -206,16 +206,34 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
   function handleCanPlay() {
     if (!l.background.immersiveTransition) setPosterVisible(false)
   }
+
+  // In immersive mode the video doesn't autoplay, so the browser shows black.
+  // Seeking to 0.001 forces the first frame to render as a static thumbnail.
+  // We do this both on initial load and every time we return to the landing.
+  useEffect(() => {
+    if (!l.background.immersiveTransition) return
+    const v = videoRef.current
+    if (!v) return
+    const seek = () => { try { v.currentTime = 0.001 } catch {} }
+    v.addEventListener('loadeddata', seek, { once: true })
+    if (v.readyState >= 2) seek()
+    return () => v.removeEventListener('loadeddata', seek)
+  }, [l.background.value, l.background.immersiveTransition]) // eslint-disable-line react-hooks/exhaustive-deps
+
   // Restore poster when landing re-appears, but only if the video isn't actively
   // playing — in loop/pingpong mode the video runs continuously behind the menu
   // and should reappear immediately without the poster covering it.
+  // In immersive mode also reset to first frame after the transition video ends.
   useEffect(() => {
     if (!menuVisible) {
       const v = videoRef.current
       const playing = v && !v.paused && !v.ended && v.readyState > 2
       setPosterVisible(!playing)
+      if (v && l.background.immersiveTransition) {
+        try { v.currentTime = 0.001 } catch {}
+      }
     }
-  }, [menuVisible])
+  }, [menuVisible]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Immersive transition driver ────────────────────────────────────────────
   function openMenu(menuId: string) {
@@ -373,6 +391,7 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
                 style={{ opacity: posterVisible ? 1 : 0, transition: 'opacity 0.6s ease' }} />
             )}
             <video ref={videoRef} src={l.background.value} muted playsInline preload="auto"
+              poster={l.background.poster || undefined}
               autoPlay={!l.background.immersiveTransition}
               loop={!l.background.immersiveTransition && l.background.loopMode === 'loop'}
               className="absolute inset-0 w-full h-full object-cover"
