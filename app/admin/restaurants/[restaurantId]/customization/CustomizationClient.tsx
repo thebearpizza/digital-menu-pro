@@ -412,9 +412,9 @@ const MOBILE_LABELS: Record<string, string> = {
 
 const EDITOR_TARGETS: Record<string, { title: string; hint: string }> = {
   'landing-bg':        { title: 'Sfondo Landing',     hint: 'Tipo, immagine, video, colore, texture, opacità' },
-  'landing-logo':      { title: 'Logo',               hint: 'Dimensione, blend mode' },
-  'landing-title':     { title: 'Nome Ristorante',    hint: 'Font, colore, dimensione, peso' },
-  'landing-desc':      { title: 'Slogan',             hint: 'Font, colore, dimensione' },
+  'landing-logo':      { title: 'Logo',               hint: 'Immagine, dimensione, blend mode, spaziatura' },
+  'landing-title':     { title: 'Nome Ristorante',    hint: 'Testo, font, colore, dimensione, peso' },
+  'landing-desc':      { title: 'Slogan',             hint: 'Testo, font, colore, dimensione' },
   'landing-buttons':   { title: 'Bottoni Menu',       hint: 'Colori, bordo, font, forma' },
   'landing-socials':   { title: 'Social & Accento',   hint: 'Colore accento, icone social, dimensione' },
   'dish-title':        { title: 'Titolo Piatto',      hint: 'Font, colore, dimensione, allineamento' },
@@ -459,11 +459,13 @@ interface SidebarSetters {
   handleMenuBgUpload: (f: File) => void
   handleMenuPageBgUpload: (f: File) => void
   handlePosterUpload: (f: File) => void
+  handleLogoUpload:   (f: File) => void
   bgUploading:        boolean
   vidUploading:       boolean
   menuBgUploading:    boolean
   pageBgUploading:    boolean
   posterUploading:    boolean
+  logoUploading:      boolean
 }
 
 // ── Buttons panel — own state for transparent-bg toggle ───────────────────────
@@ -525,9 +527,10 @@ function ButtonsPanel({ l, setLBu }: {
 
 // ── Editor sidebar ────────────────────────────────────────────────────────────
 
-function EditorSidebar({ target, theme, setters, previewMode, onClose }: {
+function EditorSidebar({ target, theme, setters, previewMode, onClose, restaurantName, restaurantLogo }: {
   target: string; theme: RestaurantTheme; setters: SidebarSetters
   previewMode: 'landing' | 'menu' | 'card'; onClose: () => void
+  restaurantName: string; restaurantLogo: string | null
 }) {
   const info = EDITOR_TARGETS[target]
   const l    = theme.landing
@@ -651,6 +654,26 @@ function EditorSidebar({ target, theme, setters, previewMode, onClose }: {
 
       case 'landing-logo': return (
         <div className="space-y-4">
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Immagine logo</p>
+            {l.logo.image ? (
+              <div className="flex items-center gap-3 mb-2">
+                <img src={l.logo.image} alt="Logo" className="h-10 w-10 object-contain border border-gray-200 rounded bg-white" />
+                <button type="button" onClick={() => setters.setLLogo({ image: '' })}
+                  className="text-[11px] text-red-500 hover:text-red-600 underline">
+                  Rimuovi (usa logo del ristorante)
+                </button>
+              </div>
+            ) : (
+              <p className="text-[11px] text-gray-400 mb-2">
+                {restaurantLogo ? 'Verrà usato il logo del ristorante.' : 'Nessun logo impostato.'}
+              </p>
+            )}
+            <input type="file" accept="image/*"
+              onChange={e => { const f = e.target.files?.[0]; if (f) setters.handleLogoUpload(f) }}
+              className="block text-xs text-gray-500 file:mr-2 file:py-1 file:px-3 file:border file:border-gray-200 file:text-xs file:bg-white file:text-gray-600 hover:file:bg-gray-50 cursor-pointer w-full" />
+            {setters.logoUploading && <p className="text-xs text-gray-400 mt-1">Caricamento…</p>}
+          </div>
           <FontSizeSlider label="Dimensione logo" value={l.logo.size}
             min={1} max={8} step={0.25} previewFont="inherit"
             onChange={v => setters.setLLogo({ size: v })} />
@@ -660,11 +683,21 @@ function EditorSidebar({ target, theme, setters, previewMode, onClose }: {
               options={[{ label:'Normale', value:'normal' },{ label:'Multiply', value:'multiply' },{ label:'Screen', value:'screen' }]}
               value={l.logo.mixBlend} onChange={v => setters.setLLogo({ mixBlend: v })} />
           </div>
+          <FontSizeSlider label="Spazio sotto logo/nome" value={l.buttons.gapTop}
+            min={0} max={6} step={0.25} previewFont="inherit"
+            onChange={v => setters.setLBu({ gapTop: v })} />
         </div>
       )
 
       case 'landing-title': return (
         <div className="space-y-4">
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Testo</p>
+            <input type="text" value={l.title.text} placeholder={restaurantName}
+              onChange={e => setters.setLTitle({ text: e.target.value })}
+              className="w-full px-3 py-2 text-sm border border-gray-200 rounded focus:outline-none focus:border-gray-400" />
+            <p className="text-[11px] text-gray-400 mt-1">Vuoto = usa il nome del ristorante ({restaurantName}).</p>
+          </div>
           <FontSelector label="Font" value={l.title.font}
             curated={[...SERIF_FONTS, ...DISPLAY_FONTS]} category="serif"
             onChange={v => setters.setLTitle({ font: v })} />
@@ -683,6 +716,13 @@ function EditorSidebar({ target, theme, setters, previewMode, onClose }: {
 
       case 'landing-desc': return (
         <div className="space-y-4">
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Testo</p>
+            <input type="text" value={l.description.text} placeholder="Alta cucina italiana · dal 1987"
+              onChange={e => setters.setLDesc({ text: e.target.value })}
+              className="w-full px-3 py-2 text-sm border border-gray-200 rounded focus:outline-none focus:border-gray-400" />
+            <p className="text-[11px] text-gray-400 mt-1">Vuoto = usa la descrizione del ristorante.</p>
+          </div>
           <FontSelector label="Font" value={l.description.font}
             curated={SANS_FONTS} category="sans"
             onChange={v => setters.setLDesc({ font: v })} />
@@ -1438,7 +1478,7 @@ function BannerManager({ restaurantId, initialBanners }: { restaurantId: string;
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 export default function CustomizationClient({
-  restaurantId, qrToken, initialTheme, initialBanners,
+  restaurantId, restaurantName, restaurantLogo, qrToken, initialTheme, initialBanners,
 }: Props) {
   const [theme,        setTheme]        = useState<RestaurantTheme>(initialTheme)
   const [saving,       setSaving]       = useState(false)
@@ -1449,6 +1489,7 @@ export default function CustomizationClient({
   const [menuBgUploading, setMenuBgUploading] = useState(false)
   const [pageBgUploading, setPageBgUploading] = useState(false)
   const [posterUploading, setPosterUploading] = useState(false)
+  const [logoUploading, setLogoUploading] = useState(false)
   const [previewMode,  setPreviewMode]  = useState<'landing' | 'menu' | 'card'>('landing')
   const [editMode,     setEditMode]     = useState(false)
   const [showDummyData,setShowDummyData]= useState(false)
@@ -1584,6 +1625,21 @@ export default function CustomizationClient({
     setPageBgUploading(false)
   }
 
+  async function handleLogoUpload(file: File) {
+    if (file.size > MAX_MEDIA_BYTES) { setError('Immagine troppo grande (max 5MB).'); return }
+    setLogoUploading(true); setError(null)
+    const supabase = createClient()
+    const ext  = file.name.split('.').pop() ?? 'png'
+    const path = `${restaurantId}/logo.${ext}`
+    const { data, error: err } = await supabase.storage
+      .from('restaurant-assets').upload(path, file, { upsert: true })
+    if (!err && data) {
+      const { data: pub } = supabase.storage.from('restaurant-assets').getPublicUrl(data.path)
+      setLLogo({ image: `${pub.publicUrl}?v=${Date.now()}` })
+    } else if (err) setError('Upload: ' + err.message)
+    setLogoUploading(false)
+  }
+
   async function handlePosterUpload(file: File) {
     if (file.size > MAX_MEDIA_BYTES) { setError('Immagine troppo grande (max 5MB).'); return }
     setPosterUploading(true); setError(null)
@@ -1656,8 +1712,8 @@ export default function CustomizationClient({
     setLBg, setLLogo, setLTitle, setLDesc, setLBu, setL,
     setMDishes, setMDescs, setMPrices, setMCats, setMLayout, setMDivider, setMBg, setMPageBg, setMNav, setMSticky, setMAllergens, setM,
     setC, setCardTitle, setCardDesc, setCardPrice, setCardAllergens, setCardClose,
-    handleBgUpload, handleVideoUpload, handleMenuBgUpload, handleMenuPageBgUpload, handlePosterUpload,
-    bgUploading, vidUploading, menuBgUploading, pageBgUploading, posterUploading,
+    handleBgUpload, handleVideoUpload, handleMenuBgUpload, handleMenuPageBgUpload, handlePosterUpload, handleLogoUpload,
+    bgUploading, vidUploading, menuBgUploading, pageBgUploading, posterUploading, logoUploading,
   }
 
   const sidebarOpen = editMode && activeEditor !== null
@@ -1771,7 +1827,8 @@ export default function CustomizationClient({
               <div className="absolute top-full left-0 right-0 bg-white shadow-xl z-50 overflow-y-auto"
                 style={{ maxHeight: '48dvh', borderBottom: '1px solid #e5e7eb' }}>
                 <EditorSidebar target={activeEditor} theme={theme} setters={setters}
-                  previewMode={previewMode} onClose={() => setActiveEditor(null)} />
+                  previewMode={previewMode} onClose={() => setActiveEditor(null)}
+                  restaurantName={restaurantName} restaurantLogo={restaurantLogo} />
               </div>
             )}
           </div>
@@ -1793,7 +1850,8 @@ export default function CustomizationClient({
           }`}>
           {sidebarOpen && (
             <div className="h-full sm:w-[46vw] md:w-[380px]">
-              <EditorSidebar target={activeEditor!} theme={theme} setters={setters} previewMode={previewMode} onClose={() => setActiveEditor(null)} />
+              <EditorSidebar target={activeEditor!} theme={theme} setters={setters} previewMode={previewMode} onClose={() => setActiveEditor(null)}
+                restaurantName={restaurantName} restaurantLogo={restaurantLogo} />
             </div>
           )}
         </aside>

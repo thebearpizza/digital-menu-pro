@@ -122,9 +122,12 @@ export interface LandingBackground {
 export interface LandingTheme {
   background:  LandingBackground
   accent:      string
-  logo:        { size: number; mixBlend: 'normal' | 'multiply' | 'screen' }
-  title:       { font: string; size: number; color: string; weight: 'light' | 'normal' | 'bold' }
-  description: { font: string; size: number; color: string }
+  // image: custom logo upload — overrides restaurant.logo_url when set
+  logo:        { size: number; mixBlend: 'normal' | 'multiply' | 'screen'; image: string }
+  // text: override for the restaurant name — falls back to restaurant.name when empty
+  title:       { font: string; size: number; color: string; weight: 'light' | 'normal' | 'bold'; text: string }
+  // text: override for the slogan — falls back to restaurant.description when empty
+  description: { font: string; size: number; color: string; text: string }
   buttons: {
     shape:       'flat' | 'rounded' | 'pill'
     borderStyle: 'none' | 'solid' | 'dashed'
@@ -134,6 +137,8 @@ export interface LandingTheme {
     fontSize:    number
     textColor:   string
     bgColor:     string
+    // Vertical gap (rem) between the title/logo block and the menu buttons
+    gapTop:      number
   }
   socials: { color: string; size: number; style: 'minimal' | 'circle' | 'box' | 'outline' }
 }
@@ -197,12 +202,12 @@ export const DEFAULT_THEME: RestaurantTheme = {
       immersiveTransition: false, poster: undefined,
     },
     accent:      '#c9a96e',
-    logo:        { size: 3.5, mixBlend: 'normal' },
-    title:       { font: 'Cormorant Garamond', size: 2.0, color: '#ede8e0', weight: 'light' },
-    description: { font: 'DM Sans', size: 0.6, color: '#c9a96e80' },
+    logo:        { size: 3.5, mixBlend: 'normal', image: '' },
+    title:       { font: 'Cormorant Garamond', size: 2.0, color: '#ede8e0', weight: 'light', text: '' },
+    description: { font: 'DM Sans', size: 0.6, color: '#c9a96e80', text: '' },
     buttons: {
       shape: 'flat', borderStyle: 'solid', borderWidth: 1, borderColor: '#c9a96e',
-      font: 'DM Sans', fontSize: 0.625, textColor: '#ede8e0', bgColor: 'transparent',
+      font: 'DM Sans', fontSize: 0.625, textColor: '#ede8e0', bgColor: 'transparent', gapTop: 2.5,
     },
     socials: { color: '#c9a96e', size: 1.25, style: 'minimal' },
   },
@@ -324,9 +329,9 @@ function parseNested(r: Record<string, unknown>): RestaurantTheme {
         poster:              str(lb.poster, '') || undefined,
       },
       accent:      str(l.accent, d.landing.accent),
-      logo:        { size: num(ll.size, d.landing.logo.size), mixBlend: one(ll.mixBlend, ['normal','multiply','screen'] as const, d.landing.logo.mixBlend) },
-      title:       { font: str(lt.font, d.landing.title.font), size: num(lt.size, d.landing.title.size), color: str(lt.color, d.landing.title.color), weight: one(lt.weight, ['light','normal','bold'] as const, d.landing.title.weight) },
-      description: { font: str(ld.font, d.landing.description.font), size: num(ld.size, d.landing.description.size), color: str(ld.color, d.landing.description.color) },
+      logo:        { size: num(ll.size, d.landing.logo.size), mixBlend: one(ll.mixBlend, ['normal','multiply','screen'] as const, d.landing.logo.mixBlend), image: str(ll.image, d.landing.logo.image) },
+      title:       { font: str(lt.font, d.landing.title.font), size: num(lt.size, d.landing.title.size), color: str(lt.color, d.landing.title.color), weight: one(lt.weight, ['light','normal','bold'] as const, d.landing.title.weight), text: str(lt.text, d.landing.title.text) },
+      description: { font: str(ld.font, d.landing.description.font), size: num(ld.size, d.landing.description.size), color: str(ld.color, d.landing.description.color), text: str(ld.text, d.landing.description.text) },
       buttons: {
         shape:       one(bu.shape, ['flat','rounded','pill'] as const, d.landing.buttons.shape),
         borderStyle: one(bu.borderStyle, ['none','solid','dashed'] as const, d.landing.buttons.borderStyle),
@@ -336,6 +341,7 @@ function parseNested(r: Record<string, unknown>): RestaurantTheme {
         fontSize:    num(bu.fontSize, d.landing.buttons.fontSize),
         textColor:   str(bu.textColor, d.landing.buttons.textColor),
         bgColor:     str(bu.bgColor, d.landing.buttons.bgColor),
+        gapTop:      num(bu.gapTop, d.landing.buttons.gapTop),
       },
       socials: {
         color: str(ls.color, d.landing.socials.color),
@@ -471,12 +477,12 @@ export function migrateFlat(r: Record<string, unknown>): RestaurantTheme {
         poster: typeof r.bgVideoPoster === 'string' ? r.bgVideoPoster : undefined,
       },
       accent,
-      logo:        { size: 3.5, mixBlend: 'normal' },
-      title:       { font: fontSerif, size: num(fs.title, d.landing.title.size), color: textPrimary, weight: 'light' },
-      description: { font: fontSans, size: 0.6, color: `${accent}80` },
+      logo:        { size: 3.5, mixBlend: 'normal', image: '' },
+      title:       { font: fontSerif, size: num(fs.title, d.landing.title.size), color: textPrimary, weight: 'light', text: '' },
+      description: { font: fontSans, size: 0.6, color: `${accent}80`, text: '' },
       buttons: {
         shape: buttonShape, borderStyle: 'solid', borderWidth: 1, borderColor: accent,
-        font: fontSans, fontSize: 0.625, textColor: textPrimary, bgColor: 'transparent',
+        font: fontSans, fontSize: 0.625, textColor: textPrimary, bgColor: 'transparent', gapTop: 2.5,
       },
       socials: { color: accent, size: 1.25, style: 'minimal' },
     },

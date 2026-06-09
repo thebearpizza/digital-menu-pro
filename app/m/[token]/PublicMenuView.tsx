@@ -352,7 +352,9 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
   const vis           = restaurant.visibility
 
   // ── Dummy data for admin preview (fills empty fields when showDummyData=true) ─
-  const displayDesc = restaurant.description || (showDummyData ? 'Alta cucina italiana · dal 1987' : null)
+  const displayDesc = l.description.text || restaurant.description || (showDummyData ? 'Alta cucina italiana · dal 1987' : null)
+  const displayName = l.title.text || restaurant.name
+  const logoSrc      = l.logo.image || restaurant.logo_url
   const displayMenus = (showDummyData && menus.length === 0)
     ? [{ id: 'dummy-pranzo', name: 'Pranzo', dishes: [] as Dish[] }, { id: 'dummy-cena', name: 'Cena', dishes: [] as Dish[] }]
     : menus
@@ -465,8 +467,8 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
           <BannerCarousel banners={banners} accent={l.accent} />
 
           <EditHandle target="landing-logo" editMode={editMode}>
-            {restaurant.logo_url && isVis(vis, 'logo') && (
-              <img src={restaurant.logo_url} alt={restaurant.name}
+            {logoSrc && isVis(vis, 'logo') && (
+              <img src={logoSrc} alt={displayName}
                 className="object-contain"
                 style={{
                   height: `${l.logo.size * 0.75}rem`,
@@ -477,7 +479,7 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
             )}
           </EditHandle>
 
-          {!restaurant.logo_url && isVis(vis,'name') && (
+          {!logoSrc && isVis(vis,'name') && (
             <div className="w-10 h-px mb-7" style={{ background: l.accent }} />
           )}
 
@@ -490,7 +492,7 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
                   letterSpacing: '0.22em',
                   fontWeight: l.title.weight === 'bold' ? 700 : l.title.weight === 'normal' ? 400 : 300,
                 }}>
-                {restaurant.name}
+                {displayName}
               </h1>
             )}
           </EditHandle>
@@ -503,13 +505,13 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
             )}
           </EditHandle>
 
-          {!restaurant.logo_url && (isVis(vis,'name') || isVis(vis,'description')) && (
+          {!logoSrc && (isVis(vis,'name') || isVis(vis,'description')) && (
             <div className="w-10 h-px mt-7" style={{ background: l.accent }} />
           )}
 
           {/* Menu buttons */}
-          <EditHandle target="landing-buttons" editMode={editMode} className="w-full mt-10">
-            <div className="flex flex-col gap-3 w-full">
+          <EditHandle target="landing-buttons" editMode={editMode} className="w-full">
+            <div className="flex flex-col gap-3 w-full" style={{ marginTop: `${l.buttons.gapTop}rem` }}>
               {displayMenus.length === 0 ? (
                 <p className="text-[10px] uppercase tracking-[0.25em]" style={{ color: l.title.color }}>Menu in aggiornamento.</p>
               ) : (
@@ -577,8 +579,8 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
           style={{ opacity: menuReady ? 1 : 0, pointerEvents: menuReady ? 'auto' : 'none', transition: 'opacity 0.5s ease' }}>
           <FlipbookViewer
             pdfUrl={pdfUrl}
-            restaurantName={restaurant.name}
-            restaurantLogo={restaurant.logo_url}
+            restaurantName={displayName}
+            restaurantLogo={logoSrc}
             onBack={() => setSelectedMenuId(null)}
             categories={categories.length > 0 ? categories : undefined}
             dishes={activeMenu?.dishes ?? []}
