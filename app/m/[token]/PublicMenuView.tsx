@@ -227,18 +227,49 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
     return () => { v.removeEventListener('ended', finish); clearTimeout(fallback) }
   }, [transitioning, pendingMenuId])
 
-  // Pingpong loop: on end, reverse playback rate
+  // Pingpong loop. Browsers don't reliably support negative playbackRate (Chrome
+  // ignores it → the video would freeze at the end), so we drive the reverse leg
+  // with a manual rAF that steps currentTime backwards, then resume native
+  // forward playback. If reverse playback can't be set up at all we fall back to
+  // a seamless forward loop so the background never stalls.
   useEffect(() => {
     const v = videoRef.current
     if (!v || l.background.loopMode !== 'pingpong' || l.background.immersiveTransition) return
-    function handleEnded() {
-      if (!v) return
-      v.playbackRate = -v.playbackRate
-      v.currentTime = v.playbackRate < 0 ? v.duration - 0.01 : 0.01
-      v.play().catch(() => {})
+
+    let raf = 0
+    let last = 0
+    let reversing = false
+
+    const stepBack = (ts: number) => {
+      if (!reversing) return
+      const dt = last ? (ts - last) / 1000 : 0
+      last = ts
+      const next = v.currentTime - dt   // 1× reverse speed
+      if (next <= 0.02) {
+        v.currentTime = 0
+        reversing = false
+        v.play().catch(() => {})        // resume forward
+        return
+      }
+      v.currentTime = next
+      raf = requestAnimationFrame(stepBack)
     }
+
+    const handleEnded = () => {
+      if (!v.duration || Number.isNaN(v.duration)) { v.currentTime = 0; v.play().catch(() => {}); return }
+      try { v.pause() } catch {}
+      reversing = true
+      last = 0
+      v.currentTime = Math.max(0, v.duration - 0.05)
+      raf = requestAnimationFrame(stepBack)
+    }
+
     v.addEventListener('ended', handleEnded)
-    return () => v.removeEventListener('ended', handleEnded)
+    return () => {
+      v.removeEventListener('ended', handleEnded)
+      reversing = false
+      if (raf) cancelAnimationFrame(raf)
+    }
   }, [l.background.loopMode, l.background.immersiveTransition])
 
   // ── Fonts ─────────────────────────────────────────────────────────────────
@@ -260,11 +291,14 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
     website_url:   restaurant.website_url   || '#',
   } : restaurant
 
-  // Card preview: first real dish if available, else rich dummy data (allergens + pairing)
+  // Card preview: first real dish if available, else rich dummy data (photo +
+  // allergens + pairing). The photo is an inline SVG so it needs no network.
+  const DUMMY_PHOTO =
+    "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='800' height='450'%3E%3Cdefs%3E%3CradialGradient id='g' cx='35%25' cy='30%25' r='80%25'%3E%3Cstop offset='0%25' stop-color='%233a2c1c'/%3E%3Cstop offset='55%25' stop-color='%23241a10'/%3E%3Cstop offset='100%25' stop-color='%23140d07'/%3E%3C/radialGradient%3E%3C/defs%3E%3Crect width='800' height='450' fill='url(%23g)'/%3E%3Cg fill='none' stroke='%23c9a96e' stroke-opacity='0.45' stroke-width='3'%3E%3Ccircle cx='400' cy='225' r='150'/%3E%3Ccircle cx='400' cy='225' r='110'/%3E%3C/g%3E%3Cg fill='%23c9a96e' fill-opacity='0.5'%3E%3Cellipse cx='400' cy='225' rx='70' ry='38'/%3E%3C/g%3E%3Ctext x='400' y='400' text-anchor='middle' fill='%23c9a96e' fill-opacity='0.6' font-family='Georgia,serif' font-size='22' letter-spacing='4'%3EANTEPRIMA%3C/text%3E%3C/svg%3E"
   const DUMMY_DISH: DishData = {
     id: 'preview', name: 'Tagliolini al Tartufo Nero',
     description: 'Tagliolini freschi al tartufo nero di Norcia, burro mantecato e Parmigiano Reggiano stagionato 24 mesi.',
-    price: 24, category: 'Primi', image_url: null, allergens: [1, 3, 7],
+    price: 24, category: 'Primi', image_url: DUMMY_PHOTO, allergens: [1, 3, 7],
     pairing_dish_id: 'preview-wine', pairing_label: 'Abbinamento vino consigliato',
   }
   const DUMMY_WINE: DishData = {
