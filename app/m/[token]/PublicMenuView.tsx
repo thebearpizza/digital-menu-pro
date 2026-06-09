@@ -147,6 +147,7 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
   const videoRef        = useRef<HTMLVideoElement>(null)
   const transitioningRef = useRef(false)
   const [posterVisible, setPosterVisible] = useState(true)
+  const [posterBroken,  setPosterBroken]  = useState(false)
 
   // ── Admin preview bridge ───────────────────────────────────────────────────
   useEffect(() => {
@@ -210,45 +211,53 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
   }
 
   // In immersive mode the video doesn't autoplay, so the browser shows black.
-  // A plain seek isn't enough on iOS Safari (it ignores preload and decodes no
-  // frame until playback starts), so we "prime" the video: play() muted, wait
-  // for the first frame to actually paint, then pause and rewind to 0. The
-  // result is a static first-frame thumbnail on every platform.
+  // A plain seek isn't enough on iOS Safari (it decodes no frame until playback
+  // starts), so we "prime" it: play() muted and pause as soon as a frame has
+  // actually been PRESENTED (requestVideoFrameCallback where available, timeout
+  // fallback elsewhere). We deliberately do NOT seek back to 0 after pausing —
+  // on iOS that can flush the decoded frame and bring the black screen back;
+  // being paused a frame or two in is visually identical to the start.
+  function primeFirstFrame(v: HTMLVideoElement, isStale: () => boolean) {
+    if (isStale()) return
+    const pause = () => { if (!isStale()) { try { v.pause() } catch {} } }
+    const whenPresented = () => {
+      const anyV = v as HTMLVideoElement & { requestVideoFrameCallback?: (cb: () => void) => void }
+      if (typeof anyV.requestVideoFrameCallback === 'function') anyV.requestVideoFrameCallback(pause)
+      else setTimeout(pause, 150)
+    }
+    const p = v.play()
+    if (p?.then) {
+      p.then(() => { if (!isStale()) whenPresented() })
+        .catch(() => {
+          // Autoplay blocked (e.g. iOS Low Power Mode): retry on first interaction.
+          const retry = () => { if (!isStale()) primeFirstFrame(v, isStale) }
+          window.addEventListener('touchstart', retry, { once: true, passive: true })
+          window.addEventListener('click', retry, { once: true })
+        })
+    } else whenPresented()
+  }
+
   useEffect(() => {
     if (!l.background.immersiveTransition) return
     const v = videoRef.current
     if (!v) return
     let cancelled = false
-
-    const prime = () => {
-      if (cancelled || transitioningRef.current) return
-      const p = v.play()
-      if (!p?.then) { try { v.pause(); v.currentTime = 0 } catch {}; return }
-      p.then(() => {
-        // Wait two rAFs so the first frame is actually painted before pausing.
-        requestAnimationFrame(() => requestAnimationFrame(() => {
-          if (cancelled || transitioningRef.current) return
-          try { v.pause(); v.currentTime = 0 } catch {}
-        }))
-      }).catch(() => {})
-    }
-
-    if (v.readyState >= 1) prime()
-    else v.addEventListener('loadedmetadata', prime, { once: true })
-    return () => { cancelled = true; v.removeEventListener('loadedmetadata', prime) }
+    primeFirstFrame(v, () => cancelled || transitioningRef.current)
+    return () => { cancelled = true }
   }, [l.background.value, l.background.immersiveTransition]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Restore poster when landing re-appears, but only if the video isn't actively
   // playing — in loop/pingpong mode the video runs continuously behind the menu
   // and should reappear immediately without the poster covering it.
-  // In immersive mode also reset to first frame after the transition video ends.
+  // In immersive mode re-prime: rewind and pause on the first presented frame.
   useEffect(() => {
     if (!menuVisible) {
       const v = videoRef.current
       const playing = v && !v.paused && !v.ended && v.readyState > 2
       setPosterVisible(!playing)
       if (v && l.background.immersiveTransition) {
-        try { v.currentTime = 0.001 } catch {}
+        try { v.currentTime = 0 } catch {}
+        primeFirstFrame(v, () => transitioningRef.current)
       }
     }
   }, [menuVisible]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -370,6 +379,7 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
   const bgIsImage = l.background.type === 'image'
   const bgColor   = l.background.type === 'color' ? l.background.value : '#0d0d0d'
   const textureBg = landingTextureCss(l.background.texture)
+  const hasPoster = !!l.background.poster && !posterBroken
 
   return (
     <div className="fixed inset-0 h-[100dvh]">
@@ -403,17 +413,18 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
         {bgIsVideo && (
           <div className="absolute inset-0 pointer-events-none"
             style={{ opacity: transitioning ? 1 : l.background.opacity/100, zIndex: transitioning ? 40 : 0, transition: 'opacity 0.8s ease' }}>
-            {l.background.poster && (
+            {hasPoster && (
               <img src={l.background.poster} alt=""
                 className="absolute inset-0 w-full h-full object-cover"
-                style={{ opacity: posterVisible ? 1 : 0, transition: 'opacity 0.6s ease' }} />
+                style={{ opacity: posterVisible ? 1 : 0, transition: 'opacity 0.6s ease' }}
+                onError={() => setPosterBroken(true)} />
             )}
             <video ref={videoRef} src={l.background.value} muted playsInline preload="auto"
-              poster={l.background.poster || undefined}
+              poster={hasPoster ? l.background.poster : undefined}
               autoPlay={!l.background.immersiveTransition}
               loop={!l.background.immersiveTransition && l.background.loopMode === 'loop'}
               className="absolute inset-0 w-full h-full object-cover"
-              style={{ opacity: (l.background.poster && posterVisible) ? 0 : 1, transition: 'opacity 0.6s ease' }}
+              style={{ opacity: (hasPoster && posterVisible) ? 0 : 1, transition: 'opacity 0.6s ease' }}
               onCanPlay={handleCanPlay}
             />
           </div>
