@@ -92,7 +92,7 @@ export interface CardTheme {
   title:       { font: string; size: number; color: string; weight: 'light' | 'normal' | 'bold' }
   description: { font: string; size: number; color: string }
   price:       { font: string; size: number; color: string; format: PriceFormat; currency: string }
-  allergens:   { style: 'text' | 'badge'; color: string; bgColor: string; display: AllergenDisplay; separator: string }
+  allergens:   { style: 'text' | 'badge'; color: string; bgColor: string; display: AllergenDisplay; separator: string; size: number }
   closeButton: { color: string; position: 'top-right' | 'top-left'; shape: 'none' | 'circle' | 'square' }
 }
 
@@ -129,30 +129,40 @@ export interface LandingTheme {
 
 // ── Menu sub-theme ────────────────────────────────────────────────────────────
 
-export type DividerType = 'none' | 'solid' | 'dashed' | 'dotted' | 'double' | 'gradient' | 'ornament'
+export type DividerType = 'none' | 'solid' | 'dashed' | 'dotted' | 'double' | 'gradient' | 'ornament' | 'wavy'
+
+// Decorative element drawn to the left/right of a category title.
+export type CategoryFlourish = 'none' | 'lines' | 'dots' | 'diamond'
+
+// Page layouts for the generated PDF menu.
+export type DishLayout = 'list' | 'grid-2' | 'grid-3' | 'boxed-card' | 'minimal-row' | 'elegant'
 
 export interface MenuTheme {
   accent:         string
-  background:     { color: string; color2: string; effect: MenuBgEffect; image: string; imageOpacity: number }
+  background:     { color: string; color2: string; effect: MenuBgEffect; effectOpacity: number; effectStrength: number; image: string; imageOpacity: number }
   pageBackground: string
   pdfLayout:      'classic' | 'compact'
+  compactMode:    'linear' | 'alternating'
   layout: {
-    dishLayout:       'list' | 'grid-2' | 'boxed-card' | 'minimal-row'
+    dishLayout:       DishLayout
     dishAlignment:    'left' | 'center' | 'right'
     dishSpacing:      number
+    dishesPerPage:    number          // 0 = automatico (flusso naturale)
     boxedBorderWidth: number
-    divider:          { type: DividerType; color: string }
+    divider:          { type: DividerType; color: string; width: number }
   }
   dishes:       { titleFont: string; titleSize: number; titleColor: string; align: AlignOpt }
   descriptions: { font: string; size: number; color: string; align: AlignOpt }
-  allergens:    { style: 'text' | 'badge'; color: string; bgColor: string; display: AllergenDisplay; separator: string }
+  allergens:    { style: 'text' | 'badge'; color: string; bgColor: string; display: AllergenDisplay; separator: string; size: number; align: AlignOpt }
   prices:       { font: string; size: number; color: string; format: PriceFormat; currency: string; position: PricePosition; align: AlignOpt }
-  categories:   { font: string; color: string; size: number; align: AlignOpt }
+  categories:   { font: string; color: string; size: number; align: AlignOpt; flourish: CategoryFlourish; flourishColor: string; flourishWidth: number; flourishThickness: number }
   stickyCategories: {
     style:     'transparent-blur' | 'solid' | 'none'
     bgColor:   string
     textColor: string
+    activeColor: string
     font:      string
+    fontSize:  number
   }
   navigation: { style: PaginationStyle; color: string }
   banners:    { position: 'inline' | 'dedicated-page' }
@@ -187,23 +197,25 @@ export const DEFAULT_THEME: RestaurantTheme = {
   },
   menu: {
     accent:         '#c9a96e',
-    background:     { color: '#0d0d0d', color2: '#1a1a1a', effect: 'none', image: '', imageOpacity: 100 },
+    background:     { color: '#0d0d0d', color2: '#1a1a1a', effect: 'none', effectOpacity: 100, effectStrength: 100, image: '', imageOpacity: 100 },
     pageBackground: '#ffffff',
     pdfLayout:      'classic',
+    compactMode:    'linear',
     layout: {
       dishLayout:       'list',
       dishAlignment:    'left',
       dishSpacing:      0,
+      dishesPerPage:    0,
       boxedBorderWidth: 1,
-      divider:          { type: 'solid', color: '#ece6da' },
+      divider:          { type: 'solid', color: '#ece6da', width: 0.5 },
     },
     dishes:       { titleFont: 'Cormorant Garamond', titleSize: 1.75, titleColor: '#ede8e0', align: 'inherit' },
     descriptions: { font: 'DM Sans', size: 0.875, color: '#a09080', align: 'inherit' },
-    allergens:    { style: 'text', color: '#c9a96e', bgColor: '#181208', display: 'full', separator: ', ' },
+    allergens:    { style: 'text', color: '#c9a96e', bgColor: '#181208', display: 'full', separator: ', ', size: 0.85, align: 'inherit' },
     prices:       { font: 'DM Sans', size: 1.1, color: '#c9a96e', format: 'symbol-left', currency: '€', position: 'right', align: 'inherit' },
-    categories:   { font: 'Cormorant Garamond', color: '#1a1a1a', size: 1.3, align: 'inherit' },
+    categories:   { font: 'Cormorant Garamond', color: '#1a1a1a', size: 1.3, align: 'inherit', flourish: 'none', flourishColor: '#c9a96e', flourishWidth: 40, flourishThickness: 1 },
     stickyCategories: {
-      style: 'solid', bgColor: 'rgba(7,7,7,0.96)', textColor: '#4f4f4f', font: 'DM Sans',
+      style: 'solid', bgColor: 'rgba(7,7,7,0.96)', textColor: '#4f4f4f', activeColor: '#c9a96e', font: 'DM Sans', fontSize: 0.625,
     },
     navigation: { style: 'prec_succ', color: '#4f4f4f' },
     banners:    { position: 'inline' },
@@ -215,7 +227,7 @@ export const DEFAULT_THEME: RestaurantTheme = {
     title:       { font: 'Cormorant Garamond', size: 1.75, color: '#ede8e0', weight: 'light' },
     description: { font: 'DM Sans', size: 0.875, color: '#a09080' },
     price:       { font: 'DM Sans', size: 1.1, color: '#c9a96e', format: 'symbol-left', currency: '€' },
-    allergens:   { style: 'text', color: '#c9a96e', bgColor: '#181208', display: 'full', separator: ', ' },
+    allergens:   { style: 'text', color: '#c9a96e', bgColor: '#181208', display: 'full', separator: ', ', size: 0.85 },
     closeButton: { color: '#555555', position: 'top-right', shape: 'none' },
   },
 }
@@ -311,28 +323,34 @@ function parseNested(r: Record<string, unknown>): RestaurantTheme {
         color:  str(mb.color, d.menu.background.color),
         color2: str(mb.color2, d.menu.background.color2),
         effect: one(mb.effect, MENU_BG_EFFECTS as readonly MenuBgEffect[], d.menu.background.effect),
+        effectOpacity:  num(mb.effectOpacity, d.menu.background.effectOpacity),
+        effectStrength: num(mb.effectStrength, d.menu.background.effectStrength),
         image:  str(mb.image, d.menu.background.image),
         imageOpacity: num(mb.imageOpacity, d.menu.background.imageOpacity),
       },
       pageBackground: str(m.pageBackground, d.menu.pageBackground),
       pdfLayout:      one(m.pdfLayout, ['classic','compact'] as const, d.menu.pdfLayout),
+      compactMode:    one(m.compactMode, ['linear','alternating'] as const, d.menu.compactMode),
       layout: {
-        dishLayout:       one(ml.dishLayout, ['list','grid-2','boxed-card','minimal-row'] as const, d.menu.layout.dishLayout),
+        dishLayout:       one(ml.dishLayout, ['list','grid-2','grid-3','boxed-card','minimal-row','elegant'] as const, d.menu.layout.dishLayout),
         dishAlignment:    one(ml.dishAlignment, ['left','center','right'] as const, d.menu.layout.dishAlignment),
         dishSpacing:      num(ml.dishSpacing, d.menu.layout.dishSpacing),
+        dishesPerPage:    num(ml.dishesPerPage, d.menu.layout.dishesPerPage),
         boxedBorderWidth: num(ml.boxedBorderWidth, d.menu.layout.boxedBorderWidth),
-        divider:          { type: one(md.type, ['none','solid','dashed','dotted','double','gradient','ornament'] as const, d.menu.layout.divider.type), color: str(md.color, d.menu.layout.divider.color) },
+        divider:          { type: one(md.type, ['none','solid','dashed','dotted','double','gradient','ornament','wavy'] as const, d.menu.layout.divider.type), color: str(md.color, d.menu.layout.divider.color), width: num(md.width, d.menu.layout.divider.width) },
       },
       dishes:       { titleFont: str(mi.titleFont, d.menu.dishes.titleFont), titleSize: num(mi.titleSize, d.menu.dishes.titleSize), titleColor: str(mi.titleColor, d.menu.dishes.titleColor), align: one(mi.align, ['inherit','left','center','right'] as const, d.menu.dishes.align) },
       descriptions: { font: str(me.font, d.menu.descriptions.font), size: num(me.size, d.menu.descriptions.size), color: str(me.color, d.menu.descriptions.color), align: one(me.align, ['inherit','left','center','right'] as const, d.menu.descriptions.align) },
-      allergens:    { style: one(ma.style, ['text','badge'] as const, d.menu.allergens.style), color: str(ma.color, d.menu.allergens.color), bgColor: str(ma.bgColor, d.menu.allergens.bgColor), display: one(ma.display, ['full','short','number'] as const, d.menu.allergens.display), separator: str(ma.separator, d.menu.allergens.separator) },
+      allergens:    { style: one(ma.style, ['text','badge'] as const, d.menu.allergens.style), color: str(ma.color, d.menu.allergens.color), bgColor: str(ma.bgColor, d.menu.allergens.bgColor), display: one(ma.display, ['full','short','number'] as const, d.menu.allergens.display), separator: str(ma.separator, d.menu.allergens.separator), size: num(ma.size, d.menu.allergens.size), align: one(ma.align, ['inherit','left','center','right'] as const, d.menu.allergens.align) },
       prices:       { font: str(mp.font, d.menu.prices.font), size: num(mp.size, d.menu.prices.size), color: str(mp.color, d.menu.prices.color), format: one(mp.format, ['symbol-left','symbol-right','no-symbol'] as const, d.menu.prices.format), currency: str(mp.currency, d.menu.prices.currency), position: one(mp.position, ['left','right','above','below'] as const, d.menu.prices.position), align: one(mp.align, ['inherit','left','center','right'] as const, d.menu.prices.align) },
-      categories:   { font: str(mc.font, d.menu.categories.font), color: str(mc.color, d.menu.categories.color), size: num(mc.size, d.menu.categories.size), align: one(mc.align, ['inherit','left','center','right'] as const, d.menu.categories.align) },
+      categories:   { font: str(mc.font, d.menu.categories.font), color: str(mc.color, d.menu.categories.color), size: num(mc.size, d.menu.categories.size), align: one(mc.align, ['inherit','left','center','right'] as const, d.menu.categories.align), flourish: one(mc.flourish, ['none','lines','dots','diamond'] as const, d.menu.categories.flourish), flourishColor: str(mc.flourishColor, d.menu.categories.flourishColor), flourishWidth: num(mc.flourishWidth, d.menu.categories.flourishWidth), flourishThickness: num(mc.flourishThickness, d.menu.categories.flourishThickness) },
       stickyCategories: {
-        style:     one(ms.style, ['transparent-blur','solid','none'] as const, d.menu.stickyCategories.style),
-        bgColor:   str(ms.bgColor, d.menu.stickyCategories.bgColor),
-        textColor: str(ms.textColor, d.menu.stickyCategories.textColor),
-        font:      str(ms.font, d.menu.stickyCategories.font),
+        style:       one(ms.style, ['transparent-blur','solid','none'] as const, d.menu.stickyCategories.style),
+        bgColor:     str(ms.bgColor, d.menu.stickyCategories.bgColor),
+        textColor:   str(ms.textColor, d.menu.stickyCategories.textColor),
+        activeColor: str(ms.activeColor, d.menu.stickyCategories.activeColor),
+        font:        str(ms.font, d.menu.stickyCategories.font),
+        fontSize:    num(ms.fontSize, d.menu.stickyCategories.fontSize),
       },
       navigation: {
         style: one(mn.style, Object.keys(PAGINATION_OPTIONS) as PaginationStyle[], d.menu.navigation.style),
@@ -368,6 +386,7 @@ function parseNested(r: Record<string, unknown>): RestaurantTheme {
         bgColor:   str(caa.bgColor, d.card.allergens.bgColor),
         display:   one(caa.display, ['full','short','number'] as const, d.card.allergens.display),
         separator: str(caa.separator, d.card.allergens.separator),
+        size:      num(caa.size, d.card.allergens.size),
       },
       closeButton: {
         color:    str(cab.color, d.card.closeButton.color),
@@ -440,19 +459,20 @@ export function migrateFlat(r: Record<string, unknown>): RestaurantTheme {
     },
     menu: {
       accent,
-      background:     { color: appBg, color2: d.menu.background.color2, effect: 'none', image: '', imageOpacity: 100 },
+      background:     { color: appBg, color2: d.menu.background.color2, effect: 'none', effectOpacity: 100, effectStrength: 100, image: '', imageOpacity: 100 },
       pageBackground: str(r.pageBackground, d.menu.pageBackground),
       pdfLayout:      r.pdfLayout === 'compact' ? 'compact' : 'classic',
+      compactMode:    'linear',
       layout: {
-        dishLayout, dishAlignment, dishSpacing: 0, boxedBorderWidth: 1,
-        divider: { type: dividerType, color: '#ece6da' },
+        dishLayout, dishAlignment, dishSpacing: 0, dishesPerPage: 0, boxedBorderWidth: 1,
+        divider: { type: dividerType, color: '#ece6da', width: 0.5 },
       },
       dishes:       { titleFont: fontSerif, titleSize: num(fs.title, d.menu.dishes.titleSize), titleColor: '#ede8e0', align: 'inherit' },
       descriptions: { font: fontSans, size: num(fs.base, d.menu.descriptions.size), color: '#a09080', align: 'inherit' },
-      allergens:    { style: 'text', color: accent, bgColor: '#181208', display: 'full', separator: ', ' },
+      allergens:    { style: 'text', color: accent, bgColor: '#181208', display: 'full', separator: ', ', size: 0.85, align: 'inherit' },
       prices:       { font: fontSans, size: num(fs.price, d.menu.prices.size), color: accent, format: priceFormat, currency: '€', position: 'right', align: 'inherit' },
-      categories:   { font: fontSerif, color: '#1a1a1a', size: 1.3, align: 'inherit' },
-      stickyCategories: { style: stickyCatStyle, bgColor: navBg, textColor: textMuted, font: fontSans },
+      categories:   { font: fontSerif, color: '#1a1a1a', size: 1.3, align: 'inherit', flourish: 'none', flourishColor: accent, flourishWidth: 40, flourishThickness: 1 },
+      stickyCategories: { style: stickyCatStyle, bgColor: navBg, textColor: textMuted, activeColor: accent, font: fontSans, fontSize: 0.625 },
       navigation:   { style: paginationStyle, color: textMuted },
       banners:      { position: 'inline' },
     },

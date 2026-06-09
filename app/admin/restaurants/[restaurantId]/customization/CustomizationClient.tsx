@@ -12,6 +12,7 @@ import { ALL_GOOGLE_FONTS } from '@/lib/googleFontsCatalog'
 import type {
   RestaurantTheme, LandingTheme, LandingBackground, MenuTheme, CardTheme,
   MenuBgEffect, PaginationStyle, AlignOpt, AllergenDisplay, PricePosition, DividerType,
+  CategoryFlourish, DishLayout,
 } from '@/lib/theme'
 
 const MAX_MEDIA_BYTES = 5 * 1024 * 1024 // 5MB
@@ -405,6 +406,7 @@ const EDITOR_TARGETS: Record<string, { title: string; hint: string }> = {
   'category-title':    { title: 'Titolo Categoria',   hint: 'Font, colore, dimensione, allineamento' },
   'allergens':         { title: 'Allergeni',          hint: 'Stile, formato, separatore, colori' },
   'card-style':        { title: 'Stile Card',         hint: 'Sfondo card, bordi, pulsante chiudi, accento' },
+  'sticky-categories': { title: 'Barra Categorie',    hint: 'Stile, colori, font della barra categorie' },
   'background-layout': { title: 'Sfondo & Layout',    hint: 'Sfondo menu, immagine, paginazione, spaziatura' },
 }
 
@@ -425,6 +427,7 @@ interface SidebarSetters {
   setMDivider:       (p: Partial<MenuTheme['layout']['divider']>) => void
   setMBg:            (p: Partial<MenuTheme['background']>) => void
   setMNav:           (p: Partial<MenuTheme['navigation']>) => void
+  setMSticky:        (p: Partial<MenuTheme['stickyCategories']>) => void
   setMAllergens:     (p: Partial<MenuTheme['allergens']>) => void
   setM:              (p: Partial<MenuTheme>) => void
   setC:              (p: Partial<CardTheme>) => void
@@ -498,13 +501,18 @@ function ButtonsPanel({ l, setLBu }: {
 
 // ── Editor sidebar ────────────────────────────────────────────────────────────
 
-function EditorSidebar({ target, theme, setters, onClose }: {
-  target: string; theme: RestaurantTheme; setters: SidebarSetters; onClose: () => void
+function EditorSidebar({ target, theme, setters, previewMode, onClose }: {
+  target: string; theme: RestaurantTheme; setters: SidebarSetters
+  previewMode: 'landing' | 'menu' | 'card'; onClose: () => void
 }) {
   const info = EDITOR_TARGETS[target]
   const l    = theme.landing
   const m    = theme.menu
   const c    = theme.card
+  // Shared dish targets (title/desc/price/allergens) live in both Card and Menu.
+  // Show only the section that matches the tab the user is editing from.
+  const showCard = previewMode === 'card'
+  const showMenu = previewMode !== 'card'
   const bgFileRef    = useRef<HTMLInputElement>(null)
   const videoFileRef = useRef<HTMLInputElement>(null)
 
@@ -651,13 +659,13 @@ function EditorSidebar({ target, theme, setters, onClose }: {
 
       case 'dish-title': return (
         <div className="space-y-5">
+          {showCard && (
           <div className="space-y-3">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 border-b border-gray-100 pb-1">Card espansa</p>
             <FontSelector label="Font" value={c.title.font}
               curated={[...SERIF_FONTS, ...DISPLAY_FONTS]} category="serif"
               onChange={v => setters.setCardTitle({ font: v })} />
             <FontSizeSlider label="Dimensione" value={c.title.size}
-              min={1.0} max={3.5} step={0.1} previewFont={fontStack(c.title.font, 'serif')}
+              min={1.0} max={4.5} step={0.1} previewFont={fontStack(c.title.font, 'serif')}
               onChange={v => setters.setCardTitle({ size: v })} />
             <ColorRow label="Colore" value={c.title.color}
               onChange={v => setters.setCardTitle({ color: v })} />
@@ -668,60 +676,65 @@ function EditorSidebar({ target, theme, setters, onClose }: {
                 value={c.title.weight} onChange={v => setters.setCardTitle({ weight: v })} />
             </div>
           </div>
+          )}
+          {showMenu && (
           <div className="space-y-3">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 border-b border-gray-100 pb-1">Menu PDF (flipbook)</p>
             <FontSelector label="Font" value={m.dishes.titleFont}
               curated={[...SERIF_FONTS, ...DISPLAY_FONTS]} category="serif"
               onChange={v => setters.setMDishes({ titleFont: v })} />
             <FontSizeSlider label="Dimensione" value={m.dishes.titleSize}
-              min={0.8} max={3.5} step={0.1} previewFont={fontStack(m.dishes.titleFont, 'serif')}
+              min={0.8} max={4.5} step={0.1} previewFont={fontStack(m.dishes.titleFont, 'serif')}
               onChange={v => setters.setMDishes({ titleSize: v })} />
             <ColorRow label="Colore" value={m.dishes.titleColor}
               onChange={v => setters.setMDishes({ titleColor: v })} />
             <AlignRow label="Allineamento" value={m.dishes.align}
               onChange={v => setters.setMDishes({ align: v })} />
+            <p className="text-[10px] text-gray-400 leading-snug">Descrizione e allergeni seguono questo allineamento finché non li personalizzi singolarmente.</p>
           </div>
+          )}
         </div>
       )
 
       case 'dish-description': return (
         <div className="space-y-5">
+          {showCard && (
           <div className="space-y-3">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 border-b border-gray-100 pb-1">Card espansa</p>
             <FontSelector label="Font" value={c.description.font}
               curated={SANS_FONTS} category="sans"
               onChange={v => setters.setCardDesc({ font: v })} />
             <FontSizeSlider label="Dimensione" value={c.description.size}
-              min={0.6} max={1.6} step={0.05} previewFont={fontStack(c.description.font, 'sans')}
+              min={0.6} max={2.0} step={0.05} previewFont={fontStack(c.description.font, 'sans')}
               onChange={v => setters.setCardDesc({ size: v })} />
             <ColorRow label="Colore" value={c.description.color}
               onChange={v => setters.setCardDesc({ color: v })} />
           </div>
+          )}
+          {showMenu && (
           <div className="space-y-3">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 border-b border-gray-100 pb-1">Menu PDF (flipbook)</p>
             <FontSelector label="Font" value={m.descriptions.font}
               curated={SANS_FONTS} category="sans"
               onChange={v => setters.setMDescs({ font: v })} />
             <FontSizeSlider label="Dimensione" value={m.descriptions.size}
-              min={0.5} max={2.0} step={0.05} previewFont={fontStack(m.descriptions.font, 'sans')}
+              min={0.5} max={2.5} step={0.05} previewFont={fontStack(m.descriptions.font, 'sans')}
               onChange={v => setters.setMDescs({ size: v })} />
             <ColorRow label="Colore" value={m.descriptions.color}
               onChange={v => setters.setMDescs({ color: v })} />
             <AlignRow label="Allineamento" value={m.descriptions.align}
               onChange={v => setters.setMDescs({ align: v })} />
           </div>
+          )}
         </div>
       )
 
       case 'dish-price': return (
         <div className="space-y-5">
+          {showCard && (
           <div className="space-y-3">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 border-b border-gray-100 pb-1">Card espansa</p>
             <FontSelector label="Font" value={c.price.font}
               curated={SANS_FONTS} category="sans"
               onChange={v => setters.setCardPrice({ font: v })} />
             <FontSizeSlider label="Dimensione" value={c.price.size}
-              min={0.7} max={2.5} step={0.05} previewFont={fontStack(c.price.font, 'sans')}
+              min={0.7} max={3.0} step={0.05} previewFont={fontStack(c.price.font, 'sans')}
               onChange={v => setters.setCardPrice({ size: v })} />
             <ColorRow label="Colore" value={c.price.color}
               onChange={v => setters.setCardPrice({ color: v })} />
@@ -731,14 +744,21 @@ function EditorSidebar({ target, theme, setters, onClose }: {
                 options={[{ label:'€ 12.00', value:'symbol-left' },{ label:'12.00 €', value:'symbol-right' },{ label:'12.00', value:'no-symbol' }]}
                 value={c.price.format} onChange={v => setters.setCardPrice({ format: v })} />
             </div>
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Valuta</p>
+              <PillGroup
+                options={CURRENCY_OPTIONS.map(cur => ({ label: cur, value: cur }))}
+                value={c.price.currency} onChange={v => setters.setCardPrice({ currency: v })} />
+            </div>
           </div>
+          )}
+          {showMenu && (
           <div className="space-y-3">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 border-b border-gray-100 pb-1">Menu PDF (flipbook)</p>
             <FontSelector label="Font" value={m.prices.font}
               curated={SANS_FONTS} category="sans"
               onChange={v => setters.setMPrices({ font: v })} />
             <FontSizeSlider label="Dimensione" value={m.prices.size}
-              min={0.7} max={2.5} step={0.05} previewFont={fontStack(m.prices.font, 'sans')}
+              min={0.7} max={3.0} step={0.05} previewFont={fontStack(m.prices.font, 'sans')}
               onChange={v => setters.setMPrices({ size: v })} />
             <ColorRow label="Colore" value={m.prices.color}
               onChange={v => setters.setMPrices({ color: v })} />
@@ -763,6 +783,7 @@ function EditorSidebar({ target, theme, setters, onClose }: {
             <AlignRow label="Allineamento" value={m.prices.align}
               onChange={v => setters.setMPrices({ align: v })} />
           </div>
+          )}
         </div>
       )
 
@@ -772,19 +793,49 @@ function EditorSidebar({ target, theme, setters, onClose }: {
             curated={[...SERIF_FONTS, ...DISPLAY_FONTS]} category="serif"
             onChange={v => setters.setMCats({ font: v })} />
           <FontSizeSlider label="Dimensione" value={m.categories.size}
-            min={0.8} max={3.0} step={0.1} previewFont={fontStack(m.categories.font, 'serif')}
+            min={0.8} max={3.5} step={0.1} previewFont={fontStack(m.categories.font, 'serif')}
             onChange={v => setters.setMCats({ size: v })} />
           <ColorRow label="Colore" value={m.categories.color}
             onChange={v => setters.setMCats({ color: v })} />
           <AlignRow label="Allineamento proprio" value={m.categories.align}
             onChange={v => setters.setMCats({ align: v })} />
+          <div className="pt-2 border-t border-gray-100">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Ghirigori (decori laterali)</p>
+            <PillGroup
+              options={[{ label:'Nessuno', value:'none' },{ label:'Linee', value:'lines' },{ label:'Punti', value:'dots' },{ label:'Diamante', value:'diamond' }]}
+              value={m.categories.flourish} onChange={v => setters.setMCats({ flourish: v as CategoryFlourish })} />
+          </div>
+          {m.categories.flourish !== 'none' && (<>
+            <ColorRow label="Colore decoro" value={m.categories.flourishColor}
+              onChange={v => setters.setMCats({ flourishColor: v })} />
+            {m.categories.flourish === 'lines' && (<>
+              <div>
+                <div className="flex justify-between items-center mb-1">
+                  <label className="text-xs text-gray-600">Lunghezza linee</label>
+                  <span className="text-[10px] font-mono text-gray-400">{m.categories.flourishWidth}px</span>
+                </div>
+                <input type="range" min={10} max={120} step={2} value={m.categories.flourishWidth}
+                  onChange={e => setters.setMCats({ flourishWidth: Number(e.target.value) })}
+                  className="w-full accent-gray-900" />
+              </div>
+              <div>
+                <div className="flex justify-between items-center mb-1">
+                  <label className="text-xs text-gray-600">Spessore linee</label>
+                  <span className="text-[10px] font-mono text-gray-400">{m.categories.flourishThickness}px</span>
+                </div>
+                <input type="range" min={0.5} max={6} step={0.5} value={m.categories.flourishThickness}
+                  onChange={e => setters.setMCats({ flourishThickness: Number(e.target.value) })}
+                  className="w-full accent-gray-900" />
+              </div>
+            </>)}
+          </>)}
         </div>
       )
 
       case 'allergens': return (
         <div className="space-y-5">
+          {showCard && (
           <div className="space-y-3">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 border-b border-gray-100 pb-1">Card espansa</p>
             <div>
               <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Stile</p>
               <PillGroup
@@ -798,13 +849,17 @@ function EditorSidebar({ target, theme, setters, onClose }: {
                 value={c.allergens.display} onChange={v => setters.setCardAllergens({ display: v as AllergenDisplay })} />
             </div>
             <SeparatorRow value={c.allergens.separator} onChange={v => setters.setCardAllergens({ separator: v })} />
+            <FontSizeSlider label="Dimensione testo" value={c.allergens.size}
+              min={0.5} max={1.6} step={0.05} previewFont="inherit"
+              onChange={v => setters.setCardAllergens({ size: v })} />
             <ColorRow label="Colore testo" value={c.allergens.color}
               onChange={v => setters.setCardAllergens({ color: v })} />
             <ColorRow label="Sfondo" value={c.allergens.bgColor}
               onChange={v => setters.setCardAllergens({ bgColor: v })} />
           </div>
+          )}
+          {showMenu && (
           <div className="space-y-3">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 border-b border-gray-100 pb-1">Menu PDF (flipbook)</p>
             <div>
               <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Formato nomi</p>
               <PillGroup
@@ -812,7 +867,15 @@ function EditorSidebar({ target, theme, setters, onClose }: {
                 value={m.allergens.display} onChange={v => setters.setMAllergens({ display: v as AllergenDisplay })} />
             </div>
             <SeparatorRow value={m.allergens.separator} onChange={v => setters.setMAllergens({ separator: v })} />
+            <FontSizeSlider label="Dimensione testo" value={m.allergens.size}
+              min={0.5} max={1.6} step={0.05} previewFont="inherit"
+              onChange={v => setters.setMAllergens({ size: v })} />
+            <ColorRow label="Colore testo" value={m.allergens.color}
+              onChange={v => setters.setMAllergens({ color: v })} />
+            <AlignRow label="Allineamento" value={m.allergens.align}
+              onChange={v => setters.setMAllergens({ align: v })} />
           </div>
+          )}
         </div>
       )
 
@@ -845,6 +908,33 @@ function EditorSidebar({ target, theme, setters, onClose }: {
         </div>
       )
 
+      case 'sticky-categories': return (
+        <div className="space-y-4">
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Stile barra</p>
+            <PillGroup
+              options={[{ label:'Solido', value:'solid' },{ label:'Vetro', value:'transparent-blur' },{ label:'Nascosta', value:'none' }]}
+              value={m.stickyCategories.style} onChange={v => setters.setMSticky({ style: v })} />
+          </div>
+          {m.stickyCategories.style !== 'none' && (<>
+            {m.stickyCategories.style === 'solid' && (
+              <ColorRow label="Sfondo barra" value={m.stickyCategories.bgColor.startsWith('rgba') ? '#070707' : m.stickyCategories.bgColor}
+                onChange={v => setters.setMSticky({ bgColor: v })} />
+            )}
+            <ColorRow label="Testo categoria" value={m.stickyCategories.textColor}
+              onChange={v => setters.setMSticky({ textColor: v })} />
+            <ColorRow label="Categoria attiva" value={m.stickyCategories.activeColor}
+              onChange={v => setters.setMSticky({ activeColor: v })} />
+            <FontSelector label="Font" value={m.stickyCategories.font}
+              curated={SANS_FONTS} category="sans"
+              onChange={v => setters.setMSticky({ font: v })} />
+            <FontSizeSlider label="Dimensione testo" value={m.stickyCategories.fontSize}
+              min={0.5} max={1.2} step={0.025} previewFont={fontStack(m.stickyCategories.font, 'sans')}
+              onChange={v => setters.setMSticky({ fontSize: v })} />
+          </>)}
+        </div>
+      )
+
       case 'background-layout': return (
         <div className="space-y-4">
           <div>
@@ -864,6 +954,26 @@ function EditorSidebar({ target, theme, setters, onClose }: {
                   ))}
                 </select>
               </div>
+              {m.background.effect !== 'none' && (<>
+                <div>
+                  <div className="flex justify-between items-center mb-1">
+                    <label className="text-xs text-gray-600">Opacità effetto</label>
+                    <span className="text-[10px] font-mono text-gray-400">{m.background.effectOpacity}%</span>
+                  </div>
+                  <input type="range" min={0} max={100} step={1} value={m.background.effectOpacity}
+                    onChange={e => setters.setMBg({ effectOpacity: Number(e.target.value) })}
+                    className="w-full accent-gray-900" />
+                </div>
+                <div>
+                  <div className="flex justify-between items-center mb-1">
+                    <label className="text-xs text-gray-600">Intensità effetto</label>
+                    <span className="text-[10px] font-mono text-gray-400">{m.background.effectStrength}%</span>
+                  </div>
+                  <input type="range" min={20} max={200} step={5} value={m.background.effectStrength}
+                    onChange={e => setters.setMBg({ effectStrength: Number(e.target.value) })}
+                    className="w-full accent-gray-900" />
+                </div>
+              </>)}
             </div>
           </div>
           <div>
@@ -900,26 +1010,56 @@ function EditorSidebar({ target, theme, setters, onClose }: {
           <div>
             <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Divisore (sotto ogni piatto)</p>
             <PillGroup
-              options={[{ label:'Nessuno', value:'none' },{ label:'Solido', value:'solid' },{ label:'Tratteg.', value:'dashed' },{ label:'Punteg.', value:'dotted' },{ label:'Doppio', value:'double' },{ label:'Gradiente', value:'gradient' },{ label:'Ornamento', value:'ornament' }]}
+              options={[{ label:'Nessuno', value:'none' },{ label:'Solido', value:'solid' },{ label:'Tratteg.', value:'dashed' },{ label:'Punteg.', value:'dotted' },{ label:'Doppio', value:'double' },{ label:'Gradiente', value:'gradient' },{ label:'Ornamento', value:'ornament' },{ label:'Ondulato', value:'wavy' }]}
               value={m.layout.divider.type} onChange={v => setters.setMDivider({ type: v as DividerType })} />
             {m.layout.divider.type !== 'none' && (
-              <div className="mt-2">
+              <div className="mt-2 space-y-2">
                 <ColorRow label="Colore divisore" value={m.layout.divider.color}
                   onChange={v => setters.setMDivider({ color: v })} />
+                {(m.layout.divider.type === 'solid' || m.layout.divider.type === 'dashed' || m.layout.divider.type === 'dotted' || m.layout.divider.type === 'double' || m.layout.divider.type === 'gradient') && (
+                  <div>
+                    <div className="flex justify-between items-center mb-1">
+                      <label className="text-xs text-gray-600">Spessore</label>
+                      <span className="text-[10px] font-mono text-gray-400">{m.layout.divider.width}px</span>
+                    </div>
+                    <input type="range" min={0.5} max={5} step={0.5} value={m.layout.divider.width}
+                      onChange={e => setters.setMDivider({ width: Number(e.target.value) })}
+                      className="w-full accent-gray-900" />
+                  </div>
+                )}
               </div>
             )}
           </div>
           <div>
             <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Layout piatti</p>
             <PillGroup
-              options={[{ label:'Lista', value:'list' },{ label:'Griglia', value:'grid-2' },{ label:'Card', value:'boxed-card' },{ label:'Minimal', value:'minimal-row' }]}
-              value={m.layout.dishLayout} onChange={v => setters.setMLayout({ dishLayout: v })} />
+              options={[{ label:'Lista', value:'list' },{ label:'Griglia 2', value:'grid-2' },{ label:'Griglia 3', value:'grid-3' },{ label:'Card', value:'boxed-card' },{ label:'Minimal', value:'minimal-row' },{ label:'Elegante', value:'elegant' }]}
+              value={m.layout.dishLayout} onChange={v => setters.setMLayout({ dishLayout: v as DishLayout })} />
           </div>
           <div>
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Allineamento</p>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Allineamento generale</p>
             <PillGroup
               options={[{ label:'Sx', value:'left' },{ label:'Centro', value:'center' },{ label:'Dx', value:'right' }]}
               value={m.layout.dishAlignment} onChange={v => setters.setMLayout({ dishAlignment: v })} />
+          </div>
+          <div>
+            <div className="flex justify-between items-center mb-1">
+              <label className="text-xs text-gray-600">Spaziatura piatti</label>
+              <span className="text-[10px] font-mono text-gray-400">{m.layout.dishSpacing}px</span>
+            </div>
+            <input type="range" min={0} max={40} step={1} value={m.layout.dishSpacing}
+              onChange={e => setters.setMLayout({ dishSpacing: Number(e.target.value) })}
+              className="w-full accent-gray-900" />
+          </div>
+          <div>
+            <div className="flex justify-between items-center mb-1">
+              <label className="text-xs text-gray-600">Piatti per pagina</label>
+              <span className="text-[10px] font-mono text-gray-400">{m.layout.dishesPerPage === 0 ? 'Auto' : m.layout.dishesPerPage}</span>
+            </div>
+            <input type="range" min={0} max={20} step={1} value={m.layout.dishesPerPage}
+              onChange={e => setters.setMLayout({ dishesPerPage: Number(e.target.value) })}
+              className="w-full accent-gray-900" />
+            <p className="text-[10px] text-gray-400 mt-1">0 = automatico (flusso naturale). Valori bassi forzano l&apos;impaginazione.</p>
           </div>
           <div>
             <label className="text-xs text-gray-600 mb-1 block">Paginazione</label>
@@ -937,6 +1077,15 @@ function EditorSidebar({ target, theme, setters, onClose }: {
               options={[{ label:'Classic', value:'classic' },{ label:'Compact', value:'compact' }]}
               value={m.pdfLayout} onChange={v => setters.setM({ pdfLayout: v })} />
           </div>
+          {m.pdfLayout === 'compact' && (
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Modalità compact</p>
+              <PillGroup
+                options={[{ label:'Lineare', value:'linear' },{ label:'Alternato', value:'alternating' }]}
+                value={m.compactMode} onChange={v => setters.setM({ compactMode: v as MenuTheme['compactMode'] })} />
+              <p className="text-[10px] text-gray-400 mt-1">Alternato: ogni categoria inverte l&apos;allineamento del titolo.</p>
+            </div>
+          )}
         </div>
       )
 
@@ -1292,11 +1441,10 @@ export default function CustomizationClient({
 
   const setters: SidebarSetters = {
     setLBg, setLLogo, setLTitle, setLDesc, setLBu, setL,
-    setMDishes, setMDescs, setMPrices, setMCats, setMLayout, setMDivider, setMBg, setMNav, setMAllergens, setM,
+    setMDishes, setMDescs, setMPrices, setMCats, setMLayout, setMDivider, setMBg, setMNav, setMSticky, setMAllergens, setM,
     setC, setCardTitle, setCardDesc, setCardPrice, setCardAllergens, setCardClose,
     handleBgUpload, handleVideoUpload, handleMenuBgUpload, bgUploading, vidUploading, menuBgUploading,
   }
-  void setMSticky
 
   const sidebarOpen = editMode && activeEditor !== null
 
@@ -1391,7 +1539,7 @@ export default function CustomizationClient({
           }`}>
           {sidebarOpen && (
             <div className="h-full w-[88vw] sm:w-[46vw] md:w-[380px]">
-              <EditorSidebar target={activeEditor!} theme={theme} setters={setters} onClose={() => setActiveEditor(null)} />
+              <EditorSidebar target={activeEditor!} theme={theme} setters={setters} previewMode={previewMode} onClose={() => setActiveEditor(null)} />
             </div>
           )}
         </aside>

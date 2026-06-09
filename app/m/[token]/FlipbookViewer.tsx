@@ -132,12 +132,14 @@ export default function FlipbookViewer({
     textPrimary: themeProp?.landing.title.color ?? menuConfig.theme.textPrimary,
     textMuted:   mn?.stickyCategories.textColor ?? menuConfig.theme.textMuted,
     navBg:       navBgComputed,
-    navActive:   mn?.accent                    ?? menuConfig.theme.navActive,
+    navActive:   mn?.stickyCategories.activeColor ?? mn?.accent ?? menuConfig.theme.navActive,
     navInactive: mn?.stickyCategories.textColor ?? menuConfig.theme.navInactive,
     navColor:    mn?.navigation.color           ?? menuConfig.theme.textMuted,
     fontSerif:   fontStack(mn?.dishes.titleFont       ?? 'Cormorant Garamond', 'serif'),
     fontSans:    fontStack(mn?.stickyCategories.font  ?? 'DM Sans', 'sans'),
   }
+  // Sticky category tab font size (rem) — own control, falls back to a sane default.
+  const navFontSize = `${mn?.stickyCategories.fontSize ?? 0.625}rem`
   const bookRef = useRef<HTMLDivElement>(null)
 
   const [dims,          setDims]         = useState<{ w: number; h: number } | null>(null)
@@ -601,12 +603,25 @@ export default function FlipbookViewer({
     <div
       className="fixed inset-0 h-[100dvh] overflow-hidden select-none outline-none [-webkit-tap-highlight-color:transparent] [&_*]:[-webkit-tap-highlight-color:transparent]"
       style={{
-        ...(mn ? menuBackgroundCss(mn.background) : { background: theme.appBg }),
+        background:  mn ? mn.background.color : theme.appBg,
         touchAction: 'none',
         fontFamily:  theme.fontSans,
         '--theme-accent-rgb': hexToRgb(mn?.accent ?? '#c9a96e'),
       } as React.CSSProperties}
     >
+
+      {/* Menu background EFFECT layer — separate so its opacity & intensity are
+          independently controllable; fades into the base colour beneath. */}
+      {mn && mn.background.effect !== 'none' && (
+        <div
+          className="absolute inset-0 pointer-events-none"
+          style={{
+            ...menuBackgroundCss(mn.background),
+            opacity: (mn.background.effectOpacity ?? 100) / 100,
+            filter:  `contrast(${(mn.background.effectStrength ?? 100) / 100})`,
+          }}
+        />
+      )}
 
       {/* Menu background image layer — sits behind the book, above the effect bg */}
       {mn?.background.image && (
@@ -722,9 +737,11 @@ export default function FlipbookViewer({
           >
             {([
               ['category-title',   'Categoria'],
-              ['dish-title',       'Titolo & Desc'],
+              ['dish-title',       'Titolo'],
+              ['dish-description', 'Descrizione'],
               ['dish-price',       'Prezzi'],
               ['allergens',        'Allergeni'],
+              ['sticky-categories','Barra cat.'],
               ['background-layout','Sfondo & Layout'],
             ] as [string, string][]).map(([target, label]) => (
               <button
@@ -783,11 +800,12 @@ export default function FlipbookViewer({
                 key={cat.label}
                 ref={el => { catBtnRefs.current[idx] = el }}
                 onClick={() => handleCategoryClick(cat.targetPage, idx)}
-                className="shrink-0 px-5 py-3 text-[10px] uppercase tracking-[0.22em] transition-all duration-200"
+                className="shrink-0 px-5 py-3 uppercase tracking-[0.22em] transition-all duration-200"
                 style={{
                   color:        idx === activeCatIdx ? theme.navActive : theme.navInactive,
                   borderBottom: `2px solid ${idx === activeCatIdx ? theme.navActive : 'transparent'}`,
                   fontFamily:   theme.fontSans,
+                  fontSize:     navFontSize,
                   background:   'transparent',
                 }}
               >

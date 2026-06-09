@@ -55,6 +55,7 @@ export default function DishModal({ activeDish, allDishes, isNested, onClose, on
   const ALRG_BADGE   = (card?.allergens.style  ?? mn?.allergens.style)  === 'badge'
   const ALRG_DISPLAY = card?.allergens.display   ?? mn?.allergens.display   ?? 'full'
   const ALRG_SEP     = card?.allergens.separator ?? mn?.allergens.separator ?? ', '
+  const ALRG_SIZE    = card?.allergens.size      ?? mn?.allergens.size      ?? 0.85
   const CLOSE_COLOR  = card?.closeButton.color    ?? '#555555'
   const CLOSE_POS    = card?.closeButton.position ?? 'top-right'
   const CLOSE_SHAPE  = card?.closeButton.shape    ?? 'none'
@@ -354,7 +355,7 @@ export default function DishModal({ activeDish, allDishes, isNested, onClose, on
                 }}
               >
                 {!ALRG_BADGE && <p style={{ color: ALRG_COLOR, fontSize: 8, letterSpacing: '0.26em', textTransform: 'uppercase', marginBottom: 6 }}>Allergeni</p>}
-                <p style={{ color: ALRG_COLOR, fontSize: '0.75rem', lineHeight: 1.6 }}>
+                <p style={{ color: ALRG_COLOR, fontSize: `${ALRG_SIZE}rem`, lineHeight: 1.6 }}>
                   {ALRG_BADGE ? '⚠ ' : ''}{formatAllergens(dish.allergens, ALRG_DISPLAY, ALRG_SEP)}
                 </p>
               </div>

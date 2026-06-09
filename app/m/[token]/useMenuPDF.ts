@@ -224,6 +224,15 @@ export function useMenuPDF(
     theme?.menu.prices.align, theme?.menu.categories.align,
     theme?.menu.prices.position, theme?.menu.prices.currency,
     theme?.menu.allergens.display, theme?.menu.allergens.separator,
+    // new: allergen size/align, divider width, dishes-per-page, compact mode,
+    // category flourishes
+    theme?.menu.allergens.size, theme?.menu.allergens.align,
+    theme?.menu.allergens.color,
+    theme?.menu.layout.divider.width, theme?.menu.layout.dishesPerPage,
+    theme?.menu.compactMode,
+    theme?.menu.categories.flourish, theme?.menu.categories.flourishColor,
+    theme?.menu.categories.flourishWidth, theme?.menu.categories.flourishThickness,
+    theme?.menu.layout.boxedBorderWidth,
   ]) // eslint-disable-line react-hooks/exhaustive-deps
 
   return result
