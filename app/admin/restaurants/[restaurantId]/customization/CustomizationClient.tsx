@@ -10,6 +10,7 @@ import {
 } from '@/lib/theme'
 import { ALL_GOOGLE_FONTS } from '@/lib/googleFontsCatalog'
 import { removeUniformBackground } from '@/lib/imageBackground'
+import { getRecentFonts, addRecentFont } from '@/lib/recentFonts'
 import type {
   RestaurantTheme, LandingTheme, LandingBackground, MenuTheme, CardTheme,
   MenuBgEffect, PaginationStyle, AlignOpt, AllergenDisplay, PricePosition, DividerType,
@@ -287,22 +288,31 @@ function FontSelector({ label, value, curated, category, onChange }: {
 }) {
   const [open,  setOpen]  = useState(false)
   const [query, setQuery] = useState('')
+  const [recent, setRecent] = useState<string[]>([])
+
+  useEffect(() => { if (open) setRecent(getRecentFonts()) }, [open])
 
   const q = query.trim().toLowerCase()
   const results = useMemo(() => {
     if (!q) {
-      const rest = ALL_GOOGLE_FONTS.filter(f => !curated.includes(f))
-      return [...curated, ...rest].slice(0, 80)
+      const rest = ALL_GOOGLE_FONTS.filter(f => !curated.includes(f) && !recent.includes(f))
+      return [...curated.filter(f => !recent.includes(f)), ...rest].slice(0, 80)
     }
     return ALL_GOOGLE_FONTS.filter(f => f.toLowerCase().includes(q)).slice(0, 80)
-  }, [q, curated])
+  }, [q, curated, recent])
+
+  // A typed name not found in the curated catalog — let the user use it as a
+  // custom Google Font (any valid family name works, even if not listed).
+  const customName = query.trim()
+  const isCustom = customName.length > 1
+    && !ALL_GOOGLE_FONTS.some(f => f.toLowerCase() === customName.toLowerCase())
 
   // Load the fonts currently visible in the list so each option previews itself.
   // Debounced so fast typing doesn't fire a fetch per keystroke.
   useEffect(() => {
     if (!open) return
     const id = setTimeout(() => {
-      const href = googleFontsUrl(results)
+      const href = googleFontsUrl(isCustom ? [...results, customName] : results)
       if (!href) return
       let link = document.querySelector('link[data-font-search]') as HTMLLinkElement | null
       if (!link) {
@@ -314,7 +324,7 @@ function FontSelector({ label, value, curated, category, onChange }: {
       link.href = href
     }, 250)
     return () => clearTimeout(id)
-  }, [open, results])
+  }, [open, results, isCustom, customName])
 
   return (
     <div>
@@ -333,12 +343,26 @@ function FontSelector({ label, value, curated, category, onChange }: {
               className="w-full px-2 py-1.5 border border-gray-200 text-xs focus:outline-none focus:border-gray-400" />
           </div>
           <div className="max-h-56 overflow-y-auto">
+            {!q && recent.length > 0 && (
+              <>
+                <p className="px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-gray-400">Usati di recente</p>
+                {recent.map(f => (
+                  <button key={`recent-${f}`} type="button"
+                    onClick={() => { addRecentFont(f); onChange(f); setOpen(false); setQuery('') }}
+                    className={`w-full text-left px-3 py-1.5 text-sm hover:bg-gray-50 transition-colors ${f === value ? 'bg-gray-100' : ''}`}
+                    style={{ fontFamily: fontStack(f, category) }}>
+                    {f}
+                  </button>
+                ))}
+                <div className="border-t border-gray-100" />
+              </>
+            )}
             {results.length === 0 && (
               <p className="px-3 py-3 text-[11px] text-gray-400">Nessun font trovato.</p>
             )}
             {results.map(f => (
               <button key={f} type="button"
-                onClick={() => { onChange(f); setOpen(false); setQuery('') }}
+                onClick={() => { addRecentFont(f); onChange(f); setOpen(false); setQuery('') }}
                 className={`w-full text-left px-3 py-1.5 text-sm hover:bg-gray-50 transition-colors ${f === value ? 'bg-gray-100' : ''}`}
                 style={{ fontFamily: fontStack(f, category) }}>
                 {f}
@@ -346,6 +370,14 @@ function FontSelector({ label, value, curated, category, onChange }: {
             ))}
             {!q && results.length >= 80 && (
               <p className="px-3 py-2 text-[10px] text-gray-300">Digita per cercare tra tutti i {ALL_GOOGLE_FONTS.length} font…</p>
+            )}
+            {isCustom && (
+              <button type="button"
+                onClick={() => { addRecentFont(customName); onChange(customName); setOpen(false); setQuery('') }}
+                className="w-full text-left px-3 py-1.5 text-sm hover:bg-blue-50 transition-colors border-t border-gray-100 text-blue-600"
+                style={{ fontFamily: fontStack(customName, category) }}>
+                Usa &ldquo;{customName}&rdquo; come font Google personalizzato
+              </button>
             )}
           </div>
         </div>
