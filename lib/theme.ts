@@ -71,6 +71,15 @@ export const MENU_BG_EFFECT_LABELS: Record<MenuBgEffect, string> = {
   'gold-leaf':       "Foglia d'oro",
 }
 
+// Color + effect + image background config, shared by the area around the
+// flipbook (`menu.background`) and the page surface under the dishes
+// (`menu.pageBackground`).
+export interface MenuBgConfig {
+  color: string; color2: string; effect: MenuBgEffect
+  effectOpacity: number; effectStrength: number
+  image: string; imageOpacity: number
+}
+
 // ── Shared option types ─────────────────────────────────────────────────────────
 
 // Per-element alignment: 'inherit' uses the general dish alignment.
@@ -141,8 +150,8 @@ export type DishLayout = 'list' | 'grid-2' | 'grid-3' | 'boxed-card' | 'minimal-
 
 export interface MenuTheme {
   accent:         string
-  background:     { color: string; color2: string; effect: MenuBgEffect; effectOpacity: number; effectStrength: number; image: string; imageOpacity: number }
-  pageBackground: string
+  background:     MenuBgConfig
+  pageBackground: MenuBgConfig
   pdfLayout:      'classic' | 'compact'
   compactMode:    'linear' | 'alternating'
   layout: {
@@ -200,7 +209,7 @@ export const DEFAULT_THEME: RestaurantTheme = {
   menu: {
     accent:         '#c9a96e',
     background:     { color: '#0d0d0d', color2: '#1a1a1a', effect: 'none', effectOpacity: 100, effectStrength: 100, image: '', imageOpacity: 100 },
-    pageBackground: '#ffffff',
+    pageBackground: { color: '#ffffff', color2: '#f0ece4', effect: 'none', effectOpacity: 100, effectStrength: 100, image: '', imageOpacity: 100 },
     pdfLayout:      'classic',
     compactMode:    'linear',
     layout: {
@@ -246,6 +255,20 @@ function one<T extends string>(v: unknown, opts: readonly T[], fb: T): T {
 function sub(v: unknown): Record<string, unknown> {
   return (v && typeof v === 'object' ? v : {}) as Record<string, unknown>
 }
+function parseMenuBg(raw: unknown, fb: MenuBgConfig): MenuBgConfig {
+  // Older saves stored pageBackground as a plain hex string.
+  if (typeof raw === 'string') return { ...fb, color: raw }
+  const v = sub(raw)
+  return {
+    color:          str(v.color, fb.color),
+    color2:         str(v.color2, fb.color2),
+    effect:         one(v.effect, MENU_BG_EFFECTS as readonly MenuBgEffect[], fb.effect),
+    effectOpacity:  num(v.effectOpacity, fb.effectOpacity),
+    effectStrength: num(v.effectStrength, fb.effectStrength),
+    image:          str(v.image, fb.image),
+    imageOpacity:   num(v.imageOpacity, fb.imageOpacity),
+  }
+}
 
 // ── parseTheme — handles both new nested format and old flat format ────────────
 
@@ -272,7 +295,6 @@ function parseNested(r: Record<string, unknown>): RestaurantTheme {
   const ld  = sub(l.description)
   const bu  = sub(l.buttons)
   const ls  = sub(l.socials)
-  const mb  = sub(m.background)
   const ml  = sub(m.layout)
   const md  = sub(ml.divider)
   const mi  = sub(m.dishes)
@@ -323,16 +345,8 @@ function parseNested(r: Record<string, unknown>): RestaurantTheme {
     },
     menu: {
       accent:         str(m.accent, d.menu.accent),
-      background:     {
-        color:  str(mb.color, d.menu.background.color),
-        color2: str(mb.color2, d.menu.background.color2),
-        effect: one(mb.effect, MENU_BG_EFFECTS as readonly MenuBgEffect[], d.menu.background.effect),
-        effectOpacity:  num(mb.effectOpacity, d.menu.background.effectOpacity),
-        effectStrength: num(mb.effectStrength, d.menu.background.effectStrength),
-        image:  str(mb.image, d.menu.background.image),
-        imageOpacity: num(mb.imageOpacity, d.menu.background.imageOpacity),
-      },
-      pageBackground: str(m.pageBackground, d.menu.pageBackground),
+      background:     parseMenuBg(m.background, d.menu.background),
+      pageBackground: parseMenuBg(m.pageBackground, d.menu.pageBackground),
       pdfLayout:      one(m.pdfLayout, ['classic','compact'] as const, d.menu.pdfLayout),
       compactMode:    one(m.compactMode, ['linear','alternating'] as const, d.menu.compactMode),
       layout: {
@@ -469,7 +483,7 @@ export function migrateFlat(r: Record<string, unknown>): RestaurantTheme {
     menu: {
       accent,
       background:     { color: appBg, color2: d.menu.background.color2, effect: 'none', effectOpacity: 100, effectStrength: 100, image: '', imageOpacity: 100 },
-      pageBackground: str(r.pageBackground, d.menu.pageBackground),
+      pageBackground: parseMenuBg(r.pageBackground, d.menu.pageBackground),
       pdfLayout:      r.pdfLayout === 'compact' ? 'compact' : 'classic',
       compactMode:    'linear',
       layout: {

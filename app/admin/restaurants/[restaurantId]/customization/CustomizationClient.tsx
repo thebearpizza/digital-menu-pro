@@ -443,6 +443,7 @@ interface SidebarSetters {
   setMLayout:        (p: Partial<MenuTheme['layout']>) => void
   setMDivider:       (p: Partial<MenuTheme['layout']['divider']>) => void
   setMBg:            (p: Partial<MenuTheme['background']>) => void
+  setMPageBg:        (p: Partial<MenuTheme['pageBackground']>) => void
   setMNav:           (p: Partial<MenuTheme['navigation']>) => void
   setMSticky:        (p: Partial<MenuTheme['stickyCategories']>) => void
   setMAllergens:     (p: Partial<MenuTheme['allergens']>) => void
@@ -456,10 +457,12 @@ interface SidebarSetters {
   handleBgUpload:     (f: File) => void
   handleVideoUpload:  (f: File) => void
   handleMenuBgUpload: (f: File) => void
+  handleMenuPageBgUpload: (f: File) => void
   handlePosterUpload: (f: File) => void
   bgUploading:        boolean
   vidUploading:       boolean
   menuBgUploading:    boolean
+  pageBgUploading:    boolean
   posterUploading:    boolean
 }
 
@@ -1079,6 +1082,76 @@ function EditorSidebar({ target, theme, setters, previewMode, onClose }: {
             {setters.menuBgUploading && <p className="text-xs text-gray-400 mt-1">Caricamento…</p>}
           </div>
           <div>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-2">Sfondo pagina (sotto i piatti)</p>
+            <div className="space-y-2.5">
+              <ColorRow label="Colore primario" value={m.pageBackground.color}
+                onChange={v => setters.setMPageBg({ color: v })} />
+              <ColorRow label="Colore secondario" value={m.pageBackground.color2}
+                onChange={v => setters.setMPageBg({ color2: v })} />
+              <div>
+                <label className="text-xs text-gray-600 mb-1 block">Effetto</label>
+                <select value={m.pageBackground.effect}
+                  onChange={e => setters.setMPageBg({ effect: e.target.value as MenuBgEffect })}
+                  className="w-full px-2 py-1.5 border border-gray-200 text-xs bg-white focus:outline-none focus:border-gray-400">
+                  {MENU_BG_EFFECTS.map(ef => (
+                    <option key={ef} value={ef}>{MENU_BG_EFFECT_LABELS[ef]}</option>
+                  ))}
+                </select>
+              </div>
+              {m.pageBackground.effect !== 'none' && (<>
+                <div>
+                  <div className="flex justify-between items-center mb-1">
+                    <label className="text-xs text-gray-600">Opacità effetto</label>
+                    <span className="text-[10px] font-mono text-gray-400">{m.pageBackground.effectOpacity}%</span>
+                  </div>
+                  <input type="range" min={0} max={100} step={1} value={m.pageBackground.effectOpacity}
+                    onChange={e => setters.setMPageBg({ effectOpacity: Number(e.target.value) })}
+                    className="w-full accent-gray-900" />
+                </div>
+                <div>
+                  <div className="flex justify-between items-center mb-1">
+                    <label className="text-xs text-gray-600">Intensità effetto</label>
+                    <span className="text-[10px] font-mono text-gray-400">{m.pageBackground.effectStrength}%</span>
+                  </div>
+                  <input type="range" min={20} max={200} step={5} value={m.pageBackground.effectStrength}
+                    onChange={e => setters.setMPageBg({ effectStrength: Number(e.target.value) })}
+                    className="w-full accent-gray-900" />
+                </div>
+              </>)}
+            </div>
+            <div className="mt-2.5">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Immagine di sfondo pagina</p>
+              {m.pageBackground.image
+                ? (
+                  <div className="space-y-2">
+                    <img src={m.pageBackground.image} alt="" className="w-full h-20 object-cover border border-gray-200 rounded" />
+                    <div className="flex items-center gap-2">
+                      <input type="file" accept="image/*"
+                        onChange={e => { const f = e.target.files?.[0]; if (f) setters.handleMenuPageBgUpload(f) }}
+                        className="block text-xs text-gray-500 file:mr-2 file:py-1 file:px-3 file:border file:border-gray-200 file:text-xs file:bg-white file:text-gray-600 hover:file:bg-gray-50 cursor-pointer flex-1" />
+                      <button type="button" onClick={() => setters.setMPageBg({ image: '' })}
+                        className="text-[10px] text-red-400 hover:text-red-600 shrink-0">Rimuovi</button>
+                    </div>
+                    <div>
+                      <div className="flex justify-between items-center mb-1">
+                        <label className="text-xs text-gray-600">Opacità immagine</label>
+                        <span className="text-[10px] font-mono text-gray-400">{m.pageBackground.imageOpacity}%</span>
+                      </div>
+                      <input type="range" min={0} max={100} step={1} value={m.pageBackground.imageOpacity}
+                        onChange={e => setters.setMPageBg({ imageOpacity: Number(e.target.value) })}
+                        className="w-full accent-gray-900" />
+                    </div>
+                  </div>
+                )
+                : (
+                  <input type="file" accept="image/*"
+                    onChange={e => { const f = e.target.files?.[0]; if (f) setters.handleMenuPageBgUpload(f) }}
+                    className="block text-xs text-gray-500 file:mr-2 file:py-1 file:px-3 file:border file:border-gray-200 file:text-xs file:bg-white file:text-gray-600 hover:file:bg-gray-50 cursor-pointer w-full" />
+                )}
+              {setters.pageBgUploading && <p className="text-xs text-gray-400 mt-1">Caricamento…</p>}
+            </div>
+          </div>
+          <div>
             <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Divisore (sotto ogni piatto)</p>
             <PillGroup
               options={[{ label:'Nessuno', value:'none' },{ label:'Solido', value:'solid' },{ label:'Tratteg.', value:'dashed' },{ label:'Punteg.', value:'dotted' },{ label:'Doppio', value:'double' },{ label:'Gradiente', value:'gradient' },{ label:'Ornamento', value:'ornament' },{ label:'Ondulato', value:'wavy' }]}
@@ -1374,6 +1447,7 @@ export default function CustomizationClient({
   const [bgUploading,  setBgUploading]  = useState(false)
   const [vidUploading, setVidUploading] = useState(false)
   const [menuBgUploading, setMenuBgUploading] = useState(false)
+  const [pageBgUploading, setPageBgUploading] = useState(false)
   const [posterUploading, setPosterUploading] = useState(false)
   const [previewMode,  setPreviewMode]  = useState<'landing' | 'menu' | 'card'>('landing')
   const [editMode,     setEditMode]     = useState(false)
@@ -1457,6 +1531,9 @@ export default function CustomizationClient({
   function setMBg(patch: Partial<MenuTheme['background']>) {
     setSaved(false); setTheme(t => ({ ...t, menu: { ...t.menu, background: { ...t.menu.background, ...patch } } }))
   }
+  function setMPageBg(patch: Partial<MenuTheme['pageBackground']>) {
+    setSaved(false); setTheme(t => ({ ...t, menu: { ...t.menu, pageBackground: { ...t.menu.pageBackground, ...patch } } }))
+  }
 
   // ── Upload handlers ──────────────────────────────────────────────────────────
 
@@ -1490,6 +1567,21 @@ export default function CustomizationClient({
       setMBg({ image: `${pub.publicUrl}?v=${Date.now()}` })
     } else if (err) setError('Upload: ' + err.message)
     setMenuBgUploading(false)
+  }
+
+  async function handleMenuPageBgUpload(file: File) {
+    if (file.size > MAX_MEDIA_BYTES) { setError('Immagine troppo grande (max 5MB).'); return }
+    setPageBgUploading(true); setError(null)
+    const supabase = createClient()
+    const ext  = file.name.split('.').pop() ?? 'jpg'
+    const path = `${restaurantId}/menu-page-bg.${ext}`
+    const { data, error: err } = await supabase.storage
+      .from('restaurant-assets').upload(path, file, { upsert: true })
+    if (!err && data) {
+      const { data: pub } = supabase.storage.from('restaurant-assets').getPublicUrl(data.path)
+      setMPageBg({ image: `${pub.publicUrl}?v=${Date.now()}` })
+    } else if (err) setError('Upload: ' + err.message)
+    setPageBgUploading(false)
   }
 
   async function handlePosterUpload(file: File) {
@@ -1562,10 +1654,10 @@ export default function CustomizationClient({
 
   const setters: SidebarSetters = {
     setLBg, setLLogo, setLTitle, setLDesc, setLBu, setL,
-    setMDishes, setMDescs, setMPrices, setMCats, setMLayout, setMDivider, setMBg, setMNav, setMSticky, setMAllergens, setM,
+    setMDishes, setMDescs, setMPrices, setMCats, setMLayout, setMDivider, setMBg, setMPageBg, setMNav, setMSticky, setMAllergens, setM,
     setC, setCardTitle, setCardDesc, setCardPrice, setCardAllergens, setCardClose,
-    handleBgUpload, handleVideoUpload, handleMenuBgUpload, handlePosterUpload,
-    bgUploading, vidUploading, menuBgUploading, posterUploading,
+    handleBgUpload, handleVideoUpload, handleMenuBgUpload, handleMenuPageBgUpload, handlePosterUpload,
+    bgUploading, vidUploading, menuBgUploading, pageBgUploading, posterUploading,
   }
 
   const sidebarOpen = editMode && activeEditor !== null

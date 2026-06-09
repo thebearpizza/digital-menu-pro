@@ -208,7 +208,11 @@ export function useMenuPDF(
     // typography/layout/price sliders are reflected in the generated document.
   }, [
     menu?.id, restaurant?.name,
-    theme?.menu.accent, theme?.menu.pageBackground, theme?.menu.pdfLayout,
+    theme?.menu.accent, theme?.menu.pdfLayout,
+    theme?.menu.pageBackground.color, theme?.menu.pageBackground.color2,
+    theme?.menu.pageBackground.effect, theme?.menu.pageBackground.effectOpacity,
+    theme?.menu.pageBackground.effectStrength, theme?.menu.pageBackground.image,
+    theme?.menu.pageBackground.imageOpacity,
     theme?.menu.layout.dishLayout, theme?.menu.prices.format,
     theme?.menu.layout.divider.type, theme?.menu.layout.divider.color,
     theme?.menu.layout.dishSpacing,

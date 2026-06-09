@@ -43,6 +43,8 @@ const cases: Array<[string, RestaurantTheme]> = [
   ['list + price above',      themeWith(t => { t.menu.prices.position = 'above' })],
   ['list + price below',      themeWith(t => { t.menu.prices.position = 'below' })],
   ['compact perPage=2 no-orphan', themeWith(t => { t.menu.pdfLayout = 'compact'; t.menu.layout.dishesPerPage = 2 })],
+  ['page bg radial gradient',  themeWith(t => { t.menu.pageBackground = { color: '#fdf6ec', color2: '#e8c97a', effect: 'radial-gradient', effectOpacity: 80, effectStrength: 100, image: '', imageOpacity: 100 } })],
+  ['page bg linear gradient',  themeWith(t => { t.menu.pageBackground = { color: '#101418', color2: '#3a4a5a', effect: 'linear-gradient', effectOpacity: 60, effectStrength: 80, image: '', imageOpacity: 100 } })],
 ]
 
 async function main() {

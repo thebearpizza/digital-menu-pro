@@ -54,7 +54,7 @@ function ThemeInjector({ theme }: { theme: RestaurantTheme }) {
     root.style.setProperty('--theme-accent',     l.accent)
     root.style.setProperty('--menu-accent',      m.accent)
     root.style.setProperty('--theme-accent-rgb', hexToRgb(m.accent))
-    root.style.setProperty('--page-background',  m.pageBackground)
+    root.style.setProperty('--page-background',  m.pageBackground.color)
     root.style.setProperty('--font-size-title',  `${m.dishes.titleSize}rem`)
     root.style.setProperty('--font-size-base',   `${m.descriptions.size}rem`)
     root.style.setProperty('--font-size-price',  `${m.prices.size}rem`)

@@ -122,7 +122,7 @@ export default function FlipbookViewer({
   // Merge incoming theme over menuConfig defaults so existing callers without
   // a theme prop keep working with the hardcoded palette.
   const mn           = themeProp?.menu      ?? null
-  const pageBgColor  = mn?.pageBackground ?? menuConfig.flipbook.pageBackground
+  const pageBgColor  = mn?.pageBackground.color ?? menuConfig.flipbook.pageBackground
   const catStyle     = mn?.stickyCategories.style ?? 'solid'
   const navBgComputed = catStyle === 'transparent-blur' ? 'rgba(0,0,0,0.35)' : (mn?.stickyCategories.bgColor ?? menuConfig.theme.navBg)
   // Tasto "Menù" e contatore pagine appartengono allo stesso gruppo visivo delle

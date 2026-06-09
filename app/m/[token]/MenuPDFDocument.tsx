@@ -2,10 +2,43 @@
 // MenuPDFDocument — @react-pdf/renderer document for a single restaurant menu.
 // Dynamically imported by useMenuPDF (never SSR-ed).
 // ─────────────────────────────────────────────────────────────────────────────
-import { Document, Page, Text, View, StyleSheet, Svg, Path } from '@react-pdf/renderer'
+import { Document, Page, Text, View, Image, StyleSheet, Svg, Path, Defs, LinearGradient, RadialGradient, Stop, Rect } from '@react-pdf/renderer'
 import { formatAllergens } from '@/lib/allergens'
-import type { RestaurantTheme } from '@/lib/theme'
+import type { RestaurantTheme, MenuBgConfig } from '@/lib/theme'
 import { DEFAULT_THEME, lightenHex, formatPrice, resolveAlign } from '@/lib/theme'
+
+// Effects rendered as a radial gradient (glow from a point); everything else
+// falls back to a diagonal linear gradient. A pragmatic v1 approximation of
+// the richer CSS effects available on the web landing/menu backgrounds.
+const RADIAL_PAGE_EFFECTS = new Set(['radial-gradient', 'spotlight', 'aurora', 'mesh-warm', 'mesh-cool', 'emerald-mist', 'gold-leaf'])
+
+// Page-background color/gradient/image layer, rendered behind all content on
+// every page (the actual "page" surface under the dishes).
+function PageBackgroundLayer({ bg, compact }: { bg: MenuBgConfig; compact: boolean }) {
+  if (bg.effect === 'none' && !bg.image) return null
+  const top    = compact ? 38 : 52
+  const bottom = compact ? 64 : 56
+  const sides  = compact ? 44 : 54
+  const layerStyle = { position: 'absolute' as const, top: -top, left: -sides, right: -sides, bottom: -bottom }
+  const opacity = (bg.effectOpacity / 100) * (bg.effectStrength / 100)
+  const isRadial = RADIAL_PAGE_EFFECTS.has(bg.effect)
+  const gradient = isRadial
+    ? <RadialGradient id="pageBg" cx="50%" cy="30%" r="75%"><Stop offset="0" stopColor={bg.color2} stopOpacity={opacity} /><Stop offset="1" stopColor={bg.color2} stopOpacity={0} /></RadialGradient>
+    : <LinearGradient id="pageBg" x1="0" y1="0" x2="1" y2="1"><Stop offset="0" stopColor={bg.color2} stopOpacity={opacity} /><Stop offset="1" stopColor={bg.color2} stopOpacity={0} /></LinearGradient>
+  return (
+    <View style={layerStyle} fixed>
+      {bg.effect !== 'none' && (
+        <Svg style={{ width: '100%', height: '100%' }} viewBox="0 0 100 100" preserveAspectRatio="none">
+          <Defs>{gradient}</Defs>
+          <Rect width="100" height="100" fill="url(#pageBg)" />
+        </Svg>
+      )}
+      {bg.image ? (
+        <Image src={bg.image} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, width: '100%', height: '100%', opacity: bg.imageOpacity / 100, objectFit: 'cover' }} />
+      ) : null}
+    </View>
+  )
+}
 
 // A smooth repeating sine-like wave across a 240×10 viewBox (12 full periods
 // of 20 units each), used for the "wavy" divider — a true vector wave instead
@@ -112,7 +145,7 @@ function makeStyles(theme: RestaurantTheme, registered: Set<string>, flipped = f
   const divColor  = m.layout.divider.color
   const divWidth  = m.layout.divider.width || 0.5
   const divWidthPct = m.layout.divider.widthPercent || 100
-  const bg        = m.pageBackground
+  const bg        = m.pageBackground.color
   const spacing   = m.layout.dishSpacing || 0
   // Inter-dish gap: identical TOTAL distance whatever the divider type, so the
   // spacing slider behaves uniformly (gapBase + spacing between any two dishes).
@@ -508,6 +541,7 @@ export function MenuPDFDocument({ restaurant, menu, theme: themeProp, registered
       creator="Digital Menu Pro"
     >
       <Page size="A4" style={s.page} wrap>
+        <PageBackgroundLayer bg={m.pageBackground} compact={compact} />
         {categories.map((cat, catIdx) => {
           const flipped = alternating && catIdx % 2 === 1
           const st      = flipped ? sFlip : s
