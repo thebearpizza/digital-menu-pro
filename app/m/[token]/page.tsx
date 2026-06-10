@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation'
 import type { Metadata } from 'next'
 import PublicMenuView from './PublicMenuView'
 import { parseTheme, googleFontsUrl, allThemeFonts, customFontFaceCss, themeRootCssVars } from '@/lib/theme'
+import { isMenuOpenNow } from '@/lib/menuSchedule'
 
 // The /m/[token] URL pattern is the printed QR contract — this path must never change.
 // See CLAUDE.md → "URL del QR code stabile per sempre"
@@ -33,7 +34,7 @@ export default async function PublicMenuPage({
   const [{ data: rawMenus }, { data: banners }, { data: info }] = await Promise.all([
     supabase
       .from('menus')
-      .select('id, name, sort_order, category_order')
+      .select('id, name, sort_order, category_order, schedule_enabled, schedule_from, schedule_until')
       .eq('restaurant_id', restaurant.id)
       .eq('is_active', true)
       .order('sort_order', { ascending: true }),
@@ -51,8 +52,12 @@ export default async function PublicMenuPage({
       .maybeSingle(),
   ])
 
+  // Programmazione oraria: i menu fuori fascia spariscono dal menu pubblico
+  // (la pagina è force-dynamic, quindi il filtro è valutato a ogni richiesta).
+  const visibleMenus = (rawMenus ?? []).filter(m => isMenuOpenNow(m as any))
+
   const menus = await Promise.all(
-    (rawMenus ?? []).map(async menu => {
+    visibleMenus.map(async menu => {
       const categoryOrder = (menu as any).category_order as string[] | null
 
       const { data: dishes } = await supabase

@@ -44,6 +44,31 @@ export async function updateMenuName(restaurantId: string, menuId: string, name:
   revalidate(restaurantId)
 }
 
+/** Programmazione oraria: il menu è visibile al pubblico solo nella fascia
+ *  from–until (ora italiana). Supporta fasce a cavallo di mezzanotte. */
+export async function updateMenuSchedule(
+  restaurantId: string,
+  menuId: string,
+  schedule: { enabled: boolean; from: string | null; until: string | null },
+) {
+  if (schedule.enabled && (!schedule.from || !schedule.until)) {
+    throw new Error('Indica orario di inizio e di fine.')
+  }
+  const supabase = await createClient()
+  await verifyOwnership(supabase, restaurantId)
+
+  const { error } = await supabase
+    .from('menus')
+    .update({
+      schedule_enabled: schedule.enabled,
+      schedule_from:    schedule.from,
+      schedule_until:   schedule.until,
+    })
+    .eq('id', menuId).eq('restaurant_id', restaurantId)
+  if (error) throw new Error(error.message)
+  revalidate(restaurantId)
+}
+
 export async function deleteMenu(restaurantId: string, menuId: string) {
   const supabase = await createClient()
   await verifyOwnership(supabase, restaurantId)

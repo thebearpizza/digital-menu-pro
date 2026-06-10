@@ -13,14 +13,18 @@ import {
   useSortable,
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { createMenu, deleteMenu, duplicateMenu, reorderMenus, updateMenuName, toggleMenuActive } from './actions'
+import { createMenu, deleteMenu, duplicateMenu, reorderMenus, updateMenuName, toggleMenuActive, updateMenuSchedule } from './actions'
 import VisibilityToggle from '@/components/ui/VisibilityToggle'
+import { scheduleLabel } from '@/lib/menuSchedule'
 
 interface Menu {
   id: string
   name: string
   sort_order: number
   is_active: boolean
+  schedule_enabled: boolean | null
+  schedule_from: string | null
+  schedule_until: string | null
 }
 
 interface Props {
@@ -35,6 +39,7 @@ function SortableMenu({
   onDelete,
   onDuplicate,
   onToggleActive,
+  onSchedule,
 }: {
   menu: Menu
   restaurantId: string
@@ -42,6 +47,7 @@ function SortableMenu({
   onDelete: (id: string) => void
   onDuplicate: (id: string) => void
   onToggleActive: (id: string, active: boolean) => void
+  onSchedule: (menu: Menu) => void
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: menu.id })
@@ -121,6 +127,11 @@ function SortableMenu({
             className="flex-1 min-w-0 text-sm font-medium text-gray-900 hover:text-blue-600 hover:underline truncate"
           >
             {menu.name}
+            {scheduleLabel(menu) && (
+              <span className="ml-2 text-[10px] font-normal text-amber-600 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded whitespace-nowrap">
+                🕐 {scheduleLabel(menu)}
+              </span>
+            )}
           </Link>
 
           {/* Azioni inline — visibili solo su md+ */}
@@ -140,6 +151,12 @@ function SortableMenu({
               className="text-xs text-gray-500 hover:text-gray-800 hover:underline px-2"
             >
               Duplica
+            </button>
+            <button
+              onClick={() => onSchedule(menu)}
+              className="text-xs text-gray-500 hover:text-gray-800 hover:underline px-2"
+            >
+              Programmazione
             </button>
             <button
               onClick={() => onDelete(menu.id)}
@@ -178,6 +195,12 @@ function SortableMenu({
                     Duplica
                   </button>
                   <button
+                    onClick={() => { onSchedule(menu); setKebabOpen(false) }}
+                    className="w-full text-left px-4 py-3 text-sm text-gray-700 hover:bg-gray-50"
+                  >
+                    Programmazione
+                  </button>
+                  <button
                     onClick={() => { onDelete(menu.id); setKebabOpen(false) }}
                     className="w-full text-left px-4 py-3 text-sm text-red-500 hover:bg-red-50"
                   >
@@ -201,11 +224,85 @@ function SortableMenu({
   )
 }
 
+// ── Modale programmazione oraria ────────────────────────────────────────────
+
+function ScheduleModal({ menu, onSave, onClose }: {
+  menu: Menu
+  onSave: (enabled: boolean, from: string | null, until: string | null) => Promise<void>
+  onClose: () => void
+}) {
+  const [enabled, setEnabled] = useState(menu.schedule_enabled ?? false)
+  const [from,    setFrom]    = useState(menu.schedule_from?.slice(0, 5) ?? '08:00')
+  const [until,   setUntil]   = useState(menu.schedule_until?.slice(0, 5) ?? '12:00')
+  const [saving,  setSaving]  = useState(false)
+  const [err,     setErr]     = useState<string | null>(null)
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault()
+    if (enabled && (!from || !until)) { setErr('Indica orario di inizio e di fine.'); return }
+    setSaving(true); setErr(null)
+    try {
+      await onSave(enabled, enabled ? from : null, enabled ? until : null)
+      onClose()
+    } catch (e: any) { setErr(e?.message ?? 'Errore nel salvataggio.') }
+    finally { setSaving(false) }
+  }
+
+  return (
+    <div className="fixed inset-0 z-[300] bg-black/40 flex items-center justify-center p-4" onClick={onClose}>
+      <form onSubmit={submit} onClick={e => e.stopPropagation()}
+        className="bg-white w-full max-w-sm p-5 shadow-2xl space-y-4">
+        <div>
+          <h3 className="text-sm font-semibold text-gray-900">Programmazione oraria</h3>
+          <p className="text-xs text-gray-500 mt-0.5">
+            &ldquo;{menu.name}&rdquo; sarà visibile ai clienti solo nella fascia scelta
+            (ora italiana). Fuori fascia sparisce in automatico dal menu pubblico.
+          </p>
+        </div>
+        <label className="flex items-center gap-2 cursor-pointer select-none">
+          <input type="checkbox" checked={enabled} onChange={e => setEnabled(e.target.checked)}
+            className="accent-blue-600 w-4 h-4" />
+          <span className="text-sm text-gray-700">Attiva programmazione</span>
+        </label>
+        {enabled && (
+          <div className="flex items-center gap-3">
+            <label className="flex-1 text-xs text-gray-600">
+              Dalle
+              <input type="time" value={from} onChange={e => setFrom(e.target.value)} required
+                className="mt-1 w-full px-2 py-1.5 border border-gray-300 text-sm focus:outline-none focus:border-blue-500" />
+            </label>
+            <label className="flex-1 text-xs text-gray-600">
+              Alle
+              <input type="time" value={until} onChange={e => setUntil(e.target.value)} required
+                className="mt-1 w-full px-2 py-1.5 border border-gray-300 text-sm focus:outline-none focus:border-blue-500" />
+            </label>
+          </div>
+        )}
+        {enabled && from > until && (
+          <p className="text-[11px] text-amber-600">
+            Fascia a cavallo della mezzanotte: il menu sarà visibile dalle {from} alle {until} del giorno dopo.
+          </p>
+        )}
+        {err && <p className="text-xs text-red-500">{err}</p>}
+        <div className="flex justify-end gap-2 pt-1">
+          <button type="button" onClick={onClose}
+            className="text-sm text-gray-500 hover:text-gray-700 px-3 py-2">Annulla</button>
+          <button type="submit" disabled={saving}
+            className="bg-blue-600 text-white text-sm font-medium px-4 py-2 hover:bg-blue-700 disabled:opacity-50 transition-colors">
+            {saving ? '…' : 'Salva'}
+          </button>
+        </div>
+      </form>
+    </div>
+  )
+}
+
 export default function MenuList({ restaurantId, initialMenus }: Props) {
   const [menus,    setMenus]    = useState(initialMenus)
   const [newName,  setNewName]  = useState('')
   const [creating, setCreating] = useState(false)
   const [error,    setError]    = useState<string | null>(null)
+  const [schedMenu, setSchedMenu] = useState<Menu | null>(null)
 
   const sensors = useSensors(useSensor(PointerSensor))
 
@@ -315,11 +412,26 @@ export default function MenuList({ restaurantId, initialMenus }: Props) {
                   onDelete={handleDelete}
                   onDuplicate={handleDuplicate}
                   onToggleActive={handleToggleActive}
+                  onSchedule={setSchedMenu}
                 />
               ))}
             </SortableContext>
           </DndContext>
         </div>
+      )}
+
+      {schedMenu && (
+        <ScheduleModal
+          menu={schedMenu}
+          onClose={() => setSchedMenu(null)}
+          onSave={async (enabled, from, until) => {
+            await updateMenuSchedule(restaurantId, schedMenu.id, { enabled, from, until })
+            setMenus(prev => prev.map(m => m.id === schedMenu.id
+              ? { ...m, schedule_enabled: enabled, schedule_from: from, schedule_until: until }
+              : m
+            ))
+          }}
+        />
       )}
     </div>
   )
