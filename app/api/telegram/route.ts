@@ -79,6 +79,14 @@ async function ownerMenus(sb: SupabaseClient, restaurantIds: string[]) {
 
 const norm = (s: string) => s.trim().toLowerCase()
 
+/** Rimuove articoli, preposizioni e parole comuni per parsing elastico */
+function stripClutter(text: string): string {
+  return text
+    .replace(/\b(il|la|lo|i|le|gli|un|una|uno|un'|l'|l|a|di|da|per|dal|della|dello|del|dallo|dalle|dai)\b\s+/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
 /** Parsa "8", "8.30", "8:30", "08,30" → "HH:MM" oppure null. */
 function parseTime(raw: string): string | null {
   const m = raw.trim().match(/^(\d{1,2})(?:[:.,](\d{2}))?$/)
@@ -97,6 +105,7 @@ function parsePrice(raw: string): number | null {
 
 async function handleCommand(sb: SupabaseClient, chatId: number, userId: string | null, text: string): Promise<string> {
   const t = text.trim()
+  const clean = stripClutter(t)
 
   // /start, /help
   if (/^\/(start|help)\b/i.test(t)) {
@@ -151,7 +160,7 @@ async function handleCommand(sb: SupabaseClient, chatId: number, userId: string 
   }
 
   // prezzo <piatto> <valore> [menu <m>]
-  const mPrice = t.match(/^prezzo\s+(.+?)\s+([\d.,]+\s*€?)(?:\s+menu\s+(.+))?$/i)
+  const mPrice = clean.match(/^prezzo\s+(.+?)\s+([\d.,]+\s*€?)(?:\s+menu\s+(.+))?$/i)
   if (mPrice) {
     const [, dishName, rawPrice, menuName] = mPrice
     const price = parsePrice(rawPrice)
@@ -181,7 +190,7 @@ async function handleCommand(sb: SupabaseClient, chatId: number, userId: string 
   }
 
   // attiva/disattiva <piatto|categoria|menu|ristorante> <nome> [menu <m>]
-  const mTog = t.match(/^(attiva|disattiva)\s+(piatto|categoria|menu|ristorante)\s+(.+?)(?:\s+menu\s+(.+))?$/i)
+  const mTog = clean.match(/^(attiva|disattiva)\s+(piatto|categoria|menu|ristorante)\s+(.+?)(?:\s+menu\s+(.+))?$/i)
   if (mTog) {
     const [, verb, kind, name, menuName] = mTog
     const active = norm(verb) === 'attiva'
@@ -233,7 +242,7 @@ async function handleCommand(sb: SupabaseClient, chatId: number, userId: string 
   }
 
   // programma menu <nome> dalle X alle Y
-  const mSched = t.match(/^programma\s+menu\s+(.+?)\s+dalle\s+(\S+)\s+alle\s+(\S+)$/i)
+  const mSched = clean.match(/^programma\s+menu\s+(.+?)\s+dalle\s+(\S+)\s+alle\s+(\S+)$/i)
   if (mSched) {
     const [, name, rawFrom, rawUntil] = mSched
     const from = parseTime(rawFrom), until = parseTime(rawUntil)
@@ -248,7 +257,7 @@ async function handleCommand(sb: SupabaseClient, chatId: number, userId: string 
   }
 
   // rimuovi programmazione menu <nome>
-  const mUnsched = t.match(/^rimuovi\s+programmazione\s+menu\s+(.+)$/i)
+  const mUnsched = clean.match(/^rimuovi\s+programmazione\s+menu\s+(.+)$/i)
   if (mUnsched) {
     const name = mUnsched[1]
     const found = menus.filter(m => norm(m.name) === norm(name))
