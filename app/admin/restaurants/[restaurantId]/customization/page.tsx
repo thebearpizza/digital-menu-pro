@@ -10,7 +10,7 @@ export default async function CustomizationPage({
 }) {
   const supabase = await createClient()
 
-  const [{ data: restaurant }, { data: rawBanners }] = await Promise.all([
+  const [{ data: restaurant }, { data: rawBanners }, { data: rawMenus }] = await Promise.all([
     supabase
       .from('restaurants')
       .select('id, name, logo_url, theme_config, qr_public_token')
@@ -20,6 +20,12 @@ export default async function CustomizationPage({
       .from('restaurant_banners')
       .select('id, media_url, media_type, title, subtitle, sort_order, is_active')
       .eq('restaurant_id', params.restaurantId)
+      .order('sort_order', { ascending: true }),
+    supabase
+      .from('menus')
+      .select('id, name')
+      .eq('restaurant_id', params.restaurantId)
+      .eq('is_active', true)
       .order('sort_order', { ascending: true }),
   ])
 
@@ -40,6 +46,10 @@ export default async function CustomizationPage({
         subtitle:   b.subtitle as string | null,
         sort_order: b.sort_order as number,
         is_active:  b.is_active as boolean,
+      }))}
+      menus={(rawMenus ?? []).map(m => ({
+        id:   m.id as string,
+        name: m.name as string,
       }))}
     />
   )

@@ -113,7 +113,7 @@ export default async function PublicMenuPage({
       <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
       {fontsHref && <link rel="stylesheet" href={fontsHref} data-theme-fonts="1" />}
       {customCss && <style data-custom-fonts="1" dangerouslySetInnerHTML={{ __html: customCss }} />}
-      <style dangerouslySetInnerHTML={{ __html: themeRootCssVars(theme) }} />
+      <style dangerouslySetInnerHTML={{ __html: themeRootCssVars(theme, defaultMenuId) }} />
       <PublicMenuView
         restaurant={{
           name:             restaurant.name as string,

@@ -221,6 +221,10 @@ export interface RestaurantTheme {
   landing: LandingTheme
   menu:    MenuTheme
   card:    CardTheme
+  // Per-menu overrides: menuId → full MenuTheme override. Menus without an
+  // entry here inherit `menu` ("Generale"). hintPopup is always taken from
+  // `menu.hintPopup` regardless of overrides — see resolveMenuTheme().
+  menuThemes?: Record<string, MenuTheme>
   // Custom uploaded font files: family name → public URL (TTF/OTF/WOFF/WOFF2).
   // Lets users pick a font that doesn't exist on Google Fonts. Any font.* field
   // can reference a key here by name; @font-face rules are injected at runtime
@@ -339,6 +343,89 @@ function parseMenuBg(raw: unknown, fb: MenuBgConfig): MenuBgConfig {
   }
 }
 
+// Parses any MenuTheme (the "Generale" theme or a per-menu override), falling
+// back field-by-field to `fb` — defaults for Generale, the parsed Generale for
+// per-menu overrides.
+export function parseMenuTheme(raw: unknown, fb: MenuTheme): MenuTheme {
+  const m   = sub(raw)
+  const ml  = sub(m.layout)
+  const md  = sub(ml.divider)
+  const mi  = sub(m.dishes)
+  const me  = sub(m.descriptions)
+  const ma  = sub(m.allergens)
+  const mp  = sub(m.prices)
+  const mc  = sub(m.categories)
+  const ms  = sub(m.stickyCategories)
+  const mn  = sub(m.navigation)
+  const mbn = sub(m.banners)
+  const mh  = sub(m.hintPopup)
+  return {
+    accent:         str(m.accent, fb.accent),
+    background:     parseMenuBg(m.background, fb.background),
+    pageBackground: parseMenuBg(m.pageBackground, fb.pageBackground),
+    pdfLayout:      one(m.pdfLayout, ['classic','compact'] as const, fb.pdfLayout),
+    compactMode:    one(m.compactMode, ['linear','alternating'] as const, fb.compactMode),
+    layout: {
+      dishLayout:       one(ml.dishLayout, ['list','grid-2','grid-3','boxed-card','minimal-row','elegant'] as const, fb.layout.dishLayout),
+      dishAlignment:    one(ml.dishAlignment, ['left','center','right'] as const, fb.layout.dishAlignment),
+      dishSpacing:      num(ml.dishSpacing, fb.layout.dishSpacing),
+      dishesPerPage:    num(ml.dishesPerPage, fb.layout.dishesPerPage),
+      boxedBorderWidth: num(ml.boxedBorderWidth, fb.layout.boxedBorderWidth),
+      divider:          { type: one(md.type, ['none','solid','dashed','dotted','double','gradient','ornament','wavy'] as const, fb.layout.divider.type), color: str(md.color, fb.layout.divider.color), width: num(md.width, fb.layout.divider.width), widthPercent: num(md.widthPercent, fb.layout.divider.widthPercent) },
+    },
+    dishes:       { titleFont: str(mi.titleFont, fb.dishes.titleFont), titleSize: num(mi.titleSize, fb.dishes.titleSize), titleColor: str(mi.titleColor, fb.dishes.titleColor), align: one(mi.align, ['inherit','left','center','right'] as const, fb.dishes.align) },
+    descriptions: { font: str(me.font, fb.descriptions.font), size: num(me.size, fb.descriptions.size), color: str(me.color, fb.descriptions.color), align: one(me.align, ['inherit','left','center','right'] as const, fb.descriptions.align) },
+    allergens:    { style: one(ma.style, ['text','badge'] as const, fb.allergens.style), color: str(ma.color, fb.allergens.color), bgColor: str(ma.bgColor, fb.allergens.bgColor), display: one(ma.display, ['full','short','number'] as const, fb.allergens.display), separator: str(ma.separator, fb.allergens.separator), size: num(ma.size, fb.allergens.size), align: one(ma.align, ['inherit','left','center','right'] as const, fb.allergens.align) },
+    prices:       { font: str(mp.font, fb.prices.font), size: num(mp.size, fb.prices.size), color: str(mp.color, fb.prices.color), format: one(mp.format, ['symbol-left','symbol-right','no-symbol'] as const, fb.prices.format), currency: str(mp.currency, fb.prices.currency), position: one(mp.position, ['left','right','above','below'] as const, fb.prices.position), align: one(mp.align, ['inherit','left','center','right'] as const, fb.prices.align) },
+    categories:   { font: str(mc.font, fb.categories.font), color: str(mc.color, fb.categories.color), size: num(mc.size, fb.categories.size), align: one(mc.align, ['inherit','left','center','right'] as const, fb.categories.align), flourish: one(mc.flourish, ['none','lines','dots','diamond'] as const, fb.categories.flourish), flourishColor: str(mc.flourishColor, fb.categories.flourishColor), flourishWidth: num(mc.flourishWidth, fb.categories.flourishWidth), flourishThickness: num(mc.flourishThickness, fb.categories.flourishThickness) },
+    stickyCategories: {
+      style:       one(ms.style, ['solid','none'] as const, fb.stickyCategories.style),
+      bgColor:     str(ms.bgColor, fb.stickyCategories.bgColor),
+      textColor:   str(ms.textColor, fb.stickyCategories.textColor),
+      activeColor: str(ms.activeColor, fb.stickyCategories.activeColor),
+      font:        str(ms.font, fb.stickyCategories.font),
+      fontSize:    num(ms.fontSize, fb.stickyCategories.fontSize),
+    },
+    navigation: {
+      style: one(mn.style, Object.keys(PAGINATION_OPTIONS) as PaginationStyle[], fb.navigation.style),
+      color: str(mn.color, fb.navigation.color),
+    },
+    banners: { position: one(mbn.position, ['inline','dedicated-page'] as const, fb.banners.position) },
+    hintPopup: {
+      enabled:      mh.enabled !== undefined ? mh.enabled !== false : fb.hintPopup.enabled,
+      showOnce:     mh.showOnce !== undefined ? mh.showOnce !== false : fb.hintPopup.showOnce,
+      title:        str(mh.title, fb.hintPopup.title),
+      text:         str(mh.text, fb.hintPopup.text),
+      font:         str(mh.font, fb.hintPopup.font),
+      titleSize:    num(mh.titleSize, fb.hintPopup.titleSize),
+      textSize:     num(mh.textSize, fb.hintPopup.textSize),
+      bgColor:      str(mh.bgColor, fb.hintPopup.bgColor),
+      titleColor:   str(mh.titleColor, fb.hintPopup.titleColor),
+      textColor:    str(mh.textColor, fb.hintPopup.textColor),
+      closeColor:   str(mh.closeColor, fb.hintPopup.closeColor),
+      borderRadius: one(mh.borderRadius, ['none','sm','md'] as const, fb.hintPopup.borderRadius),
+    },
+  }
+}
+
+// Parses the optional per-menu override map (theme.menuThemes).
+function parseMenuThemeOverrides(raw: unknown, generale: MenuTheme): Record<string, MenuTheme> | undefined {
+  if (!raw || typeof raw !== 'object') return undefined
+  const out: Record<string, MenuTheme> = {}
+  for (const [id, val] of Object.entries(raw as Record<string, unknown>)) {
+    if (val && typeof val === 'object') out[id] = parseMenuTheme(val, generale)
+  }
+  return Object.keys(out).length > 0 ? out : undefined
+}
+
+// Effective MenuTheme for a given menu: per-menu override if present, otherwise
+// "Generale". hintPopup is restaurant-wide and always comes from Generale.
+export function resolveMenuTheme(theme: RestaurantTheme, menuId?: string | null): MenuTheme {
+  const override = menuId ? theme.menuThemes?.[menuId] : undefined
+  if (!override) return theme.menu
+  return { ...override, hintPopup: theme.menu.hintPopup }
+}
+
 // ── parseTheme — handles both new nested format and old flat format ────────────
 
 export function parseTheme(raw: unknown): RestaurantTheme {
@@ -365,16 +452,6 @@ function parseNested(r: Record<string, unknown>): RestaurantTheme {
   const bu  = sub(l.buttons)
   const ls  = sub(l.socials)
   const ml  = sub(m.layout)
-  const md  = sub(ml.divider)
-  const mi  = sub(m.dishes)
-  const me  = sub(m.descriptions)
-  const ma  = sub(m.allergens)
-  const mp  = sub(m.prices)
-  const mc  = sub(m.categories)
-  const ms  = sub(m.stickyCategories)
-  const mn  = sub(m.navigation)
-  const mbn = sub(m.banners)
-  const mh  = sub(m.hintPopup)
   const ca  = sub(r.card)
   const cac = sub(ca.category)
   const cat = sub(ca.title)
@@ -383,6 +460,8 @@ function parseNested(r: Record<string, unknown>): RestaurantTheme {
   const caa = sub(ca.allergens)
   const cpr = sub(ca.pairing)
   const cab = sub(ca.closeButton)
+
+  const parsedMenu = parseMenuTheme(r.menu, d.menu)
 
   return {
     landing: {
@@ -416,53 +495,8 @@ function parseNested(r: Record<string, unknown>): RestaurantTheme {
         style: one(ls.style, ['minimal','circle','box','outline'] as const, d.landing.socials.style),
       },
     },
-    menu: {
-      accent:         str(m.accent, d.menu.accent),
-      background:     parseMenuBg(m.background, d.menu.background),
-      pageBackground: parseMenuBg(m.pageBackground, d.menu.pageBackground),
-      pdfLayout:      one(m.pdfLayout, ['classic','compact'] as const, d.menu.pdfLayout),
-      compactMode:    one(m.compactMode, ['linear','alternating'] as const, d.menu.compactMode),
-      layout: {
-        dishLayout:       one(ml.dishLayout, ['list','grid-2','grid-3','boxed-card','minimal-row','elegant'] as const, d.menu.layout.dishLayout),
-        dishAlignment:    one(ml.dishAlignment, ['left','center','right'] as const, d.menu.layout.dishAlignment),
-        dishSpacing:      num(ml.dishSpacing, d.menu.layout.dishSpacing),
-        dishesPerPage:    num(ml.dishesPerPage, d.menu.layout.dishesPerPage),
-        boxedBorderWidth: num(ml.boxedBorderWidth, d.menu.layout.boxedBorderWidth),
-        divider:          { type: one(md.type, ['none','solid','dashed','dotted','double','gradient','ornament','wavy'] as const, d.menu.layout.divider.type), color: str(md.color, d.menu.layout.divider.color), width: num(md.width, d.menu.layout.divider.width), widthPercent: num(md.widthPercent, d.menu.layout.divider.widthPercent) },
-      },
-      dishes:       { titleFont: str(mi.titleFont, d.menu.dishes.titleFont), titleSize: num(mi.titleSize, d.menu.dishes.titleSize), titleColor: str(mi.titleColor, d.menu.dishes.titleColor), align: one(mi.align, ['inherit','left','center','right'] as const, d.menu.dishes.align) },
-      descriptions: { font: str(me.font, d.menu.descriptions.font), size: num(me.size, d.menu.descriptions.size), color: str(me.color, d.menu.descriptions.color), align: one(me.align, ['inherit','left','center','right'] as const, d.menu.descriptions.align) },
-      allergens:    { style: one(ma.style, ['text','badge'] as const, d.menu.allergens.style), color: str(ma.color, d.menu.allergens.color), bgColor: str(ma.bgColor, d.menu.allergens.bgColor), display: one(ma.display, ['full','short','number'] as const, d.menu.allergens.display), separator: str(ma.separator, d.menu.allergens.separator), size: num(ma.size, d.menu.allergens.size), align: one(ma.align, ['inherit','left','center','right'] as const, d.menu.allergens.align) },
-      prices:       { font: str(mp.font, d.menu.prices.font), size: num(mp.size, d.menu.prices.size), color: str(mp.color, d.menu.prices.color), format: one(mp.format, ['symbol-left','symbol-right','no-symbol'] as const, d.menu.prices.format), currency: str(mp.currency, d.menu.prices.currency), position: one(mp.position, ['left','right','above','below'] as const, d.menu.prices.position), align: one(mp.align, ['inherit','left','center','right'] as const, d.menu.prices.align) },
-      categories:   { font: str(mc.font, d.menu.categories.font), color: str(mc.color, d.menu.categories.color), size: num(mc.size, d.menu.categories.size), align: one(mc.align, ['inherit','left','center','right'] as const, d.menu.categories.align), flourish: one(mc.flourish, ['none','lines','dots','diamond'] as const, d.menu.categories.flourish), flourishColor: str(mc.flourishColor, d.menu.categories.flourishColor), flourishWidth: num(mc.flourishWidth, d.menu.categories.flourishWidth), flourishThickness: num(mc.flourishThickness, d.menu.categories.flourishThickness) },
-      stickyCategories: {
-        style:       one(ms.style, ['solid','none'] as const, d.menu.stickyCategories.style),
-        bgColor:     str(ms.bgColor, d.menu.stickyCategories.bgColor),
-        textColor:   str(ms.textColor, d.menu.stickyCategories.textColor),
-        activeColor: str(ms.activeColor, d.menu.stickyCategories.activeColor),
-        font:        str(ms.font, d.menu.stickyCategories.font),
-        fontSize:    num(ms.fontSize, d.menu.stickyCategories.fontSize),
-      },
-      navigation: {
-        style: one(mn.style, Object.keys(PAGINATION_OPTIONS) as PaginationStyle[], d.menu.navigation.style),
-        color: str(mn.color, d.menu.navigation.color),
-      },
-      banners: { position: one(mbn.position, ['inline','dedicated-page'] as const, d.menu.banners.position) },
-      hintPopup: {
-        enabled:      mh.enabled !== false,
-        showOnce:     mh.showOnce !== false,
-        title:        str(mh.title, d.menu.hintPopup.title),
-        text:         str(mh.text, d.menu.hintPopup.text),
-        font:         str(mh.font, d.menu.hintPopup.font),
-        titleSize:    num(mh.titleSize, d.menu.hintPopup.titleSize),
-        textSize:     num(mh.textSize, d.menu.hintPopup.textSize),
-        bgColor:      str(mh.bgColor, d.menu.hintPopup.bgColor),
-        titleColor:   str(mh.titleColor, d.menu.hintPopup.titleColor),
-        textColor:    str(mh.textColor, d.menu.hintPopup.textColor),
-        closeColor:   str(mh.closeColor, d.menu.hintPopup.closeColor),
-        borderRadius: one(mh.borderRadius, ['none','sm','md'] as const, d.menu.hintPopup.borderRadius),
-      },
-    },
+    menu:       parsedMenu,
+    menuThemes: parseMenuThemeOverrides(r.menuThemes, parsedMenu),
     card: {
       bgColor:      str(ca.bgColor, d.card.bgColor),
       // Back-compat: i temi salvati prima dell'introduzione di accent/align sulla card
@@ -641,6 +675,9 @@ export function allThemeFonts(theme: RestaurantTheme): string[] {
     theme.menu.hintPopup.font,
     theme.card.title.font, theme.card.description.font, theme.card.price.font,
   ]
+  for (const mt of Object.values(theme.menuThemes ?? {})) {
+    all.push(mt.dishes.titleFont, mt.descriptions.font, mt.prices.font, mt.categories.font, mt.stickyCategories.font)
+  }
   return all.filter((f, i, a) => f && a.indexOf(f) === i)
 }
 
@@ -685,8 +722,8 @@ export function customFontFaceCss(customFonts: Record<string, string>): string {
 // CSS custom properties read by globals.css and the public viewer. Rendered
 // server-side in /m/[token] so the very first paint already shows the final
 // colors/sizes (ThemeInjector keeps them updated client-side for the preview).
-export function themeRootCssVars(theme: RestaurantTheme): string {
-  const l = theme.landing, m = theme.menu, c = theme.card
+export function themeRootCssVars(theme: RestaurantTheme, menuId?: string | null): string {
+  const l = theme.landing, m = resolveMenuTheme(theme, menuId), c = theme.card
   return [
     ':root{',
     `--theme-accent:${l.accent};`,

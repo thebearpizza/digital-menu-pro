@@ -7,6 +7,7 @@ import {
   DEFAULT_THEME, SERIF_FONTS, SANS_FONTS, DISPLAY_FONTS, PAGINATION_OPTIONS,
   MENU_BG_EFFECTS, MENU_BG_EFFECT_LABELS, CURRENCY_OPTIONS,
   googleFontsUrl, allThemeFonts, fontStack, formatPrice, customFontFaceCss, CUSTOM_FONT_EXTENSIONS,
+  resolveMenuTheme,
 } from '@/lib/theme'
 import { ALL_GOOGLE_FONTS } from '@/lib/googleFontsCatalog'
 import { removeUniformBackground } from '@/lib/imageBackground'
@@ -140,6 +141,11 @@ interface AdminBanner {
   is_active:  boolean
 }
 
+interface MenuSummary {
+  id:   string
+  name: string
+}
+
 interface Props {
   restaurantId:   string
   restaurantName: string
@@ -147,6 +153,7 @@ interface Props {
   qrToken:        string | null
   initialTheme:   RestaurantTheme
   initialBanners: AdminBanner[]
+  menus:          MenuSummary[]
 }
 
 // ── Font loader ───────────────────────────────────────────────────────────────
@@ -626,14 +633,14 @@ function ButtonsPanel({ l, setLBu, customFonts, onUploadFont, fontUploading }: {
 
 // ── Editor sidebar ────────────────────────────────────────────────────────────
 
-function EditorSidebar({ target, theme, setters, previewMode, onClose, restaurantName, restaurantLogo }: {
+function EditorSidebar({ target, theme, setters, previewMode, activeMenuId, onClose, restaurantName, restaurantLogo }: {
   target: string; theme: RestaurantTheme; setters: SidebarSetters
-  previewMode: 'landing' | 'menu' | 'card' | 'hint'; onClose: () => void
+  previewMode: 'landing' | 'menu' | 'card' | 'hint'; activeMenuId: string | null; onClose: () => void
   restaurantName: string; restaurantLogo: string | null
 }) {
   const info = EDITOR_TARGETS[target]
   const l    = theme.landing
-  const m    = theme.menu
+  const m    = previewMode === 'menu' ? resolveMenuTheme(theme, activeMenuId) : theme.menu
   const c    = theme.card
   // Shared dish targets (title/desc/price/allergens) live in both Card and Menu.
   // Show only the section that matches the tab the user is editing from.
@@ -1544,8 +1551,9 @@ function EditorSidebar({ target, theme, setters, previewMode, onClose, restauran
 
 // ── Live preview iframe ───────────────────────────────────────────────────────
 
-function LivePreview({ qrToken, theme, previewMode, editMode = false, showDummyData = false, onElementClick, onViewChange, zoom = 1 }: {
+function LivePreview({ qrToken, theme, previewMode, activeMenuId = null, editMode = false, showDummyData = false, onElementClick, onViewChange, zoom = 1 }: {
   qrToken: string | null; theme: RestaurantTheme; previewMode: 'landing' | 'menu' | 'card' | 'hint'
+  activeMenuId?: string | null
   editMode?: boolean; showDummyData?: boolean; onElementClick?: (target: string) => void
   onViewChange?: (view: 'landing' | 'menu' | 'card') => void
   zoom?: number
@@ -1564,7 +1572,7 @@ function LivePreview({ qrToken, theme, previewMode, editMode = false, showDummyD
       if (e.data?.type === 'dmp-preview-ready') {
         readyRef.current = true
         post({ type: 'dmp-theme', theme })
-        post({ type: 'dmp-nav', view: previewMode })
+        post({ type: 'dmp-nav', view: previewMode, menuId: previewMode === 'menu' ? activeMenuId : undefined })
         post({ type: 'dmp-editor-state', editMode, showDummyData })
         const w = containerRef.current?.getBoundingClientRect().width ?? 0
         if (w > 0) post({ type: 'dmp-font-scale', fontSize: Math.round((w / 390) * 16 * 10) / 10 })
@@ -1579,7 +1587,7 @@ function LivePreview({ qrToken, theme, previewMode, editMode = false, showDummyD
     }
     window.addEventListener('message', onMsg)
     return () => window.removeEventListener('message', onMsg)
-  }, [theme, previewMode, editMode, showDummyData]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [theme, previewMode, activeMenuId, editMode, showDummyData]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Resend font scale whenever the preview container resizes (sidebar open/close)
   useEffect(() => {
@@ -1601,8 +1609,8 @@ function LivePreview({ qrToken, theme, previewMode, editMode = false, showDummyD
 
   useEffect(() => {
     if (!readyRef.current) return
-    post({ type: 'dmp-nav', view: previewMode })
-  }, [previewMode]) // eslint-disable-line react-hooks/exhaustive-deps
+    post({ type: 'dmp-nav', view: previewMode, menuId: previewMode === 'menu' ? activeMenuId : undefined })
+  }, [previewMode, activeMenuId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!readyRef.current) return
@@ -1715,7 +1723,7 @@ function BannerManager({ restaurantId, initialBanners }: { restaurantId: string;
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 export default function CustomizationClient({
-  restaurantId, restaurantName, restaurantLogo, qrToken, initialTheme, initialBanners,
+  restaurantId, restaurantName, restaurantLogo, qrToken, initialTheme, initialBanners, menus,
 }: Props) {
   const [theme,        setTheme]        = useState<RestaurantTheme>(initialTheme)
   const [saving,       setSaving]       = useState(false)
@@ -1729,6 +1737,9 @@ export default function CustomizationClient({
   const [logoUploading, setLogoUploading] = useState(false)
   const [fontUploading, setFontUploading] = useState(false)
   const [previewMode,  setPreviewMode]  = useState<'landing' | 'menu' | 'card' | 'hint'>('landing')
+  // Sub-tab attivo dentro "Menu": null = "Generale" (tema condiviso), altrimenti
+  // l'id del menu il cui override per-menu si sta modificando.
+  const [activeMenuTab, setActiveMenuTab] = useState<string | null>(null)
   const [editMode,     setEditMode]     = useState(false)
   const [showDummyData,setShowDummyData]= useState(false)
   const [activeEditor, setActiveEditor] = useState<string | null>(null)
@@ -1758,8 +1769,18 @@ export default function CustomizationClient({
   function setCustomFonts(patch: Record<string, string>) {
     setSaved(false); setTheme(t => ({ ...t, customFonts: { ...t.customFonts, ...patch } }))
   }
+  // Applica una trasformazione al MenuTheme giusto: "Generale" (theme.menu) o,
+  // se è attivo un sub-tab per-menu, l'override in theme.menuThemes[menuId]
+  // (creato lazy clonando il Generale al primo edit). hintPopup resta sempre
+  // quello del Generale — è restaurant-wide (vedi resolveMenuTheme).
+  function updateMenuTheme(t: RestaurantTheme, fn: (m: MenuTheme) => MenuTheme): RestaurantTheme {
+    if (!activeMenuTab) return { ...t, menu: fn(t.menu) }
+    const base = t.menuThemes?.[activeMenuTab] ?? t.menu
+    const next = { ...fn(base), hintPopup: t.menu.hintPopup }
+    return { ...t, menuThemes: { ...(t.menuThemes ?? {}), [activeMenuTab]: next } }
+  }
   function setM(patch: Partial<MenuTheme>) {
-    setSaved(false); setTheme(t => ({ ...t, menu: { ...t.menu, ...patch } }))
+    setSaved(false); setTheme(t => updateMenuTheme(t, m => ({ ...m, ...patch })))
   }
   function setC(patch: Partial<CardTheme>) {
     setSaved(false); setTheme(t => ({ ...t, card: { ...t.card, ...patch } }))
@@ -1801,40 +1822,40 @@ export default function CustomizationClient({
     setSaved(false); setTheme(t => ({ ...t, landing: { ...t.landing, buttons: { ...t.landing.buttons, ...patch } } }))
   }
   function setMLayout(patch: Partial<MenuTheme['layout']>) {
-    setSaved(false); setTheme(t => ({ ...t, menu: { ...t.menu, layout: { ...t.menu.layout, ...patch } } }))
+    setSaved(false); setTheme(t => updateMenuTheme(t, m => ({ ...m, layout: { ...m.layout, ...patch } })))
   }
   function setMDivider(patch: Partial<MenuTheme['layout']['divider']>) {
-    setSaved(false); setTheme(t => ({ ...t, menu: { ...t.menu, layout: { ...t.menu.layout, divider: { ...t.menu.layout.divider, ...patch } } } }))
+    setSaved(false); setTheme(t => updateMenuTheme(t, m => ({ ...m, layout: { ...m.layout, divider: { ...m.layout.divider, ...patch } } })))
   }
   function setMDishes(patch: Partial<MenuTheme['dishes']>) {
-    setSaved(false); setTheme(t => ({ ...t, menu: { ...t.menu, dishes: { ...t.menu.dishes, ...patch } } }))
+    setSaved(false); setTheme(t => updateMenuTheme(t, m => ({ ...m, dishes: { ...m.dishes, ...patch } })))
   }
   function setMDescs(patch: Partial<MenuTheme['descriptions']>) {
-    setSaved(false); setTheme(t => ({ ...t, menu: { ...t.menu, descriptions: { ...t.menu.descriptions, ...patch } } }))
+    setSaved(false); setTheme(t => updateMenuTheme(t, m => ({ ...m, descriptions: { ...m.descriptions, ...patch } })))
   }
   function setMAllergens(patch: Partial<MenuTheme['allergens']>) {
-    setSaved(false); setTheme(t => ({ ...t, menu: { ...t.menu, allergens: { ...t.menu.allergens, ...patch } } }))
+    setSaved(false); setTheme(t => updateMenuTheme(t, m => ({ ...m, allergens: { ...m.allergens, ...patch } })))
   }
   function setMPrices(patch: Partial<MenuTheme['prices']>) {
-    setSaved(false); setTheme(t => ({ ...t, menu: { ...t.menu, prices: { ...t.menu.prices, ...patch } } }))
+    setSaved(false); setTheme(t => updateMenuTheme(t, m => ({ ...m, prices: { ...m.prices, ...patch } })))
   }
   function setMCats(patch: Partial<MenuTheme['categories']>) {
-    setSaved(false); setTheme(t => ({ ...t, menu: { ...t.menu, categories: { ...t.menu.categories, ...patch } } }))
+    setSaved(false); setTheme(t => updateMenuTheme(t, m => ({ ...m, categories: { ...m.categories, ...patch } })))
   }
   function setMSticky(patch: Partial<MenuTheme['stickyCategories']>) {
-    setSaved(false); setTheme(t => ({ ...t, menu: { ...t.menu, stickyCategories: { ...t.menu.stickyCategories, ...patch } } }))
+    setSaved(false); setTheme(t => updateMenuTheme(t, m => ({ ...m, stickyCategories: { ...m.stickyCategories, ...patch } })))
   }
   function setMHint(patch: Partial<MenuTheme['hintPopup']>) {
     setSaved(false); setTheme(t => ({ ...t, menu: { ...t.menu, hintPopup: { ...t.menu.hintPopup, ...patch } } }))
   }
   function setMNav(patch: Partial<MenuTheme['navigation']>) {
-    setSaved(false); setTheme(t => ({ ...t, menu: { ...t.menu, navigation: { ...t.menu.navigation, ...patch } } }))
+    setSaved(false); setTheme(t => updateMenuTheme(t, m => ({ ...m, navigation: { ...m.navigation, ...patch } })))
   }
   function setMBg(patch: Partial<MenuTheme['background']>) {
-    setSaved(false); setTheme(t => ({ ...t, menu: { ...t.menu, background: { ...t.menu.background, ...patch } } }))
+    setSaved(false); setTheme(t => updateMenuTheme(t, m => ({ ...m, background: { ...m.background, ...patch } })))
   }
   function setMPageBg(patch: Partial<MenuTheme['pageBackground']>) {
-    setSaved(false); setTheme(t => ({ ...t, menu: { ...t.menu, pageBackground: { ...t.menu.pageBackground, ...patch } } }))
+    setSaved(false); setTheme(t => updateMenuTheme(t, m => ({ ...m, pageBackground: { ...m.pageBackground, ...patch } })))
   }
 
   // ── Upload handlers ──────────────────────────────────────────────────────────
@@ -2033,6 +2054,27 @@ export default function CustomizationClient({
           </button>
         ))}
 
+        {/* Sub-tab per-menu: Generale + un tab per ogni menu del ristorante.
+            Visibili solo nella tab Menu e solo se c'è più di un menu. */}
+        {previewMode === 'menu' && menus.length > 1 && (
+          <div className="w-full sm:w-auto flex items-center gap-1.5 flex-wrap">
+            <span className="text-[10px] text-gray-400 select-none">↳</span>
+            {[{ id: null as string | null, name: 'Generale' }, ...menus].map(mn => (
+              <button key={mn.id ?? '__general'} type="button" onClick={() => setActiveMenuTab(mn.id)}
+                className={`px-2.5 py-1 text-[10px] font-medium border rounded-full transition-colors ${
+                  activeMenuTab === mn.id
+                    ? 'bg-gray-700 text-white border-gray-700'
+                    : 'bg-white text-gray-500 border-gray-200 hover:border-gray-400'
+                }`}>
+                {mn.name}
+                {mn.id !== null && theme.menuThemes?.[mn.id] && (
+                  <span className="ml-1 text-amber-400" title="Questo menu ha personalizzazioni proprie">●</span>
+                )}
+              </button>
+            ))}
+          </div>
+        )}
+
         <div className="hidden sm:block w-px h-5 bg-gray-200 mx-1 shrink-0" />
 
         {/* Pencil toggle */}
@@ -2122,7 +2164,7 @@ export default function CustomizationClient({
               <div className="absolute top-full left-0 right-0 bg-white shadow-xl z-50 overflow-y-auto"
                 style={{ maxHeight: '48dvh', borderBottom: '1px solid #e5e7eb' }}>
                 <EditorSidebar target={sidebarTarget} theme={theme} setters={setters}
-                  previewMode={previewMode} onClose={closeSidebar}
+                  previewMode={previewMode} activeMenuId={activeMenuTab} onClose={closeSidebar}
                   restaurantName={restaurantName} restaurantLogo={restaurantLogo} />
               </div>
             )}
@@ -2131,7 +2173,7 @@ export default function CustomizationClient({
           {/* Preview iframe area — fills remaining height, centers phone mockup */}
           <div className="flex-1 flex items-center justify-center bg-gradient-to-br from-gray-100 to-gray-200 transition-all duration-300 ease-out p-3 sm:p-5 min-h-0">
             <LivePreview
-              qrToken={qrToken} theme={theme} previewMode={previewMode}
+              qrToken={qrToken} theme={theme} previewMode={previewMode} activeMenuId={activeMenuTab}
               editMode={editMode || isMobile} showDummyData={showDummyData}
               onElementClick={setActiveEditor} onViewChange={setPreviewMode} zoom={previewZoom}
             />
@@ -2145,7 +2187,7 @@ export default function CustomizationClient({
           }`}>
           {sidebarOpen && (
             <div className="h-full sm:w-[46vw] md:w-[380px]">
-              <EditorSidebar target={sidebarTarget!} theme={theme} setters={setters} previewMode={previewMode} onClose={closeSidebar}
+              <EditorSidebar target={sidebarTarget!} theme={theme} setters={setters} previewMode={previewMode} activeMenuId={activeMenuTab} onClose={closeSidebar}
                 restaurantName={restaurantName} restaurantLogo={restaurantLogo} />
             </div>
           )}

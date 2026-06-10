@@ -14,7 +14,7 @@ import { useMenuPDF }  from './useMenuPDF'
 import {
   googleFontsUrl, allThemeFonts, fontStack,
   hexToRgb, landingButtonRadius, landingTextureCss, menuBackgroundCss,
-  parseTheme, lineSizesFor, customFontFaceCss, cardBorderRadius,
+  parseTheme, lineSizesFor, customFontFaceCss, cardBorderRadius, resolveMenuTheme,
 } from '@/lib/theme'
 import type { RestaurantTheme } from '@/lib/theme'
 
@@ -155,7 +155,6 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
   const [liveTheme, setLiveTheme] = useState<RestaurantTheme>(restaurant.theme)
   const t = liveTheme
   const l = t.landing
-  const m = t.menu
 
   // editMode / showDummyData / cardPreviewOpen: driven by dmp-editor-state + dmp-nav
   const [editMode,        setEditMode]        = useState(false)
@@ -188,7 +187,10 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
         if (d.view === 'landing') {
           setPendingMenuId(null); setSelectedMenuId(null); setCardPreviewOpen(false)
         } else if (d.view === 'menu' || d.view === 'hint') {
-          setSelectedMenuId(p => p ?? menus[0]?.id ?? null); setCardPreviewOpen(false)
+          // L'editor può indicare quale menu mostrare (sub-tab per-menu).
+          if (typeof d.menuId === 'string' && d.menuId) setSelectedMenuId(d.menuId)
+          else setSelectedMenuId(p => p ?? menus[0]?.id ?? null)
+          setCardPreviewOpen(false)
         } else if (d.view === 'card') {
           setSelectedMenuId(p => p ?? menus[0]?.id ?? null); setCardPreviewOpen(true)
         }
@@ -223,6 +225,13 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
   // ── PDF generation — driven by selected or pending menu ───────────────────
   const activeMenuId = selectedMenuId ?? pendingMenuId
   const activeMenu   = activeMenuId ? menus.find(m => m.id === activeMenuId) ?? null : null
+
+  // m: MenuTheme effettivo per il menu attivo (override per-menu se presente,
+  // altrimenti "Generale" — vedi resolveMenuTheme). effectiveTheme propaga
+  // questa risoluzione a FlipbookViewer/DishModal/useMenuPDF senza altre modifiche.
+  const m = resolveMenuTheme(t, activeMenuId)
+  const effectiveTheme: RestaurantTheme = { ...t, menu: m }
+
   const { pdfUrl, categories, isGenerating, error } = useMenuPDF(
     { name: restaurant.name },
     activeMenu ? {
@@ -232,7 +241,7 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
         price: d.price, category: d.category||'Menu', allergens: d.allergens,
       })),
     } : null,
-    t,
+    effectiveTheme,
   )
 
   // ── Derived visibility flags ───────────────────────────────────────────────
@@ -445,7 +454,7 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
 
   return (
     <div className="fixed inset-0 h-[100dvh]">
-      <ThemeInjector theme={t} />
+      <ThemeInjector theme={effectiveTheme} />
       <ThemeFontLoader theme={t} />
 
       {/* ── LANDING LAYER — always in DOM so video keeps playing ─────────── */}
@@ -633,7 +642,7 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
             onBack={() => setSelectedMenuId(null)}
             categories={categories.length > 0 ? categories : undefined}
             dishes={activeMenu?.dishes ?? []}
-            theme={t}
+            theme={effectiveTheme}
             editMode={editMode && !cardPreviewOpen}
             onEditTarget={sendEdit}
           />
@@ -691,7 +700,7 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
             onClose={() => setCardPreviewOpen(false)}
             onOpenDish={() => {}}
             editMode={editMode}
-            theme={t}
+            theme={effectiveTheme}
           />
         </div>
       )}
