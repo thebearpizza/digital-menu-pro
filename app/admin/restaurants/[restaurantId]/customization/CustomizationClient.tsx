@@ -477,10 +477,11 @@ function Toggle({ checked, onChange, disabled = false }: { checked: boolean; onC
 
 // ── Mobile chip bar config ────────────────────────────────────────────────────
 
-const MOBILE_TARGETS: Record<'landing' | 'menu' | 'card', string[]> = {
+const MOBILE_TARGETS: Record<'landing' | 'menu' | 'card' | 'hint', string[]> = {
   landing: ['landing-bg','landing-logo','landing-title','landing-desc','landing-buttons','landing-socials'],
-  menu:    ['category-title','dish-title','dish-description','dish-price','allergens','background-layout','sticky-categories','menu-hint'],
+  menu:    ['category-title','dish-title','dish-description','dish-price','allergens','background-layout','sticky-categories'],
   card:    ['card-style','card-category','dish-title','dish-description','dish-price','allergens','card-pairing'],
+  hint:    ['menu-hint'],
 }
 const MOBILE_LABELS: Record<string, string> = {
   'landing-bg':       'Sfondo',    'landing-logo':     'Logo',
@@ -627,7 +628,7 @@ function ButtonsPanel({ l, setLBu, customFonts, onUploadFont, fontUploading }: {
 
 function EditorSidebar({ target, theme, setters, previewMode, onClose, restaurantName, restaurantLogo }: {
   target: string; theme: RestaurantTheme; setters: SidebarSetters
-  previewMode: 'landing' | 'menu' | 'card'; onClose: () => void
+  previewMode: 'landing' | 'menu' | 'card' | 'hint'; onClose: () => void
   restaurantName: string; restaurantLogo: string | null
 }) {
   const info = EDITOR_TARGETS[target]
@@ -1544,7 +1545,7 @@ function EditorSidebar({ target, theme, setters, previewMode, onClose, restauran
 // ── Live preview iframe ───────────────────────────────────────────────────────
 
 function LivePreview({ qrToken, theme, previewMode, editMode = false, showDummyData = false, onElementClick, onViewChange, zoom = 1 }: {
-  qrToken: string | null; theme: RestaurantTheme; previewMode: 'landing' | 'menu' | 'card'
+  qrToken: string | null; theme: RestaurantTheme; previewMode: 'landing' | 'menu' | 'card' | 'hint'
   editMode?: boolean; showDummyData?: boolean; onElementClick?: (target: string) => void
   onViewChange?: (view: 'landing' | 'menu' | 'card') => void
   zoom?: number
@@ -1727,7 +1728,7 @@ export default function CustomizationClient({
   const [posterUploading, setPosterUploading] = useState(false)
   const [logoUploading, setLogoUploading] = useState(false)
   const [fontUploading, setFontUploading] = useState(false)
-  const [previewMode,  setPreviewMode]  = useState<'landing' | 'menu' | 'card'>('landing')
+  const [previewMode,  setPreviewMode]  = useState<'landing' | 'menu' | 'card' | 'hint'>('landing')
   const [editMode,     setEditMode]     = useState(false)
   const [showDummyData,setShowDummyData]= useState(false)
   const [activeEditor, setActiveEditor] = useState<string | null>(null)
@@ -2003,7 +2004,11 @@ export default function CustomizationClient({
     bgUploading, vidUploading, menuBgUploading, pageBgUploading, posterUploading, logoUploading, fontUploading,
   }
 
-  const sidebarOpen = editMode && activeEditor !== null
+  // La tab "Pop-up" ha un solo target: il pannello si apre da sé, senza
+  // bisogno della modalità Modifica né di un click nell'anteprima.
+  const sidebarTarget = previewMode === 'hint' ? 'menu-hint' : activeEditor
+  const sidebarOpen   = previewMode === 'hint' || (editMode && activeEditor !== null)
+  const closeSidebar  = previewMode === 'hint' ? () => setPreviewMode('menu') : () => setActiveEditor(null)
 
 
   return (
@@ -2017,14 +2022,14 @@ export default function CustomizationClient({
       <div className="flex items-center gap-2 sm:gap-3 pb-3 mb-3 border-b border-gray-100 flex-wrap shrink-0">
 
         {/* Mode tabs */}
-        {(['landing', 'menu', 'card'] as const).map(mode => (
+        {(['landing', 'menu', 'card', 'hint'] as const).map(mode => (
           <button key={mode} type="button" onClick={() => setPreviewMode(mode)}
             className={`px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider border transition-colors ${
               previewMode === mode
                 ? 'bg-gray-900 text-white border-gray-900'
                 : 'bg-white text-gray-500 border-gray-200 hover:border-gray-400'
             }`}>
-            {mode === 'landing' ? 'Landing' : mode === 'menu' ? 'Menu' : 'Card'}
+            {mode === 'landing' ? 'Landing' : mode === 'menu' ? 'Menu' : mode === 'card' ? 'Card' : 'Pop-up'}
           </button>
         ))}
 
@@ -2094,27 +2099,30 @@ export default function CustomizationClient({
         {/* Preview column — chip bar + iframe stacked on mobile */}
         <div className="flex-1 min-w-0 flex flex-col min-h-0 relative">
 
-          {/* Mobile chip bar: sm:hidden, scrollable chips for current tab's targets */}
+          {/* Mobile chip bar: sm:hidden, scrollable chips for current tab's targets.
+              La tab "Pop-up" ha un solo target e si apre da sé: niente chip. */}
           <div className="sm:hidden shrink-0 bg-white border-b border-gray-100 relative z-20">
-            <div className="flex gap-1.5 px-3 py-2 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
-              {MOBILE_TARGETS[previewMode].map(target => (
-                <button key={target} type="button"
-                  onClick={() => setActiveEditor(prev => prev === target ? null : target)}
-                  className={`shrink-0 px-3 py-1.5 text-[11px] font-medium rounded-full border transition-colors whitespace-nowrap ${
-                    activeEditor === target
-                      ? 'bg-gray-900 text-white border-gray-900'
-                      : 'bg-white text-gray-600 border-gray-200'
-                  }`}>
-                  {MOBILE_LABELS[target] ?? target}
-                </button>
-              ))}
-            </div>
+            {previewMode !== 'hint' && (
+              <div className="flex gap-1.5 px-3 py-2 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
+                {MOBILE_TARGETS[previewMode].map(target => (
+                  <button key={target} type="button"
+                    onClick={() => setActiveEditor(prev => prev === target ? null : target)}
+                    className={`shrink-0 px-3 py-1.5 text-[11px] font-medium rounded-full border transition-colors whitespace-nowrap ${
+                      activeEditor === target
+                        ? 'bg-gray-900 text-white border-gray-900'
+                        : 'bg-white text-gray-600 border-gray-200'
+                    }`}>
+                    {MOBILE_LABELS[target] ?? target}
+                  </button>
+                ))}
+              </div>
+            )}
             {/* Dropdown editor panel — overlays iframe from top, max 48dvh */}
-            {activeEditor !== null && MOBILE_TARGETS[previewMode].includes(activeEditor) && (
+            {sidebarTarget !== null && (previewMode === 'hint' || MOBILE_TARGETS[previewMode].includes(sidebarTarget)) && (
               <div className="absolute top-full left-0 right-0 bg-white shadow-xl z-50 overflow-y-auto"
                 style={{ maxHeight: '48dvh', borderBottom: '1px solid #e5e7eb' }}>
-                <EditorSidebar target={activeEditor} theme={theme} setters={setters}
-                  previewMode={previewMode} onClose={() => setActiveEditor(null)}
+                <EditorSidebar target={sidebarTarget} theme={theme} setters={setters}
+                  previewMode={previewMode} onClose={closeSidebar}
                   restaurantName={restaurantName} restaurantLogo={restaurantLogo} />
               </div>
             )}
@@ -2137,7 +2145,7 @@ export default function CustomizationClient({
           }`}>
           {sidebarOpen && (
             <div className="h-full sm:w-[46vw] md:w-[380px]">
-              <EditorSidebar target={activeEditor!} theme={theme} setters={setters} previewMode={previewMode} onClose={() => setActiveEditor(null)}
+              <EditorSidebar target={sidebarTarget!} theme={theme} setters={setters} previewMode={previewMode} onClose={closeSidebar}
                 restaurantName={restaurantName} restaurantLogo={restaurantLogo} />
             </div>
           )}

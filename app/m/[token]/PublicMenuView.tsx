@@ -161,6 +161,9 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
   const [editMode,        setEditMode]        = useState(false)
   const [showDummyData,   setShowDummyData]   = useState(false)
   const [cardPreviewOpen, setCardPreviewOpen] = useState(false)
+  // hintForced: tab "Pop-up" dell'admin → tieni il pop-up visibile per la
+  // modifica anche se disattivato/già chiuso, indipendentemente da showHint.
+  const [hintForced,      setHintForced]      = useState(false)
   const isMobilePreview = useIsMobilePreview()
 
   const videoRef        = useRef<HTMLVideoElement>(null)
@@ -181,9 +184,10 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
       if (!d || typeof d !== 'object') return
       if (d.type === 'dmp-theme' && d.theme)  setLiveTheme(parseTheme(d.theme))
       if (d.type === 'dmp-nav') {
+        setHintForced(d.view === 'hint')
         if (d.view === 'landing') {
           setPendingMenuId(null); setSelectedMenuId(null); setCardPreviewOpen(false)
-        } else if (d.view === 'menu') {
+        } else if (d.view === 'menu' || d.view === 'hint') {
           setSelectedMenuId(p => p ?? menus[0]?.id ?? null); setCardPreviewOpen(false)
         } else if (d.view === 'card') {
           setSelectedMenuId(p => p ?? menus[0]?.id ?? null); setCardPreviewOpen(true)
@@ -209,8 +213,8 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
   // Landing/Menu/Card restano sincronizzati anche quando la navigazione parte
   // dall'interno dell'anteprima (bottone "Sfoglia il menu", back, chiudi card).
   // I dmp-nav del parent producono lo stesso stato → nessun loop di feedback.
-  const currentView: 'landing' | 'menu' | 'card' =
-    cardPreviewOpen ? 'card' : selectedMenuId !== null ? 'menu' : 'landing'
+  const currentView: 'landing' | 'menu' | 'card' | 'hint' =
+    cardPreviewOpen ? 'card' : hintForced ? 'hint' : selectedMenuId !== null ? 'menu' : 'landing'
   useEffect(() => {
     if (!isPreviewRef.current) return
     try { window.parent?.postMessage({ type: 'dmp-view-changed', view: currentView }, window.location.origin) } catch {}
@@ -636,44 +640,45 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
         </div>
       )}
 
-      {/* ── HINT POPUP — istruzioni d'uso mostrate all'apertura del menu ── */}
-      {menuVisible && menuReady && !cardPreviewOpen && hint.enabled && showHint && (
+      {/* ── HINT POPUP — istruzioni d'uso mostrate all'apertura del menu ──
+          hintForced (tab "Pop-up" dell'admin) lo tiene visibile per la modifica
+          anche se disattivato o già chiuso; il × / sfondo chiudono sempre,
+          la modifica avviene dalla tab dedicata "Pop-up". ── */}
+      {menuVisible && menuReady && !cardPreviewOpen && (hintForced || (hint.enabled && showHint)) && (
         <div
           className="absolute inset-0 flex items-center justify-center px-8"
           style={{ zIndex: 450, background: 'rgba(0,0,0,0.62)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)' }}
-          onClick={() => { if (editMode) sendEdit('menu-hint'); else dismissHint() }}
+          onClick={dismissHint}
         >
-          <EditHandle target="menu-hint" editMode={editMode} className="w-full max-w-sm">
-            <div
-              className="relative w-full text-center"
-              style={{
-                background:   hint.bgColor,
-                borderRadius: cardBorderRadius(hint.borderRadius),
-                border:       `1px solid ${m.accent}26`,
-                padding:      '30px 26px',
-                fontFamily:   fontStack(hint.font, 'sans'),
-                animation:    'dish-fade-in 0.25s ease-out both',
-              }}
-              onClick={e => { if (!editMode) e.stopPropagation() }}
+          <div
+            className="relative w-full max-w-sm text-center"
+            style={{
+              background:   hint.bgColor,
+              borderRadius: cardBorderRadius(hint.borderRadius),
+              border:       `1px solid ${m.accent}26`,
+              padding:      '30px 26px',
+              fontFamily:   fontStack(hint.font, 'sans'),
+              animation:    'dish-fade-in 0.25s ease-out both',
+            }}
+            onClick={e => e.stopPropagation()}
+          >
+            <button
+              onClick={e => { e.stopPropagation(); dismissHint() }}
+              aria-label="Chiudi"
+              className="absolute top-2.5 right-3.5 text-xl leading-none transition-opacity hover:opacity-60"
+              style={{ color: hint.closeColor }}
             >
-              <button
-                onClick={e => { e.stopPropagation(); if (editMode) sendEdit('menu-hint'); else dismissHint() }}
-                aria-label="Chiudi"
-                className="absolute top-2.5 right-3.5 text-xl leading-none transition-opacity hover:opacity-60"
-                style={{ color: hint.closeColor }}
-              >
-                ×
-              </button>
-              {hint.title && (
-                <p style={{ color: hint.titleColor, fontSize: `${hint.titleSize}rem`, letterSpacing: '0.06em', fontWeight: 600, marginBottom: 12 }}>
-                  {hint.title}
-                </p>
-              )}
-              <p style={{ color: hint.textColor, fontSize: `${hint.textSize}rem`, lineHeight: 1.75, whiteSpace: 'pre-wrap' }}>
-                {hint.text}
+              ×
+            </button>
+            {hint.title && (
+              <p style={{ color: hint.titleColor, fontSize: `${hint.titleSize}rem`, letterSpacing: '0.06em', fontWeight: 600, marginBottom: 12 }}>
+                {hint.title}
               </p>
-            </div>
-          </EditHandle>
+            )}
+            <p style={{ color: hint.textColor, fontSize: `${hint.textSize}rem`, lineHeight: 1.75, whiteSpace: 'pre-wrap' }}>
+              {hint.text}
+            </p>
+          </div>
         </div>
       )}
 
