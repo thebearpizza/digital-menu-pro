@@ -127,12 +127,16 @@ export default function FlipbookViewer({
   const catStyle     = mn?.stickyCategories.style ?? 'solid'
   const navBgComputed = catStyle === 'transparent-blur' ? 'rgba(0,0,0,0.35)' : (mn?.stickyCategories.bgColor ?? menuConfig.theme.navBg)
   // Tasto "Menù" e contatore pagine appartengono allo stesso gruppo visivo delle
-  // categorie sticky: condividono il colore testo (stickyCategories.textColor) e
-  // usano sempre uno sfondo OPACO ("muro"), cosi i nomi categoria che scorrono
-  // sotto non risultano mai visibili attraverso di essi, qualunque sia lo stile
-  // (solido o vetro/blur).
+  // categorie sticky: condividono il colore testo (stickyCategories.textColor).
+  // Stile solido: sfondo OPACO ("muro"), cosi i nomi categoria che scorrono sotto
+  // non risultano mai visibili attraverso di essi.
+  // Stile vetro/blur: stesso sfondo translucido della barra, cosi i due angoli
+  // "sticky" si fondono visivamente con il vetro centrale invece di apparire
+  // come blocchi opachi agli estremi (il blur è applicato da un layer separato,
+  // vedi sotto, per evitare un bug noto di Safari con backdrop-filter +
+  // elementi sticky che dipinge il blur ben oltre i bordi della barra).
   const navColorComputed = mn?.stickyCategories.textColor ?? menuConfig.theme.textMuted
-  const navBgOpaque = toOpaqueColor(mn?.stickyCategories.bgColor ?? menuConfig.theme.navBg)
+  const navBgOpaque = catStyle === 'transparent-blur' ? navBgComputed : toOpaqueColor(mn?.stickyCategories.bgColor ?? menuConfig.theme.navBg)
   const theme = {
     ...menuConfig.theme,
     appBg:       mn?.background.color          ?? menuConfig.theme.pageBg,
@@ -783,15 +787,28 @@ export default function FlipbookViewer({
             ref={catNavRef}
             className="relative z-[9999] shrink-0 flex items-stretch overflow-x-auto pointer-events-auto"
             style={{
-              background:           navBgComputed,
-              backdropFilter:       catStyle === 'transparent-blur' ? 'blur(16px)' : undefined,
-              WebkitBackdropFilter: catStyle === 'transparent-blur' ? 'blur(16px)' : undefined,
+              background:    catStyle === 'transparent-blur' ? 'transparent' : navBgComputed,
               borderTop:     `1px solid ${theme.textMuted}1a`,
               scrollbarWidth:'none',
               WebkitOverflowScrolling: 'touch',
-            } as React.CSSProperties}
+            }}
             aria-label="Navigazione categorie menu"
           >
+            {/* Layer di blur separato, non-sticky: evita il bug Safari per cui
+                backdrop-filter su un antenato di elementi position:sticky dipinge
+                lo sfondo sfocato ben oltre i bordi visivi della barra. */}
+            {catStyle === 'transparent-blur' && (
+              <div
+                aria-hidden
+                className="absolute inset-0 pointer-events-none"
+                style={{
+                  background:           navBgComputed,
+                  backdropFilter:       'blur(16px)',
+                  WebkitBackdropFilter: 'blur(16px)',
+                }}
+              />
+            )}
+
             {/* Tasto torna — sticky a sinistra, fuori dallo scroll orizzontale */}
             <button
               onClick={onBack}
