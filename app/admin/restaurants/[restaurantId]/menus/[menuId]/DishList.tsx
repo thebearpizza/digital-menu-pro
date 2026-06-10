@@ -17,6 +17,7 @@ import DishForm from './DishForm'
 import DishSyncBannerModal from './DishSyncBannerModal'
 import MoveDishModal from './MoveDishModal'
 import MoveCategoryModal from './MoveCategoryModal'
+import ExcelImportExport from './ExcelImportExport'
 import VisibilityToggle from '@/components/ui/VisibilityToggle'
 import {
   deleteDish, reorderCategories, reorderDishes,
@@ -743,6 +744,16 @@ export default function DishList({
             + Aggiungi categoria
           </button>
         )}
+
+        <ExcelImportExport
+          restaurantId={restaurantId}
+          menuId={menuId}
+          onImported={created => {
+            const next = [...dishes, ...(created as Dish[])]
+            setDishes(next)
+            syncCategories(next)
+          }}
+        />
       </div>
 
       {(formOpen || editingDish) && (

@@ -194,6 +194,70 @@ export async function bulkUpdateDishPrices(
   revalidate(restaurantId, menuId)
 }
 
+/** Import in blocco da modulo Excel: crea i piatti ricevuti (già validati lato
+ *  client) accodandoli al menu. L'abbinamento è risolto per nome piatto, prima
+ *  fra i piatti esistenti del menu, poi fra quelli appena creati. */
+export async function bulkCreateDishes(
+  restaurantId: string,
+  menuId: string,
+  rows: {
+    name: string
+    description: string | null
+    price: number | null
+    category: string
+    image_url: string | null
+    allergens: number[]
+    pairing_name: string | null
+    is_active: boolean
+  }[],
+) {
+  if (!rows.length) return []
+  const supabase = await createClient()
+  await verifyOwnership(supabase, restaurantId)
+
+  const { data: last } = await supabase
+    .from('dishes').select('sort_order').eq('menu_id', menuId)
+    .order('sort_order', { ascending: false }).limit(1).maybeSingle()
+  let sort = (last?.sort_order ?? -1) + 1
+
+  const { data: created, error } = await supabase
+    .from('dishes')
+    .insert(rows.map(r => ({
+      restaurant_id: restaurantId,
+      menu_id:       menuId,
+      name:          r.name,
+      description:   r.description,
+      price:         r.price,
+      category:      r.category || null,
+      image_url:     r.image_url,
+      allergens:     r.allergens,
+      is_active:     r.is_active,
+      sort_order:    sort++,
+    })))
+    .select('id, name, description, price, category, image_url, allergens, sort_order, is_active, pairing_dish_id, pairing_label')
+  if (error) throw new Error(error.message)
+
+  // Seconda passata: risolvi gli abbinamenti per nome.
+  const wantPairing = rows
+    .map((r, i) => ({ r, dish: created?.[i] }))
+    .filter(x => x.r.pairing_name && x.dish)
+  if (wantPairing.length) {
+    const { data: all } = await supabase
+      .from('dishes').select('id, name').eq('menu_id', menuId)
+    const byName = new Map((all ?? []).map(d => [String(d.name).trim().toLowerCase(), d.id]))
+    for (const { r, dish } of wantPairing) {
+      const targetId = byName.get(r.pairing_name!.trim().toLowerCase())
+      if (targetId && targetId !== dish!.id) {
+        await supabase.from('dishes').update({ pairing_dish_id: targetId }).eq('id', dish!.id)
+        ;(dish as any).pairing_dish_id = targetId
+      }
+    }
+  }
+
+  revalidate(restaurantId, menuId)
+  return created ?? []
+}
+
 // ── MODULO 4: riordino piatti, duplicazione, spostamento ────────────────────────
 
 const DISH_COLUMNS =
