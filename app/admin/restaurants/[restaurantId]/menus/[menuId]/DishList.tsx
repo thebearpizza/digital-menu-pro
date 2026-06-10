@@ -302,38 +302,6 @@ function SortableCategory({
   const toggleLabel = (allActive || anyActive) ? 'Disabilita' : 'Abilita'
   const toggleActive = allActive || anyActive
 
-  // Azioni secondarie — usate nell'inline desktop (testo) e nel dropdown mobile
-  const secondaryActions = (
-    <>
-      {dishes.length > 0 && (
-        <button
-          onClick={() => { onMoveCategory(cat); setKebabOpen(false) }}
-          className="text-xs text-gray-500 hover:text-gray-800 hover:underline whitespace-nowrap"
-        >
-          Sposta in
-        </button>
-      )}
-      <button
-        onClick={() => { onDuplicateCategory(cat); setKebabOpen(false) }}
-        className="text-xs text-gray-500 hover:text-gray-800 hover:underline whitespace-nowrap"
-      >
-        Duplica
-      </button>
-      <button
-        onClick={() => { onRenameCategory(cat); setKebabOpen(false) }}
-        className="text-xs text-gray-500 hover:text-gray-800 hover:underline whitespace-nowrap"
-      >
-        Rinomina
-      </button>
-      <button
-        onClick={() => { onDeleteCategory(cat); setKebabOpen(false) }}
-        className="text-xs text-red-500 hover:underline whitespace-nowrap"
-      >
-        Elimina
-      </button>
-    </>
-  )
-
   return (
     <div ref={setNodeRef} style={style} className="bg-white border border-gray-200">
       {/* Category header */}
@@ -357,20 +325,9 @@ function SortableCategory({
           <span className="text-xs text-gray-400 shrink-0">({dishes.length})</span>
         </button>
 
-        {/* Azioni inline — visibili solo su md+ */}
-        <div className="hidden md:flex items-center gap-1 shrink-0">
-          {dishes.length > 0 && (
-            <VisibilityToggle
-              isVisible={toggleActive}
-              onToggle={() => onToggleCategory(cat, !toggleActive)}
-            />
-          )}
-          {secondaryActions}
-        </div>
-
-        {/* Kebab menu — visibile solo su mobile */}
-        <div className="md:hidden flex items-center shrink-0" ref={kebabRef}>
-          {/* 👁 sempre visibile anche su mobile */}
+        {/* Kebab menu — tutte le azioni categoria, su ogni dimensione schermo */}
+        <div className="flex items-center shrink-0" ref={kebabRef}>
+          {/* 👁 sempre visibile */}
           {dishes.length > 0 && (
             <VisibilityToggle
               isVisible={toggleActive}
