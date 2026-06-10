@@ -479,7 +479,7 @@ function Toggle({ checked, onChange, disabled = false }: { checked: boolean; onC
 
 const MOBILE_TARGETS: Record<'landing' | 'menu' | 'card', string[]> = {
   landing: ['landing-bg','landing-logo','landing-title','landing-desc','landing-buttons','landing-socials'],
-  menu:    ['category-title','dish-title','dish-description','dish-price','allergens','background-layout','sticky-categories'],
+  menu:    ['category-title','dish-title','dish-description','dish-price','allergens','background-layout','sticky-categories','menu-hint'],
   card:    ['card-style','card-category','dish-title','dish-description','dish-price','allergens','card-pairing'],
 }
 const MOBILE_LABELS: Record<string, string> = {
@@ -491,6 +491,7 @@ const MOBILE_LABELS: Record<string, string> = {
   'category-title':   'Categoria', 'background-layout':'Layout',
   'sticky-categories':'Barra',     'card-style':       'Stile Card',
   'card-category':    'Categoria', 'card-pairing':     'Abbinam.',
+  'menu-hint':        'Pop-up',
 }
 
 // ── Editor target registry ────────────────────────────────────────────────────
@@ -511,6 +512,7 @@ const EDITOR_TARGETS: Record<string, { title: string; hint: string }> = {
   'card-category':     { title: 'Categoria (Card)',   hint: 'Colore e dimensione dell\'etichetta categoria nella card' },
   'card-pairing':      { title: 'Abbinamento',        hint: 'Colori dell\'etichetta e del prodotto consigliato' },
   'sticky-categories': { title: 'Barra Categorie',    hint: 'Stile, colori, font della barra categorie' },
+  'menu-hint':         { title: 'Pop-up istruzioni',  hint: 'Testo, colori, font del pop-up "come sfogliare il menu"' },
   'background-layout': { title: 'Sfondo & Layout',    hint: 'Accento, sfondo menu, immagine, paginazione, spaziatura' },
 }
 
@@ -533,6 +535,7 @@ interface SidebarSetters {
   setMPageBg:        (p: Partial<MenuTheme['pageBackground']>) => void
   setMNav:           (p: Partial<MenuTheme['navigation']>) => void
   setMSticky:        (p: Partial<MenuTheme['stickyCategories']>) => void
+  setMHint:          (p: Partial<MenuTheme['hintPopup']>) => void
   setMAllergens:     (p: Partial<MenuTheme['allergens']>) => void
   setM:              (p: Partial<MenuTheme>) => void
   setC:              (p: Partial<CardTheme>) => void
@@ -1221,6 +1224,65 @@ function EditorSidebar({ target, theme, setters, previewMode, onClose, restauran
         </div>
       )
 
+      case 'menu-hint': return (
+        <div className="space-y-4">
+          <label className="flex items-center gap-2 cursor-pointer select-none">
+            <Toggle checked={m.hintPopup.enabled}
+              onChange={v => setters.setMHint({ enabled: v })} />
+            <span className="text-xs text-gray-600">Mostra pop-up istruzioni</span>
+          </label>
+          {m.hintPopup.enabled && (<>
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <Toggle checked={m.hintPopup.showOnce}
+                onChange={v => setters.setMHint({ showOnce: v })} />
+              <span className="text-xs text-gray-600">Solo la prima volta per dispositivo</span>
+            </label>
+            <p className="text-[11px] text-gray-400 leading-snug">
+              Nell&rsquo;anteprima il pop-up è sempre visibile; per i clienti
+              {m.hintPopup.showOnce ? ' appare solo alla prima apertura del menu.' : ' appare a ogni apertura del menu.'}
+            </p>
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Titolo</p>
+              <input type="text" value={m.hintPopup.title}
+                onChange={e => setters.setMHint({ title: e.target.value })}
+                className="w-full px-3 py-2 text-sm border border-gray-200 rounded focus:outline-none focus:border-gray-400" />
+            </div>
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Testo</p>
+              <textarea value={m.hintPopup.text}
+                rows={Math.max(2, m.hintPopup.text.split('\n').length)}
+                onChange={e => setters.setMHint({ text: e.target.value })}
+                className="w-full px-3 py-2 text-sm border border-gray-200 rounded focus:outline-none focus:border-gray-400 resize-y" />
+              <p className="text-[11px] text-gray-400 mt-1">Premi Invio per andare a capo.</p>
+            </div>
+            <FontSelector label="Font" value={m.hintPopup.font}
+              curated={SANS_FONTS} category="sans"
+              onChange={v => setters.setMHint({ font: v })}
+              customFonts={theme.customFonts} onUploadFont={setters.handleFontUpload} uploading={setters.fontUploading} />
+            <FontSizeSlider label="Dimensione titolo" value={m.hintPopup.titleSize}
+              min={0.8} max={2.2} step={0.05} previewFont={fontStack(m.hintPopup.font, 'sans')}
+              onChange={v => setters.setMHint({ titleSize: v })} />
+            <FontSizeSlider label="Dimensione testo" value={m.hintPopup.textSize}
+              min={0.6} max={1.6} step={0.05} previewFont={fontStack(m.hintPopup.font, 'sans')}
+              onChange={v => setters.setMHint({ textSize: v })} />
+            <ColorRow label="Sfondo pop-up" value={m.hintPopup.bgColor}
+              onChange={v => setters.setMHint({ bgColor: v })} />
+            <ColorRow label="Colore titolo" value={m.hintPopup.titleColor}
+              onChange={v => setters.setMHint({ titleColor: v })} />
+            <ColorRow label="Colore testo" value={m.hintPopup.textColor}
+              onChange={v => setters.setMHint({ textColor: v })} />
+            <ColorRow label="Colore chiudi (×)" value={m.hintPopup.closeColor}
+              onChange={v => setters.setMHint({ closeColor: v })} />
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Angoli</p>
+              <PillGroup
+                options={[{ label:'Netti', value:'none' },{ label:'Arrotondati', value:'sm' },{ label:'Morbidi', value:'md' }]}
+                value={m.hintPopup.borderRadius} onChange={v => setters.setMHint({ borderRadius: v })} />
+            </div>
+          </>)}
+        </div>
+      )
+
       case 'background-layout': return (
         <div className="space-y-4">
           <ColorRow label="Colore accento menu" value={m.accent}
@@ -1761,6 +1823,9 @@ export default function CustomizationClient({
   function setMSticky(patch: Partial<MenuTheme['stickyCategories']>) {
     setSaved(false); setTheme(t => ({ ...t, menu: { ...t.menu, stickyCategories: { ...t.menu.stickyCategories, ...patch } } }))
   }
+  function setMHint(patch: Partial<MenuTheme['hintPopup']>) {
+    setSaved(false); setTheme(t => ({ ...t, menu: { ...t.menu, hintPopup: { ...t.menu.hintPopup, ...patch } } }))
+  }
   function setMNav(patch: Partial<MenuTheme['navigation']>) {
     setSaved(false); setTheme(t => ({ ...t, menu: { ...t.menu, navigation: { ...t.menu.navigation, ...patch } } }))
   }
@@ -1932,7 +1997,7 @@ export default function CustomizationClient({
 
   const setters: SidebarSetters = {
     setLBg, setLLogo, setLTitle, setLDesc, setLBu, setL,
-    setMDishes, setMDescs, setMPrices, setMCats, setMLayout, setMDivider, setMBg, setMPageBg, setMNav, setMSticky, setMAllergens, setM,
+    setMDishes, setMDescs, setMPrices, setMCats, setMLayout, setMDivider, setMBg, setMPageBg, setMNav, setMSticky, setMHint, setMAllergens, setM,
     setC, setCardTitle, setCardDesc, setCardPrice, setCardAllergens, setCardClose, setCardCategory, setCardPairing,
     handleBgUpload, handleVideoUpload, handleMenuBgUpload, handleMenuPageBgUpload, handlePosterUpload, handleLogoUpload, handleFontUpload,
     bgUploading, vidUploading, menuBgUploading, pageBgUploading, posterUploading, logoUploading, fontUploading,

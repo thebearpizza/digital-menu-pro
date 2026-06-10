@@ -196,6 +196,23 @@ export interface MenuTheme {
   }
   navigation: { style: PaginationStyle; color: string }
   banners:    { position: 'inline' | 'dedicated-page' }
+  // Pop-up istruzioni mostrato al centro (sfondo sfocato) all'apertura del menu:
+  // spiega che i piatti sono cliccabili e come girare pagina. showOnce: appare
+  // una sola volta per dispositivo (localStorage). text supporta \n.
+  hintPopup: {
+    enabled:      boolean
+    showOnce:     boolean
+    title:        string
+    text:         string
+    font:         string
+    titleSize:    number
+    textSize:     number
+    bgColor:      string
+    titleColor:   string
+    textColor:    string
+    closeColor:   string
+    borderRadius: 'none' | 'sm' | 'md'
+  }
 }
 
 // ── Root ──────────────────────────────────────────────────────────────────────
@@ -254,6 +271,20 @@ export const DEFAULT_THEME: RestaurantTheme = {
     },
     navigation: { style: 'prec_succ', color: '#4f4f4f' },
     banners:    { position: 'inline' },
+    hintPopup: {
+      enabled:  true,
+      showOnce: true,
+      title:    'Come sfogliare il menu',
+      text:     'Tocca un piatto per scoprire i dettagli.\nPer girare pagina tocca o trascina gli angoli in basso del foglio.',
+      font:     'DM Sans',
+      titleSize: 1.1,
+      textSize:  0.85,
+      bgColor:    '#111111',
+      titleColor: '#ede8e0',
+      textColor:  '#a09080',
+      closeColor: '#777777',
+      borderRadius: 'sm',
+    },
   },
   card: {
     bgColor:      '#111111',
@@ -343,6 +374,7 @@ function parseNested(r: Record<string, unknown>): RestaurantTheme {
   const ms  = sub(m.stickyCategories)
   const mn  = sub(m.navigation)
   const mbn = sub(m.banners)
+  const mh  = sub(m.hintPopup)
   const ca  = sub(r.card)
   const cac = sub(ca.category)
   const cat = sub(ca.title)
@@ -416,6 +448,20 @@ function parseNested(r: Record<string, unknown>): RestaurantTheme {
         color: str(mn.color, d.menu.navigation.color),
       },
       banners: { position: one(mbn.position, ['inline','dedicated-page'] as const, d.menu.banners.position) },
+      hintPopup: {
+        enabled:      mh.enabled !== false,
+        showOnce:     mh.showOnce !== false,
+        title:        str(mh.title, d.menu.hintPopup.title),
+        text:         str(mh.text, d.menu.hintPopup.text),
+        font:         str(mh.font, d.menu.hintPopup.font),
+        titleSize:    num(mh.titleSize, d.menu.hintPopup.titleSize),
+        textSize:     num(mh.textSize, d.menu.hintPopup.textSize),
+        bgColor:      str(mh.bgColor, d.menu.hintPopup.bgColor),
+        titleColor:   str(mh.titleColor, d.menu.hintPopup.titleColor),
+        textColor:    str(mh.textColor, d.menu.hintPopup.textColor),
+        closeColor:   str(mh.closeColor, d.menu.hintPopup.closeColor),
+        borderRadius: one(mh.borderRadius, ['none','sm','md'] as const, d.menu.hintPopup.borderRadius),
+      },
     },
     card: {
       bgColor:      str(ca.bgColor, d.card.bgColor),
@@ -554,6 +600,7 @@ export function migrateFlat(r: Record<string, unknown>): RestaurantTheme {
       stickyCategories: { style: stickyCatStyle, bgColor: navBg, textColor: textMuted, activeColor: accent, font: fontSans, fontSize: 0.625 },
       navigation:   { style: paginationStyle, color: textMuted },
       banners:      { position: 'inline' },
+      hintPopup:    structuredClone(d.menu.hintPopup),
     },
     card: {
       ...structuredClone(d.card), accent, align: dishAlignment,
@@ -591,6 +638,7 @@ export function allThemeFonts(theme: RestaurantTheme): string[] {
     theme.landing.title.font, theme.landing.buttons.font, theme.landing.description.font,
     theme.menu.dishes.titleFont, theme.menu.descriptions.font,
     theme.menu.prices.font, theme.menu.categories.font, theme.menu.stickyCategories.font,
+    theme.menu.hintPopup.font,
     theme.card.title.font, theme.card.description.font, theme.card.price.font,
   ]
   return all.filter((f, i, a) => f && a.indexOf(f) === i)

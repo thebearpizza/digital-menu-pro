@@ -14,7 +14,7 @@ import { useMenuPDF }  from './useMenuPDF'
 import {
   googleFontsUrl, allThemeFonts, fontStack,
   hexToRgb, landingButtonRadius, landingTextureCss, menuBackgroundCss,
-  parseTheme, lineSizesFor, customFontFaceCss,
+  parseTheme, lineSizesFor, customFontFaceCss, cardBorderRadius,
 } from '@/lib/theme'
 import type { RestaurantTheme } from '@/lib/theme'
 
@@ -236,6 +236,28 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
   transitioningRef.current = transitioning
   const menuVisible   = selectedMenuId !== null
   const menuReady     = menuVisible && !!pdfUrl
+
+  // ── Hint popup ("come sfogliare il menu") ──────────────────────────────────
+  // Mostrato al centro con sfondo sfocato all'apertura del menu. Con showOnce
+  // appare una sola volta per dispositivo (localStorage); nell'anteprima admin
+  // non persiste mai, così resta visibile/editabile in edit mode.
+  const hint = m.hintPopup
+  const [showHint, setShowHint] = useState(false)
+  const hintKey = () => `dmp-menu-hint-seen:${window.location.pathname}`
+  useEffect(() => {
+    if (!menuReady || !hint.enabled) return
+    if (!isPreviewRef.current && hint.showOnce) {
+      try { if (localStorage.getItem(hintKey())) return } catch {}
+    }
+    setShowHint(true)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [menuReady, hint.enabled])
+  function dismissHint() {
+    setShowHint(false)
+    if (!isPreviewRef.current && hint.showOnce) {
+      try { localStorage.setItem(hintKey(), '1') } catch {}
+    }
+  }
 
   // ── Poster / video logic ───────────────────────────────────────────────────
   function handleCanPlay() {
@@ -611,6 +633,47 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
             editMode={editMode && !cardPreviewOpen}
             onEditTarget={sendEdit}
           />
+        </div>
+      )}
+
+      {/* ── HINT POPUP — istruzioni d'uso mostrate all'apertura del menu ── */}
+      {menuVisible && menuReady && !cardPreviewOpen && hint.enabled && showHint && (
+        <div
+          className="absolute inset-0 flex items-center justify-center px-8"
+          style={{ zIndex: 450, background: 'rgba(0,0,0,0.62)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)' }}
+          onClick={() => { if (editMode) sendEdit('menu-hint'); else dismissHint() }}
+        >
+          <EditHandle target="menu-hint" editMode={editMode} className="w-full max-w-sm">
+            <div
+              className="relative w-full text-center"
+              style={{
+                background:   hint.bgColor,
+                borderRadius: cardBorderRadius(hint.borderRadius),
+                border:       `1px solid ${m.accent}26`,
+                padding:      '30px 26px',
+                fontFamily:   fontStack(hint.font, 'sans'),
+                animation:    'dish-fade-in 0.25s ease-out both',
+              }}
+              onClick={e => { if (!editMode) e.stopPropagation() }}
+            >
+              <button
+                onClick={e => { e.stopPropagation(); if (editMode) sendEdit('menu-hint'); else dismissHint() }}
+                aria-label="Chiudi"
+                className="absolute top-2.5 right-3.5 text-xl leading-none transition-opacity hover:opacity-60"
+                style={{ color: hint.closeColor }}
+              >
+                ×
+              </button>
+              {hint.title && (
+                <p style={{ color: hint.titleColor, fontSize: `${hint.titleSize}rem`, letterSpacing: '0.06em', fontWeight: 600, marginBottom: 12 }}>
+                  {hint.title}
+                </p>
+              )}
+              <p style={{ color: hint.textColor, fontSize: `${hint.textSize}rem`, lineHeight: 1.75, whiteSpace: 'pre-wrap' }}>
+                {hint.text}
+              </p>
+            </div>
+          </EditHandle>
         </div>
       )}
 
