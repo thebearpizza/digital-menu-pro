@@ -1200,14 +1200,12 @@ function EditorSidebar({ target, theme, setters, previewMode, onClose, restauran
           <div>
             <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Stile barra</p>
             <PillGroup
-              options={[{ label:'Solido', value:'solid' },{ label:'Vetro', value:'transparent-blur' },{ label:'Nascosta', value:'none' }]}
+              options={[{ label:'Solido', value:'solid' },{ label:'Nascosta', value:'none' }]}
               value={m.stickyCategories.style} onChange={v => setters.setMSticky({ style: v })} />
           </div>
           {m.stickyCategories.style !== 'none' && (<>
-            {m.stickyCategories.style === 'solid' && (
-              <ColorRow label="Sfondo barra" value={m.stickyCategories.bgColor.startsWith('rgba') ? '#070707' : m.stickyCategories.bgColor}
-                onChange={v => setters.setMSticky({ bgColor: v })} />
-            )}
+            <ColorRow label="Sfondo barra" value={m.stickyCategories.bgColor.startsWith('rgba') ? '#070707' : m.stickyCategories.bgColor}
+              onChange={v => setters.setMSticky({ bgColor: v })} />
             <ColorRow label="Testo categoria" value={m.stickyCategories.textColor}
               onChange={v => setters.setMSticky({ textColor: v })} />
             <ColorRow label="Categoria attiva" value={m.stickyCategories.activeColor}

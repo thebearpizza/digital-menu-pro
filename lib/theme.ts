@@ -185,7 +185,9 @@ export interface MenuTheme {
   prices:       { font: string; size: number; color: string; format: PriceFormat; currency: string; position: PricePosition; align: AlignOpt }
   categories:   { font: string; color: string; size: number; align: AlignOpt; flourish: CategoryFlourish; flourishColor: string; flourishWidth: number; flourishThickness: number }
   stickyCategories: {
-    style:     'transparent-blur' | 'solid' | 'none'
+    // Lo stile 'transparent-blur' (vetro) è stato rimosso: resa inaffidabile
+    // (backdrop-filter + sticky). I temi salvati con quel valore ricadono su 'solid'.
+    style:     'solid' | 'none'
     bgColor:   string
     textColor: string
     activeColor: string
@@ -402,7 +404,7 @@ function parseNested(r: Record<string, unknown>): RestaurantTheme {
       prices:       { font: str(mp.font, d.menu.prices.font), size: num(mp.size, d.menu.prices.size), color: str(mp.color, d.menu.prices.color), format: one(mp.format, ['symbol-left','symbol-right','no-symbol'] as const, d.menu.prices.format), currency: str(mp.currency, d.menu.prices.currency), position: one(mp.position, ['left','right','above','below'] as const, d.menu.prices.position), align: one(mp.align, ['inherit','left','center','right'] as const, d.menu.prices.align) },
       categories:   { font: str(mc.font, d.menu.categories.font), color: str(mc.color, d.menu.categories.color), size: num(mc.size, d.menu.categories.size), align: one(mc.align, ['inherit','left','center','right'] as const, d.menu.categories.align), flourish: one(mc.flourish, ['none','lines','dots','diamond'] as const, d.menu.categories.flourish), flourishColor: str(mc.flourishColor, d.menu.categories.flourishColor), flourishWidth: num(mc.flourishWidth, d.menu.categories.flourishWidth), flourishThickness: num(mc.flourishThickness, d.menu.categories.flourishThickness) },
       stickyCategories: {
-        style:       one(ms.style, ['transparent-blur','solid','none'] as const, d.menu.stickyCategories.style),
+        style:       one(ms.style, ['solid','none'] as const, d.menu.stickyCategories.style),
         bgColor:     str(ms.bgColor, d.menu.stickyCategories.bgColor),
         textColor:   str(ms.textColor, d.menu.stickyCategories.textColor),
         activeColor: str(ms.activeColor, d.menu.stickyCategories.activeColor),
@@ -506,8 +508,7 @@ export function migrateFlat(r: Record<string, unknown>): RestaurantTheme {
     r.dividerStyle === 'none' ? 'none' : r.dividerStyle === 'dashed' ? 'dashed' : 'solid'
 
   const stickyCatStyle: MenuTheme['stickyCategories']['style'] =
-    r.stickyCategoryStyle === 'transparent-blur' ? 'transparent-blur'
-    : r.stickyCategoryStyle === 'none' ? 'none' : 'solid'
+    r.stickyCategoryStyle === 'none' ? 'none' : 'solid'
 
   const dishAlignment: MenuTheme['layout']['dishAlignment'] =
     r.dishAlignment === 'center' ? 'center' : r.dishAlignment === 'right' ? 'right' : 'left'
