@@ -476,7 +476,7 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
                   height: `${l.logo.size * 0.75}rem`,
                   mixBlendMode: l.logo.mixBlend as any,
                   opacity: 0.88,
-                  marginBottom: isVis(vis,'name') ? '1.5rem' : '2.5rem',
+                  marginBottom: isVis(vis,'name') ? `${l.logo.gapBottom}rem` : '2.5rem',
                 }} />
             )}
           </EditHandle>
@@ -501,7 +501,7 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
 
           <EditHandle target="landing-desc" editMode={editMode}>
             {displayDesc && isVis(vis,'description') && (
-              <p style={{ color: l.description.color, fontFamily: DESC_FONT, fontSize: `${l.description.size}rem`, letterSpacing: '0.2em', textTransform: 'uppercase', marginTop: '0.6rem' }}>
+              <p style={{ color: l.description.color, fontFamily: DESC_FONT, fontSize: `${l.description.size}rem`, letterSpacing: '0.2em', textTransform: 'uppercase', marginTop: `${l.title.gapBottom}rem` }}>
                 {displayDesc}
               </p>
             )}

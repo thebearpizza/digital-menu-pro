@@ -123,9 +123,9 @@ export interface LandingTheme {
   background:  LandingBackground
   accent:      string
   // image: custom logo upload — overrides restaurant.logo_url when set
-  logo:        { size: number; mixBlend: 'normal' | 'multiply' | 'screen'; image: string }
+  logo:        { size: number; mixBlend: 'normal' | 'multiply' | 'screen'; image: string; gapBottom: number }
   // text: override for the restaurant name — falls back to restaurant.name when empty
-  title:       { font: string; size: number; color: string; weight: 'light' | 'normal' | 'bold'; text: string }
+  title:       { font: string; size: number; color: string; weight: 'light' | 'normal' | 'bold'; text: string; gapBottom: number }
   // text: override for the slogan — falls back to restaurant.description when empty
   description: { font: string; size: number; color: string; text: string }
   buttons: {
@@ -137,7 +137,7 @@ export interface LandingTheme {
     fontSize:    number
     textColor:   string
     bgColor:     string
-    // Vertical gap (rem) between the title/logo block and the menu buttons
+    // Vertical gap (rem) between description (or title) and the menu buttons
     gapTop:      number
   }
   socials: { color: string; size: number; style: 'minimal' | 'circle' | 'box' | 'outline' }
@@ -202,8 +202,8 @@ export const DEFAULT_THEME: RestaurantTheme = {
       immersiveTransition: false, poster: undefined,
     },
     accent:      '#c9a96e',
-    logo:        { size: 3.5, mixBlend: 'normal', image: '' },
-    title:       { font: 'Cormorant Garamond', size: 2.0, color: '#ede8e0', weight: 'light', text: '' },
+    logo:        { size: 3.5, mixBlend: 'normal', image: '', gapBottom: 1.5 },
+    title:       { font: 'Cormorant Garamond', size: 2.0, color: '#ede8e0', weight: 'light', text: '', gapBottom: 0.6 },
     description: { font: 'DM Sans', size: 0.6, color: '#c9a96e80', text: '' },
     buttons: {
       shape: 'flat', borderStyle: 'solid', borderWidth: 1, borderColor: '#c9a96e',
@@ -329,8 +329,8 @@ function parseNested(r: Record<string, unknown>): RestaurantTheme {
         poster:              str(lb.poster, '') || undefined,
       },
       accent:      str(l.accent, d.landing.accent),
-      logo:        { size: num(ll.size, d.landing.logo.size), mixBlend: one(ll.mixBlend, ['normal','multiply','screen'] as const, d.landing.logo.mixBlend), image: str(ll.image, d.landing.logo.image) },
-      title:       { font: str(lt.font, d.landing.title.font), size: num(lt.size, d.landing.title.size), color: str(lt.color, d.landing.title.color), weight: one(lt.weight, ['light','normal','bold'] as const, d.landing.title.weight), text: str(lt.text, d.landing.title.text) },
+      logo:        { size: num(ll.size, d.landing.logo.size), mixBlend: one(ll.mixBlend, ['normal','multiply','screen'] as const, d.landing.logo.mixBlend), image: str(ll.image, d.landing.logo.image), gapBottom: num(ll.gapBottom, d.landing.logo.gapBottom) },
+      title:       { font: str(lt.font, d.landing.title.font), size: num(lt.size, d.landing.title.size), color: str(lt.color, d.landing.title.color), weight: one(lt.weight, ['light','normal','bold'] as const, d.landing.title.weight), text: str(lt.text, d.landing.title.text), gapBottom: num(lt.gapBottom, d.landing.title.gapBottom) },
       description: { font: str(ld.font, d.landing.description.font), size: num(ld.size, d.landing.description.size), color: str(ld.color, d.landing.description.color), text: str(ld.text, d.landing.description.text) },
       buttons: {
         shape:       one(bu.shape, ['flat','rounded','pill'] as const, d.landing.buttons.shape),
@@ -477,8 +477,8 @@ export function migrateFlat(r: Record<string, unknown>): RestaurantTheme {
         poster: typeof r.bgVideoPoster === 'string' ? r.bgVideoPoster : undefined,
       },
       accent,
-      logo:        { size: 3.5, mixBlend: 'normal', image: '' },
-      title:       { font: fontSerif, size: num(fs.title, d.landing.title.size), color: textPrimary, weight: 'light', text: '' },
+      logo:        { size: 3.5, mixBlend: 'normal', image: '', gapBottom: d.landing.logo.gapBottom },
+      title:       { font: fontSerif, size: num(fs.title, d.landing.title.size), color: textPrimary, weight: 'light', text: '', gapBottom: d.landing.title.gapBottom },
       description: { font: fontSans, size: 0.6, color: `${accent}80`, text: '' },
       buttons: {
         shape: buttonShape, borderStyle: 'solid', borderWidth: 1, borderColor: accent,

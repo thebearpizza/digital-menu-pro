@@ -403,10 +403,6 @@ function FontSizeSlider({ label, value, min, max, step, previewFont, onChange }:
       <input type="range" min={min} max={max} step={step} value={value}
         onChange={e => onChange(Number(e.target.value))}
         className="w-full accent-gray-900" />
-      <p className="mt-0.5 overflow-hidden text-nowrap"
-        style={{ fontSize: `${value}rem`, fontFamily: previewFont, color: '#999', lineHeight: 1.2 }}>
-        Testo di esempio
-      </p>
     </div>
   )
 }
@@ -716,9 +712,9 @@ function EditorSidebar({ target, theme, setters, previewMode, onClose, restauran
               options={[{ label:'Normale', value:'normal' },{ label:'Multiply', value:'multiply' },{ label:'Screen', value:'screen' }]}
               value={l.logo.mixBlend} onChange={v => setters.setLLogo({ mixBlend: v })} />
           </div>
-          <FontSizeSlider label="Spazio sotto logo/nome" value={l.buttons.gapTop}
+          <FontSizeSlider label="Spazio sotto logo" value={l.logo.gapBottom}
             min={0} max={6} step={0.25} previewFont="inherit"
-            onChange={v => setters.setLBu({ gapTop: v })} />
+            onChange={v => setters.setLLogo({ gapBottom: v })} />
         </div>
       )
 
@@ -744,6 +740,9 @@ function EditorSidebar({ target, theme, setters, previewMode, onClose, restauran
               options={[{ label:'Light', value:'light' },{ label:'Normal', value:'normal' },{ label:'Bold', value:'bold' }]}
               value={l.title.weight} onChange={v => setters.setLTitle({ weight: v })} />
           </div>
+          <FontSizeSlider label="Spazio sotto il nome" value={l.title.gapBottom}
+            min={0} max={6} step={0.25} previewFont="inherit"
+            onChange={v => setters.setLTitle({ gapBottom: v })} />
         </div>
       )
 
@@ -764,6 +763,9 @@ function EditorSidebar({ target, theme, setters, previewMode, onClose, restauran
             onChange={v => setters.setLDesc({ size: v })} />
           <ColorRow label="Colore" value={l.description.color.slice(0, 7)}
             onChange={v => setters.setLDesc({ color: v })} />
+          <FontSizeSlider label="Spazio sopra i bottoni menu" value={l.buttons.gapTop}
+            min={0} max={6} step={0.25} previewFont="inherit"
+            onChange={v => setters.setLBu({ gapTop: v })} />
         </div>
       )
 
