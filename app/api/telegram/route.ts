@@ -83,21 +83,25 @@ async function monthlyVoiceSeconds(sb: SupabaseClient): Promise<number> {
   return (data ?? []).reduce((sum, r) => sum + (r.duration_seconds ?? 0), 0)
 }
 
-/** Scarica il vocale da Telegram e lo trascrive con Google STT. */
-async function transcribeVoice(fileId: string): Promise<string | null> {
+/**
+ * Scarica il vocale da Telegram e lo trascrive con Google STT.
+ * Ritorna '' se l'audio non contiene parlato riconoscibile; lancia un errore
+ * con i dettagli (visibili in chat e nei log Vercel) se un servizio fallisce.
+ */
+async function transcribeVoice(fileId: string): Promise<string> {
   const botToken = process.env.TELEGRAM_BOT_TOKEN
   const apiKey = process.env.GOOGLE_SPEECH_API_KEY
-  if (!botToken || !apiKey) return null
+  if (!botToken || !apiKey) throw new Error('configurazione mancante')
 
   // 1. file_id → file_path
   const fileRes = await fetch(`https://api.telegram.org/bot${botToken}/getFile?file_id=${fileId}`)
   const fileJson = await fileRes.json().catch(() => null)
   const filePath: string | undefined = fileJson?.result?.file_path
-  if (!filePath) return null
+  if (!filePath) throw new Error(`Telegram getFile fallito: ${fileJson?.description ?? 'risposta vuota'}`)
 
   // 2. Download dell'audio (i vocali Telegram sono OGG/Opus a 48 kHz)
   const audioRes = await fetch(`https://api.telegram.org/file/bot${botToken}/${filePath}`)
-  if (!audioRes.ok) return null
+  if (!audioRes.ok) throw new Error(`download audio fallito (HTTP ${audioRes.status})`)
   const audioBase64 = Buffer.from(await audioRes.arrayBuffer()).toString('base64')
 
   // 3. Trascrizione
@@ -113,13 +117,19 @@ async function transcribeVoice(fileId: string): Promise<string | null> {
       audio: { content: audioBase64 },
     }),
   })
-  if (!sttRes.ok) return null
-  const stt = await sttRes.json().catch(() => null)
-  const transcript = (stt?.results ?? [])
+  const sttBody = await sttRes.text().catch(() => '')
+  if (!sttRes.ok) {
+    console.error('Google STT error', sttRes.status, sttBody)
+    let googleMsg: string | null = null
+    try { googleMsg = JSON.parse(sttBody)?.error?.message ?? null } catch {}
+    throw new Error(`Google STT HTTP ${sttRes.status}${googleMsg ? ` — ${googleMsg}` : ''}`)
+  }
+  let stt: any = null
+  try { stt = JSON.parse(sttBody) } catch {}
+  return (stt?.results ?? [])
     .map((r: any) => r?.alternatives?.[0]?.transcript ?? '')
     .join(' ')
     .trim()
-  return transcript || null
 }
 
 // ── Lookup helpers (scoped all'owner abbinato) ────────────────────────────────
