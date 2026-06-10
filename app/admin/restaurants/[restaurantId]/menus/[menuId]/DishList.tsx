@@ -20,7 +20,7 @@ import MoveCategoryModal from './MoveCategoryModal'
 import VisibilityToggle from '@/components/ui/VisibilityToggle'
 import {
   deleteDish, reorderCategories, reorderDishes,
-  duplicateDish, duplicateCategory, findDishTwins, DishTwin,
+  duplicateDish, duplicateCategory, deleteCategory, renameCategory, findDishTwins, DishTwin,
   toggleDishActive, toggleCategoryActive,
 } from './actions'
 
@@ -220,6 +220,7 @@ function SortableCategory({
   onReorderDishes,
   onDuplicateCategory,
   onDeleteCategory,
+  onRenameCategory,
   onAddDish,
   onMoveCategory,
   onToggleCategory,
@@ -238,6 +239,7 @@ function SortableCategory({
   onReorderDishes: (cat: string, dishIds: string[]) => void
   onDuplicateCategory: (cat: string) => void
   onDeleteCategory: (cat: string) => void
+  onRenameCategory: (cat: string) => void
   onAddDish: (cat: string) => void
   onMoveCategory: (cat: string) => void
   onToggleCategory: (cat: string, active: boolean) => void
@@ -299,14 +301,18 @@ function SortableCategory({
       >
         Duplica
       </button>
-      {dishes.length === 0 && (
-        <button
-          onClick={() => { onDeleteCategory(cat); setKebabOpen(false) }}
-          className="text-xs text-red-500 hover:underline whitespace-nowrap"
-        >
-          Elimina
-        </button>
-      )}
+      <button
+        onClick={() => { onRenameCategory(cat); setKebabOpen(false) }}
+        className="text-xs text-gray-500 hover:text-gray-800 hover:underline whitespace-nowrap"
+      >
+        Rinomina
+      </button>
+      <button
+        onClick={() => { onDeleteCategory(cat); setKebabOpen(false) }}
+        className="text-xs text-red-500 hover:underline whitespace-nowrap"
+      >
+        Elimina
+      </button>
     </>
   )
 
@@ -377,14 +383,18 @@ function SortableCategory({
                 >
                   Duplica
                 </button>
-                {dishes.length === 0 && (
-                  <button
-                    onClick={() => { onDeleteCategory(cat); setKebabOpen(false) }}
-                    className="w-full text-left px-4 py-3 text-sm text-red-500 hover:bg-red-50"
-                  >
-                    Elimina
-                  </button>
-                )}
+                <button
+                  onClick={() => { onRenameCategory(cat); setKebabOpen(false) }}
+                  className="w-full text-left px-4 py-3 text-sm text-gray-700 hover:bg-gray-50"
+                >
+                  Rinomina
+                </button>
+                <button
+                  onClick={() => { onDeleteCategory(cat); setKebabOpen(false) }}
+                  className="w-full text-left px-4 py-3 text-sm text-red-500 hover:bg-red-50"
+                >
+                  Elimina
+                </button>
               </div>
             )}
           </div>
@@ -562,11 +572,37 @@ export default function DishList({
   }
 
   async function handleDeleteCategory(cat: string) {
-    if ((byCategory[cat]?.length ?? 0) > 0) return
-    if (!confirm(`Eliminare la categoria vuota "${cat}"?`)) return
+    const count = byCategory[cat]?.length ?? 0
+    const msg = count > 0
+      ? `Eliminare la categoria "${cat}" e i ${count} piatti che contiene? L'operazione non è reversibile.`
+      : `Eliminare la categoria vuota "${cat}"?`
+    if (!confirm(msg)) return
     const newCats = categories.filter(c => c !== cat)
     setCategories(newCats)
-    await reorderCategories(restaurantId, menuId, newCats)
+    if (count > 0) setDishes(prev => prev.filter(d => (d.category ?? 'Senza categoria') !== cat))
+    try {
+      if (count > 0) await deleteCategory(restaurantId, menuId, cat)
+      else await reorderCategories(restaurantId, menuId, newCats)
+    } catch { alert("Errore durante l'eliminazione della categoria.") }
+  }
+
+  async function handleRenameCategory(cat: string) {
+    const input = prompt(`Nuovo nome per la categoria "${cat}":`, cat === 'Senza categoria' ? '' : cat)
+    if (input === null) return
+    const newName = input.trim()
+    if (!newName || newName === cat) return
+    if (categories.includes(newName)) { alert(`Esiste già una categoria "${newName}".`); return }
+    setCategories(prev => prev.map(c => (c === cat ? newName : c)))
+    setDishes(prev => prev.map(d =>
+      (d.category ?? 'Senza categoria') === cat ? { ...d, category: newName } : d
+    ))
+    setExpanded(prev => {
+      if (!prev.has(cat)) return prev
+      const next = new Set(prev); next.delete(cat); next.add(newName); return next
+    })
+    try {
+      await renameCategory(restaurantId, menuId, cat, newName)
+    } catch { alert('Errore durante la rinomina della categoria.') }
   }
 
   // ── Piatti: CRUD / duplica / sposta ─────────────────────────────────────────
@@ -774,6 +810,7 @@ export default function DishList({
                   onReorderDishes={handleReorderDishes}
                   onDuplicateCategory={handleDuplicateCategory}
                   onDeleteCategory={handleDeleteCategory}
+                  onRenameCategory={handleRenameCategory}
                   onAddDish={handleAddDish}
                   onMoveCategory={setMoveCatName}
                   onToggleCategory={handleToggleCategory}

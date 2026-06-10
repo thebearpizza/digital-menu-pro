@@ -122,6 +122,59 @@ export async function reorderCategories(
   revalidate(restaurantId, menuId)
 }
 
+/** Elimina una categoria e tutti i piatti che contiene, poi la rimuove
+ *  da category_order. "Senza categoria" raggruppa i piatti con category null. */
+export async function deleteCategory(restaurantId: string, menuId: string, category: string) {
+  const supabase = await createClient()
+  await verifyOwnership(supabase, restaurantId)
+
+  const isUncategorized = category === 'Senza categoria'
+  const base = supabase.from('dishes').delete().eq('menu_id', menuId)
+  const { error } = await (isUncategorized ? base.is('category', null) : base.eq('category', category))
+  if (error) throw new Error(error.message)
+
+  const { data: menu } = await supabase
+    .from('menus').select('category_order').eq('id', menuId).single()
+  const order = (menu?.category_order as string[] | null) ?? []
+  if (order.includes(category)) {
+    const { error: err2 } = await supabase
+      .from('menus')
+      .update({ category_order: order.filter(c => c !== category) })
+      .eq('id', menuId)
+    if (err2) throw new Error(err2.message)
+  }
+  revalidate(restaurantId, menuId)
+}
+
+/** Rinomina una categoria: aggiorna i piatti che la usano e category_order.
+ *  Rinominare "Senza categoria" assegna la nuova categoria ai piatti senza. */
+export async function renameCategory(
+  restaurantId: string,
+  menuId: string,
+  oldName: string,
+  newName: string,
+) {
+  const supabase = await createClient()
+  await verifyOwnership(supabase, restaurantId)
+
+  const isUncategorized = oldName === 'Senza categoria'
+  const base = supabase.from('dishes').update({ category: newName }).eq('menu_id', menuId)
+  const { error } = await (isUncategorized ? base.is('category', null) : base.eq('category', oldName))
+  if (error) throw new Error(error.message)
+
+  const { data: menu } = await supabase
+    .from('menus').select('category_order').eq('id', menuId).single()
+  const order = (menu?.category_order as string[] | null) ?? []
+  if (order.includes(oldName)) {
+    const { error: err2 } = await supabase
+      .from('menus')
+      .update({ category_order: order.map(c => (c === oldName ? newName : c)) })
+      .eq('id', menuId)
+    if (err2) throw new Error(err2.message)
+  }
+  revalidate(restaurantId, menuId)
+}
+
 // ── MODULO 4: riordino piatti, duplicazione, spostamento ────────────────────────
 
 const DISH_COLUMNS =
