@@ -20,7 +20,7 @@ import MoveCategoryModal from './MoveCategoryModal'
 import VisibilityToggle from '@/components/ui/VisibilityToggle'
 import {
   deleteDish, reorderCategories, reorderDishes,
-  duplicateDish, duplicateCategory, deleteCategory, renameCategory, findDishTwins, DishTwin,
+  duplicateDish, duplicateCategory, deleteCategory, renameCategory, bulkUpdateDishPrices, findDishTwins, DishTwin,
   toggleDishActive, toggleCategoryActive,
 } from './actions'
 
@@ -87,6 +87,8 @@ function anyFieldDiffers(s: SourceDish, twins: DishTwin[]): boolean {
 
 function SortableDish({
   dish,
+  selected,
+  onSelect,
   onEdit,
   onDelete,
   onDuplicate,
@@ -95,6 +97,8 @@ function SortableDish({
   deletingId,
 }: {
   dish: Dish
+  selected: boolean
+  onSelect: (dish: Dish, checked: boolean) => void
   onEdit: (dish: Dish) => void
   onDelete: (dish: Dish) => void
   onDuplicate: (dish: Dish) => void
@@ -139,6 +143,16 @@ function SortableDish({
       >
         ⠿
       </button>
+
+      {/* Selezione multipla — per modifiche di prezzo in blocco */}
+      <input
+        type="checkbox"
+        checked={selected}
+        onChange={e => onSelect(dish, e.target.checked)}
+        onClick={e => e.stopPropagation()}
+        className="accent-blue-600 w-4 h-4 shrink-0 cursor-pointer"
+        aria-label={`Seleziona ${dish.name}`}
+      />
 
       {/* Contenuto — flex-1, mai sacrificato */}
       <div className="flex-1 min-w-0">
@@ -225,6 +239,8 @@ function SortableCategory({
   onMoveCategory,
   onToggleCategory,
   deletingId,
+  selectedIds,
+  onSelectDish,
 }: {
   cat: string
   dishes: Dish[]
@@ -244,6 +260,8 @@ function SortableCategory({
   onMoveCategory: (cat: string) => void
   onToggleCategory: (cat: string, active: boolean) => void
   deletingId: string | null
+  selectedIds: Set<string>
+  onSelectDish: (dish: Dish, checked: boolean) => void
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: cat })
@@ -425,6 +443,8 @@ function SortableCategory({
                     <SortableDish
                       key={dish.id}
                       dish={dish}
+                      selected={selectedIds.has(dish.id)}
+                      onSelect={onSelectDish}
                       onEdit={onEdit}
                       onDelete={onDelete}
                       onDuplicate={onDuplicateDish}
@@ -469,6 +489,35 @@ export default function DishList({
   // Aggiunta categoria (MODULO 3)
   const [addingCat, setAddingCat] = useState(false)
   const [newCatName, setNewCatName] = useState('')
+
+  // Selezione multipla piatti → cambio prezzo in blocco
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [bulkPrice, setBulkPrice] = useState('')
+  const [bulkSaving, setBulkSaving] = useState(false)
+
+  function handleSelectDish(dish: Dish, checked: boolean) {
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      checked ? next.add(dish.id) : next.delete(dish.id)
+      return next
+    })
+  }
+
+  async function handleBulkPrice() {
+    const parsed = parseFloat(bulkPrice.replace(',', '.'))
+    if (bulkPrice.trim() === '' || isNaN(parsed) || parsed < 0) {
+      alert('Inserisci un prezzo valido.'); return
+    }
+    const ids = Array.from(selectedIds)
+    setBulkSaving(true)
+    try {
+      await bulkUpdateDishPrices(restaurantId, menuId, ids, parsed)
+      setDishes(prev => prev.map(d => selectedIds.has(d.id) ? { ...d, price: parsed } : d))
+      setSelectedIds(new Set())
+      setBulkPrice('')
+    } catch { alert('Errore durante il cambio prezzo.') }
+    finally { setBulkSaving(false) }
+  }
 
   // Categorie nell'ordine corretto: rispetta category_order salvato (incluse le
   // categorie vuote create a mano), poi append delle categorie nuove dai piatti.
@@ -815,11 +864,45 @@ export default function DishList({
                   onMoveCategory={setMoveCatName}
                   onToggleCategory={handleToggleCategory}
                   deletingId={deletingId}
+                  selectedIds={selectedIds}
+                  onSelectDish={handleSelectDish}
                 />
               ))}
             </div>
           </SortableContext>
         </DndContext>
+      )}
+
+      {/* Barra azioni selezione multipla — cambio prezzo in blocco */}
+      {selectedIds.size > 0 && (
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[200] bg-gray-900 text-white shadow-2xl rounded-lg px-4 py-3 flex items-center gap-3 flex-wrap max-w-[calc(100vw-2rem)]">
+          <span className="text-sm font-medium whitespace-nowrap">
+            {selectedIds.size} {selectedIds.size === 1 ? 'piatto selezionato' : 'piatti selezionati'}
+          </span>
+          <form
+            onSubmit={e => { e.preventDefault(); handleBulkPrice() }}
+            className="flex items-center gap-2"
+          >
+            <span className="text-sm text-gray-300">€</span>
+            <input
+              type="text"
+              inputMode="decimal"
+              value={bulkPrice}
+              onChange={e => setBulkPrice(e.target.value)}
+              placeholder="Nuovo prezzo"
+              className="w-28 px-2 py-1.5 text-sm text-gray-900 rounded border-0 focus:outline-none"
+            />
+            <button type="submit" disabled={bulkSaving}
+              className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-sm font-medium px-3 py-1.5 rounded transition-colors whitespace-nowrap">
+              {bulkSaving ? '…' : 'Applica prezzo'}
+            </button>
+          </form>
+          <button type="button"
+            onClick={() => { setSelectedIds(new Set()); setBulkPrice('') }}
+            className="text-sm text-gray-400 hover:text-white whitespace-nowrap">
+            Annulla
+          </button>
+        </div>
       )}
     </div>
   )

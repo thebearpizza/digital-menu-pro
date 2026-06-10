@@ -175,6 +175,25 @@ export async function renameCategory(
   revalidate(restaurantId, menuId)
 }
 
+/** Imposta lo stesso prezzo su più piatti in un colpo solo (selezione multipla). */
+export async function bulkUpdateDishPrices(
+  restaurantId: string,
+  menuId: string,
+  dishIds: string[],
+  price: number | null,
+) {
+  if (!dishIds.length) return
+  const supabase = await createClient()
+  await verifyOwnership(supabase, restaurantId)
+  const { error } = await supabase
+    .from('dishes')
+    .update({ price, updated_at: new Date().toISOString() })
+    .eq('menu_id', menuId)
+    .in('id', dishIds)
+  if (error) throw new Error(error.message)
+  revalidate(restaurantId, menuId)
+}
+
 // ── MODULO 4: riordino piatti, duplicazione, spostamento ────────────────────────
 
 const DISH_COLUMNS =
