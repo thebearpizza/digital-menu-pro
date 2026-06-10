@@ -570,7 +570,9 @@ export function googleFontsUrl(fonts: string[]): string {
   const families = unique
     .map(f => `family=${encodeURIComponent(f)}:ital,wght@0,300;0,400;0,600;1,400`)
     .join('&')
-  return `https://fonts.googleapis.com/css2?${families}&display=swap`
+  // display=block: meglio un breve istante di testo invisibile che un flash
+  // del font di fallback seguito dallo "scatto" al font corretto (FOUT).
+  return `https://fonts.googleapis.com/css2?${families}&display=block`
 }
 
 // Splits a (possibly multi-line) text into per-line { text, size } pairs.
@@ -595,8 +597,29 @@ function fontFileFormat(url: string): string {
 // resolves to the uploaded file wherever it's referenced (landing, menu, card).
 export function customFontFaceCss(customFonts: Record<string, string>): string {
   return Object.entries(customFonts)
-    .map(([name, url]) => `@font-face { font-family: '${name}'; src: url('${url}') format('${fontFileFormat(url)}'); font-display: swap; }`)
+    .map(([name, url]) => `@font-face { font-family: '${name}'; src: url('${url}') format('${fontFileFormat(url)}'); font-display: block; }`)
     .join('\n')
+}
+
+// CSS custom properties read by globals.css and the public viewer. Rendered
+// server-side in /m/[token] so the very first paint already shows the final
+// colors/sizes (ThemeInjector keeps them updated client-side for the preview).
+export function themeRootCssVars(theme: RestaurantTheme): string {
+  const l = theme.landing, m = theme.menu, c = theme.card
+  return [
+    ':root{',
+    `--theme-accent:${l.accent};`,
+    `--menu-accent:${m.accent};`,
+    `--theme-accent-rgb:${hexToRgb(m.accent)};`,
+    `--page-background:${m.pageBackground.color};`,
+    `--font-size-title:${m.dishes.titleSize}rem;`,
+    `--font-size-base:${m.descriptions.size}rem;`,
+    `--font-size-price:${m.prices.size}rem;`,
+    `--card-bg:${c.bgColor};`,
+    `--card-title-color:${c.title.color};`,
+    `--card-price-color:${c.price.color};`,
+    '}',
+  ].join('')
 }
 
 export function fontStack(name: string, category: 'serif' | 'sans'): string {

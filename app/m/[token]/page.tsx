@@ -2,7 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
 import type { Metadata } from 'next'
 import PublicMenuView from './PublicMenuView'
-import { parseTheme } from '@/lib/theme'
+import { parseTheme, googleFontsUrl, allThemeFonts, customFontFaceCss, themeRootCssVars } from '@/lib/theme'
 
 // The /m/[token] URL pattern is the printed QR contract — this path must never change.
 // See CLAUDE.md → "URL del QR code stabile per sempre"
@@ -99,24 +99,39 @@ export default async function PublicMenuPage({
   // If only one menu, auto-select it (skips welcome screen)
   const defaultMenuId = menus.length === 1 ? menus[0].id : null
 
+  // Fonts + CSS vars rendered server-side: the first HTML paint already has the
+  // final typography and colors, instead of flashing fallback fonts/defaults
+  // until the client-side ThemeFontLoader/ThemeInjector effects run.
+  const theme       = parseTheme((restaurant as any).theme_config)
+  const customNames = new Set(Object.keys(theme.customFonts))
+  const fontsHref   = googleFontsUrl(allThemeFonts(theme).filter(f => !customNames.has(f)))
+  const customCss   = customFontFaceCss(theme.customFonts)
+
   return (
-    <PublicMenuView
-      restaurant={{
-        name:             restaurant.name as string,
-        description:      restaurant.description as string | null,
-        logo_url:         restaurant.logo_url as string | null,
-        instagram_url:    restaurant.instagram_url as string | null,
-        facebook_url:     restaurant.facebook_url as string | null,
-        website_url:      restaurant.website_url as string | null,
-        tripadvisor_url:  restaurant.tripadvisor_url as string | null,
-        google_maps_url:  restaurant.google_maps_url as string | null,
-        visibility:       (restaurant.visibility ?? null) as Record<string, boolean> | null,
-        theme:            parseTheme((restaurant as any).theme_config),
-      }}
-      menus={menus}
-      banners={(banners ?? []) as any[]}
-      info={info ?? null}
-      defaultMenuId={defaultMenuId}
-    />
+    <>
+      <link rel="preconnect" href="https://fonts.googleapis.com" />
+      <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+      {fontsHref && <link rel="stylesheet" href={fontsHref} data-theme-fonts="1" />}
+      {customCss && <style data-custom-fonts="1" dangerouslySetInnerHTML={{ __html: customCss }} />}
+      <style dangerouslySetInnerHTML={{ __html: themeRootCssVars(theme) }} />
+      <PublicMenuView
+        restaurant={{
+          name:             restaurant.name as string,
+          description:      restaurant.description as string | null,
+          logo_url:         restaurant.logo_url as string | null,
+          instagram_url:    restaurant.instagram_url as string | null,
+          facebook_url:     restaurant.facebook_url as string | null,
+          website_url:      restaurant.website_url as string | null,
+          tripadvisor_url:  restaurant.tripadvisor_url as string | null,
+          google_maps_url:  restaurant.google_maps_url as string | null,
+          visibility:       (restaurant.visibility ?? null) as Record<string, boolean> | null,
+          theme,
+        }}
+        menus={menus}
+        banners={(banners ?? []) as any[]}
+        info={info ?? null}
+        defaultMenuId={defaultMenuId}
+      />
+    </>
   )
 }
