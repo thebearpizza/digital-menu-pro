@@ -57,6 +57,7 @@ export default function DishModal({ activeDish, allDishes, isNested, onClose, on
   const ALRG_DISPLAY = card?.allergens.display   ?? mn?.allergens.display   ?? 'full'
   const ALRG_SEP     = card?.allergens.separator ?? mn?.allergens.separator ?? ', '
   const ALRG_SIZE    = card?.allergens.size      ?? mn?.allergens.size      ?? 0.85
+  const ALRG_LABEL   = card?.allergens.labelColor ?? ALRG_COLOR
   const CLOSE_COLOR  = card?.closeButton.color    ?? '#555555'
   const CLOSE_POS    = card?.closeButton.position ?? 'top-right'
   const CLOSE_SHAPE  = card?.closeButton.shape    ?? 'none'
@@ -71,6 +72,10 @@ export default function DishModal({ activeDish, allDishes, isNested, onClose, on
   // Category chip: card-owned settings, independent from menu.categories
   const CAT_COLOR = card?.category.color ?? ACCENT
   const CAT_SIZE  = card?.category.size  ?? 0.5625
+
+  // Pairing box ("Abbinamento consigliato"): label + product colors
+  const PAIR_LABEL_COLOR = card?.pairing.labelColor   ?? ACCENT
+  const PAIR_PROD_COLOR  = card?.pairing.productColor ?? '#8a8a8a'
 
   // Prev/next + page-counter colors, kept within the same neutral gray tone
   // but boosted for legibility against the active card background.
@@ -375,7 +380,7 @@ export default function DishModal({ activeDish, allDishes, isNested, onClose, on
                   borderRadius: ALRG_BADGE ? 20 : 6,
                 }}
               >
-                {!ALRG_BADGE && <p style={{ color: ALRG_COLOR, fontSize: 8, letterSpacing: '0.26em', textTransform: 'uppercase', marginBottom: 6 }}>Allergeni</p>}
+                {!ALRG_BADGE && <p style={{ color: ALRG_LABEL, fontSize: 8, letterSpacing: '0.26em', textTransform: 'uppercase', marginBottom: 6 }}>Allergeni</p>}
                 <p style={{ color: ALRG_COLOR, fontSize: `${ALRG_SIZE}rem`, lineHeight: 1.6 }}>
                   {ALRG_BADGE ? '⚠ ' : ''}{formatAllergens(dish.allergens, ALRG_DISPLAY, ALRG_SEP)}
                 </p>
@@ -384,9 +389,9 @@ export default function DishModal({ activeDish, allDishes, isNested, onClose, on
           )}
 
           {/* Pairing — clickable, no price shown. In edit mode the EditHandle
-              intercepts the click to open the card-style editor instead. */}
+              intercepts the click to open the pairing-colors editor instead. */}
           {pairing && (
-            <EditHandle target="card-style" editMode={editMode}>
+            <EditHandle target="card-pairing" editMode={editMode}>
               <button
                 onClick={() => onOpenDish(pairing)}
                 style={{
@@ -410,11 +415,11 @@ export default function DishModal({ activeDish, allDishes, isNested, onClose, on
                   ;(e.currentTarget as HTMLButtonElement).style.background = 'transparent'
                 }}
               >
-                <p style={{ color: ACCENT, fontSize: 8, letterSpacing: '0.26em', textTransform: 'uppercase', marginBottom: 6 }}>
+                <p style={{ color: PAIR_LABEL_COLOR, fontSize: 8, letterSpacing: '0.26em', textTransform: 'uppercase', marginBottom: 6 }}>
                   {dish.pairing_label ?? 'Abbinamento consigliato'}
                 </p>
                 <div className="flex items-center justify-between">
-                  <p style={{ color: '#8a8a8a', fontSize: '0.8125rem' }}>
+                  <p style={{ color: PAIR_PROD_COLOR, fontSize: '0.8125rem' }}>
                     {pairing.name}
                   </p>
                   <span style={{ color: ACCENT, fontSize: 10, letterSpacing: '0.1em' }}>›</span>

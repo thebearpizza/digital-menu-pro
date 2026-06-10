@@ -106,7 +106,11 @@ export interface CardTheme {
   title:       { font: string; size: number; color: string; weight: 'light' | 'normal' | 'bold' }
   description: { font: string; size: number; color: string }
   price:       { font: string; size: number; color: string; format: PriceFormat; currency: string }
-  allergens:   { style: 'text' | 'badge'; color: string; bgColor: string; display: AllergenDisplay; separator: string; size: number }
+  // labelColor: colore dell'etichetta "Allergeni"; color resta il colore dell'elenco.
+  allergens:   { style: 'text' | 'badge'; color: string; bgColor: string; display: AllergenDisplay; separator: string; size: number; labelColor: string }
+  // Box "Abbinamento consigliato": labelColor per l'etichetta, productColor
+  // per il nome del prodotto consigliato.
+  pairing:     { labelColor: string; productColor: string }
   // show: false nasconde del tutto la X (la card si chiude comunque con tap
   // sul backdrop o Esc). size: dimensione del glifo × in rem.
   closeButton: { color: string; position: 'top-right' | 'top-left'; shape: 'none' | 'circle' | 'square'; show: boolean; size: number }
@@ -259,7 +263,8 @@ export const DEFAULT_THEME: RestaurantTheme = {
     title:       { font: 'Cormorant Garamond', size: 1.75, color: '#ede8e0', weight: 'light' },
     description: { font: 'DM Sans', size: 0.875, color: '#a09080' },
     price:       { font: 'DM Sans', size: 1.1, color: '#c9a96e', format: 'symbol-left', currency: '€' },
-    allergens:   { style: 'text', color: '#c9a96e', bgColor: '#181208', display: 'full', separator: ', ', size: 0.85 },
+    allergens:   { style: 'text', color: '#c9a96e', bgColor: '#181208', display: 'full', separator: ', ', size: 0.85, labelColor: '#c9a96e' },
+    pairing:     { labelColor: '#c9a96e', productColor: '#8a8a8a' },
     closeButton: { color: '#555555', position: 'top-right', shape: 'none', show: true, size: 1.25 },
   },
   customFonts: {},
@@ -342,6 +347,7 @@ function parseNested(r: Record<string, unknown>): RestaurantTheme {
   const cad = sub(ca.description)
   const cap = sub(ca.price)
   const caa = sub(ca.allergens)
+  const cpr = sub(ca.pairing)
   const cab = sub(ca.closeButton)
 
   return {
@@ -449,6 +455,13 @@ function parseNested(r: Record<string, unknown>): RestaurantTheme {
         display:   one(caa.display, ['full','short','number'] as const, d.card.allergens.display),
         separator: str(caa.separator, d.card.allergens.separator),
         size:      num(caa.size, d.card.allergens.size),
+        // Back-compat: l'etichetta "Allergeni" usava lo stesso colore dell'elenco.
+        labelColor: str(caa.labelColor, str(caa.color, d.card.allergens.color)),
+      },
+      pairing: {
+        // Back-compat: l'etichetta usava l'accento della card, il prodotto un grigio fisso.
+        labelColor:   str(cpr.labelColor, str(ca.accent, str(m.accent, d.menu.accent))),
+        productColor: str(cpr.productColor, d.card.pairing.productColor),
       },
       closeButton: {
         color:    str(cab.color, d.card.closeButton.color),
@@ -541,7 +554,11 @@ export function migrateFlat(r: Record<string, unknown>): RestaurantTheme {
       navigation:   { style: paginationStyle, color: textMuted },
       banners:      { position: 'inline' },
     },
-    card: { ...structuredClone(d.card), accent, align: dishAlignment, category: { ...d.card.category, color: accent } },
+    card: {
+      ...structuredClone(d.card), accent, align: dishAlignment,
+      category: { ...d.card.category, color: accent },
+      pairing:  { ...d.card.pairing, labelColor: accent },
+    },
     customFonts: strRecord(r.customFonts),
   }
 }

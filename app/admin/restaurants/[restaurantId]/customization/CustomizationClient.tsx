@@ -480,7 +480,7 @@ function Toggle({ checked, onChange, disabled = false }: { checked: boolean; onC
 const MOBILE_TARGETS: Record<'landing' | 'menu' | 'card', string[]> = {
   landing: ['landing-bg','landing-logo','landing-title','landing-desc','landing-buttons','landing-socials'],
   menu:    ['category-title','dish-title','dish-description','dish-price','allergens','background-layout','sticky-categories'],
-  card:    ['card-style','card-category','dish-title','dish-description','dish-price','allergens'],
+  card:    ['card-style','card-category','dish-title','dish-description','dish-price','allergens','card-pairing'],
 }
 const MOBILE_LABELS: Record<string, string> = {
   'landing-bg':       'Sfondo',    'landing-logo':     'Logo',
@@ -490,7 +490,7 @@ const MOBILE_LABELS: Record<string, string> = {
   'dish-price':       'Prezzo',    'allergens':        'Allergeni',
   'category-title':   'Categoria', 'background-layout':'Layout',
   'sticky-categories':'Barra',     'card-style':       'Stile Card',
-  'card-category':    'Categoria',
+  'card-category':    'Categoria', 'card-pairing':     'Abbinam.',
 }
 
 // ── Editor target registry ────────────────────────────────────────────────────
@@ -509,6 +509,7 @@ const EDITOR_TARGETS: Record<string, { title: string; hint: string }> = {
   'allergens':         { title: 'Allergeni',          hint: 'Stile, formato, separatore, colori' },
   'card-style':        { title: 'Stile Card',         hint: 'Sfondo card, bordi, pulsante chiudi, accento' },
   'card-category':     { title: 'Categoria (Card)',   hint: 'Colore e dimensione dell\'etichetta categoria nella card' },
+  'card-pairing':      { title: 'Abbinamento',        hint: 'Colori dell\'etichetta e del prodotto consigliato' },
   'sticky-categories': { title: 'Barra Categorie',    hint: 'Stile, colori, font della barra categorie' },
   'background-layout': { title: 'Sfondo & Layout',    hint: 'Accento, sfondo menu, immagine, paginazione, spaziatura' },
 }
@@ -541,6 +542,7 @@ interface SidebarSetters {
   setCardAllergens:  (p: Partial<CardTheme['allergens']>) => void
   setCardClose:      (p: Partial<CardTheme['closeButton']>) => void
   setCardCategory:   (p: Partial<CardTheme['category']>) => void
+  setCardPairing:    (p: Partial<CardTheme['pairing']>) => void
   handleBgUpload:     (f: File) => void
   handleVideoUpload:  (f: File) => void
   handleMenuBgUpload: (f: File) => void
@@ -1085,6 +1087,8 @@ function EditorSidebar({ target, theme, setters, previewMode, onClose, restauran
               onChange={v => setters.setCardAllergens({ size: v })} />
             <ColorRow label="Colore testo" value={c.allergens.color}
               onChange={v => setters.setCardAllergens({ color: v })} />
+            <ColorRow label="Colore etichetta &ldquo;Allergeni&rdquo;" value={c.allergens.labelColor}
+              onChange={v => setters.setCardAllergens({ labelColor: v })} />
             <ColorRow label="Sfondo" value={c.allergens.bgColor}
               onChange={v => setters.setCardAllergens({ bgColor: v })} />
           </div>
@@ -1120,6 +1124,18 @@ function EditorSidebar({ target, theme, setters, previewMode, onClose, restauran
           <FontSizeSlider label="Dimensione" value={c.category.size}
             min={0.4} max={1.4} step={0.025} previewFont="inherit"
             onChange={v => setters.setCardCategory({ size: v })} />
+        </div>
+      )
+
+      case 'card-pairing': return (
+        <div className="space-y-4">
+          <p className="text-[11px] text-gray-400 leading-snug">
+            Box &ldquo;Abbinamento consigliato&rdquo; mostrato nella card quando un piatto ha un abbinamento.
+          </p>
+          <ColorRow label="Colore etichetta" value={c.pairing.labelColor}
+            onChange={v => setters.setCardPairing({ labelColor: v })} />
+          <ColorRow label="Colore prodotto consigliato" value={c.pairing.productColor}
+            onChange={v => setters.setCardPairing({ productColor: v })} />
         </div>
       )
 
@@ -1705,6 +1721,9 @@ export default function CustomizationClient({
   function setCardCategory(patch: Partial<CardTheme['category']>) {
     setSaved(false); setTheme(t => ({ ...t, card: { ...t.card, category: { ...t.card.category, ...patch } } }))
   }
+  function setCardPairing(patch: Partial<CardTheme['pairing']>) {
+    setSaved(false); setTheme(t => ({ ...t, card: { ...t.card, pairing: { ...t.card.pairing, ...patch } } }))
+  }
   function setLBg(patch: Partial<LandingBackground>) {
     setSaved(false); setTheme(t => ({ ...t, landing: { ...t.landing, background: { ...t.landing.background, ...patch } } }))
   }
@@ -1916,7 +1935,7 @@ export default function CustomizationClient({
   const setters: SidebarSetters = {
     setLBg, setLLogo, setLTitle, setLDesc, setLBu, setL,
     setMDishes, setMDescs, setMPrices, setMCats, setMLayout, setMDivider, setMBg, setMPageBg, setMNav, setMSticky, setMAllergens, setM,
-    setC, setCardTitle, setCardDesc, setCardPrice, setCardAllergens, setCardClose, setCardCategory,
+    setC, setCardTitle, setCardDesc, setCardPrice, setCardAllergens, setCardClose, setCardCategory, setCardPairing,
     handleBgUpload, handleVideoUpload, handleMenuBgUpload, handleMenuPageBgUpload, handlePosterUpload, handleLogoUpload, handleFontUpload,
     bgUploading, vidUploading, menuBgUploading, pageBgUploading, posterUploading, logoUploading, fontUploading,
   }
