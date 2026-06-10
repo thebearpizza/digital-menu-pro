@@ -9,7 +9,7 @@ import { useState, useEffect, useRef } from 'react'
 import FlipbookViewer  from './FlipbookViewer'
 import DishModal       from './DishModal'
 import type { DishData } from './DishModal'
-import { EditHandle, sendEdit } from './EditHandle'
+import { EditHandle, sendEdit, useIsMobilePreview } from './EditHandle'
 import { useMenuPDF }  from './useMenuPDF'
 import {
   googleFontsUrl, allThemeFonts, fontStack,
@@ -143,6 +143,7 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
   const [editMode,        setEditMode]        = useState(false)
   const [showDummyData,   setShowDummyData]   = useState(false)
   const [cardPreviewOpen, setCardPreviewOpen] = useState(false)
+  const isMobilePreview = useIsMobilePreview()
 
   const videoRef        = useRef<HTMLVideoElement>(null)
   const transitioningRef = useRef(false)
@@ -453,9 +454,9 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
 
         {/* Background edit handle — top-right corner badge (edit mode only).
             Hidden on mobile: the chip bar already exposes a "Sfondo" target. */}
-        {editMode && (
+        {editMode && !isMobilePreview && (
           <button
-            className="hidden sm:flex absolute top-3 right-3 z-[300] items-center gap-1.5 px-2.5 py-1 bg-blue-500 text-white rounded-full text-[11px] shadow-lg"
+            className="absolute top-3 right-3 z-[300] flex items-center gap-1.5 px-2.5 py-1 bg-blue-500 text-white rounded-full text-[11px] shadow-lg"
             onClick={() => sendEdit('landing-bg')}>
             <span>✏</span><span>Sfondo</span>
           </button>

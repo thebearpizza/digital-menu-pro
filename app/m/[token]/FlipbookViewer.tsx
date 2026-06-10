@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react'
 import DishModal, { DishData } from './DishModal'
+import { useIsMobilePreview } from './EditHandle'
 import { fontStack, hexToRgb, toOpaqueColor, PAGINATION_OPTIONS, menuBackgroundCss } from '@/lib/theme'
 import type { RestaurantTheme } from '@/lib/theme'
 
@@ -166,6 +167,7 @@ export default function FlipbookViewer({
   }, [activeCatIdx])
   // Blocco hard: diventa true SOLO dopo Promise.all + turn.js init
   const [pagesReady,    setPagesReady]   = useState(false)
+  const isMobilePreview = useIsMobilePreview()
 
   const { flipbook } = menuConfig
   // Le categorie vengono ESCLUSIVAMENTE dal menu selezionato tramite useMenuPDF.
@@ -733,9 +735,9 @@ export default function FlipbookViewer({
 
         {/* ── Edit toolbar — admin preview only, between book and category nav.
              Hidden on mobile: the chip bar already exposes these same targets. ── */}
-        {editMode && pagesReady && (
+        {editMode && pagesReady && !isMobilePreview && (
           <div
-            className="hidden sm:flex shrink-0 items-center gap-2 px-3 overflow-x-auto"
+            className="shrink-0 flex items-center gap-2 px-3 overflow-x-auto"
             style={{
               height: 36,
               background: 'rgba(2,6,18,0.94)',

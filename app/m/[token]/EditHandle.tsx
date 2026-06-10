@@ -5,10 +5,31 @@
 // window, which opens the corresponding editor panel.
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { useEffect, useState } from 'react'
 import type React from 'react'
 
 export function sendEdit(target: string) {
   try { window.parent?.postMessage({ type: 'dmp-element-clicked', target }, window.location.origin) } catch {}
+}
+
+// True when the ADMIN page hosting the preview iframe is phone-sized. The
+// iframe itself is always phone-width (it's a phone mockup), so Tailwind
+// breakpoints inside it can't tell a desktop preview from a real smartphone —
+// we must measure the parent window instead. On smartphone the chip bar is the
+// only editor entry point, so all in-preview edit chrome is hidden there.
+export function useIsMobilePreview(): boolean {
+  const [mobile, setMobile] = useState(false)
+  useEffect(() => {
+    try {
+      const w = window.parent ?? window
+      const mq = w.matchMedia('(max-width: 639px)')
+      const update = () => setMobile(mq.matches)
+      update()
+      mq.addEventListener('change', update)
+      return () => mq.removeEventListener('change', update)
+    } catch { /* cross-origin parent — standalone view, keep desktop behavior */ }
+  }, [])
+  return mobile
 }
 
 export function EditHandle({
@@ -17,7 +38,8 @@ export function EditHandle({
   target: string; children: React.ReactNode; editMode: boolean
   className?: string; style?: React.CSSProperties
 }) {
-  if (!editMode) return <>{children}</>
+  const mobile = useIsMobilePreview()
+  if (!editMode || mobile) return <>{children}</>
   return (
     <div
       className={`relative ${className}`}
