@@ -60,6 +60,8 @@ export default function DishModal({ activeDish, allDishes, isNested, onClose, on
   const CLOSE_COLOR  = card?.closeButton.color    ?? '#555555'
   const CLOSE_POS    = card?.closeButton.position ?? 'top-right'
   const CLOSE_SHAPE  = card?.closeButton.shape    ?? 'none'
+  const CLOSE_SHOW   = card?.closeButton.show     ?? true
+  const CLOSE_SIZE   = card?.closeButton.size     ?? 1.25
   const CARD_RADIUS  = cardBorderRadius(card?.borderRadius ?? 'sm')
   const TEXT_ALIGN   = (card?.align ?? mn?.layout.dishAlignment ?? 'left') as 'left' | 'center' | 'right'
 
@@ -164,12 +166,15 @@ export default function DishModal({ activeDish, allDishes, isNested, onClose, on
 
   // ── Close button style ────────────────────────────────────────────────────
 
+  // Circle/square boxes scale with the glyph (1.4× keeps the original 28px
+  // box at the default 1.25rem glyph size).
+  const closeBox = `${CLOSE_SIZE * 1.4}rem`
   const closeButtonStyle: React.CSSProperties =
     CLOSE_SHAPE === 'circle'
-      ? { color: CLOSE_COLOR, background: CLOSE_COLOR + '22', borderRadius: '50%', width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center' }
+      ? { color: CLOSE_COLOR, fontSize: `${CLOSE_SIZE}rem`, background: CLOSE_COLOR + '22', borderRadius: '50%', width: closeBox, height: closeBox, display: 'flex', alignItems: 'center', justifyContent: 'center' }
       : CLOSE_SHAPE === 'square'
-      ? { color: CLOSE_COLOR, background: CLOSE_COLOR + '22', borderRadius: 4, width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center' }
-      : { color: CLOSE_COLOR }
+      ? { color: CLOSE_COLOR, fontSize: `${CLOSE_SIZE}rem`, background: CLOSE_COLOR + '22', borderRadius: 4, width: closeBox, height: closeBox, display: 'flex', alignItems: 'center', justifyContent: 'center' }
+      : { color: CLOSE_COLOR, fontSize: `${CLOSE_SIZE}rem` }
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
@@ -222,14 +227,18 @@ export default function DishModal({ activeDish, allDishes, isNested, onClose, on
           ) : (
             <span />
           )}
-          <button
-            onClick={onClose}
-            aria-label="Chiudi"
-            className="text-xl leading-none transition-opacity hover:opacity-60 select-none"
-            style={closeButtonStyle}
-          >
-            ×
-          </button>
+          {CLOSE_SHOW ? (
+            <button
+              onClick={onClose}
+              aria-label="Chiudi"
+              className="leading-none transition-opacity hover:opacity-60 select-none"
+              style={closeButtonStyle}
+            >
+              ×
+            </button>
+          ) : (
+            <span />
+          )}
         </div>
 
         {/* Card background edit badge — admin preview only.

@@ -1147,20 +1147,35 @@ function EditorSidebar({ target, theme, setters, previewMode, onClose, restauran
               options={[{ label:'Netti', value:'none' },{ label:'Arrotondati', value:'sm' },{ label:'Morbidi', value:'md' }]}
               value={c.borderRadius} onChange={v => setters.setC({ borderRadius: v })} />
           </div>
-          <div>
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Pulsante chiudi</p>
-            <PillGroup
-              options={[{ label:'Nessuno', value:'none' },{ label:'Cerchio', value:'circle' },{ label:'Quadrato', value:'square' }]}
-              value={c.closeButton.shape} onChange={v => setters.setCardClose({ shape: v })} />
-          </div>
-          <div>
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Posizione chiudi</p>
-            <PillGroup
-              options={[{ label:'Alto dx', value:'top-right' },{ label:'Alto sx', value:'top-left' }]}
-              value={c.closeButton.position} onChange={v => setters.setCardClose({ position: v })} />
-          </div>
-          <ColorRow label="Colore chiudi" value={c.closeButton.color}
-            onChange={v => setters.setCardClose({ color: v })} />
+          <label className="flex items-center gap-2 cursor-pointer select-none">
+            <Toggle checked={c.closeButton.show}
+              onChange={v => setters.setCardClose({ show: v })} />
+            <span className="text-xs text-gray-600">Mostra pulsante chiudi (×)</span>
+          </label>
+          {!c.closeButton.show && (
+            <p className="text-[11px] text-gray-400 leading-snug">
+              La card si chiude comunque toccando fuori dalla card.
+            </p>
+          )}
+          {c.closeButton.show && (<>
+            <FontSizeSlider label="Dimensione chiudi" value={c.closeButton.size}
+              min={0.8} max={3} step={0.05} previewFont="inherit"
+              onChange={v => setters.setCardClose({ size: v })} />
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Pulsante chiudi</p>
+              <PillGroup
+                options={[{ label:'Nessuno', value:'none' },{ label:'Cerchio', value:'circle' },{ label:'Quadrato', value:'square' }]}
+                value={c.closeButton.shape} onChange={v => setters.setCardClose({ shape: v })} />
+            </div>
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Posizione chiudi</p>
+              <PillGroup
+                options={[{ label:'Alto dx', value:'top-right' },{ label:'Alto sx', value:'top-left' }]}
+                value={c.closeButton.position} onChange={v => setters.setCardClose({ position: v })} />
+            </div>
+            <ColorRow label="Colore chiudi" value={c.closeButton.color}
+              onChange={v => setters.setCardClose({ color: v })} />
+          </>)}
         </div>
       )
 

@@ -107,7 +107,9 @@ export interface CardTheme {
   description: { font: string; size: number; color: string }
   price:       { font: string; size: number; color: string; format: PriceFormat; currency: string }
   allergens:   { style: 'text' | 'badge'; color: string; bgColor: string; display: AllergenDisplay; separator: string; size: number }
-  closeButton: { color: string; position: 'top-right' | 'top-left'; shape: 'none' | 'circle' | 'square' }
+  // show: false nasconde del tutto la X (la card si chiude comunque con tap
+  // sul backdrop o Esc). size: dimensione del glifo × in rem.
+  closeButton: { color: string; position: 'top-right' | 'top-left'; shape: 'none' | 'circle' | 'square'; show: boolean; size: number }
 }
 
 // ── Landing sub-theme ─────────────────────────────────────────────────────────
@@ -258,7 +260,7 @@ export const DEFAULT_THEME: RestaurantTheme = {
     description: { font: 'DM Sans', size: 0.875, color: '#a09080' },
     price:       { font: 'DM Sans', size: 1.1, color: '#c9a96e', format: 'symbol-left', currency: '€' },
     allergens:   { style: 'text', color: '#c9a96e', bgColor: '#181208', display: 'full', separator: ', ', size: 0.85 },
-    closeButton: { color: '#555555', position: 'top-right', shape: 'none' },
+    closeButton: { color: '#555555', position: 'top-right', shape: 'none', show: true, size: 1.25 },
   },
   customFonts: {},
 }
@@ -452,6 +454,8 @@ function parseNested(r: Record<string, unknown>): RestaurantTheme {
         color:    str(cab.color, d.card.closeButton.color),
         position: one(cab.position, ['top-right','top-left'] as const, d.card.closeButton.position),
         shape:    one(cab.shape, ['none','circle','square'] as const, d.card.closeButton.shape),
+        show:     cab.show !== false,
+        size:     num(cab.size, d.card.closeButton.size),
       },
     },
     customFonts: strRecord(r.customFonts),
