@@ -6,7 +6,7 @@ import { saveTheme, createBanner, deleteBanner } from './actions'
 import {
   DEFAULT_THEME, SERIF_FONTS, SANS_FONTS, DISPLAY_FONTS, PAGINATION_OPTIONS,
   MENU_BG_EFFECTS, MENU_BG_EFFECT_LABELS, CURRENCY_OPTIONS,
-  googleFontsUrl, allThemeFonts, fontStack, formatPrice,
+  googleFontsUrl, allThemeFonts, fontStack, formatPrice, customFontFaceCss, CUSTOM_FONT_EXTENSIONS,
 } from '@/lib/theme'
 import { ALL_GOOGLE_FONTS } from '@/lib/googleFontsCatalog'
 import { removeUniformBackground } from '@/lib/imageBackground'
@@ -18,6 +18,11 @@ import type {
 } from '@/lib/theme'
 
 const MAX_MEDIA_BYTES = 5 * 1024 * 1024 // 5MB
+const MAX_FONT_BYTES  = 2 * 1024 * 1024 // 2MB
+
+function slugifyFontName(name: string): string {
+  return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'font'
+}
 
 // ── Poster extraction ─────────────────────────────────────────────────────────
 
@@ -147,9 +152,10 @@ interface Props {
 // ── Font loader ───────────────────────────────────────────────────────────────
 
 function usePreviewFonts(theme: RestaurantTheme) {
-  const fontsKey = allThemeFonts(theme).join(',')
+  const customNames = new Set(Object.keys(theme.customFonts))
+  const fontsKey = allThemeFonts(theme).filter(f => !customNames.has(f)).join(',')
   useEffect(() => {
-    const href = googleFontsUrl(allThemeFonts(theme))
+    const href = googleFontsUrl(allThemeFonts(theme).filter(f => !customNames.has(f)))
     if (!href) return
     let link = document.querySelector('link[data-admin-preview-fonts]') as HTMLLinkElement | null
     if (!link) {
@@ -160,6 +166,19 @@ function usePreviewFonts(theme: RestaurantTheme) {
     }
     link.href = href
   }, [fontsKey]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const customFontsKey = JSON.stringify(theme.customFonts)
+  useEffect(() => {
+    let style = document.querySelector('style[data-admin-custom-fonts]') as HTMLStyleElement | null
+    const css = customFontFaceCss(theme.customFonts)
+    if (!css) { if (style) style.textContent = ''; return }
+    if (!style) {
+      style = document.createElement('style')
+      style.setAttribute('data-admin-custom-fonts', '1')
+      document.head.appendChild(style)
+    }
+    style.textContent = css
+  }, [customFontsKey]) // eslint-disable-line react-hooks/exhaustive-deps
 }
 
 // ── Fill-height hook ───────────────────────────────────────────────────────────
@@ -283,12 +302,17 @@ function SeparatorRow({ value, onChange }: { value: string; onChange: (v: string
 // it never gets clipped by the sidebar's overflow containers. Each visible option
 // is previewed in its own font, loaded on demand.
 
-function FontSelector({ label, value, curated, category, onChange }: {
+function FontSelector({ label, value, curated, category, onChange, customFonts = {}, onUploadFont, uploading = false }: {
   label: string; value: string; curated: string[]; category: 'serif' | 'sans'; onChange: (v: string) => void
+  customFonts?: Record<string, string>
+  onUploadFont?: (file: File) => Promise<string | null>
+  uploading?: boolean
 }) {
   const [open,  setOpen]  = useState(false)
   const [query, setQuery] = useState('')
   const [recent, setRecent] = useState<string[]>([])
+  const fontFileRef = useRef<HTMLInputElement>(null)
+  const customNames = Object.keys(customFonts)
 
   useEffect(() => { if (open) setRecent(getRecentFonts()) }, [open])
 
@@ -343,6 +367,20 @@ function FontSelector({ label, value, curated, category, onChange }: {
               className="w-full px-2 py-1.5 border border-gray-200 text-xs focus:outline-none focus:border-gray-400" />
           </div>
           <div className="max-h-56 overflow-y-auto">
+            {!q && customNames.length > 0 && (
+              <>
+                <p className="px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-gray-400">Font caricati</p>
+                {customNames.map(f => (
+                  <button key={`custom-${f}`} type="button"
+                    onClick={() => { onChange(f); setOpen(false); setQuery('') }}
+                    className={`w-full text-left px-3 py-1.5 text-sm hover:bg-gray-50 transition-colors ${f === value ? 'bg-gray-100' : ''}`}
+                    style={{ fontFamily: fontStack(f, category) }}>
+                    {f}
+                  </button>
+                ))}
+                <div className="border-t border-gray-100" />
+              </>
+            )}
             {!q && recent.length > 0 && (
               <>
                 <p className="px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-gray-400">Usati di recente</p>
@@ -378,6 +416,23 @@ function FontSelector({ label, value, curated, category, onChange }: {
                 style={{ fontFamily: fontStack(customName, category) }}>
                 Usa &ldquo;{customName}&rdquo; come font Google personalizzato
               </button>
+            )}
+            {onUploadFont && (
+              <div className="border-t border-gray-100 p-2">
+                <input ref={fontFileRef} type="file" accept=".ttf,.otf,.woff,.woff2" className="hidden"
+                  onChange={async e => {
+                    const f = e.target.files?.[0]
+                    if (!f) return
+                    const name = await onUploadFont(f)
+                    if (name) { addRecentFont(name); onChange(name); setOpen(false); setQuery('') }
+                    if (fontFileRef.current) fontFileRef.current.value = ''
+                  }} />
+                <button type="button" disabled={uploading}
+                  onClick={() => fontFileRef.current?.click()}
+                  className="w-full text-left px-1 py-1 text-[11px] text-gray-500 hover:text-gray-900 transition-colors disabled:opacity-50">
+                  {uploading ? 'Caricamento…' : '⤒ Carica file font (.ttf, .otf, .woff, .woff2)'}
+                </button>
+              </div>
             )}
           </div>
         </div>
@@ -489,18 +544,23 @@ interface SidebarSetters {
   handleMenuPageBgUpload: (f: File) => void
   handlePosterUpload: (f: File) => void
   handleLogoUpload:   (f: File) => void
+  handleFontUpload:   (f: File) => Promise<string | null>
   bgUploading:        boolean
   vidUploading:       boolean
   menuBgUploading:    boolean
   pageBgUploading:    boolean
   posterUploading:    boolean
   logoUploading:      boolean
+  fontUploading:      boolean
 }
 
 // ── Buttons panel — own state for transparent-bg toggle ───────────────────────
 
-function ButtonsPanel({ l, setLBu }: {
+function ButtonsPanel({ l, setLBu, customFonts, onUploadFont, fontUploading }: {
   l: LandingTheme; setLBu: (p: Partial<LandingTheme['buttons']>) => void
+  customFonts: Record<string, string>
+  onUploadFont: (f: File) => Promise<string | null>
+  fontUploading: boolean
 }) {
   // Derived from the theme so it stays in sync after "Ripristina" / preset loads;
   // bgHex only remembers the last hex while the transparent checkbox is on.
@@ -546,7 +606,8 @@ function ButtonsPanel({ l, setLBu }: {
         )}
       </div>
       <FontSelector label="Font bottoni" value={l.buttons.font} curated={SANS_FONTS} category="sans"
-        onChange={v => setLBu({ font: v })} />
+        onChange={v => setLBu({ font: v })}
+        customFonts={customFonts} onUploadFont={onUploadFont} uploading={fontUploading} />
       <FontSizeSlider label="Dimensione testo" value={l.buttons.fontSize}
         min={0.5} max={1.2} step={0.025} previewFont={fontStack(l.buttons.font, 'sans')}
         onChange={v => setLBu({ fontSize: v })} />
@@ -730,7 +791,8 @@ function EditorSidebar({ target, theme, setters, previewMode, onClose, restauran
           </div>
           <FontSelector label="Font" value={l.title.font}
             curated={[...SERIF_FONTS, ...DISPLAY_FONTS]} category="serif"
-            onChange={v => setters.setLTitle({ font: v })} />
+            onChange={v => setters.setLTitle({ font: v })}
+            customFonts={theme.customFonts} onUploadFont={setters.handleFontUpload} uploading={setters.fontUploading} />
           <FontSizeSlider label="Grandezza riga 1" value={l.title.size}
             min={0.8} max={5} step={0.1} previewFont={fontStack(l.title.font, 'serif')}
             onChange={v => setters.setLTitle({ size: v })} />
@@ -769,7 +831,8 @@ function EditorSidebar({ target, theme, setters, previewMode, onClose, restauran
           </div>
           <FontSelector label="Font" value={l.description.font}
             curated={SANS_FONTS} category="sans"
-            onChange={v => setters.setLDesc({ font: v })} />
+            onChange={v => setters.setLDesc({ font: v })}
+            customFonts={theme.customFonts} onUploadFont={setters.handleFontUpload} uploading={setters.fontUploading} />
           <FontSizeSlider label="Grandezza riga 1" value={l.description.size}
             min={0.4} max={1.4} step={0.05} previewFont={fontStack(l.description.font, 'sans')}
             onChange={v => setters.setLDesc({ size: v })} />
@@ -792,7 +855,8 @@ function EditorSidebar({ target, theme, setters, previewMode, onClose, restauran
       )
 
       case 'landing-buttons': return (
-        <ButtonsPanel l={l} setLBu={setters.setLBu} />
+        <ButtonsPanel l={l} setLBu={setters.setLBu}
+          customFonts={theme.customFonts} onUploadFont={setters.handleFontUpload} fontUploading={setters.fontUploading} />
       )
 
       case 'landing-socials': return (
@@ -820,7 +884,8 @@ function EditorSidebar({ target, theme, setters, previewMode, onClose, restauran
           <div className="space-y-3">
             <FontSelector label="Font" value={c.title.font}
               curated={[...SERIF_FONTS, ...DISPLAY_FONTS]} category="serif"
-              onChange={v => setters.setCardTitle({ font: v })} />
+              onChange={v => setters.setCardTitle({ font: v })}
+              customFonts={theme.customFonts} onUploadFont={setters.handleFontUpload} uploading={setters.fontUploading} />
             <FontSizeSlider label="Dimensione" value={c.title.size}
               min={1.0} max={4.5} step={0.1} previewFont={fontStack(c.title.font, 'serif')}
               onChange={v => setters.setCardTitle({ size: v })} />
@@ -838,7 +903,8 @@ function EditorSidebar({ target, theme, setters, previewMode, onClose, restauran
           <div className="space-y-3">
             <FontSelector label="Font" value={m.dishes.titleFont}
               curated={[...SERIF_FONTS, ...DISPLAY_FONTS]} category="serif"
-              onChange={v => setters.setMDishes({ titleFont: v })} />
+              onChange={v => setters.setMDishes({ titleFont: v })}
+              customFonts={theme.customFonts} onUploadFont={setters.handleFontUpload} uploading={setters.fontUploading} />
             <FontSizeSlider label="Dimensione" value={m.dishes.titleSize}
               min={0.8} max={4.5} step={0.1} previewFont={fontStack(m.dishes.titleFont, 'serif')}
               onChange={v => setters.setMDishes({ titleSize: v })} />
@@ -858,7 +924,8 @@ function EditorSidebar({ target, theme, setters, previewMode, onClose, restauran
           <div className="space-y-3">
             <FontSelector label="Font" value={c.description.font}
               curated={SANS_FONTS} category="sans"
-              onChange={v => setters.setCardDesc({ font: v })} />
+              onChange={v => setters.setCardDesc({ font: v })}
+              customFonts={theme.customFonts} onUploadFont={setters.handleFontUpload} uploading={setters.fontUploading} />
             <FontSizeSlider label="Dimensione" value={c.description.size}
               min={0.6} max={2.0} step={0.05} previewFont={fontStack(c.description.font, 'sans')}
               onChange={v => setters.setCardDesc({ size: v })} />
@@ -870,7 +937,8 @@ function EditorSidebar({ target, theme, setters, previewMode, onClose, restauran
           <div className="space-y-3">
             <FontSelector label="Font" value={m.descriptions.font}
               curated={SANS_FONTS} category="sans"
-              onChange={v => setters.setMDescs({ font: v })} />
+              onChange={v => setters.setMDescs({ font: v })}
+              customFonts={theme.customFonts} onUploadFont={setters.handleFontUpload} uploading={setters.fontUploading} />
             <FontSizeSlider label="Dimensione" value={m.descriptions.size}
               min={0.5} max={2.5} step={0.05} previewFont={fontStack(m.descriptions.font, 'sans')}
               onChange={v => setters.setMDescs({ size: v })} />
@@ -889,7 +957,8 @@ function EditorSidebar({ target, theme, setters, previewMode, onClose, restauran
           <div className="space-y-3">
             <FontSelector label="Font" value={c.price.font}
               curated={SANS_FONTS} category="sans"
-              onChange={v => setters.setCardPrice({ font: v })} />
+              onChange={v => setters.setCardPrice({ font: v })}
+              customFonts={theme.customFonts} onUploadFont={setters.handleFontUpload} uploading={setters.fontUploading} />
             <FontSizeSlider label="Dimensione" value={c.price.size}
               min={0.7} max={3.0} step={0.05} previewFont={fontStack(c.price.font, 'sans')}
               onChange={v => setters.setCardPrice({ size: v })} />
@@ -913,7 +982,8 @@ function EditorSidebar({ target, theme, setters, previewMode, onClose, restauran
           <div className="space-y-3">
             <FontSelector label="Font" value={m.prices.font}
               curated={SANS_FONTS} category="sans"
-              onChange={v => setters.setMPrices({ font: v })} />
+              onChange={v => setters.setMPrices({ font: v })}
+              customFonts={theme.customFonts} onUploadFont={setters.handleFontUpload} uploading={setters.fontUploading} />
             <FontSizeSlider label="Dimensione" value={m.prices.size}
               min={0.7} max={3.0} step={0.05} previewFont={fontStack(m.prices.font, 'sans')}
               onChange={v => setters.setMPrices({ size: v })} />
@@ -948,7 +1018,8 @@ function EditorSidebar({ target, theme, setters, previewMode, onClose, restauran
         <div className="space-y-4">
           <FontSelector label="Font" value={m.categories.font}
             curated={[...SERIF_FONTS, ...DISPLAY_FONTS]} category="serif"
-            onChange={v => setters.setMCats({ font: v })} />
+            onChange={v => setters.setMCats({ font: v })}
+            customFonts={theme.customFonts} onUploadFont={setters.handleFontUpload} uploading={setters.fontUploading} />
           <FontSizeSlider label="Dimensione" value={m.categories.size}
             min={0.8} max={3.5} step={0.1} previewFont={fontStack(m.categories.font, 'serif')}
             onChange={v => setters.setMCats({ size: v })} />
@@ -1096,7 +1167,8 @@ function EditorSidebar({ target, theme, setters, previewMode, onClose, restauran
               onChange={v => setters.setMSticky({ activeColor: v })} />
             <FontSelector label="Font" value={m.stickyCategories.font}
               curated={SANS_FONTS} category="sans"
-              onChange={v => setters.setMSticky({ font: v })} />
+              onChange={v => setters.setMSticky({ font: v })}
+              customFonts={theme.customFonts} onUploadFont={setters.handleFontUpload} uploading={setters.fontUploading} />
             <FontSizeSlider label="Dimensione testo" value={m.stickyCategories.fontSize}
               min={0.5} max={1.2} step={0.025} previewFont={fontStack(m.stickyCategories.font, 'sans')}
               onChange={v => setters.setMSticky({ fontSize: v })} />
@@ -1547,6 +1619,7 @@ export default function CustomizationClient({
   const [pageBgUploading, setPageBgUploading] = useState(false)
   const [posterUploading, setPosterUploading] = useState(false)
   const [logoUploading, setLogoUploading] = useState(false)
+  const [fontUploading, setFontUploading] = useState(false)
   const [previewMode,  setPreviewMode]  = useState<'landing' | 'menu' | 'card'>('landing')
   const [editMode,     setEditMode]     = useState(false)
   const [showDummyData,setShowDummyData]= useState(false)
@@ -1573,6 +1646,9 @@ export default function CustomizationClient({
 
   function setL(patch: Partial<LandingTheme>) {
     setSaved(false); setTheme(t => ({ ...t, landing: { ...t.landing, ...patch } }))
+  }
+  function setCustomFonts(patch: Record<string, string>) {
+    setSaved(false); setTheme(t => ({ ...t, customFonts: { ...t.customFonts, ...patch } }))
   }
   function setM(patch: Partial<MenuTheme>) {
     setSaved(false); setTheme(t => ({ ...t, menu: { ...t.menu, ...patch } }))
@@ -1715,6 +1791,26 @@ export default function CustomizationClient({
     setLogoUploading(false)
   }
 
+  async function handleFontUpload(file: File): Promise<string | null> {
+    const ext = file.name.split('.').pop()?.toLowerCase() ?? ''
+    if (!(CUSTOM_FONT_EXTENSIONS as readonly string[]).includes(ext)) {
+      setError('Formato non supportato (usa .ttf, .otf, .woff o .woff2).')
+      return null
+    }
+    if (file.size > MAX_FONT_BYTES) { setError('File troppo grande (max 2MB).'); return null }
+    const name = file.name.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ').trim() || 'Font personalizzato'
+    setFontUploading(true); setError(null)
+    const supabase = createClient()
+    const path = `${restaurantId}/fonts/${slugifyFontName(name)}.${ext}`
+    const { data, error: err } = await supabase.storage
+      .from('restaurant-assets').upload(path, file, { upsert: true, contentType: file.type })
+    setFontUploading(false)
+    if (err || !data) { setError('Upload: ' + err?.message); return null }
+    const { data: pub } = supabase.storage.from('restaurant-assets').getPublicUrl(data.path)
+    setCustomFonts({ [name]: `${pub.publicUrl}?v=${Date.now()}` })
+    return name
+  }
+
   async function handlePosterUpload(file: File) {
     if (file.size > MAX_MEDIA_BYTES) { setError('Immagine troppo grande (max 5MB).'); return }
     setPosterUploading(true); setError(null)
@@ -1787,8 +1883,8 @@ export default function CustomizationClient({
     setLBg, setLLogo, setLTitle, setLDesc, setLBu, setL,
     setMDishes, setMDescs, setMPrices, setMCats, setMLayout, setMDivider, setMBg, setMPageBg, setMNav, setMSticky, setMAllergens, setM,
     setC, setCardTitle, setCardDesc, setCardPrice, setCardAllergens, setCardClose,
-    handleBgUpload, handleVideoUpload, handleMenuBgUpload, handleMenuPageBgUpload, handlePosterUpload, handleLogoUpload,
-    bgUploading, vidUploading, menuBgUploading, pageBgUploading, posterUploading, logoUploading,
+    handleBgUpload, handleVideoUpload, handleMenuBgUpload, handleMenuPageBgUpload, handlePosterUpload, handleLogoUpload, handleFontUpload,
+    bgUploading, vidUploading, menuBgUploading, pageBgUploading, posterUploading, logoUploading, fontUploading,
   }
 
   const sidebarOpen = editMode && activeEditor !== null

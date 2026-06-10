@@ -52,17 +52,44 @@ export function ensurePdfFont(Font: FontLike, family: string): boolean {
 }
 
 /**
+ * Ensure a custom uploaded font (TTF/OTF/WOFF, by URL) is registered with
+ * @react-pdf. Same idempotency/caching rules as ensurePdfFont.
+ */
+export function ensureCustomPdfFont(Font: FontLike, family: string, url: string): boolean {
+  if (!family || !url) return false
+  if (registered.has(family)) return true
+  if (unavailable.has(family)) return false
+
+  try {
+    Font.register({ family, fonts: [{ src: url, fontWeight: 400 }, { src: url, fontWeight: 700 }] })
+    registered.add(family)
+    return true
+  } catch {
+    unavailable.add(family)
+    return false
+  }
+}
+
+/**
  * Register every family used by a menu theme and return the set that succeeded,
  * so the document can decide per-element whether to use the real font or a
- * built-in fallback.
+ * built-in fallback. `customFonts` maps family name → uploaded font file URL
+ * and takes priority over the Google Fonts catalog.
  */
 export function registerThemeFonts(
   Font: FontLike,
   families: string[],
+  customFonts: Record<string, string> = {},
 ): Set<string> {
   const ok = new Set<string>()
   for (const f of families) {
-    if (ensurePdfFont(Font, f)) ok.add(f)
+    if (!f) continue
+    const customUrl = customFonts[f]
+    if (customUrl) {
+      if (ensureCustomPdfFont(Font, f, customUrl)) ok.add(f)
+    } else if (ensurePdfFont(Font, f)) {
+      ok.add(f)
+    }
   }
   return ok
 }

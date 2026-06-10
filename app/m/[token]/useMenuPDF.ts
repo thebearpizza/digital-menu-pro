@@ -123,6 +123,10 @@ export function useMenuPDF(
     if (activeUrlRef.current) URL.revokeObjectURL(activeUrlRef.current)
   }, [])
 
+  // Stable string key for the custom-fonts map, so the regen effect below can
+  // depend on a primitive instead of an inline expression (exhaustive-deps).
+  const customFontsKey = theme?.customFonts ? JSON.stringify(theme.customFonts) : undefined
+
   useEffect(() => {
     // No menu → show nothing (welcome screen will render instead).
     if (!menu || !restaurant || !menu.dishes.length) {
@@ -157,7 +161,7 @@ export function useMenuPDF(
               theme.menu.descriptions.font,
               theme.menu.prices.font,
               theme.menu.categories.font,
-            ])
+            ], theme.customFonts)
           : new Set<string>()
 
         // ── Generate PDF blob ──────────────────────────────────────────────────
@@ -237,6 +241,7 @@ export function useMenuPDF(
     theme?.menu.categories.flourish, theme?.menu.categories.flourishColor,
     theme?.menu.categories.flourishWidth, theme?.menu.categories.flourishThickness,
     theme?.menu.layout.boxedBorderWidth,
+    customFontsKey,
   ]) // eslint-disable-line react-hooks/exhaustive-deps
 
   return result

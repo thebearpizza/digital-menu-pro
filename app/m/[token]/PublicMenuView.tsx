@@ -14,7 +14,7 @@ import { useMenuPDF }  from './useMenuPDF'
 import {
   googleFontsUrl, allThemeFonts, fontStack,
   hexToRgb, landingButtonRadius, landingTextureCss, menuBackgroundCss,
-  parseTheme, lineSizesFor,
+  parseTheme, lineSizesFor, customFontFaceCss,
 } from '@/lib/theme'
 import type { RestaurantTheme } from '@/lib/theme'
 
@@ -69,16 +69,34 @@ function ThemeInjector({ theme }: { theme: RestaurantTheme }) {
 
 function ThemeFontLoader({ theme }: { theme: RestaurantTheme }) {
   useEffect(() => {
-    const href = googleFontsUrl(allThemeFonts(theme))
-    if (!href) return
-    let link = document.querySelector('link[data-theme-fonts]') as HTMLLinkElement | null
-    if (!link) {
-      link = document.createElement('link')
-      link.rel = 'stylesheet'
-      link.setAttribute('data-theme-fonts', '1')
-      document.head.appendChild(link)
+    // Custom uploaded fonts aren't on Google Fonts — exclude them from the
+    // Google Fonts request (an unknown family there can break the whole
+    // stylesheet) and inject @font-face rules for them instead.
+    const customNames = new Set(Object.keys(theme.customFonts))
+    const href = googleFontsUrl(allThemeFonts(theme).filter(f => !customNames.has(f)))
+    if (href) {
+      let link = document.querySelector('link[data-theme-fonts]') as HTMLLinkElement | null
+      if (!link) {
+        link = document.createElement('link')
+        link.rel = 'stylesheet'
+        link.setAttribute('data-theme-fonts', '1')
+        document.head.appendChild(link)
+      }
+      link.href = href
     }
-    link.href = href
+
+    let style = document.querySelector('style[data-custom-fonts]') as HTMLStyleElement | null
+    const css = customFontFaceCss(theme.customFonts)
+    if (css) {
+      if (!style) {
+        style = document.createElement('style')
+        style.setAttribute('data-custom-fonts', '1')
+        document.head.appendChild(style)
+      }
+      style.textContent = css
+    } else if (style) {
+      style.textContent = ''
+    }
   }, [theme])
   return null
 }

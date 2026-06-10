@@ -193,6 +193,11 @@ export interface RestaurantTheme {
   landing: LandingTheme
   menu:    MenuTheme
   card:    CardTheme
+  // Custom uploaded font files: family name → public URL (TTF/OTF/WOFF/WOFF2).
+  // Lets users pick a font that doesn't exist on Google Fonts. Any font.* field
+  // can reference a key here by name; @font-face rules are injected at runtime
+  // on the public pages (and in the admin preview) via customFontFaceCss().
+  customFonts: Record<string, string>
 }
 
 // ── Defaults ──────────────────────────────────────────────────────────────────
@@ -251,6 +256,7 @@ export const DEFAULT_THEME: RestaurantTheme = {
     allergens:   { style: 'text', color: '#c9a96e', bgColor: '#181208', display: 'full', separator: ', ', size: 0.85 },
     closeButton: { color: '#555555', position: 'top-right', shape: 'none' },
   },
+  customFonts: {},
 }
 
 // ── Parse helpers ─────────────────────────────────────────────────────────────
@@ -259,6 +265,14 @@ function str(v: unknown, fb: string): string { return typeof v === 'string' ? v 
 function num(v: unknown, fb: number): number { return typeof v === 'number' ? v : fb }
 function numArray(v: unknown, fb: number[]): number[] {
   return Array.isArray(v) && v.every(x => typeof x === 'number') ? v as number[] : fb
+}
+function strRecord(v: unknown): Record<string, string> {
+  if (!v || typeof v !== 'object') return {}
+  const out: Record<string, string> = {}
+  for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
+    if (typeof val === 'string') out[k] = val
+  }
+  return out
 }
 function one<T extends string>(v: unknown, opts: readonly T[], fb: T): T {
   return (opts as readonly unknown[]).includes(v) ? v as T : fb
@@ -429,6 +443,7 @@ function parseNested(r: Record<string, unknown>): RestaurantTheme {
         shape:    one(cab.shape, ['none','circle','square'] as const, d.card.closeButton.shape),
       },
     },
+    customFonts: strRecord(r.customFonts),
   }
 }
 
@@ -512,6 +527,7 @@ export function migrateFlat(r: Record<string, unknown>): RestaurantTheme {
       banners:      { position: 'inline' },
     },
     card: { ...structuredClone(d.card), accent, align: dishAlignment },
+    customFonts: strRecord(r.customFonts),
   }
 }
 
@@ -562,6 +578,25 @@ export function googleFontsUrl(fonts: string[]): string {
 // to `baseSize` when not set.
 export function lineSizesFor(text: string, baseSize: number, lineSizes: number[]): { text: string; size: number }[] {
   return text.split('\n').map((line, i) => ({ text: line, size: i === 0 ? baseSize : (lineSizes[i - 1] ?? baseSize) }))
+}
+
+// Accepted custom font file extensions (uploaded via admin).
+export const CUSTOM_FONT_EXTENSIONS = ['ttf', 'otf', 'woff', 'woff2'] as const
+
+function fontFileFormat(url: string): string {
+  const ext = (url.split('?')[0].split('.').pop() || '').toLowerCase()
+  if (ext === 'woff2') return 'woff2'
+  if (ext === 'woff')  return 'woff'
+  if (ext === 'otf')   return 'opentype'
+  return 'truetype'
+}
+
+// Generates @font-face rules for custom uploaded fonts, so `fontStack(name, …)`
+// resolves to the uploaded file wherever it's referenced (landing, menu, card).
+export function customFontFaceCss(customFonts: Record<string, string>): string {
+  return Object.entries(customFonts)
+    .map(([name, url]) => `@font-face { font-family: '${name}'; src: url('${url}') format('${fontFileFormat(url)}'); font-display: swap; }`)
+    .join('\n')
 }
 
 export function fontStack(name: string, category: 'serif' | 'sans'): string {
