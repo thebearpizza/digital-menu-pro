@@ -1,5 +1,5 @@
 // Smoke test: renders MenuPDFDocument with extreme theme combinations.
-// Run with: npx tsx scripts/pdf-smoke-test.tsx
+// Run with: npx tsx --tsconfig scripts/tsconfig.json scripts/pdf-smoke-test.tsx
 import React from 'react'
 import { pdf } from '@react-pdf/renderer'
 import { MenuPDFDocument, MOCK_MENU, MOCK_RESTAURANT } from '../app/m/[token]/MenuPDFDocument'

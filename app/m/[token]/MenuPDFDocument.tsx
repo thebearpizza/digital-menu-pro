@@ -419,12 +419,6 @@ export function MenuPDFDocument({ restaurant, menu, theme: themeProp, registered
   const divWidth = m.layout.divider.width || 0.5
   const perPage  = m.layout.dishesPerPage || 0
 
-  // Running dish index on the CURRENT page — drives the "N dishes per page"
-  // break. In classic mode each category already starts a fresh page, so the
-  // counter resets per category; in compact mode the flow is continuous and
-  // the counter runs globally (it resets implicitly at every forced break).
-  let dishCounter = 0
-
   // Name + price arranged per the price position setting.
   function namePriceBlock(dish: PDFDish, priceStr: string | null, st: typeof s) {
     const nameEl  = <Text style={st.dishName}>{dish.name}</Text>
@@ -473,13 +467,10 @@ export function MenuPDFDocument({ restaurant, menu, theme: themeProp, registered
   function renderDish(dish: PDFDish, isLast: boolean, st: typeof s) {
     const priceStr    = dish.price != null ? formatPrice(dish.price, m.prices.format, m.prices.currency) : null
     const allergenStr = allergenText(dish)
-    // N-dishes-per-page: force a page break before the dish that starts a new page.
-    const forceBreak  = perPage > 0 && dishCounter > 0 && dishCounter % perPage === 0
-    dishCounter++
 
     if (isBoxed) {
       return (
-        <View key={dish.id} style={st.boxedItem} wrap={false} break={forceBreak}>
+        <View key={dish.id} style={st.boxedItem} wrap={false}>
           {namePriceBlock(dish, priceStr, st)}
           {dish.description ? <Text style={st.dishDesc}>{dish.description}</Text> : null}
           {allergenStr ? <Text style={st.dishAllergens}>{allergenStr}</Text> : null}
@@ -489,7 +480,7 @@ export function MenuPDFDocument({ restaurant, menu, theme: themeProp, registered
 
     if (isElegant) {
       return (
-        <View key={dish.id} style={st.elegantItem} wrap={false} break={forceBreak}>
+        <View key={dish.id} style={st.elegantItem} wrap={false}>
           <Text style={[st.dishName, { textAlign: 'center', marginRight: 0 }]}>{dish.name}</Text>
           {priceStr ? <Text style={[st.dishPrice, { textAlign: 'center', marginTop: 2 }]}>{priceStr}</Text> : null}
           {dish.description ? <Text style={[st.dishDesc, { textAlign: 'center' }]}>{dish.description}</Text> : null}
@@ -499,7 +490,7 @@ export function MenuPDFDocument({ restaurant, menu, theme: themeProp, registered
     }
 
     return (
-      <View key={dish.id} wrap={false} break={forceBreak}>
+      <View key={dish.id} wrap={false}>
         {namePriceBlock(dish, priceStr, st)}
         {!isMinimal && dish.description ? <Text style={st.dishDesc}>{dish.description}</Text> : null}
         {!isMinimal && allergenStr ? <Text style={st.dishAllergens}>{allergenStr}</Text> : null}
@@ -534,6 +525,78 @@ export function MenuPDFDocument({ restaurant, menu, theme: themeProp, registered
     )
   }
 
+  // ── Page blocks ────────────────────────────────────────────────────────────
+  // react-pdf only honours `break` on a node when its parent's children are
+  // actually re-evaluated for pagination — which only happens when the parent
+  // doesn't fit on the current page. Nesting "N dishes per page" breaks inside
+  // a per-category wrapper meant the break was silently ignored whenever the
+  // whole category happened to fit on the page. To make `dishesPerPage` work
+  // reliably, every group that may need its own page is a DIRECT child of
+  // <Page>, pre-chunked here.
+  interface Block {
+    key:         string
+    breakBefore: boolean
+    catIdx:      number
+    cat:         { name: string }
+    st:          typeof s
+    showHeader:  boolean
+    isGrid:      boolean
+    dishes:      PDFDish[]
+    lastFlags:   boolean[]   // per dish: true if it's the last dish of its category
+  }
+
+  const blocks: Block[] = []
+  // Compact mode: dishes flow continuously, so a running counter (reset only
+  // by the orphan-avoidance rule below) lets later categories fill the
+  // remaining slots of the current page.
+  let compactCounter = 0
+
+  categories.forEach((cat, catIdx) => {
+    const flipped = alternating && catIdx % 2 === 1
+    const st      = flipped ? sFlip : s
+    const n       = cat.dishes.length
+    const lastFlags = (dishes: PDFDish[], offset: number) => dishes.map((_, i) => offset + i === n - 1)
+
+    if (perPage <= 0) {
+      blocks.push({ key: cat.name, breakBefore: !compact && catIdx > 0, catIdx, cat, st, showHeader: true, isGrid, dishes: cat.dishes, lastFlags: lastFlags(cat.dishes, 0) })
+      return
+    }
+
+    if (isGrid) {
+      // Grids honour "N per pagina" too: cells are chunked and every chunk
+      // after the first starts on a new page.
+      chunk(cat.dishes, perPage).forEach((dishes, ci) => {
+        blocks.push({ key: `${cat.name}-${ci}`, breakBefore: ci > 0 || (!compact && catIdx > 0), catIdx, cat, st, showHeader: ci === 0, isGrid: true, dishes, lastFlags: dishes.map(() => false) })
+      })
+      return
+    }
+
+    if (!compact) {
+      // Classic mode: each category already starts a fresh page, so chunks
+      // are counted from 0 within the category.
+      chunk(cat.dishes, perPage).forEach((dishes, ci) => {
+        blocks.push({ key: `${cat.name}-${ci}`, breakBefore: ci > 0 || catIdx > 0, catIdx, cat, st, showHeader: ci === 0, isGrid: false, dishes, lastFlags: lastFlags(dishes, ci * perPage) })
+      })
+      return
+    }
+
+    // Compact mode: fill the remaining slots on the current page first
+    // (a new category's dishes can top up the previous category's last
+    // page), then chunk the rest into full pages.
+    let idx = 0
+    let firstChunk = true
+    while (idx < n) {
+      const room        = perPage - (compactCounter % perPage)
+      const breakBefore = compactCounter > 0 && compactCounter % perPage === 0
+      const take        = Math.min(room, n - idx)
+      const dishes      = cat.dishes.slice(idx, idx + take)
+      blocks.push({ key: `${cat.name}-${idx}`, breakBefore, catIdx, cat, st, showHeader: firstChunk, isGrid: false, dishes, lastFlags: lastFlags(dishes, idx) })
+      compactCounter += take
+      idx += take
+      firstChunk = false
+    }
+  })
+
   return (
     <Document
       title={`${restaurant.name} — ${menu.name}`}
@@ -542,62 +605,36 @@ export function MenuPDFDocument({ restaurant, menu, theme: themeProp, registered
     >
       <Page size="A4" style={s.page} wrap>
         <PageBackgroundLayer bg={m.pageBackground} compact={compact} />
-        {categories.map((cat, catIdx) => {
-          const flipped = alternating && catIdx % 2 === 1
-          const st      = flipped ? sFlip : s
-          // Classic mode starts every category on a fresh page → reset the
-          // per-page dish counter so "N per pagina" counts from that page.
-          if (!compact) dishCounter = 0
+        {blocks.map(b => (
+          <View key={b.key} break={b.breakBefore}>
 
-          // Compact mode: avoid leaving a single "orphan" dish of a category
-          // at the bottom of a page. If fewer than 2 slots remain before the
-          // next forced break and the category has more than one dish, push
-          // the whole category to the next page (leaving the rest blank).
-          let forceBreakCategory = false
-          if (compact && perPage > 0 && !isGrid && catIdx > 0) {
-            const remaining = perPage - (dishCounter % perPage)
-            if (remaining === 1 && cat.dishes.length > 1) {
-              forceBreakCategory = true
-              dishCounter = 0
-            }
-          }
+            {b.showHeader && compact && b.catIdx > 0 && <View style={s.catSpacer} />}
+            {b.showHeader && categoryHeader(b.cat, b.st)}
+            {b.showHeader && <View style={s.catLine} />}
 
-          return (
-            <View key={cat.name} break={(!compact && catIdx > 0) || forceBreakCategory}>
+            {b.isGrid ? (
+              <View style={s.gridRow}>
+                {b.dishes.map((dish) => {
+                  const priceStr    = dish.price != null ? formatPrice(dish.price, m.prices.format, m.prices.currency) : null
+                  const allergenStr = allergenText(dish)
+                  return (
+                    <View key={dish.id} style={isGrid3 ? b.st.gridCell3 : b.st.gridCell2} wrap={false}>
+                      <View style={b.st.dishRow}>
+                        <Text style={b.st.dishName}>{dish.name}</Text>
+                        {priceStr && <Text style={b.st.dishPrice}>{priceStr}</Text>}
+                      </View>
+                      {dish.description ? <Text style={b.st.dishDesc}>{dish.description}</Text> : null}
+                      {allergenStr ? <Text style={b.st.dishAllergens}>{allergenStr}</Text> : null}
+                    </View>
+                  )
+                })}
+              </View>
+            ) : (
+              b.dishes.map((dish, i) => renderDish(dish, b.lastFlags[i], b.st))
+            )}
 
-              {compact && catIdx > 0 && <View style={s.catSpacer} />}
-
-              {categoryHeader(cat, st)}
-              <View style={s.catLine} />
-
-              {isGrid ? (
-                // Grids honour "N per pagina" too: cells are chunked and every
-                // chunk after the first starts on a new page.
-                chunk(cat.dishes, perPage).map((dishes, ci) => (
-                  <View key={ci} style={s.gridRow} break={ci > 0}>
-                    {dishes.map((dish) => {
-                      const priceStr    = dish.price != null ? formatPrice(dish.price, m.prices.format, m.prices.currency) : null
-                      const allergenStr = allergenText(dish)
-                      return (
-                        <View key={dish.id} style={isGrid3 ? st.gridCell3 : st.gridCell2} wrap={false}>
-                          <View style={st.dishRow}>
-                            <Text style={st.dishName}>{dish.name}</Text>
-                            {priceStr && <Text style={st.dishPrice}>{priceStr}</Text>}
-                          </View>
-                          {dish.description ? <Text style={st.dishDesc}>{dish.description}</Text> : null}
-                          {allergenStr ? <Text style={st.dishAllergens}>{allergenStr}</Text> : null}
-                        </View>
-                      )
-                    })}
-                  </View>
-                ))
-              ) : (
-                cat.dishes.map((dish, dishIdx) => renderDish(dish, dishIdx === cat.dishes.length - 1, st))
-              )}
-
-            </View>
-          )
-        })}
+          </View>
+        ))}
       </Page>
     </Document>
   )
