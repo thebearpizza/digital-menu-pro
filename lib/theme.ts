@@ -100,6 +100,9 @@ export interface CardTheme {
   align:        'left' | 'center' | 'right'  // allineamento testo della card
   borderRadius: 'none' | 'sm' | 'md'   // 0 / 8 / 16px
   layout:      'photo-top' | 'photo-side' | 'minimal'
+  // Etichetta categoria in cima alla card — indipendente dal titolo categoria
+  // del menu (menu.categories), che resta separato.
+  category:    { color: string; size: number }
   title:       { font: string; size: number; color: string; weight: 'light' | 'normal' | 'bold' }
   description: { font: string; size: number; color: string }
   price:       { font: string; size: number; color: string; format: PriceFormat; currency: string }
@@ -250,6 +253,7 @@ export const DEFAULT_THEME: RestaurantTheme = {
     align:        'left',
     borderRadius: 'sm',
     layout:  'photo-top',
+    category:    { color: '#c9a96e', size: 0.5625 },
     title:       { font: 'Cormorant Garamond', size: 1.75, color: '#ede8e0', weight: 'light' },
     description: { font: 'DM Sans', size: 0.875, color: '#a09080' },
     price:       { font: 'DM Sans', size: 1.1, color: '#c9a96e', format: 'symbol-left', currency: '€' },
@@ -331,6 +335,7 @@ function parseNested(r: Record<string, unknown>): RestaurantTheme {
   const mn  = sub(m.navigation)
   const mbn = sub(m.banners)
   const ca  = sub(r.card)
+  const cac = sub(ca.category)
   const cat = sub(ca.title)
   const cad = sub(ca.description)
   const cap = sub(ca.price)
@@ -411,6 +416,12 @@ function parseNested(r: Record<string, unknown>): RestaurantTheme {
                         one(ml.dishAlignment, ['left','center','right'] as const, d.menu.layout.dishAlignment)),
       borderRadius: one(ca.borderRadius, ['none','sm','md'] as const, d.card.borderRadius),
       layout:       one(ca.layout, ['photo-top','photo-side','minimal'] as const, d.card.layout),
+      category: {
+        // Back-compat: prima dell'introduzione di card.category il chip usava
+        // il colore accento della card — i temi salvati mantengono quel look.
+        color: str(cac.color, str(ca.accent, str(m.accent, d.menu.accent))),
+        size:  num(cac.size, d.card.category.size),
+      },
       title: {
         font:   str(cat.font, d.card.title.font),
         size:   num(cat.size, d.card.title.size),
@@ -526,7 +537,7 @@ export function migrateFlat(r: Record<string, unknown>): RestaurantTheme {
       navigation:   { style: paginationStyle, color: textMuted },
       banners:      { position: 'inline' },
     },
-    card: { ...structuredClone(d.card), accent, align: dishAlignment },
+    card: { ...structuredClone(d.card), accent, align: dishAlignment, category: { ...d.card.category, color: accent } },
     customFonts: strRecord(r.customFonts),
   }
 }

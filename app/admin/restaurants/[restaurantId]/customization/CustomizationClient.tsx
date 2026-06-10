@@ -480,7 +480,7 @@ function Toggle({ checked, onChange, disabled = false }: { checked: boolean; onC
 const MOBILE_TARGETS: Record<'landing' | 'menu' | 'card', string[]> = {
   landing: ['landing-bg','landing-logo','landing-title','landing-desc','landing-buttons','landing-socials'],
   menu:    ['category-title','dish-title','dish-description','dish-price','allergens','background-layout','sticky-categories'],
-  card:    ['card-style','dish-title','dish-description','dish-price','allergens'],
+  card:    ['card-style','card-category','dish-title','dish-description','dish-price','allergens'],
 }
 const MOBILE_LABELS: Record<string, string> = {
   'landing-bg':       'Sfondo',    'landing-logo':     'Logo',
@@ -490,6 +490,7 @@ const MOBILE_LABELS: Record<string, string> = {
   'dish-price':       'Prezzo',    'allergens':        'Allergeni',
   'category-title':   'Categoria', 'background-layout':'Layout',
   'sticky-categories':'Barra',     'card-style':       'Stile Card',
+  'card-category':    'Categoria',
 }
 
 // ── Editor target registry ────────────────────────────────────────────────────
@@ -507,6 +508,7 @@ const EDITOR_TARGETS: Record<string, { title: string; hint: string }> = {
   'category-title':    { title: 'Titolo Categoria',   hint: 'Font, colore, dimensione, allineamento' },
   'allergens':         { title: 'Allergeni',          hint: 'Stile, formato, separatore, colori' },
   'card-style':        { title: 'Stile Card',         hint: 'Sfondo card, bordi, pulsante chiudi, accento' },
+  'card-category':     { title: 'Categoria (Card)',   hint: 'Colore e dimensione dell\'etichetta categoria nella card' },
   'sticky-categories': { title: 'Barra Categorie',    hint: 'Stile, colori, font della barra categorie' },
   'background-layout': { title: 'Sfondo & Layout',    hint: 'Accento, sfondo menu, immagine, paginazione, spaziatura' },
 }
@@ -538,6 +540,7 @@ interface SidebarSetters {
   setCardPrice:      (p: Partial<CardTheme['price']>) => void
   setCardAllergens:  (p: Partial<CardTheme['allergens']>) => void
   setCardClose:      (p: Partial<CardTheme['closeButton']>) => void
+  setCardCategory:   (p: Partial<CardTheme['category']>) => void
   handleBgUpload:     (f: File) => void
   handleVideoUpload:  (f: File) => void
   handleMenuBgUpload: (f: File) => void
@@ -1107,6 +1110,19 @@ function EditorSidebar({ target, theme, setters, previewMode, onClose, restauran
         </div>
       )
 
+      case 'card-category': return (
+        <div className="space-y-4">
+          <p className="text-[11px] text-gray-400 leading-snug">
+            Etichetta categoria mostrata in cima alla card. È indipendente dal titolo categoria del menu.
+          </p>
+          <ColorRow label="Colore" value={c.category.color}
+            onChange={v => setters.setCardCategory({ color: v })} />
+          <FontSizeSlider label="Dimensione" value={c.category.size}
+            min={0.4} max={1.4} step={0.025} previewFont="inherit"
+            onChange={v => setters.setCardCategory({ size: v })} />
+        </div>
+      )
+
       case 'card-style': return (
         <div className="space-y-4">
           <ColorRow label="Sfondo card" value={c.bgColor}
@@ -1671,6 +1687,9 @@ export default function CustomizationClient({
   function setCardClose(patch: Partial<CardTheme['closeButton']>) {
     setSaved(false); setTheme(t => ({ ...t, card: { ...t.card, closeButton: { ...t.card.closeButton, ...patch } } }))
   }
+  function setCardCategory(patch: Partial<CardTheme['category']>) {
+    setSaved(false); setTheme(t => ({ ...t, card: { ...t.card, category: { ...t.card.category, ...patch } } }))
+  }
   function setLBg(patch: Partial<LandingBackground>) {
     setSaved(false); setTheme(t => ({ ...t, landing: { ...t.landing, background: { ...t.landing.background, ...patch } } }))
   }
@@ -1882,7 +1901,7 @@ export default function CustomizationClient({
   const setters: SidebarSetters = {
     setLBg, setLLogo, setLTitle, setLDesc, setLBu, setL,
     setMDishes, setMDescs, setMPrices, setMCats, setMLayout, setMDivider, setMBg, setMPageBg, setMNav, setMSticky, setMAllergens, setM,
-    setC, setCardTitle, setCardDesc, setCardPrice, setCardAllergens, setCardClose,
+    setC, setCardTitle, setCardDesc, setCardPrice, setCardAllergens, setCardClose, setCardCategory,
     handleBgUpload, handleVideoUpload, handleMenuBgUpload, handleMenuPageBgUpload, handlePosterUpload, handleLogoUpload, handleFontUpload,
     bgUploading, vidUploading, menuBgUploading, pageBgUploading, posterUploading, logoUploading, fontUploading,
   }

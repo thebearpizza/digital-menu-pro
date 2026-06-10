@@ -66,6 +66,10 @@ export default function DishModal({ activeDish, allDishes, isNested, onClose, on
   // Decorative accent: card-owned, with menu accent only as legacy fallback
   const ACCENT = card?.accent ?? mn?.accent ?? '#c9a96e'
 
+  // Category chip: card-owned settings, independent from menu.categories
+  const CAT_COLOR = card?.category.color ?? ACCENT
+  const CAT_SIZE  = card?.category.size  ?? 0.5625
+
   // Prev/next + page-counter colors, kept within the same neutral gray tone
   // but boosted for legibility against the active card background.
   const NAV_COLORS = cardNavColors(CARD_BG)
@@ -260,11 +264,11 @@ export default function DishModal({ activeDish, allDishes, isNested, onClose, on
           className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden overscroll-contain [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]"
           style={{ ...animStyle, padding: '20px 24px 4px', touchAction: 'pan-y' }}
         >
-          {/* Category chip */}
-          <EditHandle target="category-title" editMode={editMode}>
+          {/* Category chip — own edit target: must NOT touch menu.categories */}
+          <EditHandle target="card-category" editMode={editMode}>
             <p
               className="uppercase"
-              style={{ color: ACCENT, fontSize: 9, letterSpacing: '0.28em', marginBottom: 10, textAlign: TEXT_ALIGN }}
+              style={{ color: CAT_COLOR, fontSize: `${CAT_SIZE}rem`, letterSpacing: '0.28em', marginBottom: 10, textAlign: TEXT_ALIGN }}
             >
               {dish.category}
             </p>
