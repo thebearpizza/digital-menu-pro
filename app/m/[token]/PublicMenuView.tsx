@@ -258,8 +258,12 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
   const [showHint, setShowHint] = useState(false)
   const hintKey = () => `dmp-menu-hint-seen:${window.location.pathname}`
   useEffect(() => {
+    // Nell'anteprima admin il pop-up non appare mai da solo: ogni modifica al
+    // tema rigenera il PDF (menuReady false→true) e rifarebbe sbucare il
+    // pop-up a ogni ritocco. Lì si vede solo dalla tab "Pop-up" (hintForced).
+    if (isPreviewRef.current) return
     if (!menuReady || !hint.enabled) return
-    if (!isPreviewRef.current && hint.showOnce) {
+    if (hint.showOnce) {
       try { if (localStorage.getItem(hintKey())) return } catch {}
     }
     setShowHint(true)
