@@ -25,26 +25,26 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createSb, SupabaseClient } from '@supabase/supabase-js'
+import { aiHandle, aiEnabled } from './ai'
 
 export const dynamic = 'force-dynamic'
 
-const HELP = `Comandi disponibili:
+const HELP = `Scrivimi (o dimmi a voce 🎙) cosa fare, con parole tue. Esempi:
 
+«metti la carbonara a 12,50»
+«disattiva il menù della sera»
+«aggiungi il tiramisù a 6 euro nei dolci del menu Pranzo»
+«crea un menu che si chiama Degustazione»
+«rinomina la categoria Antipasti in Per iniziare»
+«duplica il menu Cena»
+«elimina il piatto Polpette» (ti chiederò conferma)
+«programma il menu Bar dalle 8 alle 12»
+«che situazione abbiamo?» — stato di menu e piatti
+
+Comandi fissi:
 /collega CODICE — abbina questa chat (genera il codice da Admin → Telegram)
 /lista — ristoranti e menu con stato
-/scollega — rimuovi abbinamento
-
-prezzo Carbonara 12,50
-prezzo Carbonara 12,50 menu Pranzo
-attiva piatto Carbonara
-disattiva categoria Antipasti
-disattiva categoria Antipasti menu Cena
-attiva menu Bar
-disattiva ristorante Da Mario
-programma menu Bar dalle 8 alle 12
-rimuovi programmazione menu Bar
-
-🎙 Puoi anche inviare un messaggio vocale con il comando.`
+/scollega — rimuovi abbinamento`
 
 function admin(): SupabaseClient {
   return createSb(
@@ -345,6 +345,24 @@ async function handleCommand(sb: SupabaseClient, chatId: number, userId: string 
   return `Non ho capito 🤔\n\n${HELP}`
 }
 
+/**
+ * Smista il messaggio: i comandi /slash e le chat non abbinate restano sul
+ * parser deterministico; tutto il resto passa all'interprete AI (Gemini),
+ * con fallback al parser regex se l'AI non è configurata o fallisce.
+ */
+async function handleMessage(sb: SupabaseClient, chatId: number, userId: string | null, text: string): Promise<string> {
+  if (text.trim().startsWith('/') || !userId || !aiEnabled()) {
+    return handleCommand(sb, chatId, userId, text)
+  }
+  try {
+    const answer = await aiHandle(sb, chatId, userId, text)
+    return answer || `Chat collegata. ${HELP}`
+  } catch (e: any) {
+    console.error('AI interpreter failed, falling back to regex parser', e?.message)
+    return handleCommand(sb, chatId, userId, text)
+  }
+}
+
 // ── Webhook ───────────────────────────────────────────────────────────────────
 
 export async function POST(req: NextRequest) {
@@ -398,7 +416,7 @@ export async function POST(req: NextRequest) {
         await reply(chatId, 'Non sono riuscito a capire il vocale 🎙 Riprova parlando chiaramente, o scrivi il comando in testo.')
         return NextResponse.json({ ok: true })
       }
-      const answer = await handleCommand(sb, chatId, userId, transcript)
+      const answer = await handleMessage(sb, chatId, userId, transcript)
       await reply(chatId, `🎙 Ho capito: «${transcript}»\n\n${answer}`)
     } catch (e: any) {
       await reply(chatId, `Errore nella trascrizione: ${e?.message ?? 'imprevisto'}`)
@@ -410,7 +428,7 @@ export async function POST(req: NextRequest) {
   if (!text) return NextResponse.json({ ok: true })
 
   try {
-    const answer = await handleCommand(sb, chatId, userId, text)
+    const answer = await handleMessage(sb, chatId, userId, text)
     await reply(chatId, answer)
   } catch (e: any) {
     await reply(chatId, `Errore: ${e?.message ?? 'imprevisto'}`)
