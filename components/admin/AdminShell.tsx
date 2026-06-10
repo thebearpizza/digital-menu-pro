@@ -8,6 +8,7 @@ import { LogoutButton } from '@/components/admin/LogoutButton'
 const NAV = [
   { href: '/admin',             label: 'Dashboard',  exact: true },
   { href: '/admin/restaurants', label: 'Ristoranti', exact: false },
+  { href: '/admin/telegram',    label: 'Telegram',   exact: false },
 ]
 
 export default function AdminShell({
