@@ -124,10 +124,13 @@ export interface LandingTheme {
   accent:      string
   // image: custom logo upload — overrides restaurant.logo_url when set
   logo:        { size: number; mixBlend: 'normal' | 'multiply' | 'screen'; image: string; gapBottom: number }
-  // text: override for the restaurant name — falls back to restaurant.name when empty
-  title:       { font: string; size: number; color: string; weight: 'light' | 'normal' | 'bold'; text: string; gapBottom: number }
-  // text: override for the slogan — falls back to restaurant.description when empty
-  description: { font: string; size: number; color: string; text: string }
+  // text: override for the restaurant name — falls back to restaurant.name when empty.
+  // text supports manual line breaks (\n); lineSizes[i] holds the font size (rem)
+  // for line i+2 (line 1 uses `size`). Missing entries fall back to `size`.
+  title:       { font: string; size: number; color: string; weight: 'light' | 'normal' | 'bold'; text: string; gapBottom: number; lineSizes: number[] }
+  // text: override for the slogan — falls back to restaurant.description when empty.
+  // Same multi-line / per-line size convention as `title`.
+  description: { font: string; size: number; color: string; text: string; lineSizes: number[] }
   buttons: {
     shape:       'flat' | 'rounded' | 'pill'
     borderStyle: 'none' | 'solid' | 'dashed'
@@ -203,8 +206,8 @@ export const DEFAULT_THEME: RestaurantTheme = {
     },
     accent:      '#c9a96e',
     logo:        { size: 3.5, mixBlend: 'normal', image: '', gapBottom: 1.5 },
-    title:       { font: 'Cormorant Garamond', size: 2.0, color: '#ede8e0', weight: 'light', text: '', gapBottom: 0.6 },
-    description: { font: 'DM Sans', size: 0.6, color: '#c9a96e80', text: '' },
+    title:       { font: 'Cormorant Garamond', size: 2.0, color: '#ede8e0', weight: 'light', text: '', gapBottom: 0.6, lineSizes: [] },
+    description: { font: 'DM Sans', size: 0.6, color: '#c9a96e80', text: '', lineSizes: [] },
     buttons: {
       shape: 'flat', borderStyle: 'solid', borderWidth: 1, borderColor: '#c9a96e',
       font: 'DM Sans', fontSize: 0.625, textColor: '#ede8e0', bgColor: 'transparent', gapTop: 2.5,
@@ -254,6 +257,9 @@ export const DEFAULT_THEME: RestaurantTheme = {
 
 function str(v: unknown, fb: string): string { return typeof v === 'string' ? v : fb }
 function num(v: unknown, fb: number): number { return typeof v === 'number' ? v : fb }
+function numArray(v: unknown, fb: number[]): number[] {
+  return Array.isArray(v) && v.every(x => typeof x === 'number') ? v as number[] : fb
+}
 function one<T extends string>(v: unknown, opts: readonly T[], fb: T): T {
   return (opts as readonly unknown[]).includes(v) ? v as T : fb
 }
@@ -330,8 +336,8 @@ function parseNested(r: Record<string, unknown>): RestaurantTheme {
       },
       accent:      str(l.accent, d.landing.accent),
       logo:        { size: num(ll.size, d.landing.logo.size), mixBlend: one(ll.mixBlend, ['normal','multiply','screen'] as const, d.landing.logo.mixBlend), image: str(ll.image, d.landing.logo.image), gapBottom: num(ll.gapBottom, d.landing.logo.gapBottom) },
-      title:       { font: str(lt.font, d.landing.title.font), size: num(lt.size, d.landing.title.size), color: str(lt.color, d.landing.title.color), weight: one(lt.weight, ['light','normal','bold'] as const, d.landing.title.weight), text: str(lt.text, d.landing.title.text), gapBottom: num(lt.gapBottom, d.landing.title.gapBottom) },
-      description: { font: str(ld.font, d.landing.description.font), size: num(ld.size, d.landing.description.size), color: str(ld.color, d.landing.description.color), text: str(ld.text, d.landing.description.text) },
+      title:       { font: str(lt.font, d.landing.title.font), size: num(lt.size, d.landing.title.size), color: str(lt.color, d.landing.title.color), weight: one(lt.weight, ['light','normal','bold'] as const, d.landing.title.weight), text: str(lt.text, d.landing.title.text), gapBottom: num(lt.gapBottom, d.landing.title.gapBottom), lineSizes: numArray(lt.lineSizes, d.landing.title.lineSizes) },
+      description: { font: str(ld.font, d.landing.description.font), size: num(ld.size, d.landing.description.size), color: str(ld.color, d.landing.description.color), text: str(ld.text, d.landing.description.text), lineSizes: numArray(ld.lineSizes, d.landing.description.lineSizes) },
       buttons: {
         shape:       one(bu.shape, ['flat','rounded','pill'] as const, d.landing.buttons.shape),
         borderStyle: one(bu.borderStyle, ['none','solid','dashed'] as const, d.landing.buttons.borderStyle),
@@ -478,8 +484,8 @@ export function migrateFlat(r: Record<string, unknown>): RestaurantTheme {
       },
       accent,
       logo:        { size: 3.5, mixBlend: 'normal', image: '', gapBottom: d.landing.logo.gapBottom },
-      title:       { font: fontSerif, size: num(fs.title, d.landing.title.size), color: textPrimary, weight: 'light', text: '', gapBottom: d.landing.title.gapBottom },
-      description: { font: fontSans, size: 0.6, color: `${accent}80`, text: '' },
+      title:       { font: fontSerif, size: num(fs.title, d.landing.title.size), color: textPrimary, weight: 'light', text: '', gapBottom: d.landing.title.gapBottom, lineSizes: [] },
+      description: { font: fontSans, size: 0.6, color: `${accent}80`, text: '', lineSizes: [] },
       buttons: {
         shape: buttonShape, borderStyle: 'solid', borderWidth: 1, borderColor: accent,
         font: fontSans, fontSize: 0.625, textColor: textPrimary, bgColor: 'transparent', gapTop: 2.5,
@@ -549,6 +555,13 @@ export function googleFontsUrl(fonts: string[]): string {
     .map(f => `family=${encodeURIComponent(f)}:ital,wght@0,300;0,400;0,600;1,400`)
     .join('&')
   return `https://fonts.googleapis.com/css2?${families}&display=swap`
+}
+
+// Splits a (possibly multi-line) text into per-line { text, size } pairs.
+// Line 1 uses `baseSize`; line N (N>=2) uses `lineSizes[N-2]`, falling back
+// to `baseSize` when not set.
+export function lineSizesFor(text: string, baseSize: number, lineSizes: number[]): { text: string; size: number }[] {
+  return text.split('\n').map((line, i) => ({ text: line, size: i === 0 ? baseSize : (lineSizes[i - 1] ?? baseSize) }))
 }
 
 export function fontStack(name: string, category: 'serif' | 'sans'): string {

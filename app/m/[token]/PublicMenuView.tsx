@@ -14,7 +14,7 @@ import { useMenuPDF }  from './useMenuPDF'
 import {
   googleFontsUrl, allThemeFonts, fontStack,
   hexToRgb, landingButtonRadius, landingTextureCss, menuBackgroundCss,
-  parseTheme,
+  parseTheme, lineSizesFor,
 } from '@/lib/theme'
 import type { RestaurantTheme } from '@/lib/theme'
 
@@ -490,19 +490,22 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
               <h1 className="uppercase leading-none"
                 style={{
                   color: l.title.color, fontFamily: TITLE_FONT,
-                  fontSize: `${l.title.size}rem`,
                   letterSpacing: '0.22em',
                   fontWeight: l.title.weight === 'bold' ? 700 : l.title.weight === 'normal' ? 400 : 300,
                 }}>
-                {displayName}
+                {lineSizesFor(displayName, l.title.size, l.title.lineSizes).map((ln, i) => (
+                  <span key={i} style={{ display: 'block', fontSize: `${ln.size}rem` }}>{ln.text}</span>
+                ))}
               </h1>
             )}
           </EditHandle>
 
           <EditHandle target="landing-desc" editMode={editMode}>
             {displayDesc && isVis(vis,'description') && (
-              <p style={{ color: l.description.color, fontFamily: DESC_FONT, fontSize: `${l.description.size}rem`, letterSpacing: '0.2em', textTransform: 'uppercase', marginTop: `${l.title.gapBottom}rem` }}>
-                {displayDesc}
+              <p style={{ color: l.description.color, fontFamily: DESC_FONT, letterSpacing: '0.2em', textTransform: 'uppercase', marginTop: `${l.title.gapBottom}rem` }}>
+                {lineSizesFor(displayDesc, l.description.size, l.description.lineSizes).map((ln, i) => (
+                  <span key={i} style={{ display: 'block', fontSize: `${ln.size}rem` }}>{ln.text}</span>
+                ))}
               </p>
             )}
           </EditHandle>

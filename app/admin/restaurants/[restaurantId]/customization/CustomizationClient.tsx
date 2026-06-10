@@ -722,17 +722,28 @@ function EditorSidebar({ target, theme, setters, previewMode, onClose, restauran
         <div className="space-y-4">
           <div>
             <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Testo</p>
-            <input type="text" value={l.title.text} placeholder={restaurantName}
+            <textarea value={l.title.text} placeholder={restaurantName}
+              rows={Math.max(1, l.title.text.split('\n').length)}
               onChange={e => setters.setLTitle({ text: e.target.value })}
-              className="w-full px-3 py-2 text-sm border border-gray-200 rounded focus:outline-none focus:border-gray-400" />
-            <p className="text-[11px] text-gray-400 mt-1">Vuoto = usa il nome del ristorante ({restaurantName}).</p>
+              className="w-full px-3 py-2 text-sm border border-gray-200 rounded focus:outline-none focus:border-gray-400 resize-y" />
+            <p className="text-[11px] text-gray-400 mt-1">Vuoto = usa il nome del ristorante ({restaurantName}). Premi Invio per andare a capo.</p>
           </div>
           <FontSelector label="Font" value={l.title.font}
             curated={[...SERIF_FONTS, ...DISPLAY_FONTS]} category="serif"
             onChange={v => setters.setLTitle({ font: v })} />
-          <FontSizeSlider label="Dimensione" value={l.title.size}
+          <FontSizeSlider label="Grandezza riga 1" value={l.title.size}
             min={0.8} max={5} step={0.1} previewFont={fontStack(l.title.font, 'serif')}
             onChange={v => setters.setLTitle({ size: v })} />
+          {l.title.text.split('\n').slice(1).map((_, i) => (
+            <FontSizeSlider key={i} label={`Grandezza riga ${i + 2}`}
+              value={l.title.lineSizes[i] ?? l.title.size}
+              min={0.8} max={5} step={0.1} previewFont={fontStack(l.title.font, 'serif')}
+              onChange={v => {
+                const next = [...l.title.lineSizes]
+                next[i] = v
+                setters.setLTitle({ lineSizes: next })
+              }} />
+          ))}
           <ColorRow label="Colore" value={l.title.color} onChange={v => setters.setLTitle({ color: v })} />
           <div>
             <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Peso</p>
@@ -750,17 +761,28 @@ function EditorSidebar({ target, theme, setters, previewMode, onClose, restauran
         <div className="space-y-4">
           <div>
             <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Testo</p>
-            <input type="text" value={l.description.text} placeholder="Alta cucina italiana · dal 1987"
+            <textarea value={l.description.text} placeholder="Alta cucina italiana · dal 1987"
+              rows={Math.max(1, l.description.text.split('\n').length)}
               onChange={e => setters.setLDesc({ text: e.target.value })}
-              className="w-full px-3 py-2 text-sm border border-gray-200 rounded focus:outline-none focus:border-gray-400" />
-            <p className="text-[11px] text-gray-400 mt-1">Vuoto = usa la descrizione del ristorante.</p>
+              className="w-full px-3 py-2 text-sm border border-gray-200 rounded focus:outline-none focus:border-gray-400 resize-y" />
+            <p className="text-[11px] text-gray-400 mt-1">Vuoto = usa la descrizione del ristorante. Premi Invio per andare a capo.</p>
           </div>
           <FontSelector label="Font" value={l.description.font}
             curated={SANS_FONTS} category="sans"
             onChange={v => setters.setLDesc({ font: v })} />
-          <FontSizeSlider label="Dimensione" value={l.description.size}
+          <FontSizeSlider label="Grandezza riga 1" value={l.description.size}
             min={0.4} max={1.4} step={0.05} previewFont={fontStack(l.description.font, 'sans')}
             onChange={v => setters.setLDesc({ size: v })} />
+          {l.description.text.split('\n').slice(1).map((_, i) => (
+            <FontSizeSlider key={i} label={`Grandezza riga ${i + 2}`}
+              value={l.description.lineSizes[i] ?? l.description.size}
+              min={0.4} max={1.4} step={0.05} previewFont={fontStack(l.description.font, 'sans')}
+              onChange={v => {
+                const next = [...l.description.lineSizes]
+                next[i] = v
+                setters.setLDesc({ lineSizes: next })
+              }} />
+          ))}
           <ColorRow label="Colore" value={l.description.color.slice(0, 7)}
             onChange={v => setters.setLDesc({ color: v })} />
           <FontSizeSlider label="Spazio sopra i bottoni menu" value={l.buttons.gapTop}
