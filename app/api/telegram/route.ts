@@ -14,6 +14,10 @@
 //   programma menu <nome> dalle <HH[:MM]> alle <HH[:MM]>
 //   rimuovi programmazione menu <nome>
 //
+// Messaggi vocali: trascritti con Google Speech-to-Text (REST, API key in
+// GOOGLE_SPEECH_API_KEY) e poi processati come comandi testuali. L'uso è
+// tracciato in voice_usage con tetto mensile sotto il free tier Google.
+//
 // Sicurezza: header x-telegram-bot-api-secret-token verificato contro
 // TELEGRAM_WEBHOOK_SECRET; ogni chat opera solo sui dati dell'account a cui
 // è stata abbinata con /collega (codice generato dall'admin loggato).
@@ -38,7 +42,9 @@ disattiva categoria Antipasti menu Cena
 attiva menu Bar
 disattiva ristorante Da Mario
 programma menu Bar dalle 8 alle 12
-rimuovi programmazione menu Bar`
+rimuovi programmazione menu Bar
+
+🎙 Puoi anche inviare un messaggio vocale con il comando.`
 
 function admin(): SupabaseClient {
   return createSb(
@@ -56,6 +62,64 @@ async function reply(chatId: number, text: string) {
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ chat_id: chatId, text }),
   }).catch(() => {})
+}
+
+// ── Messaggi vocali: Google Speech-to-Text con tetto mensile ─────────────────
+
+// La sync recognize di Google accetta max ~60s di audio; i comandi sono brevi.
+const VOICE_MAX_SECONDS = 59
+// Free tier Google: 60 min/mese. Blocchiamo a 55 per margine di sicurezza.
+const VOICE_MONTHLY_CAP_SECONDS = 55 * 60
+
+/** Secondi di audio già trascritti dal primo del mese corrente (globale). */
+async function monthlyVoiceSeconds(sb: SupabaseClient): Promise<number> {
+  const monthStart = new Date()
+  monthStart.setUTCDate(1)
+  monthStart.setUTCHours(0, 0, 0, 0)
+  const { data } = await sb
+    .from('voice_usage')
+    .select('duration_seconds')
+    .gte('created_at', monthStart.toISOString())
+  return (data ?? []).reduce((sum, r) => sum + (r.duration_seconds ?? 0), 0)
+}
+
+/** Scarica il vocale da Telegram e lo trascrive con Google STT. */
+async function transcribeVoice(fileId: string): Promise<string | null> {
+  const botToken = process.env.TELEGRAM_BOT_TOKEN
+  const apiKey = process.env.GOOGLE_SPEECH_API_KEY
+  if (!botToken || !apiKey) return null
+
+  // 1. file_id → file_path
+  const fileRes = await fetch(`https://api.telegram.org/bot${botToken}/getFile?file_id=${fileId}`)
+  const fileJson = await fileRes.json().catch(() => null)
+  const filePath: string | undefined = fileJson?.result?.file_path
+  if (!filePath) return null
+
+  // 2. Download dell'audio (i vocali Telegram sono OGG/Opus a 48 kHz)
+  const audioRes = await fetch(`https://api.telegram.org/file/bot${botToken}/${filePath}`)
+  if (!audioRes.ok) return null
+  const audioBase64 = Buffer.from(await audioRes.arrayBuffer()).toString('base64')
+
+  // 3. Trascrizione
+  const sttRes = await fetch(`https://speech.googleapis.com/v1/speech:recognize?key=${apiKey}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      config: {
+        encoding: 'OGG_OPUS',
+        sampleRateHertz: 48000,
+        languageCode: 'it-IT',
+      },
+      audio: { content: audioBase64 },
+    }),
+  })
+  if (!sttRes.ok) return null
+  const stt = await sttRes.json().catch(() => null)
+  const transcript = (stt?.results ?? [])
+    .map((r: any) => r?.alternatives?.[0]?.transcript ?? '')
+    .join(' ')
+    .trim()
+  return transcript || null
 }
 
 // ── Lookup helpers (scoped all'owner abbinato) ────────────────────────────────
@@ -290,8 +354,45 @@ export async function POST(req: NextRequest) {
     .from('telegram_links').select('user_id').eq('chat_id', chatId).maybeSingle()
   const userId = link?.user_id ?? null
 
-  if (msg.voice || msg.audio) {
-    await reply(chatId, 'I messaggi vocali non sono ancora supportati: scrivimi il comando in testo (es. "prezzo Carbonara 12,50").')
+  // Messaggi vocali → trascrizione → stesso parser dei comandi testuali.
+  if (msg.voice) {
+    if (!process.env.GOOGLE_SPEECH_API_KEY) {
+      await reply(chatId, 'I messaggi vocali non sono configurati: scrivimi il comando in testo (es. "prezzo Carbonara 12,50").')
+      return NextResponse.json({ ok: true })
+    }
+    if (!userId) {
+      // Niente trascrizione (e quota) per chat non abbinate.
+      await reply(chatId, 'Questa chat non è collegata. Genera un codice da Admin → Telegram e invia:\n/collega CODICE')
+      return NextResponse.json({ ok: true })
+    }
+    const duration: number = msg.voice.duration ?? 0
+    if (duration > VOICE_MAX_SECONDS) {
+      await reply(chatId, `Vocale troppo lungo (${duration}s): massimo ${VOICE_MAX_SECONDS} secondi. I comandi sono brevi, riprova 🙂`)
+      return NextResponse.json({ ok: true })
+    }
+    const used = await monthlyVoiceSeconds(sb)
+    if (used + duration > VOICE_MONTHLY_CAP_SECONDS) {
+      await reply(chatId, '⚠️ Limite mensile di trascrizione vocale raggiunto. Usa i comandi testuali (es. "prezzo Carbonara 12,50") fino al mese prossimo.')
+      return NextResponse.json({ ok: true })
+    }
+
+    try {
+      const transcript = await transcribeVoice(msg.voice.file_id)
+      // Registra l'uso anche se la trascrizione è vuota: l'audio è stato processato.
+      await sb.from('voice_usage').insert({
+        chat_id: chatId,
+        user_id: userId,
+        duration_seconds: Math.max(duration, 1),
+      })
+      if (!transcript) {
+        await reply(chatId, 'Non sono riuscito a capire il vocale 🎙 Riprova parlando chiaramente, o scrivi il comando in testo.')
+        return NextResponse.json({ ok: true })
+      }
+      const answer = await handleCommand(sb, chatId, userId, transcript)
+      await reply(chatId, `🎙 Ho capito: «${transcript}»\n\n${answer}`)
+    } catch (e: any) {
+      await reply(chatId, `Errore nella trascrizione: ${e?.message ?? 'imprevisto'}`)
+    }
     return NextResponse.json({ ok: true })
   }
 
