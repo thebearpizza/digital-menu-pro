@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { updateRestaurant } from '../actions'
 import VisibilityToggle from '@/components/ui/VisibilityToggle'
+import { Spinner } from '@/components/ui/Spinner'
 
 interface Visibility {
   name:        boolean
@@ -188,9 +189,9 @@ export default function RestaurantForm({ restaurant }: Props) {
       <div>
         <button
           type="submit" disabled={saving || uploading}
-          className="bg-blue-600 text-white text-sm font-medium px-5 py-2 hover:bg-blue-700 disabled:opacity-50 transition-colors"
+          className="bg-blue-600 text-white text-sm font-medium px-5 py-2 hover:bg-blue-700 disabled:opacity-50 transition-colors min-w-[120px] flex items-center justify-center"
         >
-          {saving ? 'Salvataggio…' : 'Salva modifiche'}
+          {saving ? <Spinner color="#fff" /> : 'Salva modifiche'}
         </button>
       </div>
     </form>

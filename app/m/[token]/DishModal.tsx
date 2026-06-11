@@ -5,6 +5,7 @@ import { formatAllergens } from '@/lib/allergens'
 import { fontStack, formatPrice, cardBorderRadius, cardNavColors } from '@/lib/theme'
 import type { CardTheme, RestaurantTheme } from '@/lib/theme'
 import { EditHandle, sendEdit, useIsMobilePreview } from './EditHandle'
+import { animateCardIn } from '@/lib/animations'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -91,6 +92,13 @@ export default function DishModal({ activeDish, allDishes, isNested, onClose, on
 
   const touchStartX = useRef<number | null>(null)
   const mouseStartX = useRef<number | null>(null)
+  const cardRef     = useRef<HTMLDivElement>(null)
+  const backdropRef = useRef<HTMLDivElement>(null)
+
+  // Pop-in entrance for the card + backdrop, played once when the modal mounts.
+  useEffect(() => {
+    animateCardIn(cardRef.current, backdropRef.current)
+  }, [])
 
   const total = allDishes.length
   const dish  = allDishes[idx] ?? activeDish
@@ -190,7 +198,8 @@ export default function DishModal({ activeDish, allDishes, isNested, onClose, on
     >
       {/* Backdrop — clicking it always closes everything */}
       <div
-        className="absolute inset-0 modal-backdrop touch-none"
+        ref={backdropRef}
+        className="absolute inset-0 touch-none"
         style={{
           background:          'rgba(0,0,0,0.78)',
           backdropFilter:      'blur(6px)',
@@ -201,7 +210,8 @@ export default function DishModal({ activeDish, allDishes, isNested, onClose, on
 
       {/* Card */}
       <div
-        className="relative w-full sm:max-w-md flex flex-col modal-card overflow-hidden"
+        ref={cardRef}
+        className="relative w-full sm:max-w-md flex flex-col overflow-hidden"
         style={{
           background:   CARD_BG,
           border:       `1px solid ${ACCENT}22`,

@@ -12,6 +12,7 @@ import {
 import { ALL_GOOGLE_FONTS } from '@/lib/googleFontsCatalog'
 import { removeUniformBackground } from '@/lib/imageBackground'
 import { getRecentFonts, addRecentFont } from '@/lib/recentFonts'
+import { Spinner } from '@/components/ui/Spinner'
 import type {
   RestaurantTheme, LandingTheme, LandingBackground, MenuTheme, CardTheme,
   MenuBgEffect, PaginationStyle, AlignOpt, AllergenDisplay, PricePosition, DividerType,
@@ -2127,8 +2128,8 @@ export default function CustomizationClient({
           Ripristina
         </button>
         <button type="button" onClick={handleSave} disabled={saving}
-          className="bg-gray-900 text-white text-xs font-medium px-4 py-2 hover:bg-gray-700 disabled:opacity-50 transition-colors shrink-0">
-          {saving ? '…' : 'Salva'}
+          className="bg-gray-900 text-white text-xs font-medium px-4 py-2 hover:bg-gray-700 disabled:opacity-50 transition-colors shrink-0 min-w-[52px] flex items-center justify-center">
+          {saving ? <Spinner color="#fff" size={4} /> : 'Salva'}
         </button>
       </div>
 

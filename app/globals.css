@@ -13,15 +13,6 @@ body.menu-locked {
   touch-action: none;
 }
 
-/* ─── Dish modal ────────────────────────────────────────── */
-@keyframes modalBackdrop { from { opacity: 0; } to { opacity: 1; } }
-@keyframes modalCard {
-  from { opacity: 0; transform: translateY(12px) scale(0.98); }
-  to   { opacity: 1; transform: translateY(0)     scale(1);   }
-}
-.modal-backdrop { animation: modalBackdrop 0.15s ease-out both; }
-.modal-card     { animation: modalCard     0.2s  ease-out both; }
-
 /* ─── Banner fade carousel ──────────────────────────────── */
 @keyframes bannerFadeIn  { from { opacity: 0; } to { opacity: 1; } }
 @keyframes bannerFadeOut { from { opacity: 1; } to { opacity: 0; } }

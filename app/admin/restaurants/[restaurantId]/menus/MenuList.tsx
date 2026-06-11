@@ -15,6 +15,7 @@ import {
 import { CSS } from '@dnd-kit/utilities'
 import { createMenu, deleteMenu, duplicateMenu, reorderMenus, updateMenuName, toggleMenuActive, updateMenuSchedule } from './actions'
 import VisibilityToggle from '@/components/ui/VisibilityToggle'
+import { Spinner } from '@/components/ui/Spinner'
 import { scheduleLabel } from '@/lib/menuSchedule'
 
 interface Menu {
@@ -256,8 +257,8 @@ function ScheduleModal({ menu, onSave, onClose }: {
           <button type="button" onClick={onClose}
             className="text-sm text-gray-500 hover:text-gray-700 px-3 py-2">Annulla</button>
           <button type="submit" disabled={saving}
-            className="bg-blue-600 text-white text-sm font-medium px-4 py-2 hover:bg-blue-700 disabled:opacity-50 transition-colors">
-            {saving ? '…' : 'Salva'}
+            className="bg-blue-600 text-white text-sm font-medium px-4 py-2 hover:bg-blue-700 disabled:opacity-50 transition-colors min-w-[64px] flex items-center justify-center">
+            {saving ? <Spinner color="#fff" /> : 'Salva'}
           </button>
         </div>
       </form>

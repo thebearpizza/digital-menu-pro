@@ -11,6 +11,8 @@ import DishModal       from './DishModal'
 import type { DishData } from './DishModal'
 import { EditHandle, sendEdit, useIsMobilePreview } from './EditHandle'
 import { useMenuPDF }  from './useMenuPDF'
+import { animateLandingIn } from '@/lib/animations'
+import { RingSpinner } from '@/components/ui/Spinner'
 import {
   googleFontsUrl, allThemeFonts, fontStack,
   hexToRgb, landingButtonRadius, landingTextureCss, menuBackgroundCss,
@@ -166,6 +168,7 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
   const isMobilePreview = useIsMobilePreview()
 
   const videoRef        = useRef<HTMLVideoElement>(null)
+  const landingContentRef = useRef<HTMLDivElement>(null)
   const transitioningRef = useRef(false)
   const [posterVisible, setPosterVisible] = useState(true)
   const [posterBroken,  setPosterBroken]  = useState(false)
@@ -221,6 +224,11 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
     if (!isPreviewRef.current) return
     try { window.parent?.postMessage({ type: 'dmp-view-changed', view: currentView }, window.location.origin) } catch {}
   }, [currentView])
+
+  // ── Landing entrance animation — staggered fade/slide-up, plays once ──────
+  useEffect(() => {
+    animateLandingIn(landingContentRef.current)
+  }, [])
 
   // ── PDF generation — driven by selected or pending menu ───────────────────
   const activeMenuId = selectedMenuId ?? pendingMenuId
@@ -520,7 +528,7 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
         )}
 
         {/* Content — fades during immersive transition */}
-        <div className="relative flex flex-col items-center text-center px-10 w-full max-w-xs py-12"
+        <div ref={landingContentRef} className="relative flex flex-col items-center text-center px-10 w-full max-w-xs py-12"
           style={{ opacity: transitioning ? 0 : 1, transition: 'opacity 0.6s ease', pointerEvents: transitioning ? 'none' : 'auto' }}>
 
           <BannerCarousel banners={banners} accent={l.accent} />
@@ -627,10 +635,13 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
               </button>
             </div>
           ) : (
-            <p className="text-[10px] uppercase tracking-[0.3em]"
-              style={{ color: m.navigation.color, fontFamily: fontStack(m.stickyCategories.font,'sans') }}>
-              Preparazione menu…
-            </p>
+            <div className="flex flex-col items-center gap-4">
+              <RingSpinner size={28} color={m.navigation.color} />
+              <p className="text-[10px] uppercase tracking-[0.3em]"
+                style={{ color: m.navigation.color, fontFamily: fontStack(m.stickyCategories.font,'sans') }}>
+                Preparazione menu…
+              </p>
+            </div>
           )}
         </div>
       )}

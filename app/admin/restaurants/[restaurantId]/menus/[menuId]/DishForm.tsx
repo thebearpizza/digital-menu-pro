@@ -4,6 +4,7 @@ import React, { useState, useRef, useCallback, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { createDish, updateDish } from './actions'
 import { ALLERGENS } from '@/lib/allergens'
+import { Spinner } from '@/components/ui/Spinner'
 
 interface Dish {
   id: string
@@ -399,9 +400,9 @@ export default function DishForm({
             <button
               type="submit"
               disabled={saving || uploading}
-              className="bg-blue-600 text-white text-sm font-medium px-4 py-2 hover:bg-blue-700 disabled:opacity-50 transition-colors"
+              className="bg-blue-600 text-white text-sm font-medium px-4 py-2 hover:bg-blue-700 disabled:opacity-50 transition-colors min-w-[64px] flex items-center justify-center"
             >
-              {saving ? 'Salvataggio…' : 'Salva'}
+              {saving ? <Spinner color="#fff" /> : 'Salva'}
             </button>
             <button
               type="button"
