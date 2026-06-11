@@ -73,6 +73,14 @@ function matchByName<T extends { name: string }>(items: T[], query: string): T[]
 
 function catKey(c: string | null): string { return c ?? 'Senza categoria' }
 
+/** Deduce attiva/disattiva dal testo. L'ordine conta: "disattiva" contiene "attiv". */
+function inferActive(text: string): boolean | undefined {
+  const t = norm(text)
+  if (/(disattiv|spegn|disabilit|nascond|sospend|togli|rimuov)/.test(t)) return false
+  if (/(attiv|riattiv|accend|abilit|mostra|riapri|rimett)/.test(t)) return true
+  return undefined
+}
+
 // ── Intent ────────────────────────────────────────────────────────────────────
 
 export interface Intent {
@@ -147,7 +155,9 @@ Devi restituire UN SOLO intent JSON con l'azione richiesta e i parametri.
 
 REGOLE:
 - Nei campi restaurant/menu/category/dish usa SEMPRE il nome ESATTO preso dai dati qui sotto (corretto da eventuali errori di trascrizione), non quello che ha scritto l'utente.
-- "attiva/riattiva/accendi/abilita/mostra/rimetti" → active=true; "disattiva/spegni/disabilita/nascondi/togli/sospendi" → active=false (azioni toggle_*).
+- Per le azioni toggle_* il campo active è OBBLIGATORIO: "attiva/riattiva/accendi/abilita/mostra/rimetti" → active=true; "disattiva/spegni/disabilita/nascondi/togli/sospendi" → active=false.
+- Compila SEMPRE i campi dell'oggetto target dell'azione: toggle_dish richiede dish, toggle_category richiede category, set_price richiede dish e price, e così via. Non lasciare mai vuoto il campo principale.
+- Se l'utente descrive un piatto con parole leggermente diverse (es. "i fiori di zucca fritti" per il piatto "Fiori di zucca" della categoria "Fritti"), scegli il piatto esistente più plausibile dai dati e usa il suo nome esatto. Se è davvero ambiguo tra piatto e categoria, preferisci il piatto se il nome combacia, altrimenti la categoria.
 - "togli/rimuovi/cancella/elimina" un piatto/menu/categoria in modo definitivo → delete_*. Se l'utente dice solo "togli X" senza chiarire, preferisci toggle (disattivazione, reversibile).
 - Prezzi: numeri con virgola o punto ("dodici e cinquanta" = 12.50). Campo price sempre numerico.
 - Orari per schedule_menu in formato HH:MM ("dalle 8 alle 12" → 08:00 e 12:00).
@@ -162,12 +172,47 @@ DATI ATTUALI DELL'ACCOUNT:
 ${lines.join('\n')}`
 }
 
+/** Campi indispensabili per azione: se mancano, l'intent è incompleto. */
+const REQUIRED_FIELDS: Record<string, (keyof Intent)[]> = {
+  set_price:        ['dish', 'price'],
+  toggle_dish:      ['dish'],
+  toggle_category:  ['category'],
+  create_dish:      ['dish'],
+  update_dish:      ['dish'],
+  delete_dish:      ['dish'],
+  duplicate_dish:   ['dish'],
+  create_menu:      ['menu'],
+  rename_menu:      ['new_name'],
+  create_category:  ['category'],
+  rename_category:  ['category', 'new_name'],
+  delete_category:  ['category'],
+  schedule_menu:    ['schedule_from', 'schedule_until'],
+}
+
+function missingFields(it: Intent): string[] {
+  return (REQUIRED_FIELDS[it.action] ?? []).filter(f => {
+    const v = it[f]
+    return v == null || v === ''
+  })
+}
+
 /**
- * Chiama Gemini e restituisce l'intent strutturato.
- * Il free tier risponde a tratti 503 (sovraccarico) o 429 (quota): si ritenta
- * sul primo modello e poi si scala lungo MODEL_CHAIN prima di arrendersi.
+ * Chiama Gemini e restituisce l'intent strutturato. Se l'intent arriva senza
+ * i campi indispensabili, ritenta una volta segnalando al modello cosa manca.
  */
 export async function interpret(text: string, ctx: Ctx): Promise<Intent> {
+  const intent = await interpretRaw(text, ctx)
+  const missing = missingFields(intent)
+  if (!missing.length) return intent
+
+  const retry = await interpretRaw(
+    `${text}\n\n(NOTA DI SISTEMA: nella risposta precedente hai scelto action="${intent.action}" ma senza compilare: ${missing.join(', ')}. Rispondi di nuovo includendo tutti i campi necessari con i nomi esatti presi dai dati; se davvero non riesci a determinarli, usa action="clarify" con una domanda specifica.)`,
+    ctx,
+  )
+  return missingFields(retry).length ? intent : retry
+}
+
+async function interpretRaw(text: string, ctx: Ctx): Promise<Intent> {
   const apiKey = process.env.GEMINI_API_KEY!
   const sys = buildSystemPrompt(ctx)
   let lastErr: Error | null = null
@@ -198,7 +243,13 @@ export async function interpret(text: string, ctx: Ctx): Promise<Intent> {
           try { return JSON.parse(body)?.candidates?.[0]?.content?.parts?.[0]?.text } catch { return null }
         })()
         if (!raw) { lastErr = new Error('Gemini: risposta vuota'); break }
-        return JSON.parse(raw) as Intent
+        const intent = JSON.parse(raw) as Intent
+        // Rete di sicurezza: se il modello omette active in un toggle,
+        // lo deduciamo dalle parole dell'utente (mai default arbitrari).
+        if (intent.action?.startsWith('toggle_') && intent.active == null) {
+          intent.active = inferActive(text)
+        }
+        return intent
       }
       console.error('Gemini error', model, res.status, body.slice(0, 300))
       let msg: string | null = null
@@ -265,6 +316,10 @@ function resolveDishes(ctx: Ctx, name: string, menuName?: string): { dishes?: Di
 const menuName = (ctx: Ctx, id: string) => ctx.menus.find(m => m.id === id)?.name ?? '?'
 
 export async function execute(sb: SupabaseClient, ctx: Ctx, it: Intent): Promise<string> {
+  // Mai tirare a indovinare il verso di un toggle.
+  if (it.action?.startsWith('toggle_') && it.active == null) {
+    return 'Devo attivare o disattivare? Riprova specificandolo.'
+  }
   switch (it.action) {
     case 'list': return statusText(ctx)
     case 'help': return ''  // il chiamante mostra l'HELP standard
