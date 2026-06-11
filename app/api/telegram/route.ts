@@ -358,8 +358,10 @@ async function handleMessage(sb: SupabaseClient, chatId: number, userId: string 
     const answer = await aiHandle(sb, chatId, userId, text)
     return answer || `Chat collegata. ${HELP}`
   } catch (e: any) {
-    console.error('AI interpreter failed, falling back to regex parser', e?.message)
-    return handleCommand(sb, chatId, userId, text)
+    // Niente fallback al parser regex: con frasi libere darebbe risposte
+    // fuorvianti. Meglio chiedere di riprovare tra qualche istante.
+    console.error('AI interpreter failed', e?.message)
+    return 'Il mio interprete AI è momentaneamente sovraccarico 🤯 Riprova tra qualche istante.'
   }
 }
 

@@ -15,7 +15,13 @@
 
 import { SupabaseClient } from '@supabase/supabase-js'
 
-const GEMINI_MODEL = process.env.GEMINI_MODEL ?? 'gemini-2.5-flash'
+// Catena di modelli: se il primo è sovraccarico (503) o a corto di quota (429)
+// si passa al successivo. Tutti nel free tier di AI Studio.
+const MODEL_CHAIN = Array.from(new Set([
+  process.env.GEMINI_MODEL ?? 'gemini-2.5-flash',
+  'gemini-2.0-flash',
+  'gemini-2.5-flash-lite',
+]))
 
 export function aiEnabled(): boolean {
   return !!process.env.GEMINI_API_KEY
@@ -34,9 +40,9 @@ interface Dish {
   id: string; name: string; price: number | null; category: string | null
   menu_id: string; is_active: boolean
 }
-interface Ctx { restaurants: Restaurant[]; menus: Menu[]; dishes: Dish[] }
+export interface Ctx { restaurants: Restaurant[]; menus: Menu[]; dishes: Dish[] }
 
-async function loadContext(sb: SupabaseClient, userId: string): Promise<Ctx> {
+export async function loadContext(sb: SupabaseClient, userId: string): Promise<Ctx> {
   const { data: restaurants } = await sb
     .from('restaurants').select('id, name, is_active').eq('owner_id', userId)
   const rIds = (restaurants ?? []).map(r => r.id)
@@ -156,41 +162,59 @@ DATI ATTUALI DELL'ACCOUNT:
 ${lines.join('\n')}`
 }
 
-/** Chiama Gemini e restituisce l'intent strutturato. */
-async function interpret(text: string, ctx: Ctx): Promise<Intent> {
+/**
+ * Chiama Gemini e restituisce l'intent strutturato.
+ * Il free tier risponde a tratti 503 (sovraccarico) o 429 (quota): si ritenta
+ * sul primo modello e poi si scala lungo MODEL_CHAIN prima di arrendersi.
+ */
+export async function interpret(text: string, ctx: Ctx): Promise<Intent> {
   const apiKey = process.env.GEMINI_API_KEY!
-  const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`,
-    {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        system_instruction: { parts: [{ text: buildSystemPrompt(ctx) }] },
-        contents: [{ role: 'user', parts: [{ text }] }],
-        generationConfig: {
-          temperature: 0,
-          responseMimeType: 'application/json',
-          responseSchema: INTENT_SCHEMA,
+  const sys = buildSystemPrompt(ctx)
+  let lastErr: Error | null = null
+
+  for (const model of MODEL_CHAIN) {
+    const attempts = model === MODEL_CHAIN[0] ? 2 : 1
+    for (let attempt = 0; attempt < attempts; attempt++) {
+      if (attempt > 0) await new Promise(r => setTimeout(r, 600))
+      const res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            system_instruction: { parts: [{ text: sys }] },
+            contents: [{ role: 'user', parts: [{ text }] }],
+            generationConfig: {
+              temperature: 0,
+              responseMimeType: 'application/json',
+              responseSchema: INTENT_SCHEMA,
+            },
+          }),
         },
-      }),
-    },
-  )
-  const body = await res.text().catch(() => '')
-  if (!res.ok) {
-    console.error('Gemini error', res.status, body)
-    let msg: string | null = null
-    try { msg = JSON.parse(body)?.error?.message ?? null } catch {}
-    throw new Error(`Gemini HTTP ${res.status}${msg ? ` — ${msg}` : ''}`)
+      )
+      const body = await res.text().catch(() => '')
+      if (res.ok) {
+        const raw = (() => {
+          try { return JSON.parse(body)?.candidates?.[0]?.content?.parts?.[0]?.text } catch { return null }
+        })()
+        if (!raw) { lastErr = new Error('Gemini: risposta vuota'); break }
+        return JSON.parse(raw) as Intent
+      }
+      console.error('Gemini error', model, res.status, body.slice(0, 300))
+      let msg: string | null = null
+      try { msg = JSON.parse(body)?.error?.message ?? null } catch {}
+      lastErr = new Error(`Gemini HTTP ${res.status}${msg ? ` — ${msg}` : ''}`)
+      if (res.status === 503 || res.status === 429 || res.status >= 500) continue // ritenta / prossimo modello
+      if (res.status === 404) break // modello inesistente → prossimo della catena
+      throw lastErr // 400/403: errore di configurazione, inutile insistere
+    }
   }
-  const json = JSON.parse(body)
-  const raw = json?.candidates?.[0]?.content?.parts?.[0]?.text
-  if (!raw) throw new Error('Gemini: risposta vuota')
-  return JSON.parse(raw) as Intent
+  throw lastErr ?? new Error('Gemini non disponibile')
 }
 
 // ── Esecuzione intent ─────────────────────────────────────────────────────────
 
-const CONFIRM_ACTIONS = new Set(['delete_dish', 'delete_menu', 'delete_category'])
+export const CONFIRM_ACTIONS = new Set(['delete_dish', 'delete_menu', 'delete_category'])
 const PENDING_TTL_MS = 5 * 60 * 1000
 
 function statusText(ctx: Ctx): string {
@@ -240,7 +264,7 @@ function resolveDishes(ctx: Ctx, name: string, menuName?: string): { dishes?: Di
 
 const menuName = (ctx: Ctx, id: string) => ctx.menus.find(m => m.id === id)?.name ?? '?'
 
-async function execute(sb: SupabaseClient, ctx: Ctx, it: Intent): Promise<string> {
+export async function execute(sb: SupabaseClient, ctx: Ctx, it: Intent): Promise<string> {
   switch (it.action) {
     case 'list': return statusText(ctx)
     case 'help': return ''  // il chiamante mostra l'HELP standard
@@ -537,7 +561,7 @@ async function execute(sb: SupabaseClient, ctx: Ctx, it: Intent): Promise<string
 
 // ── Descrizione leggibile per la conferma ─────────────────────────────────────
 
-function describeIntent(ctx: Ctx, it: Intent): string {
+export function describeIntent(ctx: Ctx, it: Intent): string {
   switch (it.action) {
     case 'delete_dish': return `eliminare definitivamente il piatto "${it.dish}"${it.menu ? ` dal menu ${it.menu}` : ''}`
     case 'delete_menu': {
