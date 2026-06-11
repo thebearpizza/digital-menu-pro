@@ -54,6 +54,9 @@ export async function updateMenuSchedule(
   if (schedule.enabled && (!schedule.from || !schedule.until)) {
     throw new Error('Indica orario di inizio e di fine.')
   }
+  if (schedule.enabled && schedule.from === schedule.until) {
+    throw new Error('Orario di inizio e di fine coincidono: scegli una fascia valida.')
+  }
   const supabase = await createClient()
   await verifyOwnership(supabase, restaurantId)
 
@@ -84,23 +87,28 @@ export async function duplicateMenu(restaurantId: string, menuId: string) {
   await verifyOwnership(supabase, restaurantId)
 
   const { data: source } = await supabase
-    .from('menus').select('name, sort_order').eq('id', menuId).single()
+    .from('menus').select('name, sort_order, category_order').eq('id', menuId).single()
   if (!source) throw new Error('Menu non trovato')
 
   const { data: newMenu, error: menuErr } = await supabase
     .from('menus')
-    .insert({ restaurant_id: restaurantId, name: `${source.name} (Copia)`, sort_order: source.sort_order + 1 })
+    .insert({
+      restaurant_id: restaurantId,
+      name: `${source.name} (Copia)`,
+      sort_order: source.sort_order + 1,
+      category_order: source.category_order,
+    })
     .select('id, name, sort_order, is_active').single()
   if (menuErr) throw new Error(menuErr.message)
 
   // Duplicate dishes
   const { data: dishes } = await supabase
     .from('dishes')
-    .select('name, description, price, category, image_url, allergens, sort_order, pairing_label')
+    .select('name, description, price, category, image_url, allergens, sort_order, pairing_label, is_active')
     .eq('menu_id', menuId)
 
   if (dishes?.length) {
-    await supabase.from('dishes').insert(
+    const { error: dishErr } = await supabase.from('dishes').insert(
       dishes.map(d => ({
         ...d,
         id: undefined,
@@ -109,6 +117,7 @@ export async function duplicateMenu(restaurantId: string, menuId: string) {
         master_dish_id: null,
       }))
     )
+    if (dishErr) throw new Error(`Menu copiato ma piatti non duplicati: ${dishErr.message}`)
   }
 
   revalidate(restaurantId)
@@ -128,10 +137,12 @@ export async function reorderMenus(restaurantId: string, orderedIds: string[]) {
   const supabase = await createClient()
   await verifyOwnership(supabase, restaurantId)
 
-  await Promise.all(
+  const results = await Promise.all(
     orderedIds.map((id, index) =>
       supabase.from('menus').update({ sort_order: index }).eq('id', id).eq('restaurant_id', restaurantId)
     )
   )
+  const failed = results.find(r => r.error)
+  if (failed?.error) throw new Error(failed.error.message)
   revalidate(restaurantId)
 }

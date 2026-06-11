@@ -177,6 +177,10 @@ export default function FlipbookViewer({
   // senza richiedere il re-init del flipbook quando i piatti cambiano.
   const dishesRef = useRef<DishData[]>(dishes ?? [])
   useEffect(() => { dishesRef.current = dishes ?? [] }, [dishes])
+  // Stesso pattern per le categorie: servono al text layer per disambiguare
+  // piatti con lo stesso nome in categorie diverse (match per pagina corrente).
+  const categoriesRef = useRef(categories)
+  useEffect(() => { categoriesRef.current = categories }, [categories])
   const [modalStack, setModalStack] = useState<DishData[]>([])
 
   // Sincronizza activeCatIdx quando currentPage cambia (sfoglio manuale)
@@ -331,9 +335,21 @@ export default function FlipbookViewer({
       for (const div of textDivs) {
         const text = div.textContent?.trim() ?? ''
         if (!text) continue
-        const match = dishesRef.current.find(
+        const candidates = dishesRef.current.filter(
           d => d.name.trim().toUpperCase() === text.toUpperCase()
         )
+        let match: DishData | undefined = candidates[0]
+        if (candidates.length > 1) {
+          // Stesso nome in più categorie: disambigua in base alla categoria
+          // la cui sezione PDF contiene questa pagina (stesso criterio di
+          // activeCatIdx sopra: ultima categoria con targetPage <= pageNum).
+          const cats = categoriesRef.current ?? []
+          let currentCat: string | undefined
+          for (let i = 0; i < cats.length; i++) {
+            if (pageNum >= cats[i].targetPage) currentCat = cats[i].label
+          }
+          match = candidates.find(d => d.category === currentCat) ?? candidates[0]
+        }
         if (match) {
           div.dataset.dishId = match.id  // CSS gold-highlight on name span
           anchors.push({ dish: match, topPx: parseFloat(div.style.top) || 0 })

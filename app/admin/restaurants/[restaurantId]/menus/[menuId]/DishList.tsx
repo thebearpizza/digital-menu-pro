@@ -516,16 +516,23 @@ export default function DishList({
   async function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event
     if (!over || active.id === over.id) return
+    const prev = categories
     const oldIdx = categories.indexOf(active.id as string)
     const newIdx = categories.indexOf(over.id as string)
     const reordered = arrayMove(categories, oldIdx, newIdx)
-    setCategories(reordered)                                  // ottimistico
-    await reorderCategories(restaurantId, menuId, reordered)  // persiste
+    setCategories(reordered)                                    // ottimistico
+    try {
+      await reorderCategories(restaurantId, menuId, reordered)  // persiste
+    } catch {
+      setCategories(prev)
+      alert('Errore nel riordino delle categorie.')
+    }
   }
 
   // ── DnD piatti dentro la categoria ─────────────────────────────────────────
 
   async function handleReorderDishes(cat: string, newIds: string[]) {
+    const prev = dishes
     const catDishes = byCategory[cat] ?? []
     const reordered = newIds
       .map(id => catDishes.find(d => d.id === id))
@@ -533,7 +540,12 @@ export default function DishList({
     const newByCat: Record<string, Dish[]> = { ...byCategory, [cat]: reordered }
     const flat = categories.flatMap(c => newByCat[c] ?? [])
     setDishes(flat)                                              // ottimistico
-    await reorderDishes(restaurantId, menuId, flat.map(d => d.id))
+    try {
+      await reorderDishes(restaurantId, menuId, flat.map(d => d.id))
+    } catch {
+      setDishes(prev)
+      alert('Errore nel riordino dei piatti.')
+    }
   }
 
   // ── Accordion ──────────────────────────────────────────────────────────────
@@ -551,12 +563,18 @@ export default function DishList({
   async function handleAddCategory() {
     const n = newCatName.trim()
     if (!n || categories.includes(n)) { setAddingCat(false); setNewCatName(''); return }
+    const prev = categories
     const newCats = [...categories, n]
     setCategories(newCats)
-    setExpanded(prev => new Set(prev).add(n))
+    setExpanded(prevExp => new Set(prevExp).add(n))
     setAddingCat(false)
     setNewCatName('')
-    await reorderCategories(restaurantId, menuId, newCats)
+    try {
+      await reorderCategories(restaurantId, menuId, newCats)
+    } catch {
+      setCategories(prev)
+      alert("Errore nell'aggiunta della categoria.")
+    }
   }
 
   async function handleDuplicateCategory(cat: string) {
@@ -649,16 +667,24 @@ export default function DishList({
     setDishes(prev => prev.map(d => d.id === dish.id ? { ...d, is_active: next } : d))
     try {
       await toggleDishActive(restaurantId, menuId, dish.id, next)
-    } catch { alert('Errore nel cambio stato piatto.') }
+    } catch {
+      // Ripristina lo stato precedente: l'ottimistico non è andato a buon fine.
+      setDishes(prev => prev.map(d => d.id === dish.id ? { ...d, is_active: dish.is_active } : d))
+      alert('Errore nel cambio stato piatto.')
+    }
   }
 
   async function handleToggleCategory(cat: string, active: boolean) {
+    const prevState = new Map(dishes.map(d => [d.id, d.is_active]))
     setDishes(prev => prev.map(d =>
       (d.category ?? 'Senza categoria') === cat ? { ...d, is_active: active } : d
     ))
     try {
       await toggleCategoryActive(restaurantId, menuId, cat, active)
-    } catch { alert('Errore nel cambio stato categoria.') }
+    } catch {
+      setDishes(prev => prev.map(d => ({ ...d, is_active: prevState.get(d.id) ?? d.is_active })))
+      alert('Errore nel cambio stato categoria.')
+    }
   }
 
   // ── MODULO 3: sposta categoria ──────────────────────────────────────────────

@@ -29,6 +29,19 @@ export default function VoiceAssistant() {
 
   useEffect(() => { setSpeechSupported(!!getSpeechRecognition()) }, [])
 
+  // Se l'utente naviga via mentre il microfono è attivo, il riconoscimento
+  // continuerebbe a girare e a chiamare setState su un componente smontato.
+  useEffect(() => () => {
+    const rec = recRef.current
+    if (rec) {
+      rec.onresult = null
+      rec.onend = null
+      rec.onerror = null
+      try { rec.abort() } catch { /* già fermo */ }
+      recRef.current = null
+    }
+  }, [])
+
   useEffect(() => {
     logRef.current?.scrollTo({ top: logRef.current.scrollHeight })
   }, [messages, interim, busy])

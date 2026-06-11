@@ -87,8 +87,14 @@ async function monthlyVoiceSeconds(sb: SupabaseClient): Promise<number> {
  * Scarica il vocale da Telegram e lo trascrive con Google STT.
  * Ritorna '' se l'audio non contiene parlato riconoscibile; lancia un errore
  * con i dettagli (visibili in chat e nei log Vercel) se un servizio fallisce.
+ *
+ * `onSttRequestSent` viene invocato non appena Google risponde alla richiesta
+ * di trascrizione (successo O errore): da quel momento la quota mensile è
+ * stata consumata lato Google, quindi va registrata anche se la risposta è
+ * un errore. Non viene invocato se si fallisce prima (getFile/download), dato
+ * che in quel caso Google non è stato nemmeno contattato.
  */
-async function transcribeVoice(fileId: string): Promise<string> {
+async function transcribeVoice(fileId: string, onSttRequestSent: () => Promise<void>): Promise<string> {
   const botToken = process.env.TELEGRAM_BOT_TOKEN
   const apiKey = process.env.GOOGLE_SPEECH_API_KEY
   if (!botToken || !apiKey) throw new Error('configurazione mancante')
@@ -117,6 +123,9 @@ async function transcribeVoice(fileId: string): Promise<string> {
       audio: { content: audioBase64 },
     }),
   })
+  // Google ha processato la richiesta (consumando quota) indipendentemente
+  // dall'esito: registra l'uso prima di valutare sttRes.ok.
+  await onSttRequestSent()
   const sttBody = await sttRes.text().catch(() => '')
   if (!sttRes.ok) {
     console.error('Google STT error', sttRes.status, sttBody)
@@ -407,12 +416,14 @@ export async function POST(req: NextRequest) {
     }
 
     try {
-      const transcript = await transcribeVoice(msg.voice.file_id)
-      // Registra l'uso anche se la trascrizione è vuota: l'audio è stato processato.
-      await sb.from('voice_usage').insert({
-        chat_id: chatId,
-        user_id: userId,
-        duration_seconds: Math.max(duration, 1),
+      const transcript = await transcribeVoice(msg.voice.file_id, async () => {
+        // Registra l'uso anche se la trascrizione fallisce/è vuota: la richiesta
+        // a Google è stata processata e ha consumato la quota mensile.
+        await sb.from('voice_usage').insert({
+          chat_id: chatId,
+          user_id: userId,
+          duration_seconds: Math.max(duration, 1),
+        })
       })
       if (!transcript) {
         await reply(chatId, 'Non sono riuscito a capire il vocale 🎙 Riprova parlando chiaramente, o scrivi il comando in testo.')

@@ -17,5 +17,6 @@ export async function deleteRestaurant(restaurantId: string) {
   if (error) throw new Error(error.message)
 
   revalidatePath('/admin/restaurants')
+  revalidatePath('/admin') // i contatori della dashboard includono questo ristorante
   redirect('/admin/restaurants')
 }

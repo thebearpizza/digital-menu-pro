@@ -73,6 +73,17 @@ function matchByName<T extends { name: string }>(items: T[], query: string): T[]
 
 function catKey(c: string | null): string { return c ?? 'Senza categoria' }
 
+/** Risolve il nome esatto di una categoria come salvato nel DB (confronto
+ *  normalizzato su piatti e category_order del menu). Le query Supabase usano
+ *  match esatto: senza questa risoluzione una variante di maiuscole/accenti
+ *  restituita da Gemini non toccherebbe nessun piatto pur riportando successo. */
+function resolveCategoryName(ctx: Ctx, menu: Menu, raw: string): string | null {
+  const want = norm(raw)
+  const dish = ctx.dishes.find(d => d.menu_id === menu.id && norm(catKey(d.category)) === want)
+  if (dish) return catKey(dish.category)
+  return (menu.category_order ?? []).find(c => norm(c) === want) ?? null
+}
+
 /** Deduce attiva/disattiva dal testo. L'ordine conta: "disattiva" contiene "attiv". */
 function inferActive(text: string): boolean | undefined {
   const t = norm(text)
@@ -177,16 +188,21 @@ const REQUIRED_FIELDS: Record<string, (keyof Intent)[]> = {
   set_price:        ['dish', 'price'],
   toggle_dish:      ['dish'],
   toggle_category:  ['category'],
+  toggle_menu:      ['menu'],
   create_dish:      ['dish'],
   update_dish:      ['dish'],
   delete_dish:      ['dish'],
   duplicate_dish:   ['dish'],
   create_menu:      ['menu'],
   rename_menu:      ['new_name'],
+  duplicate_menu:   ['menu'],
+  delete_menu:      ['menu'],
   create_category:  ['category'],
   rename_category:  ['category', 'new_name'],
+  duplicate_category: ['category'],
   delete_category:  ['category'],
   schedule_menu:    ['schedule_from', 'schedule_until'],
+  unschedule_menu:  ['menu'],
 }
 
 function missingFields(it: Intent): string[] {
@@ -534,18 +550,24 @@ export async function execute(sb: SupabaseClient, ctx: Ctx, it: Intent): Promise
           return `La categoria "${it.category}" è in più menu (${containing.map(m => m.name).join(', ')}). In quale?`
         if (containing.length === 1) scope = containing
       }
-      const isUncat = norm(it.category) === norm('Senza categoria')
+      let touched = 0
       for (const m of scope) {
+        const canonical = resolveCategoryName(ctx, m, it.category)
+        if (!canonical) continue
+        const isUncat = canonical === 'Senza categoria'
         const base = sb.from('dishes').update({ category: it.new_name }).eq('menu_id', m.id)
-        const { error } = await (isUncat ? base.is('category', null) : base.eq('category', it.category))
+        const { error } = await (isUncat ? base.is('category', null) : base.eq('category', canonical))
         if (error) return `Errore: ${error.message}`
         const order = (m.category_order ?? [])
-        if (order.includes(it.category)) {
-          await sb.from('menus')
-            .update({ category_order: order.map(c => (c === it.category ? it.new_name! : c)) })
+        if (order.some(c => norm(c) === norm(canonical))) {
+          const { error: err2 } = await sb.from('menus')
+            .update({ category_order: order.map(c => (norm(c) === norm(canonical) ? it.new_name! : c)) })
             .eq('id', m.id)
+          if (err2) return `Errore: ${err2.message}`
         }
+        touched++
       }
+      if (!touched) return `Categoria "${it.category}" non trovata.`
       return `✅ Categoria "${it.category}" rinominata in "${it.new_name}".`
     }
 
@@ -553,13 +575,15 @@ export async function execute(sb: SupabaseClient, ctx: Ctx, it: Intent): Promise
       if (!it.category) return 'Quale categoria devo duplicare?'
       const { menu, err } = resolveMenu(ctx, it.menu)
       if (err) return err
-      const isUncat = norm(it.category) === norm('Senza categoria')
+      const canonical = resolveCategoryName(ctx, menu!, it.category)
+      if (!canonical) return `Categoria "${it.category}" non trovata nel menu ${menu!.name}.`
+      const isUncat = canonical === 'Senza categoria'
       let q = sb.from('dishes')
         .select('restaurant_id, name, description, price, category, image_url, allergens, pairing_dish_id, sort_order')
         .eq('menu_id', menu!.id).order('sort_order', { ascending: true })
-      const { data: src } = await (isUncat ? q.is('category', null) : q.eq('category', it.category))
+      const { data: src } = await (isUncat ? q.is('category', null) : q.eq('category', canonical))
       if (!src?.length) return `Nessun piatto nella categoria "${it.category}".`
-      const newCat = `${isUncat ? 'Senza categoria' : it.category} (copia)`
+      const newCat = `${canonical} (copia)`
       const { data: last } = await sb
         .from('dishes').select('sort_order').eq('menu_id', menu!.id)
         .order('sort_order', { ascending: false }).limit(1).maybeSingle()
@@ -575,15 +599,18 @@ export async function execute(sb: SupabaseClient, ctx: Ctx, it: Intent): Promise
       if (!it.category) return 'Quale categoria devo eliminare?'
       const { menu, err } = resolveMenu(ctx, it.menu)
       if (err) return err
-      const isUncat = norm(it.category) === norm('Senza categoria')
+      const canonical = resolveCategoryName(ctx, menu!, it.category)
+      if (!canonical) return `Categoria "${it.category}" non trovata nel menu ${menu!.name}.`
+      const isUncat = canonical === 'Senza categoria'
       const base = sb.from('dishes').delete().eq('menu_id', menu!.id)
-      const { error } = await (isUncat ? base.is('category', null) : base.eq('category', it.category))
+      const { error } = await (isUncat ? base.is('category', null) : base.eq('category', canonical))
       if (error) return `Errore: ${error.message}`
       const order = (menu!.category_order ?? [])
-      if (order.some(c => norm(c) === norm(it.category!))) {
-        await sb.from('menus')
-          .update({ category_order: order.filter(c => norm(c) !== norm(it.category!)) })
+      if (order.some(c => norm(c) === norm(canonical))) {
+        const { error: err2 } = await sb.from('menus')
+          .update({ category_order: order.filter(c => norm(c) !== norm(canonical)) })
           .eq('id', menu!.id)
+        if (err2) return `Errore: ${err2.message}`
       }
       return `🗑 Categoria "${it.category}" eliminata dal menu ${menu!.name} con tutti i suoi piatti.`
     }

@@ -248,8 +248,9 @@ export async function bulkCreateDishes(
     for (const { r, dish } of wantPairing) {
       const targetId = byName.get(r.pairing_name!.trim().toLowerCase())
       if (targetId && targetId !== dish!.id) {
-        await supabase.from('dishes').update({ pairing_dish_id: targetId }).eq('id', dish!.id)
-        ;(dish as any).pairing_dish_id = targetId
+        const { error: pairErr } = await supabase
+          .from('dishes').update({ pairing_dish_id: targetId }).eq('id', dish!.id)
+        if (!pairErr) (dish as any).pairing_dish_id = targetId
       }
     }
   }
@@ -271,11 +272,13 @@ export async function reorderDishes(
 ) {
   const supabase = await createClient()
   await verifyOwnership(supabase, restaurantId)
-  await Promise.all(
+  const results = await Promise.all(
     dishIds.map((id, i) =>
       supabase.from('dishes').update({ sort_order: i }).eq('id', id).eq('menu_id', menuId)
     )
   )
+  const failed = results.find(r => r.error)
+  if (failed?.error) throw new Error(failed.error.message)
   revalidate(restaurantId, menuId)
 }
 
@@ -512,11 +515,13 @@ export async function moveCategoryToMenu(
     .order('sort_order', { ascending: false }).limit(1).single()
   const base = (last?.sort_order ?? -1) + 1
 
-  await Promise.all(
+  const results = await Promise.all(
     srcDishes.map((d, i) =>
       supabase.from('dishes').update({ menu_id: toMenuId, sort_order: base + i }).eq('id', d.id)
     )
   )
+  const failed = results.find(r => r.error)
+  if (failed?.error) throw new Error(failed.error.message)
 
   revalidate(restaurantId, fromMenuId)
   revalidate(restaurantId, toMenuId)
@@ -548,9 +553,10 @@ export async function syncDishToMasters(
 
   if (Object.keys(patch).length === 0) return
 
-  await supabase
+  const { error } = await supabase
     .from('dishes').update(patch)
     .in('id', targets.map(t => t.id))
+  if (error) throw new Error(error.message)
 
   // Log sync
   await supabase.from('sync_logs').insert({

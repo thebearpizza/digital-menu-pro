@@ -227,7 +227,8 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
 
   // ── Landing entrance animation — staggered fade/slide-up, plays once ──────
   useEffect(() => {
-    animateLandingIn(landingContentRef.current)
+    const anims = animateLandingIn(landingContentRef.current)
+    return () => { anims.forEach(a => a.revert()) }
   }, [])
 
   // ── PDF generation — driven by selected or pending menu ───────────────────

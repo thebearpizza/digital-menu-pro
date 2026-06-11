@@ -830,15 +830,19 @@ export function resolveAlign(
   return elementAlign === 'inherit' ? general : elementAlign
 }
 
+// Un valore non-hex (theme_config corrotto o modificato a mano) produrrebbe
+// "NaN,NaN,NaN" nelle CSS var: meglio ripiegare sull'accent di default.
+const isHex6 = (h: string) => /^[0-9a-f]{6}/i.test(h)
+
 export function hexToRgb(hex: string): string {
   const h = hex.replace('#', '')
-  if (h.length < 6) return '201,169,110'
+  if (!isHex6(h)) return '201,169,110'
   return `${parseInt(h.slice(0,2),16)},${parseInt(h.slice(2,4),16)},${parseInt(h.slice(4,6),16)}`
 }
 
 export function lightenHex(hex: string, amount: number): string {
   const h = hex.replace('#','')
-  if (h.length < 6) return hex
+  if (!isHex6(h)) return hex
   const r = Math.round(parseInt(h.slice(0,2),16) + (255-parseInt(h.slice(0,2),16))*amount)
   const g = Math.round(parseInt(h.slice(2,4),16) + (255-parseInt(h.slice(2,4),16))*amount)
   const b = Math.round(parseInt(h.slice(4,6),16) + (255-parseInt(h.slice(4,6),16))*amount)

@@ -209,6 +209,7 @@ function ScheduleModal({ menu, onSave, onClose }: {
   async function submit(e: React.FormEvent) {
     e.preventDefault()
     if (enabled && (!from || !until)) { setErr('Indica orario di inizio e di fine.'); return }
+    if (enabled && from === until) { setErr('Orario di inizio e di fine coincidono: scegli una fascia valida.'); return }
     setSaving(true); setErr(null)
     try {
       await onSave(enabled, enabled ? from : null, enabled ? until : null)
@@ -291,15 +292,23 @@ export default function MenuList({ restaurantId, initialMenus }: Props) {
   }
 
   async function handleRename(id: string, name: string) {
-    await updateMenuName(restaurantId, id, name)
-    setMenus(prev => prev.map(m => m.id === id ? { ...m, name } : m))
+    try {
+      await updateMenuName(restaurantId, id, name)
+      setMenus(prev => prev.map(m => m.id === id ? { ...m, name } : m))
+    } catch (err: any) {
+      setError(err.message ?? 'Errore nella rinomina del menu.')
+    }
   }
 
   async function handleDelete(id: string) {
     const menu = menus.find(m => m.id === id)
     if (!confirm(`Eliminare il menu "${menu?.name}"?\nTutti i piatti associati verranno eliminati.`)) return
-    await deleteMenu(restaurantId, id)
-    setMenus(prev => prev.filter(m => m.id !== id))
+    try {
+      await deleteMenu(restaurantId, id)
+      setMenus(prev => prev.filter(m => m.id !== id))
+    } catch (err: any) {
+      setError(err.message ?? "Errore nell'eliminazione del menu.")
+    }
   }
 
   async function handleDuplicate(id: string) {
@@ -320,17 +329,27 @@ export default function MenuList({ restaurantId, initialMenus }: Props) {
     setMenus(prev => prev.map(m => m.id === id ? { ...m, is_active: active } : m))
     try {
       await toggleMenuActive(restaurantId, id, active)
-    } catch { setError('Errore nel cambio stato menu.') }
+    } catch {
+      // Ripristina lo stato precedente: l'ottimistico non è andato a buon fine.
+      setMenus(prev => prev.map(m => m.id === id ? { ...m, is_active: !active } : m))
+      setError('Errore nel cambio stato menu.')
+    }
   }
 
   async function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event
     if (!over || active.id === over.id) return
+    const prev = menus
     const oldIdx = menus.findIndex(m => m.id === active.id)
     const newIdx = menus.findIndex(m => m.id === over.id)
     const reordered = arrayMove(menus, oldIdx, newIdx)
     setMenus(reordered)
-    await reorderMenus(restaurantId, reordered.map(m => m.id))
+    try {
+      await reorderMenus(restaurantId, reordered.map(m => m.id))
+    } catch {
+      setMenus(prev)
+      setError('Errore nel riordino dei menu.')
+    }
   }
 
   return (

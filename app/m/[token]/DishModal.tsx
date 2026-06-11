@@ -97,7 +97,8 @@ export default function DishModal({ activeDish, allDishes, isNested, onClose, on
 
   // Pop-in entrance for the card + backdrop, played once when the modal mounts.
   useEffect(() => {
-    animateCardIn(cardRef.current, backdropRef.current)
+    const anims = animateCardIn(cardRef.current, backdropRef.current)
+    return () => { anims.forEach(a => a.revert()) }
   }, [])
 
   const total = allDishes.length

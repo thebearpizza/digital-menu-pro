@@ -88,17 +88,16 @@ async function detectCategoryPages(
       })
     }
 
-    const result: CategoryNav[] = []
-    for (const name of categoryNames) {
-      const pg = pageMap.get(name)
-      if (pg !== undefined) result.push({ label: name, targetPage: pg })
-    }
-    // Produci sempre una lista completa: pagina reale se trovata, sequenziale se mancante.
-    // Restituire result parziale (es. 1 su N categorie) nasconde le tab rimanenti.
-    return categoryNames.map((name, i) => ({
-      label:      name,
-      targetPage: pageMap.get(name) ?? fallback[i].targetPage,
-    }))
+    // Produci sempre una lista completa: pagina reale se trovata, stima se
+    // mancante. Restituire result parziale (es. 1 su N categorie) nasconde le
+    // tab rimanenti. Le stime sono clampate alla pagina della categoria
+    // precedente: una tab non deve mai puntare prima della sezione che la precede.
+    let lastPage = 1
+    return categoryNames.map((name, i) => {
+      const pg = pageMap.get(name) ?? Math.max(lastPage, fallback[i].targetPage)
+      lastPage = pg
+      return { label: name, targetPage: pg }
+    })
   } catch {
     return fallback
   }
