@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { deleteRestaurant } from './actions'
+import { Spinner } from '@/components/ui/Spinner'
 
 export default function RestaurantDeleteButton({
   restaurantId,
@@ -54,9 +55,9 @@ export default function RestaurantDeleteButton({
               <button
                 onClick={handleDelete}
                 disabled={deleting}
-                className="flex-1 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 disabled:opacity-50 transition-colors"
+                className="flex-1 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 disabled:opacity-50 transition-colors flex items-center justify-center"
               >
-                {deleting ? 'Eliminazione…' : 'Sì, elimina'}
+                {deleting ? <Spinner color="#fff" /> : 'Sì, elimina'}
               </button>
               <button
                 onClick={() => setOpen(false)}

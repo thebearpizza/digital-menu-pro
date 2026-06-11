@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react'
 import { applyDishSync, DishTwin } from './actions'
 import { formatAllergensFull } from '@/lib/allergens'
+import { Spinner } from '@/components/ui/Spinner'
 
 interface SourceDish {
   id: string
@@ -137,9 +138,9 @@ export default function DishSyncBannerModal({ restaurantId, source, twins, onClo
               <button
                 onClick={handleSync}
                 disabled={syncing || selected.size === 0}
-                className="flex-1 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                className="flex-1 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 transition-colors flex items-center justify-center"
               >
-                {syncing ? 'Sincronizzazione…' : 'Propaga modifiche'}
+                {syncing ? <Spinner color="#fff" /> : 'Propaga modifiche'}
               </button>
               <button onClick={onClose}
                 className="flex-1 py-2 text-sm text-gray-600 border border-gray-300 hover:bg-gray-50 transition-colors">

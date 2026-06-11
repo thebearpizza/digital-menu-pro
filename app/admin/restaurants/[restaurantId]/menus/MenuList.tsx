@@ -347,9 +347,9 @@ export default function MenuList({ restaurantId, initialMenus }: Props) {
         <button
           type="submit"
           disabled={creating || !newName.trim()}
-          className="shrink-0 bg-blue-600 text-white text-sm font-medium px-4 py-2 min-h-[44px] hover:bg-blue-700 disabled:opacity-50 transition-colors"
+          className="shrink-0 bg-blue-600 text-white text-sm font-medium px-4 py-2 min-h-[44px] min-w-[120px] hover:bg-blue-700 disabled:opacity-50 transition-colors flex items-center justify-center"
         >
-          {creating ? '…' : '+ Nuovo menu'}
+          {creating ? <Spinner color="#fff" /> : '+ Nuovo menu'}
         </button>
       </form>
 

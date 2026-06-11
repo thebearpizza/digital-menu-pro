@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { moveDishToMenu } from './actions'
+import { Spinner } from '@/components/ui/Spinner'
 
 interface SimpleMenu { id: string; name: string }
 
@@ -78,9 +79,9 @@ export default function MoveDishModal({
           <button
             onClick={handleMove}
             disabled={moving || !target}
-            className="flex-1 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 transition-colors"
+            className="flex-1 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 transition-colors flex items-center justify-center"
           >
-            {moving ? 'Spostamento…' : 'Sposta'}
+            {moving ? <Spinner color="#fff" /> : 'Sposta'}
           </button>
           <button onClick={onClose}
             className="flex-1 py-2 text-sm text-gray-600 border border-gray-300 hover:bg-gray-50 transition-colors">

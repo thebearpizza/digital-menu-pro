@@ -4,6 +4,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { LogoutButton } from '@/components/admin/LogoutButton'
+import NavigationProgress from '@/components/admin/NavigationProgress'
 
 const NAV = [
   { href: '/admin',             label: 'Dashboard',  exact: true },
@@ -27,6 +28,8 @@ export default function AdminShell({
 
   return (
     <div className="min-h-screen bg-gray-50">
+      <NavigationProgress />
+
       {/* ── Mobile top bar (hamburger) — visibile solo < md ───────────── */}
       <header className="md:hidden sticky top-0 z-30 flex items-center gap-3 h-14 px-4 bg-white border-b border-gray-200">
         <button

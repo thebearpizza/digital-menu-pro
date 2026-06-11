@@ -8,6 +8,7 @@
 import { useRef, useState } from 'react'
 import * as XLSX from 'xlsx'
 import { ALLERGENS } from '@/lib/allergens'
+import { Spinner } from '@/components/ui/Spinner'
 import { bulkCreateDishes } from './actions'
 
 const HEADERS = [
@@ -132,9 +133,9 @@ export default function ExcelImportExport({ restaurantId, menuId, onImported }: 
         type="button"
         disabled={importing}
         onClick={() => fileRef.current?.click()}
-        className="border border-gray-300 text-gray-700 text-sm font-medium px-4 py-2 hover:bg-gray-50 disabled:opacity-50 transition-colors"
+        className="border border-gray-300 text-gray-700 text-sm font-medium px-4 py-2 hover:bg-gray-50 disabled:opacity-50 transition-colors min-w-[120px] flex items-center justify-center"
       >
-        {importing ? 'Importazione…' : '⬆ Carica Excel'}
+        {importing ? <Spinner color="#374151" /> : '⬆ Carica Excel'}
       </button>
       <input
         ref={fileRef}

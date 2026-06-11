@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { syncDishToMasters } from './actions'
+import { Spinner } from '@/components/ui/Spinner'
 
 interface Dish {
   id: string
@@ -87,9 +88,9 @@ export default function DishSyncModal({ restaurantId, dish, onClose }: Props) {
               <button
                 onClick={handleSync}
                 disabled={syncing || selected.length === 0}
-                className="flex-1 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                className="flex-1 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 transition-colors flex items-center justify-center"
               >
-                {syncing ? 'Sincronizzazione…' : 'Sincronizza'}
+                {syncing ? <Spinner color="#fff" /> : 'Sincronizza'}
               </button>
               <button onClick={onClose}
                 className="flex-1 py-2 text-sm text-gray-600 border border-gray-300 hover:bg-gray-50 transition-colors">

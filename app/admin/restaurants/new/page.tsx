@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createRestaurant } from './actions'
+import { Spinner } from '@/components/ui/Spinner'
 
 export default function NewRestaurantPage() {
   const [name, setName]               = useState('')
@@ -61,9 +62,9 @@ export default function NewRestaurantPage() {
           <div className="flex gap-3 pt-1">
             <button
               type="submit" disabled={loading}
-              className="bg-blue-600 text-white text-sm font-medium px-4 py-2 hover:bg-blue-700 disabled:opacity-50 transition-colors"
+              className="bg-blue-600 text-white text-sm font-medium px-4 py-2 hover:bg-blue-700 disabled:opacity-50 transition-colors min-w-[130px] flex items-center justify-center"
             >
-              {loading ? 'Creazione…' : 'Crea ristorante'}
+              {loading ? <Spinner color="#fff" /> : 'Crea ristorante'}
             </button>
             <Link
               href="/admin/restaurants"

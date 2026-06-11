@@ -19,6 +19,7 @@ import MoveDishModal from './MoveDishModal'
 import MoveCategoryModal from './MoveCategoryModal'
 import ExcelImportExport from './ExcelImportExport'
 import VisibilityToggle from '@/components/ui/VisibilityToggle'
+import { Spinner } from '@/components/ui/Spinner'
 import {
   deleteDish, reorderCategories, reorderDishes,
   duplicateDish, duplicateCategory, deleteCategory, renameCategory, bulkUpdateDishPrices, findDishTwins, DishTwin,
@@ -861,8 +862,8 @@ export default function DishList({
               className="w-28 px-2 py-1.5 text-sm text-gray-900 rounded border-0 focus:outline-none"
             />
             <button type="submit" disabled={bulkSaving}
-              className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-sm font-medium px-3 py-1.5 rounded transition-colors whitespace-nowrap">
-              {bulkSaving ? '…' : 'Applica prezzo'}
+              className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-sm font-medium px-3 py-1.5 rounded transition-colors whitespace-nowrap min-w-[110px] flex items-center justify-center">
+              {bulkSaving ? <Spinner color="#fff" size={4} /> : 'Applica prezzo'}
             </button>
           </form>
           <button type="button"

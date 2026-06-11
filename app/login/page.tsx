@@ -3,33 +3,34 @@
 import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
+import { Spinner } from '@/components/ui/Spinner'
 
 export default function LoginPage() {
   const [email, setEmail]       = useState('')
   const [password, setPassword] = useState('')
-  const [loading, setLoading]   = useState(false)
+  const [loading, setLoading]   = useState<'login' | 'signup' | null>(null)
   const [error, setError]       = useState<string | null>(null)
   const router   = useRouter()
   const supabase = createClient()
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault()
-    setLoading(true)
+    setLoading('login')
     setError(null)
     const { error } = await supabase.auth.signInWithPassword({ email, password })
-    if (error) { setError('Email o password non corretti.'); setLoading(false) }
+    if (error) { setError('Email o password non corretti.'); setLoading(null) }
     else { router.push('/admin'); router.refresh() }
   }
 
   async function handleSignUp(e: React.MouseEvent) {
     e.preventDefault()
     if (!email || !password) { setError('Inserisci email e password.'); return }
-    setLoading(true)
+    setLoading('signup')
     setError(null)
     const { error } = await supabase.auth.signUp({ email, password })
-    if (error) { setError(error.message); setLoading(false) }
+    if (error) { setError(error.message); setLoading(null) }
     else {
-      setLoading(false)
+      setLoading(null)
       alert('Registrazione effettuata! Controlla la tua email per confermare.')
     }
   }
@@ -69,16 +70,16 @@ export default function LoginPage() {
           </div>
           <div className="flex gap-2 pt-1">
             <button
-              type="submit" disabled={loading}
-              className="flex-1 bg-blue-600 text-white text-sm font-medium py-2 hover:bg-blue-700 disabled:opacity-50 transition-colors"
+              type="submit" disabled={!!loading}
+              className="flex-1 bg-blue-600 text-white text-sm font-medium py-2 hover:bg-blue-700 disabled:opacity-50 transition-colors flex items-center justify-center"
             >
-              {loading ? 'Accesso…' : 'Accedi'}
+              {loading === 'login' ? <Spinner color="#fff" /> : 'Accedi'}
             </button>
             <button
-              type="button" onClick={handleSignUp} disabled={loading}
-              className="flex-1 border border-gray-300 text-gray-600 text-sm font-medium py-2 hover:bg-gray-50 disabled:opacity-50 transition-colors"
+              type="button" onClick={handleSignUp} disabled={!!loading}
+              className="flex-1 border border-gray-300 text-gray-600 text-sm font-medium py-2 hover:bg-gray-50 disabled:opacity-50 transition-colors flex items-center justify-center"
             >
-              Registrati
+              {loading === 'signup' ? <Spinner color="#9ca3af" /> : 'Registrati'}
             </button>
           </div>
         </form>
