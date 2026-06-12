@@ -18,6 +18,8 @@ import DishSyncBannerModal from './DishSyncBannerModal'
 import MoveDishModal from './MoveDishModal'
 import MoveCategoryModal from './MoveCategoryModal'
 import ExcelImportExport from './ExcelImportExport'
+import TranslationPanel, { LangBar } from './TranslationPanel'
+import type { Lang } from '@/lib/translations'
 import VisibilityToggle from '@/components/ui/VisibilityToggle'
 import { Spinner } from '@/components/ui/Spinner'
 import {
@@ -437,6 +439,8 @@ export default function DishList({
   restaurantId, menuId, initialDishes, allDishes, allMenus, initialCategoryOrder,
 }: Props) {
   const [dishes,       setDishes]       = useState(initialDishes)
+  // Lingua attiva dell'editor: 'it' = editor normale, altre = pannello traduzioni
+  const [lang,         setLang]         = useState<Lang>('it')
   const [formOpen,     setFormOpen]     = useState(false)
   const [editingDish,  setEditingDish]  = useState<Dish | null>(null)
   const [formCat,      setFormCat]      = useState<string | null>(null) // pre-fill category (MODULO 4)
@@ -731,8 +735,20 @@ export default function DishList({
 
   // ── Render ────────────────────────────────────────────────────────────────
 
+  // Bandierina ≠ 🇮🇹 → pannello traduzioni al posto dell'editor piatti.
+  // L'early-return sta dopo tutti gli hook, quindi l'ordine resta stabile.
+  if (lang !== 'it') {
+    return (
+      <div>
+        <LangBar lang={lang} onChange={setLang} />
+        <TranslationPanel restaurantId={restaurantId} menuId={menuId} lang={lang} />
+      </div>
+    )
+  }
+
   return (
     <div>
+      <LangBar lang={lang} onChange={setLang} />
       <div className="mb-5 flex flex-wrap items-center gap-2">
         <button
           onClick={() => { setEditingDish(null); setFormOpen(true) }}

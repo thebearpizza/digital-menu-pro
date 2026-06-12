@@ -5,6 +5,7 @@ import DishModal, { DishData } from './DishModal'
 import { useIsMobilePreview } from './EditHandle'
 import { fontStack, hexToRgb, toOpaqueColor, PAGINATION_OPTIONS, menuBackgroundCss } from '@/lib/theme'
 import type { RestaurantTheme } from '@/lib/theme'
+import { ALL_LANGS, LANG_FLAGS, LANG_LABELS, uiText, type Lang } from '@/lib/translations'
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // ⚙️  MENU CONFIG
@@ -104,6 +105,10 @@ interface Props {
   theme?:        RestaurantTheme
   editMode?:     boolean
   onEditTarget?: (target: string) => void
+  // Lingua corrente + cambio lingua: se onLangChange è presente, la barra
+  // categorie mostra la bandierina al posto del contatore pagine.
+  lang?:         Lang
+  onLangChange?: (l: Lang) => void
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -119,7 +124,11 @@ export default function FlipbookViewer({
   theme: themeProp,
   editMode,
   onEditTarget,
+  lang: langProp,
+  onLangChange,
 }: Props) {
+  const lang = langProp ?? 'it'
+  const [langMenuOpen, setLangMenuOpen] = useState(false)
   // Merge incoming theme over menuConfig defaults so existing callers without
   // a theme prop keep working with the hardcoded palette.
   const mn           = themeProp?.menu      ?? null
@@ -692,7 +701,7 @@ export default function FlipbookViewer({
                 style={{ background: '#141414' }}
               >
                 <span className="text-xs" style={{ color: theme.textMuted }}>
-                  Caricamento…
+                  {uiText('loading', lang)}
                 </span>
               </div>
             )}
@@ -742,6 +751,24 @@ export default function FlipbookViewer({
                 }}
               >
                 {pagOpt.next}
+              </span>
+            )}
+
+            {/* ── Numero pagina — centrato tra prec. e succ., SOLO TESTO.
+                 CATEGORICO: pointer-events-none e nessun handler — non deve mai
+                 intercettare un tap, i click devono raggiungere i piatti e gli
+                 angoli di turn.js sottostanti. ── */}
+            {pagesReady && totalPages > 0 && (
+              <span
+                aria-hidden="true"
+                className="pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 z-50 text-[10px] tabular-nums select-none"
+                style={{
+                  color:      theme.navColor,
+                  opacity:    0.6,
+                  fontFamily: theme.fontSans,
+                }}
+              >
+                {currentPage}/{totalPages}
               </span>
             )}
 
@@ -816,7 +843,7 @@ export default function FlipbookViewer({
                 borderRight:`1px solid ${theme.navColor}1a`,
               }}
             >
-              ← Menù
+              {uiText('backToMenu', lang)}
             </button>
 
             {categories.map((cat, idx) => (
@@ -837,8 +864,21 @@ export default function FlipbookViewer({
               </button>
             ))}
 
-            {/* Contatore pagine — sticky a destra, fuori dallo scroll */}
-            {totalPages > 0 && (
+            {/* Bandierina lingua — sticky a destra, al posto del vecchio
+                 contatore pagine (ora in basso al centro, solo testuale). */}
+            {onLangChange ? (
+              <button
+                onClick={() => setLangMenuOpen(o => !o)}
+                aria-label={`Lingua: ${LANG_LABELS[lang]}`}
+                className="sticky right-0 shrink-0 px-4 py-3 text-base leading-none self-stretch ml-auto transition-opacity duration-200 hover:opacity-70"
+                style={{
+                  background:  theme.navBgOpaque,
+                  borderLeft: `1px solid ${theme.navColor}1a`,
+                }}
+              >
+                {LANG_FLAGS[lang]}
+              </button>
+            ) : totalPages > 0 ? (
               <span
                 className="sticky right-0 shrink-0 px-4 py-3 text-[10px] tabular-nums self-center ml-auto"
                 style={{
@@ -850,11 +890,49 @@ export default function FlipbookViewer({
               >
                 {currentPage}/{totalPages}
               </span>
-            )}
+            ) : null}
           </nav>
         )}
 
       </div>
+
+      {/* ── Selettore lingua — popover sopra la barra categorie ──────────────
+           L'overlay trasparente chiude al tap fuori; touchAction auto perché il
+           root ha touch-action:none. ── */}
+      {langMenuOpen && onLangChange && (
+        <>
+          <div
+            className="absolute inset-0 z-[10000]"
+            style={{ touchAction: 'auto' }}
+            onClick={() => setLangMenuOpen(false)}
+          />
+          <div
+            className="absolute right-2 z-[10001] overflow-hidden shadow-2xl"
+            style={{
+              bottom:     (catNavRef.current?.offsetHeight ?? 44) + 8,
+              background: theme.navBgOpaque,
+              border:     `1px solid ${theme.navColor}33`,
+              borderRadius: 6,
+              touchAction: 'auto',
+            }}
+          >
+            {ALL_LANGS.map(l => (
+              <button
+                key={l}
+                onClick={() => { onLangChange(l); setLangMenuOpen(false) }}
+                className="flex items-center gap-2.5 w-full text-left px-4 py-2.5 text-[10px] uppercase tracking-[0.18em] transition-opacity hover:opacity-70"
+                style={{
+                  color:      l === lang ? theme.navActive : theme.navInactive,
+                  fontFamily: theme.fontSans,
+                }}
+              >
+                <span className="text-base leading-none">{LANG_FLAGS[l]}</span>
+                {LANG_LABELS[l]}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
 
       {/* Schermo scuro a tutto schermo durante caricamento — impedisce flash bianchi */}
       {!pagesReady && (
@@ -863,7 +941,7 @@ export default function FlipbookViewer({
           style={{ background: '#0c0c0c' }}
         >
           <span className="text-xs" style={{ color: theme.textMuted }}>
-            Caricamento…
+            {uiText('loading', lang)}
           </span>
         </div>
       )}
@@ -879,6 +957,7 @@ export default function FlipbookViewer({
           onBack={modalStack.length > 1 ? () => setModalStack(s => s.slice(0, -1)) : undefined}
           onOpenDish={(dish) => setModalStack(s => [...s, dish])}
           theme={themeProp}
+          lang={lang}
         />
       )}
 

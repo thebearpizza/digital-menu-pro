@@ -5,7 +5,7 @@
 // toggled via opacity so the background video never needs to re-initialize.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import FlipbookViewer  from './FlipbookViewer'
 import DishModal       from './DishModal'
 import type { DishData } from './DishModal'
@@ -19,6 +19,11 @@ import {
   parseTheme, lineSizesFor, customFontFaceCss, cardBorderRadius, resolveMenuTheme,
 } from '@/lib/theme'
 import type { RestaurantTheme } from '@/lib/theme'
+import {
+  isLang, uiText, dishName, dishDescription, categoryName,
+  menuName as translatedMenuName,
+  type Lang, type DishTranslations, type MenuTranslations,
+} from '@/lib/translations'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -26,8 +31,12 @@ export interface Dish {
   id: string; name: string; description: string | null; price: number | null
   category: string; image_url: string | null; allergens: number[]
   pairing_dish_id: string | null; pairing_label: string | null
+  translations?: DishTranslations
 }
-export interface Menu   { id: string; name: string; dishes: Dish[] }
+export interface Menu {
+  id: string; name: string; dishes: Dish[]
+  translations?: MenuTranslations
+}
 export interface Banner { id: string; media_url: string | null; media_type: string; title: string | null; subtitle: string | null }
 export interface Info   { title: string | null; content: string | null }
 export interface Restaurant {
@@ -153,6 +162,36 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
   // pendingMenuId: set during immersive video transition (PDF generation starts early)
   const [pendingMenuId, setPendingMenuId]   = useState<string | null>(null)
 
+  // ── Lingua del menu — italiano di default, scelta persistita sul device ────
+  const [lang, setLangState] = useState<Lang>('it')
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('dmp-menu-lang')
+      if (isLang(saved)) setLangState(saved)
+    } catch {}
+  }, [])
+  function setLang(l: Lang) {
+    setLangState(l)
+    try { localStorage.setItem('dmp-menu-lang', l) } catch {}
+  }
+
+  // Menu localizzati: nomi/descrizioni/categorie sostituiti con le traduzioni
+  // pre-generate dal gestionale (fallback all'italiano se mancanti). Tutto il
+  // resto della pipeline (PDF, flipbook, modale) consuma questi dati tradotti.
+  const localizedMenus = useMemo<Menu[]>(() => {
+    if (lang === 'it') return menus
+    return menus.map(m => ({
+      ...m,
+      name: translatedMenuName(m.name, m.translations, lang),
+      dishes: m.dishes.map(d => ({
+        ...d,
+        name:        dishName(d.name, d.translations, lang),
+        description: dishDescription(d.description, d.translations, lang),
+        category:    categoryName(d.category, m.translations, lang),
+      })),
+    }))
+  }, [menus, lang])
+
   // liveTheme: updated via postMessage from admin preview iframe
   const [liveTheme, setLiveTheme] = useState<RestaurantTheme>(restaurant.theme)
   const t = liveTheme
@@ -233,7 +272,7 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
 
   // ── PDF generation — driven by selected or pending menu ───────────────────
   const activeMenuId = selectedMenuId ?? pendingMenuId
-  const activeMenu   = activeMenuId ? menus.find(m => m.id === activeMenuId) ?? null : null
+  const activeMenu   = activeMenuId ? localizedMenus.find(m => m.id === activeMenuId) ?? null : null
 
   // m: MenuTheme effettivo per il menu attivo (override per-menu se presente,
   // altrimenti "Generale" — vedi resolveMenuTheme). effectiveTheme propaga
@@ -244,7 +283,7 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
   const { pdfUrl, categories, isGenerating, error } = useMenuPDF(
     { name: restaurant.name },
     activeMenu ? {
-      id: activeMenu.id, name: activeMenu.name,
+      id: activeMenu.id, name: activeMenu.name, lang,
       dishes: activeMenu.dishes.map(d => ({
         id: d.id, name: d.name, description: d.description,
         price: d.price, category: d.category||'Menu', allergens: d.allergens,
@@ -424,7 +463,7 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
   const logoSrc      = l.logo.image || restaurant.logo_url
   const displayMenus = (showDummyData && menus.length === 0)
     ? [{ id: 'dummy-pranzo', name: 'Pranzo', dishes: [] as Dish[] }, { id: 'dummy-cena', name: 'Cena', dishes: [] as Dish[] }]
-    : menus
+    : localizedMenus
   const displayRestaurant: Restaurant = showDummyData ? {
     ...restaurant,
     instagram_url: restaurant.instagram_url || '#',
@@ -448,7 +487,7 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
     price: 18, category: 'Vini', image_url: null, allergens: [],
     pairing_dish_id: null, pairing_label: null,
   }
-  const allDishesFlat = menus.flatMap(m => m.dishes)
+  const allDishesFlat = localizedMenus.flatMap(m => m.dishes)
   const cardPreviewDish: DishData = allDishesFlat[0]
     ? { ...allDishesFlat[0], allergens: allDishesFlat[0].allergens ?? [] }
     : DUMMY_DISH
@@ -601,7 +640,7 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
                     }}>
                     <span className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
                       style={{ background: `${l.buttons.borderColor}14` }} />
-                    <span className="relative">{`Sfoglia il menu ${menu.name}`}</span>
+                    <span className="relative">{`${uiText('browseMenu', lang)} ${menu.name}`}</span>
                   </button>
                 ))
               )}
@@ -640,7 +679,7 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
               <RingSpinner size={28} color={m.navigation.color} />
               <p className="text-[10px] uppercase tracking-[0.3em]"
                 style={{ color: m.navigation.color, fontFamily: fontStack(m.stickyCategories.font,'sans') }}>
-                Preparazione menu…
+                {uiText('preparing', lang)}
               </p>
             </div>
           )}
@@ -661,6 +700,8 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
             theme={effectiveTheme}
             editMode={editMode && !cardPreviewOpen}
             onEditTarget={sendEdit}
+            lang={lang}
+            onLangChange={setLang}
           />
         </div>
       )}
@@ -717,6 +758,7 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
             onOpenDish={() => {}}
             editMode={editMode}
             theme={effectiveTheme}
+            lang={lang}
           />
         </div>
       )}

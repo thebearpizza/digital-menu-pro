@@ -4,6 +4,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { Document, Page, Text, View, Image, StyleSheet, Svg, Path, Defs, LinearGradient, RadialGradient, Stop, Rect } from '@react-pdf/renderer'
 import { formatAllergens } from '@/lib/allergens'
+import { uiText, isLang } from '@/lib/translations'
 import type { RestaurantTheme, MenuBgConfig } from '@/lib/theme'
 import { DEFAULT_THEME, lightenHex, formatPrice, resolveAlign } from '@/lib/theme'
 
@@ -63,6 +64,9 @@ export interface PDFMenu {
   id: string
   name: string
   dishes: PDFDish[]
+  // Lingua del menu già tradotto (nomi/descrizioni/categorie arrivano tradotti
+  // dal chiamante): serve solo per le etichette fisse, es. gli allergeni.
+  lang?: string
 }
 
 export interface PDFRestaurant {
@@ -459,8 +463,10 @@ export function MenuPDFDocument({ restaurant, menu, theme: themeProp, registered
   }
 
   function allergenText(dish: PDFDish): string | null {
+    const lang = menu.lang ?? 'it'
     return dish.allergens.length > 0
-      ? 'Allergeni: ' + formatAllergens(dish.allergens, m.allergens.display, m.allergens.separator)
+      ? uiText('allergens', isLang(lang) ? lang : 'it') + ': ' +
+        formatAllergens(dish.allergens, m.allergens.display, m.allergens.separator, lang)
       : null
   }
 

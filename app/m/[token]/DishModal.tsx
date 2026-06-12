@@ -6,6 +6,7 @@ import { fontStack, formatPrice, cardBorderRadius, cardNavColors } from '@/lib/t
 import type { CardTheme, RestaurantTheme } from '@/lib/theme'
 import { EditHandle, sendEdit, useIsMobilePreview } from './EditHandle'
 import { animateCardIn } from '@/lib/animations'
+import { uiText, type Lang } from '@/lib/translations'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -30,11 +31,14 @@ interface Props {
   onOpenDish:  (dish: DishData) => void
   editMode?:   boolean
   theme?:      RestaurantTheme
+  // I dati del piatto arrivano già tradotti; lang serve per le etichette fisse
+  // (allergeni, abbinamento).
+  lang?:       Lang
 }
 
 // ── Component ──────────────────────────────────────────────────────────────────
 
-export default function DishModal({ activeDish, allDishes, isNested, onClose, onBack, onOpenDish, editMode = false, theme }: Props) {
+export default function DishModal({ activeDish, allDishes, isNested, onClose, onBack, onOpenDish, editMode = false, theme, lang = 'it' }: Props) {
   const mn   = theme?.menu
   const card = theme?.card
   // Card-specific: use card theme if available, fall back to menu theme
@@ -391,9 +395,9 @@ export default function DishModal({ activeDish, allDishes, isNested, onClose, on
                   borderRadius: ALRG_BADGE ? 20 : 6,
                 }}
               >
-                {!ALRG_BADGE && <p style={{ color: ALRG_LABEL, fontSize: 8, letterSpacing: '0.26em', textTransform: 'uppercase', marginBottom: 6 }}>Allergeni</p>}
+                {!ALRG_BADGE && <p style={{ color: ALRG_LABEL, fontSize: 8, letterSpacing: '0.26em', textTransform: 'uppercase', marginBottom: 6 }}>{uiText('allergens', lang)}</p>}
                 <p style={{ color: ALRG_COLOR, fontSize: `${ALRG_SIZE}rem`, lineHeight: 1.6 }}>
-                  {ALRG_BADGE ? '⚠ ' : ''}{formatAllergens(dish.allergens, ALRG_DISPLAY, ALRG_SEP)}
+                  {ALRG_BADGE ? '⚠ ' : ''}{formatAllergens(dish.allergens, ALRG_DISPLAY, ALRG_SEP, lang)}
                 </p>
               </div>
             </EditHandle>
@@ -427,7 +431,7 @@ export default function DishModal({ activeDish, allDishes, isNested, onClose, on
                 }}
               >
                 <p style={{ color: PAIR_LABEL_COLOR, fontSize: 8, letterSpacing: '0.26em', textTransform: 'uppercase', marginBottom: 6 }}>
-                  {dish.pairing_label ?? 'Abbinamento consigliato'}
+                  {dish.pairing_label ?? uiText('pairing', lang)}
                 </p>
                 <div className="flex items-center justify-between">
                   <p style={{ color: PAIR_PROD_COLOR, fontSize: '0.8125rem' }}>

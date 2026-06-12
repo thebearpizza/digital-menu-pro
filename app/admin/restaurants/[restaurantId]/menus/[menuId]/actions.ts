@@ -2,6 +2,35 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
+import { translateItems, translateEnabled } from '@/lib/translateEngine'
+import { TARGET_LANGS, type DishTranslations } from '@/lib/translations'
+
+/**
+ * Rigenera le traduzioni automatiche di nome+descrizione di un piatto,
+ * preservando gli override manuali. Ritorna null se il traduttore non è
+ * configurato. Best effort: i chiamanti avvolgono in try/catch — un errore
+ * di traduzione non deve mai bloccare il salvataggio del piatto.
+ */
+async function autoDishTranslations(
+  name: string, description: string | null, existing?: DishTranslations | null,
+): Promise<DishTranslations | null> {
+  if (!translateEnabled()) return null
+  const items = [{ id: 'name', text: name }]
+  if (description?.trim()) items.push({ id: 'desc', text: description })
+  const res = await translateItems(items)
+  const tr: DishTranslations = JSON.parse(JSON.stringify(existing ?? {}))
+  for (const lang of TARGET_LANGS) {
+    const entry = tr[lang] ?? (tr[lang] = {})
+    const n = res['name']?.[lang]
+    if (n && !entry.manual?.name) entry.name = n
+    if (!entry.manual?.description) {
+      const d = res['desc']?.[lang]
+      if (d) entry.description = d
+      else if (!description?.trim()) delete entry.description
+    }
+  }
+  return tr
+}
 
 async function verifyOwnership(supabase: any, restaurantId: string) {
   const { data: { user } } = await supabase.auth.getUser()
@@ -56,6 +85,14 @@ export async function createDish(
     .single()
 
   if (error) throw new Error(error.message)
+
+  // Pre-genera le traduzioni (en/fr/de/es) — il menu pubblico non traduce mai
+  // al volo. Best effort: se fallisce, ensureMenuTranslations recupera dopo.
+  try {
+    const tr = await autoDishTranslations(data.name, data.description || null)
+    if (tr) await supabase.from('dishes').update({ translations: tr }).eq('id', dish.id)
+  } catch (e: any) { console.error('createDish translate failed', e?.message) }
+
   revalidate(restaurantId, menuId)
   return dish
 }
@@ -78,6 +115,10 @@ export async function updateDish(
   await verifyOwnership(supabase, restaurantId)
   const price = data.price ? parseFloat(data.price) : null
 
+  // Stato precedente: serve per capire se rigenerare le traduzioni automatiche.
+  const { data: old } = await supabase
+    .from('dishes').select('name, description, translations').eq('id', dishId).single()
+
   const { data: dish, error } = await supabase
     .from('dishes')
     .update({
@@ -95,6 +136,19 @@ export async function updateDish(
     .single()
 
   if (error) throw new Error(error.message)
+
+  // Nome o descrizione cambiati → le traduzioni automatiche sono stantie:
+  // rigenerale (gli override manuali restano). Best effort, mai bloccante.
+  const baseChanged = old &&
+    (old.name !== data.name || (old.description ?? '') !== (data.description || ''))
+  if (baseChanged) {
+    try {
+      const tr = await autoDishTranslations(
+        data.name, data.description || null, old.translations as DishTranslations | null)
+      if (tr) await supabase.from('dishes').update({ translations: tr }).eq('id', dishId)
+    } catch (e: any) { console.error('updateDish translate failed', e?.message) }
+  }
+
   revalidate(restaurantId, menuId)
   return dish
 }
@@ -163,12 +217,31 @@ export async function renameCategory(
   if (error) throw new Error(error.message)
 
   const { data: menu } = await supabase
-    .from('menus').select('category_order').eq('id', menuId).single()
+    .from('menus').select('category_order, translations').eq('id', menuId).single()
   const order = (menu?.category_order as string[] | null) ?? []
-  if (order.includes(oldName)) {
+
+  // Le traduzioni delle categorie sono indicizzate per nome italiano: il
+  // rename deve spostare la chiave, altrimenti la traduzione va persa.
+  const menuTr = (menu?.translations ?? {}) as Record<string, any>
+  let trChanged = false
+  for (const lang of Object.keys(menuTr)) {
+    const cats = menuTr[lang]?.categories
+    if (cats && oldName in cats) {
+      cats[newName] = cats[oldName]; delete cats[oldName]; trChanged = true
+    }
+    const manualCats = menuTr[lang]?.manual?.categories
+    if (manualCats && oldName in manualCats) {
+      manualCats[newName] = manualCats[oldName]; delete manualCats[oldName]; trChanged = true
+    }
+  }
+
+  if (order.includes(oldName) || trChanged) {
     const { error: err2 } = await supabase
       .from('menus')
-      .update({ category_order: order.map(c => (c === oldName ? newName : c)) })
+      .update({
+        category_order: order.map(c => (c === oldName ? newName : c)),
+        ...(trChanged ? { translations: menuTr } : {}),
+      })
       .eq('id', menuId)
     if (err2) throw new Error(err2.message)
   }
@@ -255,6 +328,53 @@ export async function bulkCreateDishes(
     }
   }
 
+  // Terza passata: pre-genera le traduzioni di piatti e nuove categorie in
+  // blocco. Best effort: un errore qui non deve invalidare l'import riuscito.
+  try {
+    if (translateEnabled() && created?.length) {
+      const newCats = Array.from(new Set(created.map(d => d.category).filter(Boolean))) as string[]
+      const items = [
+        ...created.flatMap(d => [
+          { id: `${d.id}:name`, text: d.name as string },
+          ...(d.description ? [{ id: `${d.id}:desc`, text: d.description as string }] : []),
+        ]),
+        ...newCats.map(c => ({ id: `cat:${c}`, text: c })),
+      ]
+      const res = await translateItems(items)
+
+      await Promise.all(created.map(d => {
+        const tr: DishTranslations = {}
+        for (const lang of TARGET_LANGS) {
+          const entry: NonNullable<DishTranslations[typeof lang]> = {}
+          const n = res[`${d.id}:name`]?.[lang]
+          if (n) entry.name = n
+          const ds = res[`${d.id}:desc`]?.[lang]
+          if (ds) entry.description = ds
+          if (Object.keys(entry).length) tr[lang] = entry
+        }
+        return Object.keys(tr).length
+          ? supabase.from('dishes').update({ translations: tr }).eq('id', d.id)
+          : Promise.resolve(null)
+      }))
+
+      if (newCats.length) {
+        const { data: menu } = await supabase
+          .from('menus').select('translations').eq('id', menuId).single()
+        const menuTr = (menu?.translations ?? {}) as Record<string, any>
+        let changed = false
+        for (const lang of TARGET_LANGS) {
+          const entry = menuTr[lang] ?? (menuTr[lang] = {})
+          const cats = entry.categories ?? (entry.categories = {})
+          for (const c of newCats) {
+            const t = res[`cat:${c}`]?.[lang]
+            if (t && !cats[c] && !entry.manual?.categories?.[c]) { cats[c] = t; changed = true }
+          }
+        }
+        if (changed) await supabase.from('menus').update({ translations: menuTr }).eq('id', menuId)
+      }
+    }
+  } catch (e: any) { console.error('bulkCreateDishes translate failed', e?.message) }
+
   revalidate(restaurantId, menuId)
   return created ?? []
 }
@@ -289,7 +409,7 @@ export async function duplicateDish(restaurantId: string, menuId: string, dishId
 
   const { data: src } = await supabase
     .from('dishes')
-    .select('name, description, price, category, image_url, allergens, pairing_dish_id')
+    .select('name, description, price, category, image_url, allergens, pairing_dish_id, translations')
     .eq('id', dishId).single()
   if (!src) throw new Error('Piatto non trovato')
 
@@ -309,6 +429,7 @@ export async function duplicateDish(restaurantId: string, menuId: string, dishId
       image_url:     src.image_url,
       allergens:     src.allergens,
       pairing_dish_id: src.pairing_dish_id,
+      translations:  src.translations ?? {},
       is_active:     true,
       sort_order:    (last?.sort_order ?? -1) + 1,
     })
@@ -328,7 +449,7 @@ export async function duplicateCategory(restaurantId: string, menuId: string, ca
   const isUncategorized = category === 'Senza categoria'
   let q = supabase
     .from('dishes')
-    .select('name, description, price, category, image_url, allergens, pairing_dish_id, sort_order')
+    .select('name, description, price, category, image_url, allergens, pairing_dish_id, sort_order, translations')
     .eq('menu_id', menuId)
     .order('sort_order', { ascending: true })
   q = isUncategorized ? q.is('category', null) : q.eq('category', category)
@@ -352,6 +473,7 @@ export async function duplicateCategory(restaurantId: string, menuId: string, ca
     image_url:     d.image_url,
     allergens:     d.allergens,
     pairing_dish_id: d.pairing_dish_id,
+    translations:  d.translations ?? {},
     is_active:     true,
     sort_order:    base + i,
   }))
@@ -445,7 +567,7 @@ export async function applyDishSync(
 
   const { data: source } = await supabase
     .from('dishes')
-    .select('description, price, image_url, allergens, category')
+    .select('description, price, image_url, allergens, category, translations')
     .eq('id', sourceDishId).single()
   if (!source) throw new Error('Piatto non trovato')
 
@@ -459,6 +581,28 @@ export async function applyDishSync(
 
   const { error } = await supabase.from('dishes').update(patch).in('id', targetIds)
   if (error) throw new Error(error.message)
+
+  // Descrizione sincronizzata → le traduzioni dei gemelli sono stantie:
+  // propaga quelle del piatto sorgente (riferite al nuovo testo). Gli override
+  // manuali dei gemelli decadono perché descrivevano il testo precedente.
+  if (fields.includes('description')) {
+    try {
+      const srcTr = (source.translations ?? {}) as DishTranslations
+      const { data: twins } = await supabase
+        .from('dishes').select('id, translations').in('id', targetIds)
+      await Promise.all((twins ?? []).map(t => {
+        const tr = JSON.parse(JSON.stringify(t.translations ?? {})) as DishTranslations
+        for (const lang of TARGET_LANGS) {
+          const entry = tr[lang] ?? (tr[lang] = {})
+          const srcDesc = srcTr[lang]?.description
+          if (srcDesc) entry.description = srcDesc
+          else delete entry.description
+          if (entry.manual) delete entry.manual.description
+        }
+        return supabase.from('dishes').update({ translations: tr }).eq('id', t.id)
+      }))
+    } catch (e: any) { console.error('applyDishSync translations failed', e?.message) }
+  }
 
   // I gemelli vivono in menu diversi: rivalidiamo l'intero template della pagina menu.
   revalidatePath('/admin/restaurants/[restaurantId]/menus/[menuId]', 'page')
@@ -537,7 +681,7 @@ export async function syncDishToMasters(
   const user = await verifyOwnership(supabase, restaurantId)
 
   const { data: source } = await supabase
-    .from('dishes').select('name, description, price, image_url, allergens').eq('id', dishId).single()
+    .from('dishes').select('name, description, price, image_url, allergens, translations').eq('id', dishId).single()
   if (!source) throw new Error('Piatto non trovato')
 
   const { data: targets } = await supabase
@@ -552,6 +696,12 @@ export async function syncDishToMasters(
   if (fields.includes('allergens'))   patch.allergens   = source.allergens
 
   if (Object.keys(patch).length === 0) return
+
+  // Nome/descrizione sincronizzati → i testi dei target diventano identici al
+  // sorgente: propaga anche le sue traduzioni (quelle vecchie sarebbero stantie).
+  if (fields.includes('name') || fields.includes('description')) {
+    patch.translations = source.translations ?? {}
+  }
 
   const { error } = await supabase
     .from('dishes').update(patch)

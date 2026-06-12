@@ -453,8 +453,25 @@ export async function execute(sb: SupabaseClient, ctx: Ctx, it: Intent): Promise
       if (it.description !== undefined) patch.description = it.description || null
       if (it.category !== undefined && it.category !== '') patch.category = it.category
       if (!Object.keys(patch).length) return 'Cosa devo modificare del piatto? (nome, prezzo, descrizione, categoria)'
-      const { error } = await sb.from('dishes').update(patch).in('id', dishes!.map(d => d.id))
+      const ids = dishes!.map(d => d.id)
+      const { error } = await sb.from('dishes').update(patch).in('id', ids)
       if (error) return `Errore: ${error.message}`
+      // Nome/descrizione cambiati → le traduzioni automatiche (en/fr/de/es)
+      // sono stantie: meglio rimuoverle (il pubblico vede l'italiano) che
+      // mostrare la traduzione del testo vecchio. Si rigenerano dal gestionale.
+      if (patch.name !== undefined || patch.description !== undefined) {
+        const { data: rows } = await sb.from('dishes').select('id, translations').in('id', ids)
+        await Promise.all((rows ?? []).map(r => {
+          const tr = (r.translations ?? {}) as Record<string, any>
+          let changed = false
+          for (const lng of Object.keys(tr)) {
+            const e = tr[lng]; if (!e) continue
+            if (patch.name !== undefined && e.name && !e.manual?.name) { delete e.name; changed = true }
+            if (patch.description !== undefined && e.description && !e.manual?.description) { delete e.description; changed = true }
+          }
+          return changed ? sb.from('dishes').update({ translations: tr }).eq('id', r.id) : Promise.resolve(null)
+        }))
+      }
       return `✅ Piatto "${it.new_name ?? dishes![0].name}" aggiornato.`
     }
 
@@ -511,21 +528,34 @@ export async function execute(sb: SupabaseClient, ctx: Ctx, it: Intent): Promise
       if (err) return err
       const { error } = await sb.from('menus').update({ name: it.new_name }).eq('id', menu!.id)
       if (error) return `Errore: ${error.message}`
+      // Il nome è cambiato → la traduzione automatica del nome è stantia.
+      const { data: mRow } = await sb.from('menus').select('translations').eq('id', menu!.id).single()
+      const mTr = (mRow?.translations ?? {}) as Record<string, any>
+      let trChanged = false
+      for (const lng of Object.keys(mTr)) {
+        const e = mTr[lng]
+        if (e?.name && !e.manual?.name) { delete e.name; trChanged = true }
+      }
+      if (trChanged) await sb.from('menus').update({ translations: mTr }).eq('id', menu!.id)
       return `✅ Menu "${menu!.name}" rinominato in "${it.new_name}".`
     }
 
     case 'duplicate_menu': {
       const { menu, err } = resolveMenu(ctx, it.menu)
       if (err) return err
+      const { data: srcMenu } = await sb
+        .from('menus').select('category_order, translations').eq('id', menu!.id).single()
       const { data: newMenu, error: menuErr } = await sb.from('menus').insert({
         restaurant_id: menu!.restaurant_id,
         name: `${menu!.name} (Copia)`,
         sort_order: menu!.sort_order + 1,
+        category_order: srcMenu?.category_order ?? null,
+        translations: srcMenu?.translations ?? {},
       }).select('id, name').single()
       if (menuErr) return `Errore: ${menuErr.message}`
       const { data: dishes } = await sb
         .from('dishes')
-        .select('name, description, price, category, image_url, allergens, sort_order, pairing_label')
+        .select('name, description, price, category, image_url, allergens, sort_order, pairing_label, translations')
         .eq('menu_id', menu!.id)
       if (dishes?.length) {
         await sb.from('dishes').insert(dishes.map(d => ({
@@ -587,6 +617,22 @@ export async function execute(sb: SupabaseClient, ctx: Ctx, it: Intent): Promise
             .eq('id', m.id)
           if (err2) return `Errore: ${err2.message}`
         }
+        // Le traduzioni delle categorie sono indicizzate per nome italiano:
+        // sposta la chiave sul nuovo nome per non perderle.
+        const { data: mRow } = await sb.from('menus').select('translations').eq('id', m.id).single()
+        const mTr = (mRow?.translations ?? {}) as Record<string, any>
+        let trChanged = false
+        for (const lng of Object.keys(mTr)) {
+          const cats = mTr[lng]?.categories
+          if (cats && canonical in cats) {
+            cats[it.new_name!] = cats[canonical]; delete cats[canonical]; trChanged = true
+          }
+          const man = mTr[lng]?.manual?.categories
+          if (man && canonical in man) {
+            man[it.new_name!] = man[canonical]; delete man[canonical]; trChanged = true
+          }
+        }
+        if (trChanged) await sb.from('menus').update({ translations: mTr }).eq('id', m.id)
         touched++
       }
       if (!touched) return `Categoria "${it.category}" non trovata.`

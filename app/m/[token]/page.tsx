@@ -34,7 +34,7 @@ export default async function PublicMenuPage({
   const [{ data: rawMenus }, { data: banners }, { data: info }] = await Promise.all([
     supabase
       .from('menus')
-      .select('id, name, sort_order, category_order, schedule_enabled, schedule_from, schedule_until')
+      .select('id, name, sort_order, category_order, schedule_enabled, schedule_from, schedule_until, translations')
       .eq('restaurant_id', restaurant.id)
       .eq('is_active', true)
       .order('sort_order', { ascending: true }),
@@ -62,7 +62,7 @@ export default async function PublicMenuPage({
 
       const { data: dishes } = await supabase
         .from('dishes')
-        .select('id, name, description, price, category, image_url, allergens, sort_order, pairing_dish_id, pairing_label')
+        .select('id, name, description, price, category, image_url, allergens, sort_order, pairing_dish_id, pairing_label, translations')
         .eq('menu_id', menu.id)
         .eq('is_active', true)
         .order('sort_order', { ascending: true })
@@ -84,8 +84,9 @@ export default async function PublicMenuPage({
       })
 
       return {
-        id:     menu.id as string,
-        name:   menu.name as string,
+        id:           menu.id as string,
+        name:         menu.name as string,
+        translations: ((menu as any).translations ?? {}) as Record<string, any>,
         dishes: sorted.map(d => ({
           id:              d.id as string,
           name:            d.name as string,
@@ -96,6 +97,7 @@ export default async function PublicMenuPage({
           allergens:       (d.allergens as number[] | null) ?? [],
           pairing_dish_id: d.pairing_dish_id as string | null,
           pairing_label:   d.pairing_label as string | null,
+          translations:    ((d as any).translations ?? {}) as Record<string, any>,
         })),
       }
     })

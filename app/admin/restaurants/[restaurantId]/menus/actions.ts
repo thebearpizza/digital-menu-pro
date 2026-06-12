@@ -2,6 +2,8 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
+import { translateItems, translateEnabled } from '@/lib/translateEngine'
+import { TARGET_LANGS, type MenuTranslations } from '@/lib/translations'
 
 async function verifyOwnership(supabase: any, restaurantId: string) {
   const { data: { user } } = await supabase.auth.getUser()
@@ -14,6 +16,27 @@ async function verifyOwnership(supabase: any, restaurantId: string) {
 
 function revalidate(restaurantId: string) {
   revalidatePath(`/admin/restaurants/${restaurantId}/menus`)
+}
+
+/**
+ * Rigenera la traduzione automatica del nome del menu (override manuali
+ * preservati). Best effort: mai bloccante per il salvataggio.
+ */
+async function autoTranslateMenuName(supabase: any, menuId: string, name: string) {
+  if (!translateEnabled()) return
+  try {
+    const { data: menu } = await supabase
+      .from('menus').select('translations').eq('id', menuId).single()
+    const tr = (menu?.translations ?? {}) as MenuTranslations
+    const res = await translateItems([{ id: 'name', text: name }])
+    let changed = false
+    for (const lang of TARGET_LANGS) {
+      const entry = tr[lang] ?? (tr[lang] = {})
+      const t = res['name']?.[lang]
+      if (t && !entry.manual?.name) { entry.name = t; changed = true }
+    }
+    if (changed) await supabase.from('menus').update({ translations: tr }).eq('id', menuId)
+  } catch (e: any) { console.error('autoTranslateMenuName failed', e?.message) }
 }
 
 export async function createMenu(restaurantId: string, name: string) {
@@ -30,6 +53,7 @@ export async function createMenu(restaurantId: string, name: string) {
     .select('id, name, sort_order, is_active').single()
 
   if (error) throw new Error(error.message)
+  await autoTranslateMenuName(supabase, data.id, name)
   revalidate(restaurantId)
   return data
 }
@@ -41,6 +65,7 @@ export async function updateMenuName(restaurantId: string, menuId: string, name:
   const { error } = await supabase
     .from('menus').update({ name }).eq('id', menuId).eq('restaurant_id', restaurantId)
   if (error) throw new Error(error.message)
+  await autoTranslateMenuName(supabase, menuId, name)
   revalidate(restaurantId)
 }
 
@@ -87,7 +112,7 @@ export async function duplicateMenu(restaurantId: string, menuId: string) {
   await verifyOwnership(supabase, restaurantId)
 
   const { data: source } = await supabase
-    .from('menus').select('name, sort_order, category_order').eq('id', menuId).single()
+    .from('menus').select('name, sort_order, category_order, translations').eq('id', menuId).single()
   if (!source) throw new Error('Menu non trovato')
 
   const { data: newMenu, error: menuErr } = await supabase
@@ -97,6 +122,7 @@ export async function duplicateMenu(restaurantId: string, menuId: string) {
       name: `${source.name} (Copia)`,
       sort_order: source.sort_order + 1,
       category_order: source.category_order,
+      translations: source.translations ?? {},
     })
     .select('id, name, sort_order, is_active').single()
   if (menuErr) throw new Error(menuErr.message)
@@ -104,7 +130,7 @@ export async function duplicateMenu(restaurantId: string, menuId: string) {
   // Duplicate dishes
   const { data: dishes } = await supabase
     .from('dishes')
-    .select('name, description, price, category, image_url, allergens, sort_order, pairing_label, is_active')
+    .select('name, description, price, category, image_url, allergens, sort_order, pairing_label, is_active, translations')
     .eq('menu_id', menuId)
 
   if (dishes?.length) {

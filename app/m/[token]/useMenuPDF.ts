@@ -210,7 +210,7 @@ export function useMenuPDF(
     // Regenerate whenever any PDF-affecting theme field changes, so the admin's
     // typography/layout/price sliders are reflected in the generated document.
   }, [
-    menu?.id, restaurant?.name,
+    menu?.id, menu?.lang, restaurant?.name,
     theme?.menu.accent, theme?.menu.pdfLayout,
     theme?.menu.pageBackground.color, theme?.menu.pageBackground.color2,
     theme?.menu.pageBackground.effect, theme?.menu.pageBackground.effectOpacity,
