@@ -115,7 +115,7 @@ const INTENT_SCHEMA = {
     action: {
       type: 'STRING',
       enum: [
-        'list', 'help', 'clarify',
+        'list', 'help', 'clarify', 'answer',
         'set_price', 'toggle_dish', 'toggle_category', 'toggle_menu', 'toggle_restaurant',
         'create_dish', 'update_dish', 'delete_dish', 'duplicate_dish',
         'create_menu', 'rename_menu', 'duplicate_menu', 'delete_menu',
@@ -175,7 +175,9 @@ REGOLE:
 - create_dish: serve almeno il nome; menu/categoria/prezzo/descrizione se indicati. Se l'account ha un solo menu non serve chiederlo.
 - update_dish: per cambiare nome usa new_name; per prezzo/descrizione/categoria i rispettivi campi.
 - Se il comando è ambiguo o incompleto (es. piatto presente in più menu senza indicazione), usa action="clarify" e in reply fai UNA domanda breve e specifica in italiano.
-- Se l'utente chiede lo stato/elenco ("che menu ho?", "situazione", "lista") → action="list".
+- Se il messaggio è la RISPOSTA a una domanda che il bot ha appena fatto (vedi SCAMBIO PRECEDENTE, se presente), NON chiedere di nuovo: combina la richiesta originale dell'utente con la risposta appena data e restituisci l'intent COMPLETO. Es: bot ha chiesto "in quale menu?" e l'utente risponde "alla carta" → esegui l'azione originale sul menu "Alla Carta".
+- Se l'utente fa una DOMANDA sui dati ("quali piatti sono disattivati?", "quanto costa la carbonara?", "cosa c'è nei dolci?") → action="answer" con la risposta in reply, costruita SOLO dai dati qui sotto, breve e in italiano.
+- Se l'utente chiede lo stato/elenco completo ("che menu ho?", "situazione", "lista") → action="list".
 - Se chiede aiuto o saluta → action="help".
 - Non inventare nomi che non esistono nei dati: se non trovi una corrispondenza plausibile, chiedi con clarify.
 
@@ -185,6 +187,7 @@ ${lines.join('\n')}`
 
 /** Campi indispensabili per azione: se mancano, l'intent è incompleto. */
 const REQUIRED_FIELDS: Record<string, (keyof Intent)[]> = {
+  answer:           ['reply'],
   set_price:        ['dish', 'price'],
   toggle_dish:      ['dish'],
   toggle_category:  ['category'],
@@ -212,23 +215,39 @@ function missingFields(it: Intent): string[] {
   })
 }
 
+/** Ultimo scambio della chat, passato a Gemini per capire le risposte alle
+ *  proprie domande di chiarimento (il bot altrimenti è senza memoria). */
+export interface Exchange { userMsg: string; botReply: string }
+
 /**
  * Chiama Gemini e restituisce l'intent strutturato. Se l'intent arriva senza
  * i campi indispensabili, ritenta una volta segnalando al modello cosa manca.
  */
-export async function interpret(text: string, ctx: Ctx): Promise<Intent> {
-  const intent = await interpretRaw(text, ctx)
+export async function interpret(text: string, ctx: Ctx, prev?: Exchange | null): Promise<Intent> {
+  const intent = await interpretRaw(text, ctx, prev)
   const missing = missingFields(intent)
   if (!missing.length) return intent
 
   const retry = await interpretRaw(
     `${text}\n\n(NOTA DI SISTEMA: nella risposta precedente hai scelto action="${intent.action}" ma senza compilare: ${missing.join(', ')}. Rispondi di nuovo includendo tutti i campi necessari con i nomi esatti presi dai dati; se davvero non riesci a determinarli, usa action="clarify" con una domanda specifica.)`,
-    ctx,
+    ctx, prev,
   )
   return missingFields(retry).length ? intent : retry
 }
 
-async function interpretRaw(text: string, ctx: Ctx): Promise<Intent> {
+/** Antepone lo scambio precedente al messaggio, così Gemini può interpretare
+ *  le risposte alle proprie domande ("in quale menu?" → "alla carta"). */
+function withHistory(text: string, prev?: Exchange | null): string {
+  if (!prev) return text
+  return `SCAMBIO PRECEDENTE (per contesto):
+Utente: «${prev.userMsg}»
+Bot: «${prev.botReply}»
+
+NUOVO MESSAGGIO DELL'UTENTE (se è la risposta alla domanda del bot, combina i due messaggi e restituisci l'intent completo dell'azione originale):
+${text}`
+}
+
+async function interpretRaw(text: string, ctx: Ctx, prev?: Exchange | null): Promise<Intent> {
   const apiKey = process.env.GEMINI_API_KEY!
   const sys = buildSystemPrompt(ctx)
   let lastErr: Error | null = null
@@ -244,7 +263,7 @@ async function interpretRaw(text: string, ctx: Ctx): Promise<Intent> {
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({
             system_instruction: { parts: [{ text: sys }] },
-            contents: [{ role: 'user', parts: [{ text }] }],
+            contents: [{ role: 'user', parts: [{ text: withHistory(text, prev) }] }],
             generationConfig: {
               temperature: 0,
               responseMimeType: 'application/json',
@@ -262,8 +281,10 @@ async function interpretRaw(text: string, ctx: Ctx): Promise<Intent> {
         const intent = JSON.parse(raw) as Intent
         // Rete di sicurezza: se il modello omette active in un toggle,
         // lo deduciamo dalle parole dell'utente (mai default arbitrari).
+        // Se il messaggio è la risposta a una domanda del bot ("in quale
+        // menu?"), il verbo sta nel messaggio precedente.
         if (intent.action?.startsWith('toggle_') && intent.active == null) {
-          intent.active = inferActive(text)
+          intent.active = inferActive(text) ?? (prev ? inferActive(prev.userMsg) : undefined)
         }
         return intent
       }
@@ -340,6 +361,7 @@ export async function execute(sb: SupabaseClient, ctx: Ctx, it: Intent): Promise
     case 'list': return statusText(ctx)
     case 'help': return ''  // il chiamante mostra l'HELP standard
     case 'clarify': return it.reply || 'Puoi ripetere in modo più specifico?'
+    case 'answer': return it.reply || statusText(ctx)
 
     case 'set_price': {
       if (!it.dish || it.price == null) return 'Mi serve il piatto e il nuovo prezzo (es. "Carbonara a 12,50").'
@@ -661,9 +683,36 @@ export function describeIntent(ctx: Ctx, it: Intent): string {
 const YES_RE = /^(s[iì]+|conferma|confermo|ok|okay|procedi|vai|certo)\s*[.!]*$/i
 const NO_RE  = /^(no+|annulla|lascia stare|niente|stop)\s*[.!]*$/i
 
+// Memoria conversazionale: l'ultimo scambio resta rilevante per pochi minuti,
+// poi un nuovo messaggio è quasi certamente una richiesta indipendente.
+const CONTEXT_TTL_MS = 10 * 60 * 1000
+// I lunghi elenchi di stato vengono troncati: a Gemini serve la domanda del
+// bot, non l'intero menu ripetuto nel prompt.
+const CONTEXT_MAX_REPLY = 600
+
+async function loadExchange(sb: SupabaseClient, chatId: number): Promise<Exchange | null> {
+  const { data } = await sb
+    .from('telegram_context').select('user_msg, bot_reply, created_at')
+    .eq('chat_id', chatId).maybeSingle()
+  if (!data || Date.now() - new Date(data.created_at).getTime() > CONTEXT_TTL_MS) return null
+  return { userMsg: data.user_msg, botReply: data.bot_reply }
+}
+
+async function saveExchange(sb: SupabaseClient, chatId: number, userMsg: string, botReply: string) {
+  await sb.from('telegram_context').upsert({
+    chat_id: chatId,
+    user_msg: userMsg.slice(0, CONTEXT_MAX_REPLY),
+    bot_reply: botReply.slice(0, CONTEXT_MAX_REPLY),
+    created_at: new Date().toISOString(),
+  })
+}
+
 /**
  * Interpreta il messaggio con Gemini ed esegue l'azione.
- * Gestisce anche il flusso di conferma per le eliminazioni.
+ * Gestisce anche il flusso di conferma per le eliminazioni e mantiene memoria
+ * dell'ultimo scambio, così le risposte alle domande del bot ("in quale
+ * menu?" → "alla carta") completano la richiesta originale invece di
+ * ripartire da zero.
  * Ritorna '' se l'azione è "help" (il chiamante mostra la guida standard).
  */
 export async function aiHandle(
@@ -677,21 +726,31 @@ export async function aiHandle(
 
   if (pendingFresh && YES_RE.test(text.trim())) {
     const ctx = await loadContext(sb, userId)
-    return execute(sb, ctx, pending!.intent as Intent)
+    const answer = await execute(sb, ctx, pending!.intent as Intent)
+    await saveExchange(sb, chatId, text, answer)
+    return answer
   }
   if (pendingFresh && NO_RE.test(text.trim())) {
+    await saveExchange(sb, chatId, text, 'Ok, annullato 👍')
     return 'Ok, annullato 👍'
   }
 
-  const ctx = await loadContext(sb, userId)
-  const intent = await interpret(text, ctx)
+  const [ctx, prev] = await Promise.all([
+    loadContext(sb, userId),
+    loadExchange(sb, chatId),
+  ])
+  const intent = await interpret(text, ctx, prev)
 
+  let answer: string
   if (CONFIRM_ACTIONS.has(intent.action)) {
     await sb.from('telegram_pending').upsert({
       chat_id: chatId, intent: intent as any, created_at: new Date().toISOString(),
     })
-    return `⚠️ Sto per ${describeIntent(ctx, intent)}.\nConfermi? Rispondi "sì" o "annulla".`
+    answer = `⚠️ Sto per ${describeIntent(ctx, intent)}.\nConfermi? Rispondi "sì" o "annulla".`
+  } else {
+    answer = await execute(sb, ctx, intent)
   }
 
-  return execute(sb, ctx, intent)
+  await saveExchange(sb, chatId, text, answer)
+  return answer
 }
