@@ -16,7 +16,7 @@ import {
 } from '@/lib/translations'
 import {
   ensureMenuTranslations, saveDishTranslation,
-  saveCategoryTranslation, saveMenuNameTranslation,
+  saveCategoryTranslation, saveMenuNameTranslation, saveHintTranslation,
   type TranslationSnapshot,
 } from './translationActions'
 
@@ -179,6 +179,40 @@ export default function TranslationPanel({
           }}
         />
       </div>
+
+      {/* Pop-up "come sfogliare il menu" (globale per ristorante) */}
+      {snap.hint.enabled && (snap.hint.title.trim() || snap.hint.text.trim()) && (
+        <div className="bg-white border border-gray-200 rounded p-4 space-y-3">
+          <p className="text-xs font-medium uppercase tracking-wide text-gray-400">
+            Pop-up istruzioni · vale per tutti i menu
+          </p>
+          {snap.hint.title.trim() && (
+            <TrField
+              original={snap.hint.title}
+              value={snap.hint.translations[lang]?.title ?? ''}
+              manual={!!snap.hint.translations[lang]?.manual?.title}
+              placeholder={`Titolo in ${LANG_LABELS[lang]}`}
+              onSave={async v => {
+                const tr = await saveHintTranslation(restaurantId, lang, { title: v })
+                setSnap(s => s ? { ...s, hint: { ...s.hint, translations: tr } } : s)
+              }}
+            />
+          )}
+          {snap.hint.text.trim() && (
+            <TrField
+              original={snap.hint.text}
+              value={snap.hint.translations[lang]?.text ?? ''}
+              manual={!!snap.hint.translations[lang]?.manual?.text}
+              multiline
+              placeholder={`Testo in ${LANG_LABELS[lang]}`}
+              onSave={async v => {
+                const tr = await saveHintTranslation(restaurantId, lang, { text: v })
+                setSnap(s => s ? { ...s, hint: { ...s.hint, translations: tr } } : s)
+              }}
+            />
+          )}
+        </div>
+      )}
 
       {orderedKeys.map(cat => {
         const dishes = grouped.get(cat)!
