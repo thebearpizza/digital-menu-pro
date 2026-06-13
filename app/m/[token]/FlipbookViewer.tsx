@@ -326,8 +326,14 @@ export default function FlipbookViewer({
 
       // ── Chirurgical hotspot — two-pass, zero vertical bleed ─────────────────
       //
-      // Pass 1: identify dish-name spans by exact text match → build a sorted
-      //   list of (dish, topPx) anchors from PDF.js's style.top values.
+      // Pass 1: identify each dish title by RECONSTRUCTING visual lines.
+      //   I titoli nel PDF hanno letterSpacing, quindi PDF.js può spezzare un
+      //   nome in più span (anche per carattere). Confrontare i singoli span col
+      //   nome completo fallisce. Soluzione: raggruppo gli span per coordinata
+      //   verticale (riga visiva), concateno il testo e confronto col nome del
+      //   piatto. Il confronto ignora gli spazi (lo spacing rompe gli spazi) e,
+      //   in caso di prezzo sulla stessa riga, usa "inizia con" col match più
+      //   lungo (così "Margherita" e "Margherita di bufala" non si confondono).
       //
       // Pass 2: for EVERY span whose style.top falls inside a dish's vertical
       //   range [dishName.top, nextDishName.top), extend it to full page width
@@ -341,28 +347,60 @@ export default function FlipbookViewer({
       type DishAnchor = { dish: DishData; topPx: number }
       const anchors: DishAnchor[] = []
 
+      // Normalizzazione condivisa: niente spazi, maiuscolo (lo spacing del PDF
+      // produce spazi inaffidabili tra i glifi).
+      const squash = (s: string) => s.replace(/\s+/g, '').toUpperCase()
+      const dishNorms = dishesRef.current
+        .map(d => ({ dish: d, n: squash(d.name) }))
+        .filter(x => x.n.length > 0)
+
+      // Raggruppa gli span in righe visive (tolleranza verticale ~3px).
+      type Line = { top: number; spans: HTMLElement[] }
+      const lines: Line[] = []
       for (const div of textDivs) {
-        const text = div.textContent?.trim() ?? ''
-        if (!text) continue
-        const candidates = dishesRef.current.filter(
-          d => d.name.trim().toUpperCase() === text.toUpperCase()
-        )
-        let match: DishData | undefined = candidates[0]
-        if (candidates.length > 1) {
-          // Stesso nome in più categorie: disambigua in base alla categoria
-          // la cui sezione PDF contiene questa pagina (stesso criterio di
-          // activeCatIdx sopra: ultima categoria con targetPage <= pageNum).
-          const cats = categoriesRef.current ?? []
-          let currentCat: string | undefined
-          for (let i = 0; i < cats.length; i++) {
-            if (pageNum >= cats[i].targetPage) currentCat = cats[i].label
+        if (!(div.textContent ?? '').trim()) continue
+        const top = parseFloat(div.style.top) || 0
+        const line = lines.find(l => Math.abs(l.top - top) <= 3)
+        if (line) line.spans.push(div)
+        else lines.push({ top, spans: [div] })
+      }
+
+      const cats = categoriesRef.current ?? []
+      let currentCat: string | undefined
+      for (let i = 0; i < cats.length; i++) {
+        if (pageNum >= cats[i].targetPage) currentCat = cats[i].label
+      }
+
+      for (const line of lines) {
+        line.spans.sort((a, b) => (parseFloat(a.style.left) || 0) - (parseFloat(b.style.left) || 0))
+        const lineText = squash(line.spans.map(s => s.textContent ?? '').join(''))
+        if (!lineText) continue
+
+        // Piatto col nome più lungo che coincide con la riga. "Inizia con" è
+        // ammesso solo se il resto è simile a un prezzo (cifre/valuta): così una
+        // descrizione che inizia col nome del piatto non crea un falso hotspot.
+        let best: DishData | undefined
+        let bestLen = 0
+        let tie = false
+        for (const { dish, n } of dishNorms) {
+          if (n.length < bestLen) continue
+          const rest = lineText.startsWith(n) ? lineText.slice(n.length) : null
+          const isMatch = lineText === n || (rest !== null && /^[€$0-9.,/-]*$/.test(rest))
+          if (isMatch) {
+            if (n.length > bestLen) { best = dish; bestLen = n.length; tie = false }
+            else if (n.length === bestLen && best && dish.id !== best.id) { tie = true }
           }
-          match = candidates.find(d => d.category === currentCat) ?? candidates[0]
         }
-        if (match) {
-          div.dataset.dishId = match.id  // CSS gold-highlight on name span
-          anchors.push({ dish: match, topPx: parseFloat(div.style.top) || 0 })
+        if (!best) continue
+        // Nomi identici su categorie diverse: disambigua con la categoria della pagina.
+        if (tie) {
+          const byCat = dishNorms.find(x => x.n === squash(best!.name) && x.dish.category === currentCat)
+          if (byCat) best = byCat.dish
         }
+
+        const topPx = parseFloat(line.spans[0].style.top) || 0
+        line.spans[0].dataset.dishId = best.id  // CSS gold-highlight
+        anchors.push({ dish: best, topPx })
       }
 
       if (anchors.length > 0) {
