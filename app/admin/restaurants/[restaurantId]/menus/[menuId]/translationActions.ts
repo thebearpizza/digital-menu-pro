@@ -125,19 +125,26 @@ export async function ensureMenuTranslations(
   }
   // Hint: tradotto solo se abilitato e con testo. Si rigenera anche quando il
   // testo IT è cambiato (srcTitle/srcText non combaciano più con il tema).
+  // Tradotto in una chiamata SEPARATA: è globale per ristorante e non deve
+  // dipendere dall'esito del chunk (potenzialmente l'ultimo, e più a rischio)
+  // della traduzione massiva di piatti/categorie di QUESTO menu.
+  const hintItems: { id: string; text: string }[] = []
   if (hintCfg.enabled && hintCfg.title.trim()) {
     if (missingLangs(l => !!hintTr[l]?.title && hintTr[l]?.srcTitle === hintCfg.title)) {
-      items.push({ id: 'hint:title', text: hintCfg.title })
+      hintItems.push({ id: 'hint:title', text: hintCfg.title })
     }
   }
   if (hintCfg.enabled && hintCfg.text.trim()) {
     if (missingLangs(l => !!hintTr[l]?.text && hintTr[l]?.srcText === hintCfg.text)) {
-      items.push({ id: 'hint:text', text: hintCfg.text })
+      hintItems.push({ id: 'hint:text', text: hintCfg.text })
     }
   }
-  if (!items.length) return snapshot()
+  if (!items.length && !hintItems.length) return snapshot()
 
-  const res = await translateItems(items)
+  const [res, hintRes] = await Promise.all([
+    items.length     ? translateItems(items)     : Promise.resolve({} as Awaited<ReturnType<typeof translateItems>>),
+    hintItems.length ? translateItems(hintItems) : Promise.resolve({} as Awaited<ReturnType<typeof translateItems>>),
+  ])
 
   // ── Merge: riempi SOLO i campi mancanti e non manuali ─────────────────────
   let menuChanged = false
@@ -161,9 +168,9 @@ export async function ensureMenuTranslations(
   let hintChanged = false
   for (const lang of TARGET_LANGS) {
     const entry = hintTr[lang] ?? (hintTr[lang] = {})
-    const t = res['hint:title']?.[lang]
+    const t = hintRes['hint:title']?.[lang]
     if (t && !entry.manual?.title) { entry.title = t; entry.srcTitle = hintCfg.title; hintChanged = true }
-    const x = res['hint:text']?.[lang]
+    const x = hintRes['hint:text']?.[lang]
     if (x && !entry.manual?.text) { entry.text = x; entry.srcText = hintCfg.text; hintChanged = true }
   }
   if (hintChanged) {

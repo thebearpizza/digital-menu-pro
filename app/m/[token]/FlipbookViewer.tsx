@@ -347,9 +347,19 @@ export default function FlipbookViewer({
       type DishAnchor = { dish: DishData; topPx: number }
       const anchors: DishAnchor[] = []
 
-      // Normalizzazione condivisa: niente spazi, maiuscolo (lo spacing del PDF
-      // produce spazi inaffidabili tra i glifi).
-      const squash = (s: string) => s.replace(/\s+/g, '').toUpperCase()
+      // Normalizzazione condivisa: niente spazi, maiuscolo, niente accenti.
+      // Lo spacing del PDF produce spazi inaffidabili tra i glifi e, con
+      // alcuni font custom, i caratteri accentati (à, é, ü, ñ...) vengono
+      // estratti da PDF.js come lettera base + segno diacritico separato
+      // (forma NFD) invece che come carattere precomposto (NFC) — o non
+      // vengono affatto mappati correttamente se il font non li contiene.
+      // Normalizzare a NFD e rimuovere i segni diacritici rende il confronto
+      // indipendente sia dalla forma Unicode sia dalla copertura glifi del font.
+      const squash = (s: string) => s
+        .normalize('NFD')
+        .replace(/\p{Diacritic}/gu, '')
+        .replace(/\s+/g, '')
+        .toUpperCase()
       const dishNorms = dishesRef.current
         .map(d => ({ dish: d, n: squash(d.name) }))
         .filter(x => x.n.length > 0)
