@@ -716,7 +716,8 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
           hintForced (tab "Pop-up" dell'admin) lo tiene visibile per la modifica
           anche se disattivato o già chiuso; il × / sfondo chiudono sempre,
           la modifica avviene dalla tab dedicata "Pop-up". ── */}
-      {menuVisible && menuReady && !cardPreviewOpen && (hintForced || (hint.enabled && showHint)) && (
+      {menuVisible && menuReady && !cardPreviewOpen && (hintForced || (hint.enabled && showHint))
+        && (!!hintTitleText.trim() || !!hintBodyText.trim()) && (
         <div
           className="absolute inset-0 flex items-center justify-center px-8"
           style={{ zIndex: 450, background: 'rgba(0,0,0,0.62)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)' }}

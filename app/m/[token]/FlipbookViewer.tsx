@@ -754,24 +754,6 @@ export default function FlipbookViewer({
               </span>
             )}
 
-            {/* ── Numero pagina — centrato tra prec. e succ., SOLO TESTO.
-                 CATEGORICO: pointer-events-none e nessun handler — non deve mai
-                 intercettare un tap, i click devono raggiungere i piatti e gli
-                 angoli di turn.js sottostanti. ── */}
-            {pagesReady && totalPages > 0 && (
-              <span
-                aria-hidden="true"
-                className="pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 z-50 text-[10px] tabular-nums select-none"
-                style={{
-                  color:      theme.navColor,
-                  opacity:    0.6,
-                  fontFamily: theme.fontSans,
-                }}
-              >
-                {currentPage}/{totalPages}
-              </span>
-            )}
-
           </div>
         </div>
 
