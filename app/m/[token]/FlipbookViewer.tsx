@@ -376,17 +376,17 @@ export default function FlipbookViewer({
         const lineText = squash(line.spans.map(s => s.textContent ?? '').join(''))
         if (!lineText) continue
 
-        // Piatto col nome più lungo che coincide con la riga. "Inizia con" è
-        // ammesso solo se il resto è simile a un prezzo (cifre/valuta): così una
-        // descrizione che inizia col nome del piatto non crea un falso hotspot.
+        // Match se la riga INIZIA col nome del piatto. La riga del titolo può
+        // contenere, oltre al nome, il prezzo e — con alcuni font che alterano
+        // l'estrazione del testo — l'inizio della descrizione accorpato: per
+        // questo non pretendiamo che il resto sia un prezzo. Vince il nome più
+        // lungo, così "Margherita" e "Margherita di bufala" restano distinti.
         let best: DishData | undefined
         let bestLen = 0
         let tie = false
         for (const { dish, n } of dishNorms) {
-          if (n.length < bestLen) continue
-          const rest = lineText.startsWith(n) ? lineText.slice(n.length) : null
-          const isMatch = lineText === n || (rest !== null && /^[€$0-9.,/-]*$/.test(rest))
-          if (isMatch) {
+          if (n.length < 4 || n.length < bestLen) continue
+          if (lineText === n || lineText.startsWith(n)) {
             if (n.length > bestLen) { best = dish; bestLen = n.length; tie = false }
             else if (n.length === bestLen && best && dish.id !== best.id) { tie = true }
           }
