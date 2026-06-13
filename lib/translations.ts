@@ -44,6 +44,17 @@ export interface MenuLangEntry {
 }
 export type MenuTranslations = Partial<Record<TargetLang, MenuLangEntry>>
 
+export interface HintLangEntry {
+  title?:    string
+  text?:     string
+  // Testo italiano sorgente della traduzione automatica: se non combacia più
+  // col tema corrente la traduzione è stantia → fallback all'italiano.
+  srcTitle?: string
+  srcText?:  string
+  manual?:   { title?: boolean; text?: boolean }
+}
+export type HintTranslations = Partial<Record<TargetLang, HintLangEntry>>
+
 // ── Lookup con fallback all'italiano ─────────────────────────────────────────
 
 export function dishName(name: string, tr: DishTranslations | null | undefined, lang: Lang): string {
@@ -69,6 +80,23 @@ export function categoryName(
 export function menuName(name: string, tr: MenuTranslations | null | undefined, lang: Lang): string {
   if (lang === 'it') return name
   return tr?.[lang]?.name?.trim() || name
+}
+
+// Pop-up "come sfogliare il menu": testo libero. La traduzione vale solo se è
+// stata generata dal testo italiano ATTUALE (srcTitle/srcText combaciano),
+// altrimenti il ristoratore ha modificato il testo IT senza rigenerare → IT.
+export function hintTitle(itTitle: string, tr: HintTranslations | null | undefined, lang: Lang): string {
+  if (lang === 'it') return itTitle
+  const e = tr?.[lang]
+  if (e?.title?.trim() && (e.manual?.title || e.srcTitle === itTitle)) return e.title
+  return itTitle
+}
+
+export function hintText(itText: string, tr: HintTranslations | null | undefined, lang: Lang): string {
+  if (lang === 'it') return itText
+  const e = tr?.[lang]
+  if (e?.text?.trim() && (e.manual?.text || e.srcText === itText)) return e.text
+  return itText
 }
 
 // ── Stringhe UI del menu pubblico ─────────────────────────────────────────────

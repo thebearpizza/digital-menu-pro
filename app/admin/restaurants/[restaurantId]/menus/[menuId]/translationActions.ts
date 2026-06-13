@@ -11,9 +11,10 @@
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { translateItems, translateEnabled } from '@/lib/translateEngine'
+import { parseTheme } from '@/lib/theme'
 import {
   TARGET_LANGS, type TargetLang,
-  type DishTranslations, type MenuTranslations,
+  type DishTranslations, type MenuTranslations, type HintTranslations,
 } from '@/lib/translations'
 
 async function verifyOwnership(supabase: any, restaurantId: string) {
@@ -39,6 +40,14 @@ export interface TranslationSnapshot {
   categories:       string[]            // nomi italiani, nell'ordine dell'editor
   dishes:           TranslationDish[]
   engineEnabled:    boolean
+  // Pop-up "come sfogliare il menu" (globale per ristorante). enabled false →
+  // il pannello non mostra la sezione. title/text sono i testi italiani sorgente.
+  hint: {
+    enabled:      boolean
+    title:        string
+    text:         string
+    translations: HintTranslations
+  }
 }
 
 /** Categorie nell'ordine dell'editor: prima category_order, poi le altre. */
@@ -63,7 +72,7 @@ export async function ensureMenuTranslations(
   const supabase = await createClient()
   await verifyOwnership(supabase, restaurantId)
 
-  const [{ data: menu }, { data: dishes }] = await Promise.all([
+  const [{ data: menu }, { data: dishes }, { data: rest }] = await Promise.all([
     supabase.from('menus')
       .select('id, name, category_order, translations')
       .eq('id', menuId).eq('restaurant_id', restaurantId).single(),
@@ -72,6 +81,9 @@ export async function ensureMenuTranslations(
       .eq('menu_id', menuId)
       .order('category', { ascending: true })
       .order('sort_order', { ascending: true }),
+    supabase.from('restaurants')
+      .select('theme_config, hint_translations')
+      .eq('id', restaurantId).single(),
   ])
   if (!menu) throw new Error('Menu non trovato')
 
@@ -81,9 +93,18 @@ export async function ensureMenuTranslations(
   }))
   const menuTr   = (menu.translations ?? {}) as MenuTranslations
   const cats     = orderedCategories(dishList, menu.category_order as string[] | null)
+
+  // Pop-up: i testi italiani sorgente vengono dal tema (canonico via parseTheme).
+  const hintCfg  = parseTheme(rest?.theme_config).menu.hintPopup
+  const hintTr   = (rest?.hint_translations ?? {}) as HintTranslations
+
   const snapshot = (): TranslationSnapshot => ({
     menuName: menu.name, menuTranslations: menuTr,
     categories: cats, dishes: dishList, engineEnabled: translateEnabled(),
+    hint: {
+      enabled: hintCfg.enabled, title: hintCfg.title, text: hintCfg.text,
+      translations: hintTr,
+    },
   })
 
   if (!translateEnabled()) return snapshot()
@@ -100,6 +121,18 @@ export async function ensureMenuTranslations(
     if (missingLangs(l => !!d.translations[l]?.name)) items.push({ id: `dish:${d.id}:name`, text: d.name })
     if (d.description && missingLangs(l => !!d.translations[l]?.description)) {
       items.push({ id: `dish:${d.id}:desc`, text: d.description })
+    }
+  }
+  // Hint: tradotto solo se abilitato e con testo. Si rigenera anche quando il
+  // testo IT è cambiato (srcTitle/srcText non combaciano più con il tema).
+  if (hintCfg.enabled && hintCfg.title.trim()) {
+    if (missingLangs(l => !!hintTr[l]?.title && hintTr[l]?.srcTitle === hintCfg.title)) {
+      items.push({ id: 'hint:title', text: hintCfg.title })
+    }
+  }
+  if (hintCfg.enabled && hintCfg.text.trim()) {
+    if (missingLangs(l => !!hintTr[l]?.text && hintTr[l]?.srcText === hintCfg.text)) {
+      items.push({ id: 'hint:text', text: hintCfg.text })
     }
   }
   if (!items.length) return snapshot()
@@ -121,6 +154,20 @@ export async function ensureMenuTranslations(
   }
   if (menuChanged) {
     await supabase.from('menus').update({ translations: menuTr }).eq('id', menuId)
+  }
+
+  // Hint: aggiorna i campi automatici (non manuali); registra srcTitle/srcText
+  // così il fallback sa se la traduzione è ancora aderente al testo IT corrente.
+  let hintChanged = false
+  for (const lang of TARGET_LANGS) {
+    const entry = hintTr[lang] ?? (hintTr[lang] = {})
+    const t = res['hint:title']?.[lang]
+    if (t && !entry.manual?.title) { entry.title = t; entry.srcTitle = hintCfg.title; hintChanged = true }
+    const x = res['hint:text']?.[lang]
+    if (x && !entry.manual?.text) { entry.text = x; entry.srcText = hintCfg.text; hintChanged = true }
+  }
+  if (hintChanged) {
+    await supabase.from('restaurants').update({ hint_translations: hintTr }).eq('id', restaurantId)
   }
 
   const dishUpdates: PromiseLike<any>[] = []
@@ -233,6 +280,63 @@ export async function saveCategoryTranslation(
   const { error } = await supabase.from('menus').update({ translations: tr }).eq('id', menuId)
   if (error) throw new Error(error.message)
   revalidatePath(`/admin/restaurants/${restaurantId}/menus/${menuId}`)
+  return tr
+}
+
+/**
+ * Override manuale di titolo/testo tradotti del pop-up (vuoto = rigenera).
+ * Il pop-up è globale per ristorante: salva su restaurants.hint_translations.
+ * Registra srcTitle/srcText per il controllo di freschezza lato pubblico.
+ */
+export async function saveHintTranslation(
+  restaurantId: string, lang: TargetLang,
+  patch: { title?: string; text?: string },
+): Promise<HintTranslations> {
+  const supabase = await createClient()
+  await verifyOwnership(supabase, restaurantId)
+
+  const { data: rest } = await supabase
+    .from('restaurants').select('theme_config, hint_translations')
+    .eq('id', restaurantId).single()
+  if (!rest) throw new Error('Ristorante non trovato')
+
+  const hintCfg = parseTheme(rest.theme_config).menu.hintPopup
+  const tr = (rest.hint_translations ?? {}) as HintTranslations
+  const entry  = tr[lang] ?? (tr[lang] = {})
+  const manual = entry.manual ?? (entry.manual = {})
+
+  if (patch.title !== undefined) {
+    const v = patch.title.trim()
+    if (v) { entry.title = v; entry.srcTitle = hintCfg.title; manual.title = true }
+    else {
+      delete entry.title; delete manual.title
+      if (translateEnabled() && hintCfg.title.trim()) {
+        try {
+          const res = await translateItems([{ id: 'title', text: hintCfg.title }])
+          const t = res['title']?.[lang]; if (t) { entry.title = t; entry.srcTitle = hintCfg.title }
+        } catch (e: any) { console.error('saveHintTranslation regen title failed', e?.message) }
+      }
+    }
+  }
+  if (patch.text !== undefined) {
+    const v = patch.text.trim()
+    if (v) { entry.text = v; entry.srcText = hintCfg.text; manual.text = true }
+    else {
+      delete entry.text; delete manual.text
+      if (translateEnabled() && hintCfg.text.trim()) {
+        try {
+          const res = await translateItems([{ id: 'text', text: hintCfg.text }])
+          const t = res['text']?.[lang]; if (t) { entry.text = t; entry.srcText = hintCfg.text }
+        } catch (e: any) { console.error('saveHintTranslation regen text failed', e?.message) }
+      }
+    }
+  }
+
+  const { error } = await supabase
+    .from('restaurants').update({ hint_translations: tr }).eq('id', restaurantId)
+  if (error) throw new Error(error.message)
+  // Pop-up globale: rivalida l'intero template della pagina menu.
+  revalidatePath('/admin/restaurants/[restaurantId]/menus/[menuId]', 'page')
   return tr
 }
 
