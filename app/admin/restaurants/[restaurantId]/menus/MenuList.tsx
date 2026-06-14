@@ -17,6 +17,7 @@ import { createMenu, deleteMenu, duplicateMenu, reorderMenus, updateMenuName, to
 import VisibilityToggle from '@/components/ui/VisibilityToggle'
 import { Spinner } from '@/components/ui/Spinner'
 import { scheduleLabel } from '@/lib/menuSchedule'
+import { useStaggerEntrance } from '@/lib/animations'
 
 interface Menu {
   id: string
@@ -273,6 +274,7 @@ export default function MenuList({ restaurantId, initialMenus }: Props) {
   const [creating, setCreating] = useState(false)
   const [error,    setError]    = useState<string | null>(null)
   const [schedMenu, setSchedMenu] = useState<Menu | null>(null)
+  const listRef = useStaggerEntrance<HTMLDivElement>({ duration: 450, staggerMs: 60, translateY: 8 })
 
   const sensors = useSensors(useSensor(PointerSensor))
 
@@ -383,7 +385,7 @@ export default function MenuList({ restaurantId, initialMenus }: Props) {
           </p>
         </div>
       ) : (
-        <div className="bg-white border border-gray-200 overflow-visible">
+        <div ref={listRef} className="bg-white border border-gray-200 overflow-visible">
           <div className="px-4 py-2 bg-gray-50 border-b border-gray-200">
             <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
               Menu ({menus.length}) — trascina per riordinare

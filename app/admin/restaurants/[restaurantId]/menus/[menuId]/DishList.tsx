@@ -27,6 +27,7 @@ import {
   duplicateDish, duplicateCategory, deleteCategory, renameCategory, bulkUpdateDishPrices, findDishTwins, DishTwin,
   toggleDishActive, toggleCategoryActive,
 } from './actions'
+import { useStaggerEntrance } from '@/lib/animations'
 
 interface Dish {
   id: string
@@ -457,6 +458,7 @@ export default function DishList({
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [bulkPrice, setBulkPrice] = useState('')
   const [bulkSaving, setBulkSaving] = useState(false)
+  const categoriesRef = useStaggerEntrance<HTMLDivElement>({ duration: 450, staggerMs: 70, translateY: 8 })
 
   function handleSelectDish(dish: Dish, checked: boolean) {
     setSelectedIds(prev => {
@@ -853,7 +855,7 @@ export default function DishList({
       ) : (
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
           <SortableContext items={categories} strategy={verticalListSortingStrategy}>
-            <div className="space-y-5">
+            <div ref={categoriesRef} className="space-y-5">
               {categories.map(cat => (
                 <SortableCategory
                   key={cat}
