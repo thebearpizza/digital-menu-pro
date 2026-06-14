@@ -158,8 +158,15 @@ function SortableDish({
         aria-label={`Seleziona ${dish.name}`}
       />
 
-      {/* Contenuto — flex-1, mai sacrificato */}
-      <div className="flex-1 min-w-0">
+      {/* Contenuto — flex-1, mai sacrificato; clickable per aprire l'editor */}
+      <div
+        className="flex-1 min-w-0 cursor-pointer hover:opacity-70 transition-opacity"
+        onClick={() => onEdit(dish)}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => e.key === 'Enter' && onEdit(dish)}
+        aria-label={`Modifica ${dish.name}`}
+      >
         <div className="text-sm font-medium text-gray-900 truncate">{dish.name}</div>
         {dish.description && (
           <div className="text-xs text-gray-400 mt-0.5 line-clamp-1">{dish.description}</div>
