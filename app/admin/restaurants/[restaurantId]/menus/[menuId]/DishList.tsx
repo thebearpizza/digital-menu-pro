@@ -756,54 +756,58 @@ export default function DishList({
   return (
     <div>
       <LangBar lang={lang} onChange={setLang} />
-      <div className="mb-5 flex flex-wrap items-center gap-2">
-        <button
-          onClick={() => { setEditingDish(null); setFormOpen(true) }}
-          className="bg-blue-600 text-white text-sm font-medium px-4 py-2 hover:bg-blue-700 transition-colors"
-        >
-          + Aggiungi piatto
-        </button>
-
-        {addingCat ? (
-          <form
-            onSubmit={e => { e.preventDefault(); handleAddCategory() }}
-            className="flex items-center gap-2"
-          >
-            <input
-              autoFocus
-              value={newCatName}
-              onChange={e => setNewCatName(e.target.value)}
-              onBlur={() => { if (!newCatName.trim()) { setAddingCat(false) } }}
-              placeholder="Nome categoria"
-              className="px-3 py-2 border border-blue-400 text-base focus:outline-none w-44"
-            />
-            <button type="submit"
-              className="text-sm text-blue-600 font-medium hover:underline px-2 min-h-[44px]">
-              Aggiungi
-            </button>
-            <button type="button" onClick={() => { setAddingCat(false); setNewCatName('') }}
-              className="text-sm text-gray-400 hover:underline px-2 min-h-[44px]">
-              Annulla
-            </button>
-          </form>
-        ) : (
+      <div className="mb-5">
+        <div className="flex gap-2 mb-2">
           <button
-            onClick={() => setAddingCat(true)}
-            className="border border-gray-300 text-gray-700 text-sm font-medium px-4 py-2 hover:bg-gray-50 transition-colors"
+            onClick={() => { setEditingDish(null); setFormOpen(true) }}
+            className="bg-blue-600 text-white text-sm font-medium px-4 py-2 hover:bg-blue-700 transition-colors"
           >
-            + Aggiungi categoria
+            + Aggiungi piatto
           </button>
-        )}
 
-        <ExcelImportExport
-          restaurantId={restaurantId}
-          menuId={menuId}
-          onImported={created => {
-            const next = [...dishes, ...(created as Dish[])]
-            setDishes(next)
-            syncCategories(next)
-          }}
-        />
+          {addingCat ? (
+            <form
+              onSubmit={e => { e.preventDefault(); handleAddCategory() }}
+              className="flex items-center gap-2"
+            >
+              <input
+                autoFocus
+                value={newCatName}
+                onChange={e => setNewCatName(e.target.value)}
+                onBlur={() => { if (!newCatName.trim()) { setAddingCat(false) } }}
+                placeholder="Nome categoria"
+                className="px-3 py-2 border border-blue-400 text-base focus:outline-none w-44"
+              />
+              <button type="submit"
+                className="text-sm text-blue-600 font-medium hover:underline px-2 min-h-[44px]">
+                Aggiungi
+              </button>
+              <button type="button" onClick={() => { setAddingCat(false); setNewCatName('') }}
+                className="text-sm text-gray-400 hover:underline px-2 min-h-[44px]">
+                Annulla
+              </button>
+            </form>
+          ) : (
+            <button
+              onClick={() => setAddingCat(true)}
+              className="border border-gray-300 text-gray-700 text-sm font-medium px-4 py-2 hover:bg-gray-50 transition-colors"
+            >
+              + Aggiungi categoria
+            </button>
+          )}
+        </div>
+
+        <div className="flex gap-2">
+          <ExcelImportExport
+            restaurantId={restaurantId}
+            menuId={menuId}
+            onImported={created => {
+              const next = [...dishes, ...(created as Dish[])]
+              setDishes(next)
+              syncCategories(next)
+            }}
+          />
+        </div>
       </div>
 
       {(formOpen || editingDish) && (
