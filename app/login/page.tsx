@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import { Spinner } from '@/components/ui/Spinner'
+import { useStaggerEntrance } from '@/lib/animations'
 
 export default function LoginPage() {
   const [email, setEmail]       = useState('')
@@ -12,6 +13,7 @@ export default function LoginPage() {
   const [error, setError]       = useState<string | null>(null)
   const router   = useRouter()
   const supabase = createClient()
+  const cardRef = useStaggerEntrance<HTMLDivElement>({ duration: 600, staggerMs: 90, translateY: 14 })
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault()
@@ -37,7 +39,7 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4">
-      <div className="w-full max-w-sm bg-white border border-gray-200 shadow-sm p-8">
+      <div ref={cardRef} className="w-full max-w-sm bg-white border border-gray-200 shadow-sm p-8">
         <div className="mb-7">
           <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-blue-600 mb-1">
             Digital Menu Pro
