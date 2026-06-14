@@ -130,14 +130,18 @@ function findDishAnchors(
     .map(d => ({ dish: d, n: squashText(d.name) }))
     .filter(x => x.n.length > 0)
 
-  type Line = { top: number; spans: HTMLElement[] }
+  type Line = { top: number; spans: HTMLElement[]; text: string }
   const lines: Line[] = []
   for (const div of textDivs) {
     if (!(div.textContent ?? '').trim()) continue
     const top = parseFloat(div.style.top) || 0
     const line = lines.find(l => Math.abs(l.top - top) <= 3)
     if (line) line.spans.push(div)
-    else lines.push({ top, spans: [div] })
+    else lines.push({ top, spans: [div], text: '' })
+  }
+  for (const line of lines) {
+    line.spans.sort((a, b) => (parseFloat(a.style.left) || 0) - (parseFloat(b.style.left) || 0))
+    line.text = squashText(line.spans.map(s => s.textContent ?? '').join(''))
   }
 
   let currentCat: string | undefined
@@ -146,9 +150,9 @@ function findDishAnchors(
   }
 
   const anchors: DishAnchor[] = []
-  for (const line of lines) {
-    line.spans.sort((a, b) => (parseFloat(a.style.left) || 0) - (parseFloat(b.style.left) || 0))
-    const lineText = squashText(line.spans.map(s => s.textContent ?? '').join(''))
+  for (let li = 0; li < lines.length; li++) {
+    const line = lines[li]
+    const lineText = line.text
     if (!lineText) continue
 
     // Match se la riga INIZIA col nome del piatto. La riga del titolo può
@@ -161,7 +165,27 @@ function findDishAnchors(
     let tie = false
     for (const { dish, n } of dishNorms) {
       if (n.length < 4 || n.length < bestLen) continue
-      if (lineText === n || lineText.startsWith(n)) {
+
+      let matched = lineText === n || lineText.startsWith(n)
+
+      // Nome del piatto andato a capo nel PDF (titoli lunghi nei layout
+      // compatti/a griglia): questa riga è solo l'inizio del nome — troppo
+      // corta per essere il piatto intero — e una o più righe successive
+      // lo completano. Senza questo controllo i piatti con nomi lunghi
+      // restano senza anchor e quindi non cliccabili.
+      if (!matched && lineText.length >= 4 && n.length > lineText.length && n.startsWith(lineText)) {
+        let joined = lineText
+        for (let k = li + 1; k < lines.length && k < li + 4; k++) {
+          const nextText = lines[k].text
+          if (!nextText) break
+          const candidate = joined + nextText
+          if (candidate === n || candidate.startsWith(n)) { joined = candidate; matched = true; break }
+          if (!n.startsWith(candidate)) break  // la riga successiva diverge dal nome: non è un wrap
+          joined = candidate
+        }
+      }
+
+      if (matched) {
         if (n.length > bestLen) { best = dish; bestLen = n.length; tie = false }
         else if (n.length === bestLen && best && dish.id !== best.id) { tie = true }
       }
