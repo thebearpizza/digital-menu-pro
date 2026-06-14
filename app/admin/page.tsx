@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
+import DashboardCounters from './DashboardCounters'
 
 export default async function AdminPage() {
   const supabase = await createClient()
@@ -27,20 +28,7 @@ export default async function AdminPage() {
         <p className="text-sm text-gray-500 mt-1">Panoramica del gestionale</p>
       </div>
 
-      <div className="grid grid-cols-2 gap-4 max-w-sm mb-8">
-        <div className="bg-white border border-gray-200 p-5">
-          <div className="text-[10px] font-semibold uppercase tracking-widest text-gray-400 mb-2">
-            Ristoranti
-          </div>
-          <div className="text-3xl font-semibold text-gray-900">{restaurantIds.length}</div>
-        </div>
-        <div className="bg-white border border-gray-200 p-5">
-          <div className="text-[10px] font-semibold uppercase tracking-widest text-gray-400 mb-2">
-            Piatti attivi
-          </div>
-          <div className="text-3xl font-semibold text-gray-900">{dishCount ?? 0}</div>
-        </div>
-      </div>
+      <DashboardCounters restaurantCount={restaurantIds.length} dishCount={dishCount ?? 0} />
 
       {restaurantIds.length === 0 && (
         <div className="bg-white border border-gray-200 p-8 max-w-md">
