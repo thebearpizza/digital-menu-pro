@@ -125,7 +125,7 @@ export default function ExcelImportExport({ restaurantId, menuId, onImported }: 
       <button
         type="button"
         onClick={downloadTemplate}
-        className="border border-gray-300 text-gray-700 text-sm font-medium px-4 py-2 hover:bg-gray-50 transition-colors"
+        className="w-full bg-blue-600 text-white text-sm font-medium px-4 py-2 hover:bg-blue-700 transition-colors"
       >
         Scarica modulo
       </button>
@@ -133,9 +133,9 @@ export default function ExcelImportExport({ restaurantId, menuId, onImported }: 
         type="button"
         disabled={importing}
         onClick={() => fileRef.current?.click()}
-        className="bg-blue-600 text-white text-sm font-medium px-4 py-2 hover:bg-blue-700 disabled:opacity-50 transition-colors min-w-[120px] flex items-center justify-center"
+        className="w-full border border-gray-300 text-gray-700 text-sm font-medium px-4 py-2 hover:bg-gray-50 disabled:opacity-50 transition-colors flex items-center justify-center"
       >
-        {importing ? <Spinner color="#ffffff" /> : 'Importa modulo'}
+        {importing ? <Spinner color="#374151" /> : 'Importa modulo'}
       </button>
       <input
         ref={fileRef}
