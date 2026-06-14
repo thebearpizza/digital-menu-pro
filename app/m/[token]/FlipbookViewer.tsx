@@ -93,6 +93,190 @@ function computeDims() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// DISH HOTSPOT MATCHING — funzioni pure condivise fra il flipbook (pagina per
+// pagina) e la vista elenco scrollabile (tutte le pagine in sequenza).
+// ═══════════════════════════════════════════════════════════════════════════════
+
+type DishAnchor = { dish: DishData; topPx: number }
+
+// Normalizzazione condivisa: niente spazi, maiuscolo, niente accenti.
+// Lo spacing del PDF produce spazi inaffidabili tra i glifi e, con alcuni
+// font custom, i caratteri accentati (à, é, ü, ñ...) vengono estratti da
+// PDF.js come lettera base + segno diacritico separato (forma NFD) invece
+// che come carattere precomposto (NFC) — o non vengono affatto mappati
+// correttamente se il font non li contiene. Normalizzare a NFD e rimuovere
+// i segni diacritici rende il confronto indipendente sia dalla forma
+// Unicode sia dalla copertura glifi del font.
+const squashText = (s: string) => s
+  .normalize('NFD')
+  .replace(/\p{Diacritic}/gu, '')
+  .replace(/\s+/g, '')
+  .toUpperCase()
+
+/**
+ * Pass 1: identifica i piatti presenti nella pagina ricostruendo le righe
+ * visive (gli span PDF.js sono spezzati per letterSpacing) e confrontandole
+ * coi nomi piatto normalizzati. Vince il nome più lungo che fa match
+ * "inizia con" (così "Margherita" e "Margherita di bufala" non si confondono);
+ * i pareggi vengono disambiguati con la categoria della pagina corrente.
+ */
+function findDishAnchors(
+  textDivs:   HTMLElement[],
+  dishes:     DishData[],
+  categories: Array<{ label: string; targetPage: number }>,
+  pageNum:    number,
+): DishAnchor[] {
+  const dishNorms = dishes
+    .map(d => ({ dish: d, n: squashText(d.name) }))
+    .filter(x => x.n.length > 0)
+
+  type Line = { top: number; spans: HTMLElement[] }
+  const lines: Line[] = []
+  for (const div of textDivs) {
+    if (!(div.textContent ?? '').trim()) continue
+    const top = parseFloat(div.style.top) || 0
+    const line = lines.find(l => Math.abs(l.top - top) <= 3)
+    if (line) line.spans.push(div)
+    else lines.push({ top, spans: [div] })
+  }
+
+  let currentCat: string | undefined
+  for (let i = 0; i < categories.length; i++) {
+    if (pageNum >= categories[i].targetPage) currentCat = categories[i].label
+  }
+
+  const anchors: DishAnchor[] = []
+  for (const line of lines) {
+    line.spans.sort((a, b) => (parseFloat(a.style.left) || 0) - (parseFloat(b.style.left) || 0))
+    const lineText = squashText(line.spans.map(s => s.textContent ?? '').join(''))
+    if (!lineText) continue
+
+    // Match se la riga INIZIA col nome del piatto. La riga del titolo può
+    // contenere, oltre al nome, il prezzo e — con alcuni font che alterano
+    // l'estrazione del testo — l'inizio della descrizione accorpato: per
+    // questo non pretendiamo che il resto sia un prezzo. Vince il nome più
+    // lungo, così "Margherita" e "Margherita di bufala" restano distinti.
+    let best: DishData | undefined
+    let bestLen = 0
+    let tie = false
+    for (const { dish, n } of dishNorms) {
+      if (n.length < 4 || n.length < bestLen) continue
+      if (lineText === n || lineText.startsWith(n)) {
+        if (n.length > bestLen) { best = dish; bestLen = n.length; tie = false }
+        else if (n.length === bestLen && best && dish.id !== best.id) { tie = true }
+      }
+    }
+    if (!best) continue
+    // Nomi identici su categorie diverse: disambigua con la categoria della pagina.
+    if (tie) {
+      const byCat = dishNorms.find(x => x.n === squashText(best!.name) && x.dish.category === currentCat)
+      if (byCat) best = byCat.dish
+    }
+
+    const topPx = parseFloat(line.spans[0].style.top) || 0
+    line.spans[0].dataset.dishId = best.id  // CSS gold-highlight
+    anchors.push({ dish: best, topPx })
+  }
+
+  return anchors
+}
+
+/**
+ * Pass 2: per ogni span nel range verticale [anchor.top, nextAnchor.top) —
+ * l'ultimo piatto fino al footer (10% inferiore della pagina) — estende lo
+ * span a piena larghezza e collega i listener click/touch che aprono la card.
+ * L'altezza non viene mai toccata: nessun "bleed" verticale su righe di altri piatti.
+ */
+function attachDishHotspots(
+  textDivs:       HTMLElement[],
+  anchors:        DishAnchor[],
+  viewportHeight: number,
+  onOpenDish:     (dish: DishData) => void,
+): void {
+  if (anchors.length === 0) return
+  const sorted = [...anchors].sort((a, b) => a.topPx - b.topPx)
+  const footerCutoff = viewportHeight * 0.90  // exclude bottom 10%
+
+  const ranges = sorted.map((anchor, i) => ({
+    dish:   anchor.dish,
+    minTop: anchor.topPx,
+    maxTop: i < sorted.length - 1 ? sorted[i + 1].topPx : footerCutoff,
+  }))
+
+  for (const span of textDivs) {
+    const spanTop = parseFloat(span.style.top) || 0
+    const range   = ranges.find(r => spanTop >= r.minTop && spanTop < r.maxTop)
+    if (!range) continue
+
+    const captured = range.dish
+    span.style.width        = '100%'
+    span.style.transform    = 'none'  // removes PDF.js scaleX; text is transparent
+    span.style.pointerEvents = 'auto'
+    if (!span.dataset.dishId) span.dataset.dishId = captured.id
+
+    // Stop touch/mouse events from ever reaching the turn.js container.
+    // touchstart passive:true keeps scroll intent intact on the span itself.
+    let moved   = false
+    let startX  = 0
+    let startY  = 0
+
+    span.addEventListener('touchstart', (evt) => {
+      evt.stopPropagation()
+      moved = false
+      const t = evt.touches[0]
+      if (t) { startX = t.clientX; startY = t.clientY }
+    }, { passive: true })
+
+    span.addEventListener('touchmove', (evt) => {
+      const t = evt.touches[0]
+      if (t && (Math.abs(t.clientX - startX) > 10 || Math.abs(t.clientY - startY) > 10)) {
+        moved = true
+      }
+    }, { passive: true })
+
+    // Apertura su touchend = singolo tap garantito (niente attesa del
+    // click sintetico, niente "primo tap assorbito dall'hover" su iOS).
+    // preventDefault sopprime il ghost-click successivo → nessun doppio fire.
+    span.addEventListener('touchend', (evt) => {
+      evt.stopPropagation()
+      if (moved) return            // era uno swipe, non un tap
+      evt.preventDefault()
+      onOpenDish(captured)
+    }, { passive: false })
+
+    span.addEventListener('mousedown', (evt) => { evt.stopPropagation() })
+
+    // Desktop / fallback (mouse): nessun touchend → questo gestisce il click.
+    span.addEventListener('click', (evt) => {
+      evt.stopPropagation()
+      evt.preventDefault()
+      onOpenDish(captured)
+    })
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ICONS — toggle vista elenco / sfogliabile
+// ═══════════════════════════════════════════════════════════════════════════════
+function ListIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" style={{ width: 18, height: 18 }}>
+      <rect x="4" y="3" width="16" height="5" rx="1" />
+      <rect x="4" y="10" width="16" height="5" rx="1" />
+      <rect x="4" y="17" width="16" height="4" rx="1" />
+    </svg>
+  )
+}
+function BookIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" style={{ width: 18, height: 18 }}>
+      <path d="M12 5c-1.8-1-4-1.4-6-1.2v13c2-.2 4.2.2 6 1.2 1.8-1 4-1.4 6-1.2V3.8c-2-.2-4.2.2-6 1.2z" />
+      <line x1="12" y1="5" x2="12" y2="18" />
+    </svg>
+  )
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // PROPS
 // ═══════════════════════════════════════════════════════════════════════════════
 interface Props {
@@ -191,6 +375,19 @@ export default function FlipbookViewer({
   const categoriesRef = useRef(categories)
   useEffect(() => { categoriesRef.current = categories }, [categories])
   const [modalStack, setModalStack] = useState<DishData[]>([])
+
+  // ── Vista elenco scrollabile — toggle alternativo al flipbook ───────────────
+  // 'flipbook' = sfogliabile (default, comportamento invariato).
+  // 'list'     = tutte le pagine del PDF impilate, scrollabili verticalmente.
+  const [viewMode, setViewMode] = useState<'flipbook' | 'list'>('flipbook')
+  const [listReady, setListReady] = useState(false)
+  const listContainerRef = useRef<HTMLDivElement>(null)
+  // Popolato dall'effect principale dopo la FASE 1 — riusato dalla vista
+  // elenco per renderizzare le stesse pagine a una scala diversa.
+  const pdfPageObjectsRef = useRef<any[]>([])
+  // Evita di ri-renderizzare l'elenco se pdfUrl/dimensioni non sono cambiati
+  // dall'ultima volta (es. toggle avanti e indietro senza resize).
+  const listRenderKeyRef = useRef<string>('')
 
   // Sincronizza activeCatIdx quando currentPage cambia (sfoglio manuale)
   // o quando le categorie cambiano (cambio menu).
@@ -324,160 +521,13 @@ export default function FlipbookViewer({
       }
       if (cancelled) return
 
-      // ── Chirurgical hotspot — two-pass, zero vertical bleed ─────────────────
-      //
-      // Pass 1: identify each dish title by RECONSTRUCTING visual lines.
-      //   I titoli nel PDF hanno letterSpacing, quindi PDF.js può spezzare un
-      //   nome in più span (anche per carattere). Confrontare i singoli span col
-      //   nome completo fallisce. Soluzione: raggruppo gli span per coordinata
-      //   verticale (riga visiva), concateno il testo e confronto col nome del
-      //   piatto. Il confronto ignora gli spazi (lo spacing rompe gli spazi) e,
-      //   in caso di prezzo sulla stessa riga, usa "inizia con" col match più
-      //   lungo (così "Margherita" e "Margherita di bufala" non si confondono).
-      //
-      // Pass 2: for EVERY span whose style.top falls inside a dish's vertical
-      //   range [dishName.top, nextDishName.top), extend it to full page width
-      //   (width:100%, transform:none) and attach a click handler.
-      //   Height is NEVER changed — it stays at PDF.js's exact font-size,
-      //   so no vertical bleed onto lines of other dishes.
-      //
-      // Footer exclusion: the bottom 10% of the page (restaurant name +
-      //   page number text items) is capped out of the last dish's range.
-
-      type DishAnchor = { dish: DishData; topPx: number }
-      const anchors: DishAnchor[] = []
-
-      // Normalizzazione condivisa: niente spazi, maiuscolo, niente accenti.
-      // Lo spacing del PDF produce spazi inaffidabili tra i glifi e, con
-      // alcuni font custom, i caratteri accentati (à, é, ü, ñ...) vengono
-      // estratti da PDF.js come lettera base + segno diacritico separato
-      // (forma NFD) invece che come carattere precomposto (NFC) — o non
-      // vengono affatto mappati correttamente se il font non li contiene.
-      // Normalizzare a NFD e rimuovere i segni diacritici rende il confronto
-      // indipendente sia dalla forma Unicode sia dalla copertura glifi del font.
-      const squash = (s: string) => s
-        .normalize('NFD')
-        .replace(/\p{Diacritic}/gu, '')
-        .replace(/\s+/g, '')
-        .toUpperCase()
-      const dishNorms = dishesRef.current
-        .map(d => ({ dish: d, n: squash(d.name) }))
-        .filter(x => x.n.length > 0)
-
-      // Raggruppa gli span in righe visive (tolleranza verticale ~3px).
-      type Line = { top: number; spans: HTMLElement[] }
-      const lines: Line[] = []
-      for (const div of textDivs) {
-        if (!(div.textContent ?? '').trim()) continue
-        const top = parseFloat(div.style.top) || 0
-        const line = lines.find(l => Math.abs(l.top - top) <= 3)
-        if (line) line.spans.push(div)
-        else lines.push({ top, spans: [div] })
-      }
-
-      const cats = categoriesRef.current ?? []
-      let currentCat: string | undefined
-      for (let i = 0; i < cats.length; i++) {
-        if (pageNum >= cats[i].targetPage) currentCat = cats[i].label
-      }
-
-      for (const line of lines) {
-        line.spans.sort((a, b) => (parseFloat(a.style.left) || 0) - (parseFloat(b.style.left) || 0))
-        const lineText = squash(line.spans.map(s => s.textContent ?? '').join(''))
-        if (!lineText) continue
-
-        // Match se la riga INIZIA col nome del piatto. La riga del titolo può
-        // contenere, oltre al nome, il prezzo e — con alcuni font che alterano
-        // l'estrazione del testo — l'inizio della descrizione accorpato: per
-        // questo non pretendiamo che il resto sia un prezzo. Vince il nome più
-        // lungo, così "Margherita" e "Margherita di bufala" restano distinti.
-        let best: DishData | undefined
-        let bestLen = 0
-        let tie = false
-        for (const { dish, n } of dishNorms) {
-          if (n.length < 4 || n.length < bestLen) continue
-          if (lineText === n || lineText.startsWith(n)) {
-            if (n.length > bestLen) { best = dish; bestLen = n.length; tie = false }
-            else if (n.length === bestLen && best && dish.id !== best.id) { tie = true }
-          }
-        }
-        if (!best) continue
-        // Nomi identici su categorie diverse: disambigua con la categoria della pagina.
-        if (tie) {
-          const byCat = dishNorms.find(x => x.n === squash(best!.name) && x.dish.category === currentCat)
-          if (byCat) best = byCat.dish
-        }
-
-        const topPx = parseFloat(line.spans[0].style.top) || 0
-        line.spans[0].dataset.dishId = best.id  // CSS gold-highlight
-        anchors.push({ dish: best, topPx })
-      }
-
-      if (anchors.length > 0) {
-        anchors.sort((a, b) => a.topPx - b.topPx)
-
-        const footerCutoff = viewport.height * 0.90  // exclude bottom 10%
-
-        const ranges = anchors.map((anchor, i) => ({
-          dish:   anchor.dish,
-          minTop: anchor.topPx,
-          maxTop: i < anchors.length - 1
-            ? anchors[i + 1].topPx   // exclusive: next dish name starts here
-            : footerCutoff,           // last dish: up to footer safe-zone
-        }))
-
-        // Pass 2: extend every span inside a dish range.
-        for (const span of textDivs) {
-          const spanTop = parseFloat(span.style.top) || 0
-          const range   = ranges.find(r => spanTop >= r.minTop && spanTop < r.maxTop)
-          if (!range) continue
-
-          const captured = range.dish
-          span.style.width        = '100%'
-          span.style.transform    = 'none'  // removes PDF.js scaleX; text is transparent
-          span.style.pointerEvents = 'auto'
-          if (!span.dataset.dishId) span.dataset.dishId = captured.id
-
-          // Stop touch/mouse events from ever reaching the turn.js container.
-          // touchstart passive:true keeps scroll intent intact on the span itself.
-          let moved   = false
-          let startX  = 0
-          let startY  = 0
-
-          span.addEventListener('touchstart', (evt) => {
-            evt.stopPropagation()
-            moved = false
-            const t = evt.touches[0]
-            if (t) { startX = t.clientX; startY = t.clientY }
-          }, { passive: true })
-
-          span.addEventListener('touchmove', (evt) => {
-            const t = evt.touches[0]
-            if (t && (Math.abs(t.clientX - startX) > 10 || Math.abs(t.clientY - startY) > 10)) {
-              moved = true
-            }
-          }, { passive: true })
-
-          // Apertura su touchend = singolo tap garantito (niente attesa del
-          // click sintetico, niente "primo tap assorbito dall'hover" su iOS).
-          // preventDefault sopprime il ghost-click successivo → nessun doppio fire.
-          span.addEventListener('touchend', (evt) => {
-            evt.stopPropagation()
-            if (moved) return            // era uno swipe, non un tap
-            evt.preventDefault()
-            setModalStack([captured])
-          }, { passive: false })
-
-          span.addEventListener('mousedown', (evt) => { evt.stopPropagation() })
-
-          // Desktop / fallback (mouse): nessun touchend → questo gestisce il click.
-          span.addEventListener('click', (evt) => {
-            evt.stopPropagation()
-            evt.preventDefault()
-            setModalStack([captured])
-          })
-        }
-      }
+      // ── Chirurgical hotspot — pass 1 ricostruisce le righe visive e
+      // identifica i piatti; pass 2 estende gli span del range di ciascun
+      // piatto a piena larghezza e collega i listener click/touch. Logica
+      // condivisa con la vista elenco scrollabile (findDishAnchors /
+      // attachDishHotspots, definite a livello di modulo).
+      const anchors = findDishAnchors(textDivs, dishesRef.current, categoriesRef.current, pageNum)
+      attachDishHotspots(textDivs, anchors, viewport.height, (dish) => setModalStack([dish]))
 
       pageDiv.style.position = 'relative'
       pageDiv.style.overflow = 'hidden'
@@ -505,6 +555,9 @@ export default function FlipbookViewer({
           if (cancelled) return
           pdfPageObjects.push(await pdf.getPage(i))
         }
+        // Esposti via ref per la vista elenco scrollabile, che renderizza le
+        // stesse pagine a una scala diversa senza re-iniziare questo effect.
+        pdfPageObjectsRef.current = pdfPageObjects
 
         const naturalVP = pdfPageObjects[0].getViewport({ scale: 1 })
         scale = Math.min(dims.w / naturalVP.width, dims.h / naturalVP.height) * dpr
@@ -660,6 +713,101 @@ export default function FlipbookViewer({
     }
   }, [pdfUrl, dims?.w, dims?.h]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Il libro si sta rigenerando (cambio PDF/dimensioni): la lista, se mostrata,
+  // torna in stato "loading" finché le pagine sono pronte di nuovo.
+  useEffect(() => { if (!pagesReady) setListReady(false) }, [pagesReady])
+
+  // ── Vista elenco scrollabile — render indipendente dal flipbook ─────────────
+  // Riusa gli oggetti pagina già caricati dall'effect principale (pdfPageObjectsRef)
+  // e li disegna su canvas dedicati, impilati verticalmente, con lo stesso text
+  // layer interattivo (findDishAnchors/attachDishHotspots) per i click sui piatti.
+  // Non tocca in alcun modo il DOM/stato del flipbook (bookRef, turn.js).
+  useEffect(() => {
+    if (viewMode !== 'list' || !pagesReady) return
+    const container = listContainerRef.current
+    const pages     = pdfPageObjectsRef.current
+    if (!container || !pages.length) return
+
+    const renderKey = `${pdfUrl}:${dims?.w}:${dims?.h}:${pages.length}`
+    if (listRenderKeyRef.current === renderKey && container.childElementCount > 0) {
+      setListReady(true)
+      return
+    }
+
+    let cancelled = false
+    setListReady(false)
+
+    ;(async () => {
+      const lib = window.pdfjsLib
+      container.innerHTML = ''
+      const dpr      = Math.min(window.devicePixelRatio || 1, 2)
+      const maxWidth = Math.min(container.clientWidth - 24, 720)
+      if (maxWidth <= 0) return
+
+      for (let i = 0; i < pages.length; i++) {
+        if (cancelled) return
+        const pdfPage  = pages[i]
+        const naturalVP = pdfPage.getViewport({ scale: 1 })
+        const scale     = maxWidth / naturalVP.width
+        const renderVp  = pdfPage.getViewport({ scale: scale * dpr })
+
+        const wrapper = document.createElement('div')
+        wrapper.style.cssText =
+          `position:relative;width:${maxWidth}px;height:${Math.round(renderVp.height / dpr)}px;` +
+          `margin:0 auto 16px;background:${pageBgColor};overflow:hidden;` +
+          `box-shadow:0 8px 30px rgba(0,0,0,0.35);`
+
+        const canvas = document.createElement('canvas')
+        canvas.width  = Math.round(renderVp.width)
+        canvas.height = Math.round(renderVp.height)
+        canvas.style.cssText = 'display:block;width:100%;height:100%;'
+        wrapper.appendChild(canvas)
+        container.appendChild(wrapper)
+
+        const ctx = canvas.getContext('2d')!
+        ctx.fillStyle = pageBgColor
+        ctx.fillRect(0, 0, canvas.width, canvas.height)
+        try {
+          await pdfPage.render({ canvasContext: ctx, viewport: renderVp }).promise
+        } catch (err: any) {
+          if (err?.name !== 'RenderingCancelledException') {
+            console.warn('[FlipbookViewer] list render p.' + (i + 1) + ':', err)
+          }
+        }
+        if (cancelled) return
+
+        if (dishesRef.current.length > 0 && lib?.renderTextLayer) {
+          const textViewport = pdfPage.getViewport({ scale })
+          const tc = await pdfPage.getTextContent()
+          const layer = document.createElement('div')
+          layer.className = 'pdf-text-layer'
+          layer.style.cssText = `width:${textViewport.width}px;height:${textViewport.height}px;overflow:hidden;`
+          const textDivs: HTMLElement[] = []
+          try {
+            const task = lib.renderTextLayer({ textContent: tc, container: layer, viewport: textViewport, textDivs })
+            await (task.promise ?? task)
+            if (!cancelled) {
+              const anchors = findDishAnchors(textDivs, dishesRef.current, categoriesRef.current, i + 1)
+              attachDishHotspots(textDivs, anchors, textViewport.height, (dish) => setModalStack([dish]))
+              wrapper.appendChild(layer)
+            }
+          } catch (err: any) {
+            if (err?.name !== 'RenderingCancelledException') {
+              console.warn('[FlipbookViewer] list text layer p.' + (i + 1) + ':', err)
+            }
+          }
+        }
+      }
+
+      if (!cancelled) {
+        listRenderKeyRef.current = renderKey
+        setListReady(true)
+      }
+    })()
+
+    return () => { cancelled = true }
+  }, [viewMode, pagesReady, pdfUrl, dims?.w, dims?.h, pageBgColor])
+
   // ── Callbacks ────────────────────────────────────────────────────────────────
 
 
@@ -686,7 +834,9 @@ export default function FlipbookViewer({
       className="fixed inset-0 h-[100dvh] overflow-hidden select-none outline-none [-webkit-tap-highlight-color:transparent] [&_*]:[-webkit-tap-highlight-color:transparent]"
       style={{
         background:  mn ? mn.background.color : theme.appBg,
-        touchAction: 'none',
+        // 'none' blocca lo scroll/zoom nativo durante lo sfoglio (turn.js gestisce
+        // i gesti); in vista elenco serve invece lo scroll verticale nativo.
+        touchAction: viewMode === 'list' ? 'pan-y' : 'none',
         fontFamily:  theme.fontSans,
         '--theme-accent-rgb': hexToRgb(mn?.accent ?? '#c9a96e'),
       } as React.CSSProperties}
@@ -926,20 +1076,85 @@ export default function FlipbookViewer({
 
       </div>
 
-      {/* ── Selettore lingua — popover sopra la barra categorie ──────────────
-           L'overlay trasparente chiude al tap fuori; touchAction auto perché il
-           root ha touch-action:none. ── */}
+      {/* ── Vista elenco scrollabile — overlay opaco che copre il flipbook ────
+           senza smontarlo: turn.js resta inizializzato sotto, pronto a
+           ricomparire al toggle. La barra categorie sticky non viene mostrata
+           qui; la bandierina lingua ha un suo bottone flottante. ── */}
+      {viewMode === 'list' && (
+        <div
+          className="absolute inset-0 z-[10010]"
+          style={{ background: mn ? mn.background.color : theme.appBg, touchAction: 'pan-y' }}
+        >
+          <div
+            ref={listContainerRef}
+            className="absolute inset-0 overflow-y-auto"
+            style={{ padding: '56px 12px 32px', WebkitOverflowScrolling: 'touch', touchAction: 'pan-y' } as React.CSSProperties}
+          />
+
+          {!listReady && (
+            <div
+              className="absolute inset-0 flex items-center justify-center pointer-events-none"
+              style={{ background: '#0c0c0c' }}
+            >
+              <span className="text-xs" style={{ color: theme.textMuted }}>
+                {uiText('loading', lang)}
+              </span>
+            </div>
+          )}
+
+          {/* Bandierina lingua — in vista elenco non c'è la barra sticky che la
+               ospitava: bottone flottante in alto a sinistra, simmetrico al
+               toggle elenco/sfogliabile. */}
+          {onLangChange && (
+            <button
+              onClick={() => setLangMenuOpen(o => !o)}
+              aria-label={`Lingua: ${LANG_LABELS[lang]}`}
+              className="absolute top-3 left-3 z-10 flex items-center justify-center w-9 h-9 rounded-full shadow-lg text-base leading-none transition-opacity hover:opacity-80"
+              style={{ background: theme.navBgOpaque, border: `1px solid ${theme.navColor}33` }}
+            >
+              {LANG_FLAGS[lang]}
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* ── Toggle flipbook ⇄ elenco — sempre visibile in alto a destra una
+           volta pronto il libro. Diventa il tasto "torna allo sfogliabile"
+           quando la vista elenco è attiva. ── */}
+      {pagesReady && (
+        <button
+          onClick={() => setViewMode(v => v === 'flipbook' ? 'list' : 'flipbook')}
+          aria-label={viewMode === 'flipbook' ? 'Vista elenco scorrevole' : 'Torna allo sfogliabile'}
+          className="absolute top-3 right-3 z-[10020] flex items-center justify-center w-9 h-9 rounded-full shadow-lg transition-opacity hover:opacity-80"
+          style={{
+            background:  theme.navBgOpaque,
+            color:       theme.navColor,
+            border:      `1px solid ${theme.navColor}33`,
+            touchAction: 'auto',
+          }}
+        >
+          {viewMode === 'flipbook' ? <ListIcon /> : <BookIcon />}
+        </button>
+      )}
+
+      {/* ── Selettore lingua — popover sopra la barra categorie (sfogliabile)
+           o sopra la bandierina flottante (elenco). L'overlay trasparente
+           chiude al tap fuori; touchAction auto perché il root, in modalità
+           sfogliabile, ha touch-action:none. ── */}
       {langMenuOpen && onLangChange && (
         <>
           <div
-            className="absolute inset-0 z-[10000]"
-            style={{ touchAction: 'auto' }}
+            className="absolute inset-0"
+            style={{ zIndex: viewMode === 'list' ? 10015 : 10000, touchAction: 'auto' }}
             onClick={() => setLangMenuOpen(false)}
           />
           <div
-            className="absolute right-2 z-[10001] overflow-hidden shadow-2xl"
+            className="absolute overflow-hidden shadow-2xl"
             style={{
-              bottom:     (catNavRef.current?.offsetHeight ?? 44) + 8,
+              zIndex: viewMode === 'list' ? 10016 : 10001,
+              ...(viewMode === 'list'
+                ? { top: 52, left: 12 }
+                : { right: 8, bottom: (catNavRef.current?.offsetHeight ?? 44) + 8 }),
               background: theme.navBgOpaque,
               border:     `1px solid ${theme.navColor}33`,
               borderRadius: 6,
