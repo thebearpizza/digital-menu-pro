@@ -11,8 +11,9 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { Spinner } from '@/components/ui/Spinner'
+import { FlagIcon } from '@/components/ui/FlagIcon'
 import {
-  ALL_LANGS, LANG_FLAGS, LANG_LABELS, type Lang, type TargetLang,
+  ALL_LANGS, LANG_LABELS, type Lang, type TargetLang,
 } from '@/lib/translations'
 import {
   ensureMenuTranslations, saveDishTranslation,
@@ -32,11 +33,11 @@ export function LangBar({ lang, onChange }: { lang: Lang; onChange: (l: Lang) =>
           onClick={() => onChange(l)}
           title={LANG_LABELS[l]}
           aria-label={LANG_LABELS[l]}
-          className={`px-2.5 py-1.5 text-lg leading-none rounded border transition-colors ${
+          className={`flex items-center justify-center px-3 py-2 rounded border transition-colors ${
             l === lang ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:bg-gray-50'
           }`}
         >
-          {LANG_FLAGS[l]}
+          <FlagIcon lang={l} className="w-6 h-4" />
         </button>
       ))}
       {lang !== 'it' && (

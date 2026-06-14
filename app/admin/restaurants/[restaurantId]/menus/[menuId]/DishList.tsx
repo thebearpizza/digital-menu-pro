@@ -159,8 +159,15 @@ function SortableDish({
         aria-label={`Seleziona ${dish.name}`}
       />
 
-      {/* Contenuto — flex-1, mai sacrificato */}
-      <div className="flex-1 min-w-0">
+      {/* Contenuto — flex-1, mai sacrificato; clickable per aprire l'editor */}
+      <div
+        className="flex-1 min-w-0 cursor-pointer hover:opacity-70 transition-opacity"
+        onClick={() => onEdit(dish)}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => e.key === 'Enter' && onEdit(dish)}
+        aria-label={`Modifica ${dish.name}`}
+      >
         <div className="text-sm font-medium text-gray-900 truncate">{dish.name}</div>
         {dish.description && (
           <div className="text-xs text-gray-400 mt-0.5 line-clamp-1">{dish.description}</div>
@@ -751,10 +758,10 @@ export default function DishList({
   return (
     <div>
       <LangBar lang={lang} onChange={setLang} />
-      <div className="mb-5 flex flex-wrap items-center gap-2">
+      <div className="mb-5 grid grid-cols-2 gap-2 max-w-md">
         <button
           onClick={() => { setEditingDish(null); setFormOpen(true) }}
-          className="bg-blue-600 text-white text-sm font-medium px-4 py-2 hover:bg-blue-700 transition-colors"
+          className="w-full bg-blue-600 text-white text-sm font-medium px-4 py-2 hover:bg-blue-700 transition-colors"
         >
           + Aggiungi piatto
         </button>
@@ -762,7 +769,7 @@ export default function DishList({
         {addingCat ? (
           <form
             onSubmit={e => { e.preventDefault(); handleAddCategory() }}
-            className="flex items-center gap-2"
+            className="flex items-center gap-1"
           >
             <input
               autoFocus
@@ -770,21 +777,21 @@ export default function DishList({
               onChange={e => setNewCatName(e.target.value)}
               onBlur={() => { if (!newCatName.trim()) { setAddingCat(false) } }}
               placeholder="Nome categoria"
-              className="px-3 py-2 border border-blue-400 text-base focus:outline-none w-44"
+              className="flex-1 min-w-0 px-3 py-2 border border-blue-400 text-base focus:outline-none"
             />
             <button type="submit"
-              className="text-sm text-blue-600 font-medium hover:underline px-2 min-h-[44px]">
-              Aggiungi
+              className="text-sm text-blue-600 font-medium hover:underline px-1.5 min-h-[44px]">
+              OK
             </button>
             <button type="button" onClick={() => { setAddingCat(false); setNewCatName('') }}
-              className="text-sm text-gray-400 hover:underline px-2 min-h-[44px]">
-              Annulla
+              className="text-sm text-gray-400 hover:underline px-1.5 min-h-[44px]">
+              ✕
             </button>
           </form>
         ) : (
           <button
             onClick={() => setAddingCat(true)}
-            className="border border-gray-300 text-gray-700 text-sm font-medium px-4 py-2 hover:bg-gray-50 transition-colors"
+            className="w-full border border-gray-300 text-gray-700 text-sm font-medium px-4 py-2 hover:bg-gray-50 transition-colors"
           >
             + Aggiungi categoria
           </button>
