@@ -3,15 +3,19 @@
 /**
  * VerticalNotepadMenu — sfoglio verticale realistico (stile Reels).
  *
- * Differenze rispetto a un semplice perno rigido:
- *  • La pagina non ruota come un blocco: durante il volteggio riceve un'ombreggiatura
- *    dinamica (curl + ombra proiettata) che simula la flessione/curvatura della carta.
- *  • Swipe corto e iper-reattivo: una soglia bassa o un flick rapido completano
- *    automaticamente lo sfoglio (su = pagina successiva, giù = precedente).
- *  • Drag pilotato in modo imperativo (transform applicate direttamente al DOM via
- *    ref, niente re-render React per frame) per 60fps stabili su iOS/Android.
+ * Modello di interazione:
+ *  • Nessun drag-follow: appena il dito si sposta di SWIPE_TRIGGER_PX (5px) in
+ *    una direzione, l'intero volteggio parte in automatico (tempo/easing),
+ *    indipendente da ulteriori movimenti del dito.
+ *  • Curvatura "a bande": il foglio attivo è diviso in N_BANDS strisce
+ *    orizzontali, ciascuna con un angolo di arrivo leggermente diverso →
+ *    profilo convesso "a rullo" invece di una rotazione rigida a blocco.
+ *  • Ombre dinamiche (curl/cast/back-shade) via CSS @keyframes a campana,
+ *    sincronizzate con la durata del volteggio.
+ *  • Ai bordi (prima/ultima pagina) un micro "rimbalzo" comunica che non c'è
+ *    altro da sfogliare in quella direzione.
  *
- * Rilegatura in alto (transform-origin: top center); il foglio ruota su rotateX.
+ * Rilegatura in alto (transform-origin: top center per ogni banda).
  * Componente isolato e autonomo: nessuna dipendenza dal flipbook orizzontale.
  */
 
@@ -33,17 +37,35 @@ interface VerticalNotepadMenuProps {
 }
 
 // ── Tuning ──────────────────────────────────────────────────────────────────
-const FLIP_MS         = 460          // durata animazione di completamento/rientro
-const FLIP_EASE       = 'cubic-bezier(.33,.78,.3,1)'
-const SHORT_DIST_PX   = 42           // soglia bassa "short swipe" (Reels-style)
-const FLICK_VEL       = 0.32         // px/ms — un flick rapido completa comunque
-const DRAG_TRAVEL     = 0.55         // frazione di altezza per arrivare a fine corsa
-const EDGE_RUBBER     = 0.07         // resistenza ai bordi (prima/ultima pagina)
-const ONBOARD_MS      = 5000
-const PEEK_PROGRESS   = 0.16
-const PEEK_HOLD_MS    = 720
+const N_BANDS            = 12          // bande orizzontali per la curvatura "a rullo"
+const FLIP_MS            = 460         // durata animazione di volteggio (sync con i keyframes CSS sotto)
+const FLIP_EASE          = 'cubic-bezier(.33,.78,.3,1)'
+const SWIPE_TRIGGER_PX   = 5           // spostamento minimo per innescare il volteggio
+const EDGE_BOUNCE_PROGRESS = 0.06      // ampiezza del micro-rimbalzo ai bordi
+const EDGE_BOUNCE_MS     = 180
+const ONBOARD_MS         = 5000
+const PEEK_PROGRESS      = 0.16
+const PEEK_HOLD_MS       = 720
 
 type Dir = 'up' | 'down'
+
+// Peso per banda: 0 = vicino alla rilegatura, N_BANDS-1 = bordo libero.
+function weight(i: number) {
+  return 0.85 + (i / (N_BANDS - 1)) * 0.30 // 0.85 → 1.15
+}
+// Angolo finale (p=1) per ogni banda durante un volteggio verso l'alto (cur → prev).
+function bandTargetUp(i: number) {
+  return -180 * weight(i)
+}
+// Angolo finale (p=1) per ogni banda durante un volteggio verso il basso (prev → cur).
+function bandTargetDown(i: number) {
+  return -180 + 180 * weight(i)
+}
+// Micro-rimbalzo ai bordi (nessuna pagina nella direzione richiesta).
+function bounceTarget(dir: Dir, i: number) {
+  const mag = 180 * weight(i) * EDGE_BOUNCE_PROGRESS
+  return dir === 'up' ? -mag : mag
+}
 
 export default function VerticalNotepadMenu({
   pages,
@@ -57,11 +79,11 @@ export default function VerticalNotepadMenu({
 
   const rootRef = useRef<HTMLDivElement>(null)
 
-  // Fogli attivi nello stack: precedente (sopra, ribaltato), corrente, successivo (sotto).
-  const curRef  = useRef<HTMLDivElement>(null)
-  const nextRef = useRef<HTMLDivElement>(null)
-  const prevRef = useRef<HTMLDivElement>(null)
-  // Overlay di ombreggiatura — pilotati in modo imperativo durante il drag.
+  // Bande del foglio corrente (volteggio verso l'alto) e precedente (verso il basso).
+  const curBandRefs  = useRef<(HTMLDivElement | null)[]>([])
+  const prevBandRefs = useRef<(HTMLDivElement | null)[]>([])
+
+  // Overlay di ombreggiatura — un solo livello per foglio, sopra lo stack di bande.
   const curCurlRef  = useRef<HTMLDivElement>(null)  // curvatura del foglio corrente (su)
   const curCastRef  = useRef<HTMLDivElement>(null)  // ombra ricevuta dal foglio precedente (giù)
   const curBackRef  = useRef<HTMLDivElement>(null)  // ombra sul retro del corrente
@@ -70,138 +92,136 @@ export default function VerticalNotepadMenu({
   const prevBackRef = useRef<HTMLDivElement>(null)  // ombra sul retro del precedente
 
   // Stato del gesto / animazione — in ref per non innescare render.
-  const busyRef    = useRef(false)
-  const draggingRef= useRef(false)
-  const dirRef     = useRef<Dir | null>(null)
-  const startYRef  = useRef(0)
-  const lastYRef   = useRef(0)
-  const lastTRef   = useRef(0)
-  const velRef     = useRef(0)
-  const heightRef  = useRef(1)
+  const busyRef       = useRef(false)
+  const draggingRef   = useRef(false)
+  const consumedRef   = useRef(false)
+  const startYRef     = useRef(0)
   const interactedRef = useRef(false)
 
   const hasNext = index < total - 1
   const hasPrev = index > 0
 
-  // ── Applica una configurazione visiva (transform + overlay) in modo imperativo.
-  //    p = 0 → foglio a riposo;  p = 1 → sfoglio completato nella direzione `dir`.
-  function setTransition(on: boolean) {
-    const t = on ? `transform ${FLIP_MS}ms ${FLIP_EASE}` : 'none'
-    const o = on ? `opacity ${FLIP_MS}ms ${FLIP_EASE}` : 'none'
-    ;[curRef, nextRef, prevRef].forEach(r => { if (r.current) r.current.style.transition = t })
-    ;[curCurlRef, curCastRef, curBackRef, nextCastRef, prevCurlRef, prevBackRef]
-      .forEach(r => { if (r.current) r.current.style.transition = o })
-  }
-
-  function applyVisual(dir: Dir, p: number) {
-    const bell = Math.sin(Math.min(Math.max(p, 0), 1) * Math.PI) // 0→1→0, picco a metà
-    if (dir === 'up') {
-      // Il foglio corrente si solleva dal bordo inferiore e ribalta sopra la rilegatura.
-      if (curRef.current)  curRef.current.style.transform  = `rotateX(${-180 * p}deg)`
-      if (curCurlRef.current)  curCurlRef.current.style.opacity  = String(bell * 0.5)
-      if (curBackRef.current)  curBackRef.current.style.opacity  = String(clamp((p - 0.5) * 2) * 0.4)
-      if (nextCastRef.current) nextCastRef.current.style.opacity = String(bell * 0.55)
-    } else {
-      // Il foglio precedente ridiscende dall'alto sopra il corrente.
-      if (prevRef.current)  prevRef.current.style.transform  = `rotateX(${-180 + 180 * p}deg)`
-      if (prevCurlRef.current) prevCurlRef.current.style.opacity = String(bell * 0.5)
-      if (prevBackRef.current) prevBackRef.current.style.opacity = String(clamp((0.5 - p) * 2) * 0.4)
-      if (curCastRef.current)  curCastRef.current.style.opacity  = String(bell * 0.55)
-    }
-  }
-
   // ── Reset allo stato di riposo per l'indice corrente (nessun flash al cambio pagina).
   useLayoutEffect(() => {
-    setTransition(false)
-    if (curRef.current)  curRef.current.style.transform  = 'rotateX(0deg)'
-    if (nextRef.current) nextRef.current.style.transform = 'rotateX(0deg)'
-    if (prevRef.current) prevRef.current.style.transform = 'rotateX(-180deg)'
-    ;[curCurlRef, curCastRef, curBackRef, nextCastRef, prevCurlRef, prevBackRef]
-      .forEach(r => { if (r.current) r.current.style.opacity = '0' })
+    curBandRefs.current.forEach(el => {
+      if (!el) return
+      el.style.transition = 'none'
+      el.style.transform  = 'rotateX(0deg)'
+    })
+    prevBandRefs.current.forEach(el => {
+      if (!el) return
+      el.style.transition = 'none'
+      el.style.transform  = 'rotateX(-180deg)'
+    })
+    ;[curCurlRef, curCastRef, curBackRef, nextCastRef, prevCurlRef, prevBackRef].forEach(r => {
+      if (!r.current) return
+      r.current.classList.remove('np-anim-bell-50', 'np-anim-bell-55', 'np-anim-ramp-40')
+      r.current.style.transition = 'none'
+      r.current.style.opacity = '0'
+    })
     busyRef.current = false
-    dirRef.current  = null
   }, [index, total])
 
-  // ── Commit / snap-back ──────────────────────────────────────────────────────
+  // ── Volteggio completo, guidato da CSS transition/keyframes (FLIP_MS). ─────────
   function commit(dir: Dir) {
     busyRef.current = true
-    setTransition(true)
-    applyVisual(dir, 1)
+    const bandRefs = dir === 'up' ? curBandRefs.current : prevBandRefs.current
+    const targetFn = dir === 'up' ? bandTargetUp : bandTargetDown
+    bandRefs.forEach((el, i) => {
+      if (!el) return
+      el.style.transition = `transform ${FLIP_MS}ms ${FLIP_EASE}`
+      el.style.transform  = `rotateX(${targetFn(i)}deg)`
+    })
+
+    const curlRef = dir === 'up' ? curCurlRef  : prevCurlRef
+    const castRef = dir === 'up' ? nextCastRef : curCastRef
+    const backRef = dir === 'up' ? curBackRef  : prevBackRef
+    curlRef.current?.classList.add('np-anim-bell-50')
+    castRef.current?.classList.add('np-anim-bell-55')
+    backRef.current?.classList.add('np-anim-ramp-40')
+
     window.setTimeout(() => {
       const nextIndex = dir === 'up' ? index + 1 : index - 1
       onPageChange?.(nextIndex)
-      setIndex(nextIndex)   // il layout-effect resetta i transform senza transizione
+      setIndex(nextIndex) // il layout-effect resetta le bande senza transizione
     }, FLIP_MS)
   }
 
-  function snapBack(dir: Dir) {
+  // ── Micro-rimbalzo ai bordi: nessuna pagina nella direzione dello swipe. ───────
+  function edgeBounce(dir: Dir) {
     busyRef.current = true
-    setTransition(true)
-    applyVisual(dir, 0)
-    window.setTimeout(() => { busyRef.current = false; setTransition(false); dirRef.current = null }, FLIP_MS)
+    curBandRefs.current.forEach((el, i) => {
+      if (!el) return
+      el.style.transition = `transform ${EDGE_BOUNCE_MS}ms ease-out`
+      el.style.transform  = `rotateX(${bounceTarget(dir, i)}deg)`
+    })
+    window.setTimeout(() => {
+      curBandRefs.current.forEach(el => {
+        if (!el) return
+        el.style.transition = `transform ${EDGE_BOUNCE_MS}ms ease-in`
+        el.style.transform  = 'rotateX(0deg)'
+      })
+      window.setTimeout(() => { busyRef.current = false }, EDGE_BOUNCE_MS)
+    }, EDGE_BOUNCE_MS)
   }
 
-  // ── Gesture (Pointer Events: touch + mouse, così è testabile anche da desktop) ──
+  // ── Gesture (Pointer Events: touch + mouse) ────────────────────────────────────
+  // Appena |dy| >= SWIPE_TRIGGER_PX il gesto è "consumato": parte subito il
+  // volteggio completo (o il rimbalzo) e i movimenti successivi vengono ignorati.
   function onPointerDown(e: React.PointerEvent) {
     if (busyRef.current) return
     interactedRef.current = true
     draggingRef.current = true
-    dirRef.current = null
-    startYRef.current = lastYRef.current = e.clientY
-    lastTRef.current = performance.now()
-    velRef.current = 0
-    heightRef.current = rootRef.current?.clientHeight || window.innerHeight || 1
-    setTransition(false)
+    consumedRef.current = false
+    startYRef.current = e.clientY
     try { (e.target as HTMLElement).setPointerCapture(e.pointerId) } catch { /* noop */ }
   }
 
   function onPointerMove(e: React.PointerEvent) {
-    if (!draggingRef.current) return
-    const y  = e.clientY
-    const dy = startYRef.current - y               // >0 = dito verso l'alto
-    const now = performance.now()
-    const dt  = now - lastTRef.current
-    if (dt > 0) velRef.current = (lastYRef.current - y) / dt   // >0 = verso l'alto
-    lastYRef.current = y
-    lastTRef.current = now
-
-    // Blocca la direzione al primo movimento significativo.
-    if (!dirRef.current) {
-      if (Math.abs(dy) < 5) return
-      dirRef.current = dy > 0 ? 'up' : 'down'
-    }
-    const dir = dirRef.current
+    if (!draggingRef.current || consumedRef.current || busyRef.current) return
+    const dy = startYRef.current - e.clientY // >0 = dito verso l'alto
+    if (Math.abs(dy) < SWIPE_TRIGGER_PX) return
+    consumedRef.current = true
+    const dir: Dir = dy > 0 ? 'up' : 'down'
     const able = dir === 'up' ? hasNext : hasPrev
-    const travel = Math.abs(dy) / (heightRef.current * DRAG_TRAVEL)
-    const p = able ? clamp(travel) : clamp(travel) * EDGE_RUBBER  // resistenza ai bordi
-    applyVisual(dir, p)
+    if (able) commit(dir)
+    else edgeBounce(dir)
   }
 
   function endGesture() {
-    if (!draggingRef.current) return
     draggingRef.current = false
-    const dir = dirRef.current
-    if (!dir) return
-    const able = dir === 'up' ? hasNext : hasPrev
-    const dist = Math.abs(startYRef.current - lastYRef.current)
-    const vel  = velRef.current
-    const flickRight = dir === 'up' ? vel > FLICK_VEL : vel < -FLICK_VEL
-    const go = able && (dist > SHORT_DIST_PX || flickRight)
-    if (go) commit(dir)
-    else    snapBack(dir)
+    consumedRef.current = false
   }
 
   // ── Onboarding nudge: dopo 5s di inattività il foglio "occhieggia" il retro. ──
   useEffect(() => {
     if (interactedRef.current || !hasNext) return
-    let down: ReturnType<typeof setTimeout> | undefined
-    const up = setTimeout(() => {
+    let holdTimer: ReturnType<typeof setTimeout> | undefined
+    const peekTimer = setTimeout(() => {
       if (busyRef.current || draggingRef.current) return
-      setTransition(true)
-      applyVisual('up', PEEK_PROGRESS)
-      down = setTimeout(() => { applyVisual('up', 0); setTimeout(() => setTransition(false), FLIP_MS) }, PEEK_HOLD_MS)
+      busyRef.current = true
+      const bell = Math.sin(PEEK_PROGRESS * Math.PI)
+      curBandRefs.current.forEach((el, i) => {
+        if (!el) return
+        el.style.transition = `transform ${FLIP_MS}ms ${FLIP_EASE}`
+        el.style.transform  = `rotateX(${bandTargetUp(i) * PEEK_PROGRESS}deg)`
+      })
+      if (curCurlRef.current) {
+        curCurlRef.current.style.transition = `opacity ${FLIP_MS}ms ${FLIP_EASE}`
+        curCurlRef.current.style.opacity = String(bell * 0.5)
+      }
+      if (nextCastRef.current) {
+        nextCastRef.current.style.transition = `opacity ${FLIP_MS}ms ${FLIP_EASE}`
+        nextCastRef.current.style.opacity = String(bell * 0.55)
+      }
+      holdTimer = setTimeout(() => {
+        curBandRefs.current.forEach(el => { if (el) el.style.transform = 'rotateX(0deg)' })
+        if (curCurlRef.current)  curCurlRef.current.style.opacity  = '0'
+        if (nextCastRef.current) nextCastRef.current.style.opacity = '0'
+        setTimeout(() => { busyRef.current = false }, FLIP_MS)
+      }, PEEK_HOLD_MS)
     }, ONBOARD_MS)
-    return () => { clearTimeout(up); if (down) clearTimeout(down) }
+    return () => { clearTimeout(peekTimer); if (holdTimer) clearTimeout(holdTimer) }
   }, [index, hasNext]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const back = (pg?: NotepadPage) => pg?.back ?? <div className="np-back-default" />
@@ -219,19 +239,19 @@ export default function VerticalNotepadMenu({
     >
       {/* Successivo — statico sotto, si scopre mentre il corrente si solleva. */}
       {hasNext && (
-        <Sheet zIndex={1} sheetRef={nextRef} bg={pages[index + 1].background ?? pageBackground}
+        <Sheet zIndex={1} banded={false} bg={pages[index + 1].background ?? pageBackground}
                front={pages[index + 1].content} back={back(pages[index + 1])} backBg={pages[index + 1].background ?? pageBackBackground}
                castRef={nextCastRef} />
       )}
 
       {/* Corrente — foglio attivo per lo swipe verso l'alto. */}
-      <Sheet zIndex={2} sheetRef={curRef} bg={pages[index].background ?? pageBackground}
+      <Sheet zIndex={2} banded bandRefsArray={curBandRefs} bg={pages[index].background ?? pageBackground}
              front={pages[index].content} back={back(pages[index])} backBg={pages[index].background ?? pageBackBackground}
              curlRef={curCurlRef} castRef={curCastRef} backShadeRef={curBackRef} />
 
       {/* Precedente — ribaltato sopra la rilegatura, ridiscende sullo swipe verso il basso. */}
       {hasPrev && (
-        <Sheet zIndex={3} sheetRef={prevRef} bg={pages[index - 1].background ?? pageBackground}
+        <Sheet zIndex={3} banded bandRefsArray={prevBandRefs} bg={pages[index - 1].background ?? pageBackground}
                front={pages[index - 1].content} back={back(pages[index - 1])} backBg={pages[index - 1].background ?? pageBackBackground}
                curlRef={prevCurlRef} backShadeRef={prevBackRef} initialAngle={-180} />
       )}
@@ -264,58 +284,83 @@ export default function VerticalNotepadMenu({
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Foglio singolo: fronte + retro, con overlay di curvatura/ombra agganciati via ref.
+// Foglio singolo: se `banded`, suddiviso in N_BANDS strisce orizzontali (ognuna
+// con fronte+retro e proprio rotateX) per simulare la curvatura "a rullo";
+// altrimenti un unico blocco fronte+retro (usato per il foglio statico `next`).
+// Gli overlay di ombra (curl/cast/back-shade) sono livelli unici sopra lo stack.
 // ─────────────────────────────────────────────────────────────────────────────
 function Sheet({
-  zIndex, sheetRef, bg, backBg, front, back, initialAngle = 0,
-  curlRef, castRef, backShadeRef,
+  zIndex, bg, backBg, front, back, initialAngle = 0, banded,
+  bandRefsArray, curlRef, castRef, backShadeRef,
 }: {
   zIndex: number
-  sheetRef: React.RefObject<HTMLDivElement>
   bg: string
   backBg: string
   front: React.ReactNode
   back: React.ReactNode
   initialAngle?: number
+  banded: boolean
+  bandRefsArray?: React.MutableRefObject<(HTMLDivElement | null)[]>
   curlRef?: React.RefObject<HTMLDivElement>
   castRef?: React.RefObject<HTMLDivElement>
   backShadeRef?: React.RefObject<HTMLDivElement>
 }) {
-  return (
-    <div
-      ref={sheetRef}
-      className="np-sheet"
-      style={{
-        position: 'absolute', inset: 0, zIndex,
-        transformOrigin: 'top center',
-        transformStyle: 'preserve-3d',
-        transform: `rotateX(${initialAngle}deg)`,
-        willChange: 'transform',
-      }}
-    >
-      <div className="np-face np-front" style={{ background: bg }}>
-        {front}
-        {/* Curvatura: ombra che attraversa il foglio mentre flette (picco a metà sfoglio). */}
-        {curlRef && <div ref={curlRef} className="np-curl" style={{ opacity: 0 }} />}
-        {/* Ombra ricevuta da un foglio che si solleva sopra questo. */}
-        {castRef && <div ref={castRef} className="np-cast" style={{ opacity: 0 }} />}
-      </div>
+  const bandCount = banded ? N_BANDS : 1
 
-      <div className="np-face np-back" style={{ background: backBg }}>
-        {back}
-        {backShadeRef && <div ref={backShadeRef} className="np-back-shade" style={{ opacity: 0 }} />}
-      </div>
+  return (
+    <div className="np-sheet" style={{ position: 'absolute', inset: 0, zIndex }}>
+      {Array.from({ length: bandCount }).map((_, i) => (
+        <div
+          key={i}
+          ref={el => { if (bandRefsArray) bandRefsArray.current[i] = el }}
+          className="np-band"
+          style={{
+            position: 'absolute', left: 0, right: 0,
+            top: banded ? `${(i / N_BANDS) * 100}%` : 0,
+            height: banded ? `${100 / N_BANDS}%` : '100%',
+            transformOrigin: 'top center',
+            transformStyle: 'preserve-3d',
+            transform: `rotateX(${initialAngle}deg)`,
+            willChange: 'transform',
+          }}
+        >
+          <div className="np-band-face np-band-front" style={{ background: bg }}>
+            <div className="np-band-content" style={{ height: `${bandCount * 100}%`, transform: `translateY(-${i * 100}%)` }}>
+              {front}
+            </div>
+          </div>
+          <div className="np-band-face np-band-back" style={{ background: backBg, transform: 'rotateX(180deg)' }}>
+            <div className="np-band-content" style={{ height: `${bandCount * 100}%`, transform: `translateY(-${i * 100}%)` }}>
+              {back}
+            </div>
+          </div>
+        </div>
+      ))}
+
+      {/* Curvatura: ombra che attraversa il foglio mentre flette (picco a metà sfoglio). */}
+      {curlRef && <div ref={curlRef} className="np-curl" />}
+      {/* Ombra ricevuta da un foglio che si solleva sopra questo. */}
+      {castRef && <div ref={castRef} className="np-cast" />}
+      {/* Ombra sul retro mentre si scopre. */}
+      {backShadeRef && <div ref={backShadeRef} className="np-back-shade" />}
 
       <style jsx>{`
-        .np-face { position: absolute; inset: 0; overflow: hidden; backface-visibility: hidden; -webkit-backface-visibility: hidden; box-shadow: 0 14px 34px rgba(0,0,0,.28); }
-        .np-back { transform: rotateX(180deg); }
+        .np-band-face { position: absolute; inset: 0; overflow: hidden; backface-visibility: hidden; -webkit-backface-visibility: hidden; }
+        .np-band-content { position: absolute; left: 0; right: 0; top: 0; }
         .np-back-default { position: absolute; inset: 0; background: repeating-linear-gradient(0deg, rgba(0,0,0,.03) 0, rgba(0,0,0,.03) 1px, transparent 1px, transparent 28px); }
-        .np-curl { position: absolute; inset: 0; pointer-events: none; background: linear-gradient(to top, rgba(0,0,0,.55) 0%, rgba(0,0,0,0) 42%, rgba(255,255,255,.10) 70%, rgba(0,0,0,0) 100%); }
-        .np-cast { position: absolute; inset: 0; pointer-events: none; background: linear-gradient(to bottom, rgba(0,0,0,.6), rgba(0,0,0,0) 55%); }
-        .np-back-shade { position: absolute; inset: 0; pointer-events: none; background: linear-gradient(to top, rgba(0,0,0,.4), rgba(0,0,0,0) 60%); }
+
+        .np-curl, .np-cast, .np-back-shade { position: absolute; inset: 0; pointer-events: none; opacity: 0; z-index: 5; }
+        .np-curl { background: linear-gradient(to top, rgba(0,0,0,.55) 0%, rgba(0,0,0,0) 42%, rgba(255,255,255,.10) 70%, rgba(0,0,0,0) 100%); }
+        .np-cast { background: linear-gradient(to bottom, rgba(0,0,0,.6), rgba(0,0,0,0) 55%); }
+        .np-back-shade { background: linear-gradient(to top, rgba(0,0,0,.4), rgba(0,0,0,0) 60%); }
+
+        @keyframes np-bell-50 { 0% { opacity: 0; } 50% { opacity: .5; } 100% { opacity: 0; } }
+        @keyframes np-bell-55 { 0% { opacity: 0; } 50% { opacity: .55; } 100% { opacity: 0; } }
+        @keyframes np-ramp-40 { 0%, 50% { opacity: 0; } 100% { opacity: .4; } }
+        .np-anim-bell-50 { animation: np-bell-50 ${FLIP_MS}ms ${FLIP_EASE} forwards; }
+        .np-anim-bell-55 { animation: np-bell-55 ${FLIP_MS}ms ${FLIP_EASE} forwards; }
+        .np-anim-ramp-40 { animation: np-ramp-40 ${FLIP_MS}ms ${FLIP_EASE} forwards; }
       `}</style>
     </div>
   )
 }
-
-function clamp(n: number, min = 0, max = 1) { return Math.min(max, Math.max(min, n)) }
