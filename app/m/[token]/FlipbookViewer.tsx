@@ -99,18 +99,25 @@ function computeDims() {
 
 type DishAnchor = { dish: DishData; topPx: number }
 
-// Normalizzazione condivisa: niente spazi, maiuscolo, niente accenti.
+// Normalizzazione condivisa: tiene SOLO lettere e numeri, in maiuscolo.
 // Lo spacing del PDF produce spazi inaffidabili tra i glifi e, con alcuni
 // font custom, i caratteri accentati (à, é, ü, ñ...) vengono estratti da
 // PDF.js come lettera base + segno diacritico separato (forma NFD) invece
 // che come carattere precomposto (NFC) — o non vengono affatto mappati
-// correttamente se il font non li contiene. Normalizzare a NFD e rimuovere
-// i segni diacritici rende il confronto indipendente sia dalla forma
-// Unicode sia dalla copertura glifi del font.
+// correttamente se il font non li contiene.
+//
+// Normalizzando a NFD e tenendo solo \p{L}\p{N} eliminiamo in un colpo solo:
+//  • i segni diacritici (diventano combining marks \p{M}, scartate);
+//  • gli spazi inaffidabili;
+//  • la punteggiatura che spesso DIFFERISCE fra DB e PDF: apostrofi tipografici
+//    ('  vs  ') in "L'Aragosta", trattini, &, virgole, due punti;
+//  • i caratteri fantasma inseriti dagli export PDF (soft-hyphen U+00AD,
+//    zero-width space/joiner U+200B–200D, BOM U+FEFF), che sono tutti \p{Cf}.
+// Il confronto risulta così indipendente da forma Unicode, copertura glifi
+// del font e formattazione del PDF.
 const squashText = (s: string) => s
   .normalize('NFD')
-  .replace(/\p{Diacritic}/gu, '')
-  .replace(/\s+/g, '')
+  .replace(/[^\p{L}\p{N}]/gu, '')
   .toUpperCase()
 
 /**
@@ -205,6 +212,18 @@ function findDishAnchors(
   return anchors
 }
 
+// Debug visivo OPT-IN: apri il menu con ?hotspotdebug=1 per vedere colorate in
+// rosso le aree realmente cliccabili dei piatti. È un puro strumento diagnostico
+// — spento di default, quindi il menu QR stabile (/m/[token]) non cambia mai —
+// e dice a colpo d'occhio quale dei tre problemi è in gioco:
+//  • nessun rettangolo su un piatto → il nome non fa match (problema di testo);
+//  • rettangoli sfasati/minuscoli  → disallineamento text-layer/canvas (scala);
+//  • rettangoli giusti ma il tap non apre nulla → turn.js intercetta il tocco.
+function hotspotDebugEnabled(): boolean {
+  try { return new URLSearchParams(window.location.search).has('hotspotdebug') }
+  catch { return false }
+}
+
 /**
  * Pass 2: per ogni span nel range verticale [anchor.top, nextAnchor.top) —
  * l'ultimo piatto fino al footer (10% inferiore della pagina) — estende lo
@@ -220,6 +239,7 @@ function attachDishHotspots(
   if (anchors.length === 0) return
   const sorted = [...anchors].sort((a, b) => a.topPx - b.topPx)
   const footerCutoff = viewportHeight * 0.90  // exclude bottom 10%
+  const debug = hotspotDebugEnabled()
 
   const ranges = sorted.map((anchor, i) => ({
     dish:   anchor.dish,
@@ -237,6 +257,12 @@ function attachDishHotspots(
     span.style.transform    = 'none'  // removes PDF.js scaleX; text is transparent
     span.style.pointerEvents = 'auto'
     if (!span.dataset.dishId) span.dataset.dishId = captured.id
+
+    // Visualizzazione diagnostica (?hotspotdebug=1): evidenzia l'area sensibile.
+    if (debug) {
+      span.style.background = 'rgba(255, 0, 0, 0.30)'
+      span.style.outline    = '1px solid rgba(255, 0, 0, 0.9)'
+    }
 
     // Stop touch/mouse events from ever reaching the turn.js container.
     // touchstart passive:true keeps scroll intent intact on the span itself.
