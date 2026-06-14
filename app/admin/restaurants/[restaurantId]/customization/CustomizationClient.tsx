@@ -12,6 +12,7 @@ import {
 import { ALL_GOOGLE_FONTS } from '@/lib/googleFontsCatalog'
 import { removeUniformBackground } from '@/lib/imageBackground'
 import { getRecentFonts, addRecentFont } from '@/lib/recentFonts'
+import { useStaggerEntrance } from '@/lib/animations'
 import { Spinner } from '@/components/ui/Spinner'
 import type {
   RestaurantTheme, LandingTheme, LandingBackground, MenuTheme, CardTheme,
@@ -650,6 +651,10 @@ function EditorSidebar({ target, theme, setters, previewMode, activeMenuId, onCl
   const bgFileRef     = useRef<HTMLInputElement>(null)
   const videoFileRef  = useRef<HTMLInputElement>(null)
   const posterFileRef = useRef<HTMLInputElement>(null)
+  const contentRef = useStaggerEntrance<HTMLDivElement>({
+    duration: 420, staggerMs: 45, translateY: 10,
+    selector: ':scope > div > *',
+  })
 
   function renderControls() {
     switch (target) {
@@ -1543,7 +1548,7 @@ function EditorSidebar({ target, theme, setters, previewMode, activeMenuId, onCl
           &#xD7;
         </button>
       </div>
-      <div className="flex-1 overflow-y-auto px-4 py-4">
+      <div key={target} ref={contentRef} className="flex-1 overflow-y-auto px-4 py-4">
         {renderControls()}
       </div>
     </div>
