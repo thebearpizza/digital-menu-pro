@@ -18,7 +18,7 @@ export type Lang = (typeof ALL_LANGS)[number]
 export type TargetLang = (typeof TARGET_LANGS)[number]
 
 export const LANG_FLAGS: Record<Lang, string> = {
-  it: '🇮🇹', en: '🇬🇧', fr: '🇫🇷', de: '🇩🇪', es: '🇪🇸',
+  it: 'IT', en: 'EN', fr: 'FR', de: 'DE', es: 'ES',
 }
 export const LANG_LABELS: Record<Lang, string> = {
   it: 'Italiano', en: 'English', fr: 'Français', de: 'Deutsch', es: 'Español',
