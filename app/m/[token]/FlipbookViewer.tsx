@@ -6,6 +6,7 @@ import { useIsMobilePreview } from './EditHandle'
 import { fontStack, hexToRgb, toOpaqueColor, PAGINATION_OPTIONS, menuBackgroundCss } from '@/lib/theme'
 import type { RestaurantTheme } from '@/lib/theme'
 import { ALL_LANGS, LANG_FLAGS, LANG_LABELS, uiText, type Lang } from '@/lib/translations'
+import VerticalNotepadMenu, { type NotepadPage } from '@/components/experimental/VerticalNotepadMenu'
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // ⚙️  MENU CONFIG
@@ -388,6 +389,16 @@ export default function FlipbookViewer({
   // Evita di ri-renderizzare l'elenco se pdfUrl/dimensioni non sono cambiati
   // dall'ultima volta (es. toggle avanti e indietro senza resize).
   const listRenderKeyRef = useRef<string>('')
+
+  // ── Modalità sperimentale "blocco notes" verticale ──────────────────────────
+  // Opt-in via query param ?notepad=1, così il menu QR stabile (/m/[token])
+  // resta identico: nessun impatto quando il parametro è assente.
+  const [notepadEnabled, setNotepadEnabled] = useState(false)
+  const [notepadPages,   setNotepadPages]   = useState<NotepadPage[]>([])
+  const [notepadReady,   setNotepadReady]   = useState(false)
+  useEffect(() => {
+    try { setNotepadEnabled(new URLSearchParams(window.location.search).has('notepad')) } catch { /* SSR */ }
+  }, [])
 
   // Sincronizza activeCatIdx quando currentPage cambia (sfoglio manuale)
   // o quando le categorie cambiano (cambio menu).
@@ -808,6 +819,72 @@ export default function FlipbookViewer({
     return () => { cancelled = true }
   }, [viewMode, pagesReady, pdfUrl, dims?.w, dims?.h, pageBgColor])
 
+  // ── Vista "blocco notes" verticale — render indipendente (sperimentale) ─────
+  // Riusa gli oggetti pagina già caricati (pdfPageObjectsRef): disegna ogni
+  // pagina su un canvas a misura schermo, la converte in immagine e la passa a
+  // VerticalNotepadMenu come contenuto di un foglio. Non tocca il flipbook.
+  useEffect(() => {
+    if (!notepadEnabled || !pagesReady) return
+    const pages = pdfPageObjectsRef.current
+    if (!pages.length || !dims) return
+
+    let cancelled = false
+    setNotepadReady(false)
+
+    ;(async () => {
+      const dpr = Math.min(window.devicePixelRatio || 1, 2)
+      const built: NotepadPage[] = []
+
+      for (let i = 0; i < pages.length; i++) {
+        if (cancelled) return
+        const pdfPage   = pages[i]
+        const naturalVP = pdfPage.getViewport({ scale: 1 })
+        // "contain": l'intera pagina entra nello schermo (nessun crop).
+        const fit       = Math.min(dims.w / naturalVP.width, dims.h / naturalVP.height)
+        const renderVp  = pdfPage.getViewport({ scale: fit * dpr })
+
+        const canvas  = document.createElement('canvas')
+        canvas.width  = Math.round(renderVp.width)
+        canvas.height = Math.round(renderVp.height)
+        const ctx = canvas.getContext('2d')!
+        ctx.fillStyle = pageBgColor
+        ctx.fillRect(0, 0, canvas.width, canvas.height)
+        try {
+          await pdfPage.render({ canvasContext: ctx, viewport: renderVp }).promise
+        } catch (err: any) {
+          if (err?.name !== 'RenderingCancelledException') {
+            console.warn('[FlipbookViewer] notepad render p.' + (i + 1) + ':', err)
+          }
+        }
+        if (cancelled) return
+
+        const url = canvas.toDataURL('image/jpeg', 0.92)
+        built.push({
+          id: 'np-' + i,
+          background: pageBgColor,
+          content: (
+            <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={url}
+                alt=""
+                draggable={false}
+                style={{ maxWidth: '100%', maxHeight: '100%', display: 'block', userSelect: 'none', pointerEvents: 'none' }}
+              />
+            </div>
+          ),
+        })
+      }
+
+      if (!cancelled) {
+        setNotepadPages(built)
+        setNotepadReady(true)
+      }
+    })()
+
+    return () => { cancelled = true }
+  }, [notepadEnabled, pagesReady, pdfUrl, dims?.w, dims?.h, pageBgColor]) // eslint-disable-line react-hooks/exhaustive-deps
+
   // ── Callbacks ────────────────────────────────────────────────────────────────
 
 
@@ -1118,10 +1195,53 @@ export default function FlipbookViewer({
         </div>
       )}
 
+      {/* ── Modalità "blocco notes" verticale (sperimentale, ?notepad=1) ──────
+           Overlay opaco sopra il flipbook: le pagine del PDF diventano fogli
+           sfogliabili verticalmente con swipe verso l'alto. Il flipbook resta
+           montato sotto, intatto. ── */}
+      {notepadEnabled && (
+        <div
+          className="absolute inset-0 z-[10030]"
+          style={{ background: mn ? mn.background.color : theme.appBg }}
+        >
+          {notepadReady && notepadPages.length > 0 ? (
+            <VerticalNotepadMenu
+              pages={notepadPages}
+              accent={mn?.accent ?? '#c9a96e'}
+              pageBackground={pageBgColor}
+              pageBackBackground={pageBgColor}
+            />
+          ) : (
+            <div
+              className="absolute inset-0 flex items-center justify-center pointer-events-none"
+              style={{ background: '#0c0c0c' }}
+            >
+              <span className="text-xs" style={{ color: theme.textMuted }}>
+                {uiText('loading', lang)}
+              </span>
+            </div>
+          )}
+
+          {/* Torna alla landing */}
+          <button
+            onClick={onBack}
+            className="absolute top-3 left-3 z-10 px-4 py-2 rounded-full shadow-lg text-[10px] uppercase tracking-[0.22em] transition-opacity hover:opacity-70"
+            style={{
+              color:      theme.navColor,
+              fontFamily: theme.fontSans,
+              background: theme.navBgOpaque,
+              border:     `1px solid ${theme.navColor}33`,
+            }}
+          >
+            {uiText('backToMenu', lang)}
+          </button>
+        </div>
+      )}
+
       {/* ── Toggle flipbook ⇄ elenco — sempre visibile in alto a destra una
            volta pronto il libro. Diventa il tasto "torna allo sfogliabile"
-           quando la vista elenco è attiva. ── */}
-      {pagesReady && (
+           quando la vista elenco è attiva. Nascosto in modalità blocco notes. ── */}
+      {pagesReady && !notepadEnabled && (
         <button
           onClick={() => setViewMode(v => v === 'flipbook' ? 'list' : 'flipbook')}
           aria-label={viewMode === 'flipbook' ? 'Vista elenco scorrevole' : 'Torna allo sfogliabile'}

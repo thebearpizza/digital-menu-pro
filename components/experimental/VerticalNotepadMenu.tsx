@@ -69,12 +69,12 @@ export default function VerticalNotepadMenu({
   // di qualche grado (rivelando retro/ombra/pagina sotto) per poi ricadere.
   useEffect(() => {
     if (interacted || atEnd || animating) return
+    let fall: ReturnType<typeof setTimeout> | undefined
     const timer = setTimeout(() => {
       setPeeking(true)
-      const fall = setTimeout(() => setPeeking(false), PEEK_HOLD_MS)
-      return () => clearTimeout(fall)
+      fall = setTimeout(() => setPeeking(false), PEEK_HOLD_MS)
     }, ONBOARDING_DELAY_MS)
-    return () => clearTimeout(timer)
+    return () => { clearTimeout(timer); if (fall) clearTimeout(fall) }
   }, [interacted, atEnd, animating, index])
 
   // ── Swipe detector ───────────────────────────────────────────────
