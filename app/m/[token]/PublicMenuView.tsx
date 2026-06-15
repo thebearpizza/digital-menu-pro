@@ -21,8 +21,8 @@ import {
 import type { RestaurantTheme } from '@/lib/theme'
 import {
   isLang, uiText, dishName, dishDescription, categoryName,
-  menuName as translatedMenuName, hintTitle, hintText,
-  type Lang, type DishTranslations, type MenuTranslations, type HintTranslations,
+  menuName as translatedMenuName,
+  type Lang, type DishTranslations, type MenuTranslations,
 } from '@/lib/translations'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -46,7 +46,6 @@ export interface Restaurant {
   google_maps_url: string | null
   visibility: Record<string, boolean> | null
   theme: RestaurantTheme
-  hintTranslations?: HintTranslations
 }
 
 interface Props {
@@ -165,18 +164,11 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
 
   // ── Lingua del menu — italiano di default, scelta persistita sul device ────
   const [lang, setLangState] = useState<Lang>('it')
-  // langReady: true dopo il primo controllo di localStorage. Il pop-up
-  // "hint" (sotto) si basa su `lang` per la chiave "già visto"; senza questo
-  // gate, sul primo render `lang` vale ancora 'it' mentre la preferenza
-  // salvata (es. 'en') non è stata ancora applicata, e il pop-up potrebbe
-  // aprirsi per la lingua sbagliata e restare bloccato in primo piano.
-  const [langReady, setLangReady] = useState(false)
   useEffect(() => {
     try {
       const saved = localStorage.getItem('dmp-menu-lang')
       if (isLang(saved)) setLangState(saved)
     } catch {}
-    setLangReady(true)
   }, [])
   function setLang(l: Lang) {
     setLangState(l)
@@ -311,33 +303,24 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
   // appare una sola volta per dispositivo (localStorage); nell'anteprima admin
   // non persiste mai, così resta visibile/editabile in edit mode.
   const hint = m.hintPopup
-  // Testi del pop-up tradotti nella lingua scelta (fallback IT).
-  const hintTitleText = hintTitle(hint.title, restaurant.hintTranslations, lang)
-  const hintBodyText  = hintText(hint.text,  restaurant.hintTranslations, lang)
   const [showHint, setShowHint] = useState(false)
-  // Chiave "già visto" per-lingua: cambiando lingua il pop-up riappare una
-  // volta nella nuova lingua (la traduzione è un'informazione nuova per l'utente).
-  const hintKey = (l: Lang) => `dmp-menu-hint-seen:${window.location.pathname}:${l}`
+  const hintKey = () => `dmp-menu-hint-seen:${window.location.pathname}`
   useEffect(() => {
     // Nell'anteprima admin il pop-up non appare mai da solo: ogni modifica al
     // tema rigenera il PDF (menuReady false→true) e rifarebbe sbucare il
     // pop-up a ogni ritocco. Lì si vede solo dalla tab "Pop-up" (hintForced).
     if (isPreviewRef.current) return
-    // Aspetta che `lang` rifletta la preferenza salvata (vedi langReady sopra):
-    // altrimenti questo effetto può girare una prima volta con 'it' e
-    // mostrare il pop-up, poi `lang` si corregge a 'en' ma l'overlay
-    // resterebbe visibile (nessun setShowHint(false) sul percorso "già visto").
-    if (!langReady || !menuReady || !hint.enabled) return
+    if (!menuReady || !hint.enabled) return
     if (hint.showOnce) {
-      try { if (localStorage.getItem(hintKey(lang))) return } catch {}
+      try { if (localStorage.getItem(hintKey())) return } catch {}
     }
     setShowHint(true)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [langReady, menuReady, hint.enabled, lang])
+  }, [menuReady, hint.enabled])
   function dismissHint() {
     setShowHint(false)
     if (!isPreviewRef.current && hint.showOnce) {
-      try { localStorage.setItem(hintKey(lang), '1') } catch {}
+      try { localStorage.setItem(hintKey(), '1') } catch {}
     }
   }
 
@@ -727,8 +710,7 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
           hintForced (tab "Pop-up" dell'admin) lo tiene visibile per la modifica
           anche se disattivato o già chiuso; il × / sfondo chiudono sempre,
           la modifica avviene dalla tab dedicata "Pop-up". ── */}
-      {menuVisible && menuReady && !cardPreviewOpen && (hintForced || (hint.enabled && showHint))
-        && (!!hintTitleText.trim() || !!hintBodyText.trim()) && (
+      {menuVisible && menuReady && !cardPreviewOpen && (hintForced || (hint.enabled && showHint)) && (
         <div
           className="absolute inset-0 flex items-center justify-center px-8"
           style={{ zIndex: 450, background: 'rgba(0,0,0,0.62)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)' }}
@@ -754,13 +736,13 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
             >
               ×
             </button>
-            {hintTitleText && (
+            {hint.title && (
               <p style={{ color: hint.titleColor, fontSize: `${hint.titleSize}rem`, letterSpacing: '0.06em', fontWeight: 600, marginBottom: 12 }}>
-                {hintTitleText}
+                {hint.title}
               </p>
             )}
             <p style={{ color: hint.textColor, fontSize: `${hint.textSize}rem`, lineHeight: 1.75, whiteSpace: 'pre-wrap' }}>
-              {hintBodyText}
+              {hint.text}
             </p>
           </div>
         </div>

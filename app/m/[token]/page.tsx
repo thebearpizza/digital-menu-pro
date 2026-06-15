@@ -24,7 +24,7 @@ export default async function PublicMenuPage({
 
   const { data: restaurant } = await supabase
     .from('restaurants')
-    .select('id, name, description, logo_url, instagram_url, facebook_url, website_url, tripadvisor_url, google_maps_url, visibility, theme_config, hint_translations')
+    .select('id, name, description, logo_url, instagram_url, facebook_url, website_url, tripadvisor_url, google_maps_url, visibility, theme_config')
     .eq('qr_public_token', params.token)
     .eq('is_active', true)
     .single()
@@ -133,7 +133,6 @@ export default async function PublicMenuPage({
           google_maps_url:  restaurant.google_maps_url as string | null,
           visibility:       (restaurant.visibility ?? null) as Record<string, boolean> | null,
           theme,
-          hintTranslations: ((restaurant as any).hint_translations ?? {}) as Record<string, any>,
         }}
         menus={menus}
         banners={(banners ?? []) as any[]}
