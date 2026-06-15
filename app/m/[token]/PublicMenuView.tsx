@@ -165,11 +165,18 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
 
   // ── Lingua del menu — italiano di default, scelta persistita sul device ────
   const [lang, setLangState] = useState<Lang>('it')
+  // langReady: true dopo il primo controllo di localStorage. Il pop-up
+  // "hint" (sotto) si basa su `lang` per la chiave "già visto"; senza questo
+  // gate, sul primo render `lang` vale ancora 'it' mentre la preferenza
+  // salvata (es. 'en') non è stata ancora applicata, e il pop-up potrebbe
+  // aprirsi per la lingua sbagliata e restare bloccato in primo piano.
+  const [langReady, setLangReady] = useState(false)
   useEffect(() => {
     try {
       const saved = localStorage.getItem('dmp-menu-lang')
       if (isLang(saved)) setLangState(saved)
     } catch {}
+    setLangReady(true)
   }, [])
   function setLang(l: Lang) {
     setLangState(l)
@@ -316,13 +323,17 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
     // tema rigenera il PDF (menuReady false→true) e rifarebbe sbucare il
     // pop-up a ogni ritocco. Lì si vede solo dalla tab "Pop-up" (hintForced).
     if (isPreviewRef.current) return
-    if (!menuReady || !hint.enabled) return
+    // Aspetta che `lang` rifletta la preferenza salvata (vedi langReady sopra):
+    // altrimenti questo effetto può girare una prima volta con 'it' e
+    // mostrare il pop-up, poi `lang` si corregge a 'en' ma l'overlay
+    // resterebbe visibile (nessun setShowHint(false) sul percorso "già visto").
+    if (!langReady || !menuReady || !hint.enabled) return
     if (hint.showOnce) {
       try { if (localStorage.getItem(hintKey(lang))) return } catch {}
     }
     setShowHint(true)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [menuReady, hint.enabled, lang])
+  }, [langReady, menuReady, hint.enabled, lang])
   function dismissHint() {
     setShowHint(false)
     if (!isPreviewRef.current && hint.showOnce) {
