@@ -21,8 +21,8 @@ import {
 import type { RestaurantTheme } from '@/lib/theme'
 import {
   isLang, uiText, dishName, dishDescription, categoryName,
-  menuName as translatedMenuName, hintTitle, hintText,
-  type Lang, type DishTranslations, type MenuTranslations, type HintTranslations,
+  menuName as translatedMenuName,
+  type Lang, type DishTranslations, type MenuTranslations,
 } from '@/lib/translations'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -46,7 +46,6 @@ export interface Restaurant {
   google_maps_url: string | null
   visibility: Record<string, boolean> | null
   theme: RestaurantTheme
-  hintTranslations?: HintTranslations
 }
 
 interface Props {
@@ -304,13 +303,8 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
   // appare una sola volta per dispositivo (localStorage); nell'anteprima admin
   // non persiste mai, così resta visibile/editabile in edit mode.
   const hint = m.hintPopup
-  // Testi del pop-up tradotti nella lingua scelta (fallback IT).
-  const hintTitleText = hintTitle(hint.title, restaurant.hintTranslations, lang)
-  const hintBodyText  = hintText(hint.text,  restaurant.hintTranslations, lang)
   const [showHint, setShowHint] = useState(false)
-  // Chiave "già visto" per-lingua: cambiando lingua il pop-up riappare una
-  // volta nella nuova lingua (la traduzione è un'informazione nuova per l'utente).
-  const hintKey = (l: Lang) => `dmp-menu-hint-seen:${window.location.pathname}:${l}`
+  const hintKey = () => `dmp-menu-hint-seen:${window.location.pathname}`
   useEffect(() => {
     // Nell'anteprima admin il pop-up non appare mai da solo: ogni modifica al
     // tema rigenera il PDF (menuReady false→true) e rifarebbe sbucare il
@@ -318,15 +312,15 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
     if (isPreviewRef.current) return
     if (!menuReady || !hint.enabled) return
     if (hint.showOnce) {
-      try { if (localStorage.getItem(hintKey(lang))) return } catch {}
+      try { if (localStorage.getItem(hintKey())) return } catch {}
     }
     setShowHint(true)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [menuReady, hint.enabled, lang])
+  }, [menuReady, hint.enabled])
   function dismissHint() {
     setShowHint(false)
     if (!isPreviewRef.current && hint.showOnce) {
-      try { localStorage.setItem(hintKey(lang), '1') } catch {}
+      try { localStorage.setItem(hintKey(), '1') } catch {}
     }
   }
 
@@ -716,8 +710,7 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
           hintForced (tab "Pop-up" dell'admin) lo tiene visibile per la modifica
           anche se disattivato o già chiuso; il × / sfondo chiudono sempre,
           la modifica avviene dalla tab dedicata "Pop-up". ── */}
-      {menuVisible && menuReady && !cardPreviewOpen && (hintForced || (hint.enabled && showHint))
-        && (!!hintTitleText.trim() || !!hintBodyText.trim()) && (
+      {menuVisible && menuReady && !cardPreviewOpen && (hintForced || (hint.enabled && showHint)) && (
         <div
           className="absolute inset-0 flex items-center justify-center px-8"
           style={{ zIndex: 450, background: 'rgba(0,0,0,0.62)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)' }}
@@ -743,13 +736,13 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
             >
               ×
             </button>
-            {hintTitleText && (
+            {hint.title && (
               <p style={{ color: hint.titleColor, fontSize: `${hint.titleSize}rem`, letterSpacing: '0.06em', fontWeight: 600, marginBottom: 12 }}>
-                {hintTitleText}
+                {hint.title}
               </p>
             )}
             <p style={{ color: hint.textColor, fontSize: `${hint.textSize}rem`, lineHeight: 1.75, whiteSpace: 'pre-wrap' }}>
-              {hintBodyText}
+              {hint.text}
             </p>
           </div>
         </div>
