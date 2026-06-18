@@ -1772,16 +1772,19 @@ function PresetCard({ preset, active, onApply }: {
   )
 }
 
-function BasePanel({ theme, customFonts, onUploadFont, fontUploading, onApplyPreset, onFont, onSurface, onText, onAccent }: {
+function BasePanel({ theme, customFonts, onUploadFont, fontUploading, onApplyPreset, onFont, onSurface, onText, onAccent, popupEnabled, onPopupToggle, onPreviewPopup }: {
   theme: RestaurantTheme
   customFonts: Record<string, string>
   onUploadFont: (file: File) => Promise<string | null>
   fontUploading: boolean
   onApplyPreset: (p: ThemePreset) => void
-  onFont:    (font: string) => void
-  onSurface: (color: string) => void
-  onText:    (color: string) => void
-  onAccent:  (color: string) => void
+  onFont:         (font: string) => void
+  onSurface:      (color: string) => void
+  onText:         (color: string) => void
+  onAccent:       (color: string) => void
+  popupEnabled:   boolean
+  onPopupToggle:  (v: boolean) => void
+  onPreviewPopup: () => void
 }) {
   const curFont   = theme.menu.dishes.titleFont
   const curBg     = theme.menu.pageBackground.color
@@ -1832,6 +1835,27 @@ function BasePanel({ theme, customFonts, onUploadFont, fontUploading, onApplyPre
           <ColorRow label="Accento" value={curAccent} onChange={onAccent} />
           <p className="text-[11px] text-gray-400 leading-snug">
             Lo sfondo copre landing, foglio del menu e card; l’accento colora prezzi, decori e bordi.
+          </p>
+        </div>
+
+        {/* Pop-up di benvenuto */}
+        <div>
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-2">Pop-up di benvenuto</p>
+          <div className="flex items-center justify-between gap-2">
+            <label className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer select-none">
+              <Toggle checked={popupEnabled} onChange={onPopupToggle} />
+              Mostra istruzioni all&apos;apertura
+            </label>
+            <button
+              type="button"
+              onClick={onPreviewPopup}
+              className="shrink-0 text-[11px] text-gray-500 underline hover:text-gray-800"
+            >
+              Anteprima
+            </button>
+          </div>
+          <p className="text-[11px] text-gray-400 mt-1.5 leading-snug">
+            Pop-up con istruzioni su come sfogliare il menu. Per modificare testo e colori passa alla modalità avanzata.
           </p>
         </div>
       </div>
@@ -2145,7 +2169,20 @@ export default function CustomizationClient({
   // tutto il tema, override per-menu inclusi (vedi lib/themePresets.ts).
   function applyPreset(p: ThemePreset) {
     setSaved(false)
-    setTheme(t => ({ ...structuredClone(p.theme), customFonts: structuredClone(t.customFonts) }))
+    setTheme(t => {
+      const next = { ...structuredClone(p.theme), customFonts: structuredClone(t.customFonts) }
+      // Preserve the user's popup content and on/off state: the preset provides
+      // visual styling (colors, font, radius) but must not overwrite what the
+      // owner wrote in the title/text fields or toggled on/off.
+      next.menu.hintPopup = {
+        ...next.menu.hintPopup,
+        enabled:  t.menu.hintPopup.enabled,
+        showOnce: t.menu.hintPopup.showOnce,
+        title:    t.menu.hintPopup.title,
+        text:     t.menu.hintPopup.text,
+      }
+      return next
+    })
   }
   function baseFont(font: string)     { setSaved(false); setTheme(t => applyBaseFont(t, font)) }
   function baseAccent(color: string)  { setSaved(false); setTheme(t => applyBaseAccent(t, color)) }
@@ -2321,6 +2358,9 @@ export default function CustomizationClient({
               onUploadFont={handleFontUpload} fontUploading={fontUploading}
               onApplyPreset={applyPreset}
               onFont={baseFont} onSurface={baseSurface} onText={baseText} onAccent={baseAccent}
+              popupEnabled={theme.menu.hintPopup.enabled}
+              onPopupToggle={v => setMHint({ enabled: v })}
+              onPreviewPopup={() => setPreviewMode('hint')}
             />
           </aside>
         </div>

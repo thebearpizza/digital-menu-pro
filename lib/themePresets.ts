@@ -77,13 +77,18 @@ export function applyBaseSurface(theme: RestaurantTheme, around: string, page = 
   const t = structuredClone(theme)
   t.landing.background.type  = 'color'
   t.landing.background.value = around
+  // Popup bgColor: on dark themes the page is also dark, so the popup box would
+  // be invisible against the rgba(0,0,0,0.62) backdrop unless we lighten it.
+  const [pr, pg, pb] = toRgb(page)
+  const pageLum = (0.299 * pr + 0.587 * pg + 0.114 * pb) / 255
+  const popupBg = pageLum < 0.5 ? lightenHex(page, 0.18) : page
   for (const m of allMenus(t)) {
     m.background.color      = around
     m.background.color2     = lightenHex(around, 0.07)
     m.pageBackground.color  = page
     m.pageBackground.color2 = lightenHex(page, 0.05)
     m.stickyCategories.bgColor = around
-    m.hintPopup.bgColor     = page
+    m.hintPopup.bgColor     = popupBg
   }
   t.card.bgColor = page
   return t
@@ -101,14 +106,19 @@ export function applyBaseText(theme: RestaurantTheme, text: string, bg: string):
   t.landing.description.color = muted
   t.landing.buttons.textColor = text
   for (const m of allMenus(t)) {
-    m.dishes.titleColor        = text
-    m.descriptions.color       = muted
-    m.categories.color         = text
+    m.dishes.titleColor          = text
+    m.descriptions.color         = muted
+    m.categories.color           = text
+    m.navigation.color           = muted
     m.stickyCategories.textColor = muted
-    m.hintPopup.titleColor     = text
-    m.hintPopup.textColor      = muted
+    // Derive popup text colors from the popup bgColor (not the page bg), so they
+    // always contrast correctly whether the popup is dark or light.
+    const [hbr, hbg, hbb] = toRgb(m.hintPopup.bgColor)
+    const popupBgLum = (0.299 * hbr + 0.587 * hbg + 0.114 * hbb) / 255
+    m.hintPopup.titleColor = popupBgLum > 0.5 ? '#1a1a1a' : '#f0ece4'
+    m.hintPopup.textColor  = popupBgLum > 0.5 ? '#4a4a4a' : '#a09080'
     // divisori: una linea discreta, derivata dalla coppia testo/sfondo.
-    m.layout.divider.color     = isHex6(text) && isHex6(bg) ? mixHex(text, bg, 0.72) : m.layout.divider.color
+    m.layout.divider.color = isHex6(text) && isHex6(bg) ? mixHex(text, bg, 0.72) : m.layout.divider.color
   }
   t.card.title.color       = text
   t.card.description.color = muted
@@ -118,22 +128,29 @@ export function applyBaseText(theme: RestaurantTheme, text: string, bg: string):
 /** Un solo colore accento: prezzi, decori categorie, bordi, evidenziazioni, card. */
 export function applyBaseAccent(theme: RestaurantTheme, accent: string): RestaurantTheme {
   const t = structuredClone(theme)
+  // Allergen badge background: inverted relative to accent luminance so the
+  // accent-coloured text is always readable against its chip background.
+  const [ar, ag, ab] = toRgb(accent)
+  const accentLum = (0.299 * ar + 0.587 * ag + 0.114 * ab) / 255
+  const allergenBg = accentLum > 0.35 ? '#1a1a1a' : '#e8e8e8'
   t.landing.accent              = accent
   t.landing.buttons.borderColor = accent
   t.landing.socials.color       = accent
   for (const m of allMenus(t)) {
-    m.accent                     = accent
-    m.prices.color               = accent
-    m.categories.flourishColor   = accent
+    m.accent                       = accent
+    m.prices.color                 = accent
+    m.categories.flourishColor     = accent
     m.stickyCategories.activeColor = accent
-    m.allergens.color            = accent
+    m.allergens.color              = accent
+    m.allergens.bgColor            = allergenBg
   }
-  t.card.accent              = accent
-  t.card.price.color         = accent
-  t.card.category.color      = accent
-  t.card.pairing.labelColor  = accent
-  t.card.allergens.color     = accent
+  t.card.accent               = accent
+  t.card.price.color          = accent
+  t.card.category.color       = accent
+  t.card.pairing.labelColor   = accent
+  t.card.allergens.color      = accent
   t.card.allergens.labelColor = accent
+  t.card.allergens.bgColor    = allergenBg
   return t
 }
 
