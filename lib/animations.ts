@@ -82,13 +82,26 @@ export function useStaggerEntrance<T extends HTMLElement>(opts?: {
     if (!el || opts?.enabled === false) return
     const items = el.querySelectorAll(opts?.selector ?? ':scope > *')
     if (!items.length) return
-    if (reduced) { utils.set(items, { opacity: 1, translateY: 0 }); return }
+    if (reduced) {
+      // Apply final state instantly — no translateY so no CSS stacking context is created.
+      utils.set(items, { opacity: 1 })
+      return
+    }
     animate(items, {
       opacity: [0, 1],
       translateY: [opts?.translateY ?? 18, 0],
       duration: opts?.duration ?? 700,
       delay: stagger(opts?.staggerMs ?? 90, { start: opts?.startDelay ?? 0 }),
       ease: 'outQuad',
+      onComplete: () => {
+        // Clear the inline transform so no CSS stacking context is left behind.
+        // A retained `transform: translateY(0px)` creates a stacking context that
+        // breaks z-index for absolutely-positioned dropdowns (e.g. kebab menus)
+        // inside the animated elements — sibling rows painted later would cover them.
+        Array.from(items).forEach(item => {
+          (item as HTMLElement).style.transform = ''
+        })
+      },
     })
     return () => { utils.remove(items) }
     // eslint-disable-next-line react-hooks/exhaustive-deps
