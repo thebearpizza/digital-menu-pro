@@ -10,6 +10,8 @@ import {
   resolveMenuTheme,
 } from '@/lib/theme'
 import { ALL_GOOGLE_FONTS } from '@/lib/googleFontsCatalog'
+import { PRESETS, applyBaseFont, applyBaseSurface, applyBaseText, applyBaseAccent } from '@/lib/themePresets'
+import type { ThemePreset } from '@/lib/themePresets'
 import { removeUniformBackground } from '@/lib/imageBackground'
 import { getRecentFonts, addRecentFont } from '@/lib/recentFonts'
 import { useStaggerEntrance } from '@/lib/animations'
@@ -1726,6 +1728,117 @@ function BannerManager({ restaurantId, initialBanners }: { restaurantId: string;
   )
 }
 
+// ── Base panel — personalizzazione semplificata ─────────────────────────────────
+// Una griglia di temi preset (ognuno trasforma tutto il menu) + 4 controlli che
+// si propagano ovunque in un colpo solo: Font, Sfondo, Testo, Accento.
+
+function PresetCard({ preset, active, onApply }: {
+  preset: ThemePreset; active: boolean; onApply: () => void
+}) {
+  const m = preset.theme.menu
+  const pageBg     = m.pageBackground.color
+  const text       = m.dishes.titleColor
+  const muted      = m.descriptions.color
+  const accent     = m.prices.color
+  const titleFont  = fontStack(m.dishes.titleFont, 'serif')
+  const bodyFont   = fontStack(m.descriptions.font, 'sans')
+  const dividerCol = m.layout.divider.color
+  return (
+    <button type="button" onClick={onApply}
+      className={`group text-left rounded-lg overflow-hidden border transition-all ${
+        active ? 'border-gray-900 ring-2 ring-gray-900/15' : 'border-gray-200 hover:border-gray-400'
+      }`}>
+      {/* Mini-anteprima del foglio menu con i colori/font reali del preset */}
+      <div style={{ background: pageBg }} className="px-3 py-3 h-[92px] flex flex-col justify-center gap-1.5">
+        <span style={{ color: accent, fontFamily: bodyFont, fontSize: 8, letterSpacing: '0.18em' }}
+          className="uppercase font-semibold">Antipasti</span>
+        <div className="flex items-baseline justify-between gap-2">
+          <span style={{ color: text, fontFamily: titleFont, fontSize: 15, lineHeight: 1 }}>Tartare di tonno</span>
+          <span style={{ color: accent, fontFamily: bodyFont, fontSize: 11 }}>€18</span>
+        </div>
+        <div style={{ borderTop: `1px solid ${dividerCol}` }} />
+        <span style={{ color: muted, fontFamily: bodyFont, fontSize: 8.5, lineHeight: 1.25 }}>
+          Avocado, lime, sesamo tostato
+        </span>
+      </div>
+      <div className="flex items-center justify-between px-2.5 py-1.5 bg-white border-t border-gray-100">
+        <span className="text-[11px] font-semibold text-gray-800 truncate">{preset.name}</span>
+        {active && <span className="text-[9px] font-bold uppercase tracking-wider text-gray-900 shrink-0 ml-1">Attivo</span>}
+      </div>
+      <div className="px-2.5 pb-1.5 bg-white -mt-0.5">
+        <span className="text-[9px] text-gray-400 truncate block">{preset.mood}</span>
+      </div>
+    </button>
+  )
+}
+
+function BasePanel({ theme, customFonts, onUploadFont, fontUploading, onApplyPreset, onFont, onSurface, onText, onAccent }: {
+  theme: RestaurantTheme
+  customFonts: Record<string, string>
+  onUploadFont: (file: File) => Promise<string | null>
+  fontUploading: boolean
+  onApplyPreset: (p: ThemePreset) => void
+  onFont:    (font: string) => void
+  onSurface: (color: string) => void
+  onText:    (color: string) => void
+  onAccent:  (color: string) => void
+}) {
+  const curFont   = theme.menu.dishes.titleFont
+  const curBg     = theme.menu.pageBackground.color
+  const curText   = theme.menu.dishes.titleColor
+  const curAccent = theme.menu.accent
+
+  // Un preset è "attivo" se le sue 4 leve combaciano col tema corrente.
+  const isActive = (p: ThemePreset) =>
+    p.theme.menu.dishes.titleFont === curFont &&
+    p.theme.menu.pageBackground.color === curBg &&
+    p.theme.menu.dishes.titleColor === curText &&
+    p.theme.menu.accent === curAccent
+
+  return (
+    <div className="h-full flex flex-col">
+      <div className="px-4 py-3 border-b border-gray-100 shrink-0">
+        <p className="text-xs font-semibold text-gray-800">Personalizzazione base</p>
+        <p className="text-[11px] text-gray-400 mt-0.5 leading-snug">
+          Scegli un tema pronto, poi rifinisci font e colori: si applicano a tutto il menu.
+        </p>
+      </div>
+
+      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-6">
+        {/* Temi preset */}
+        <div>
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-2">Temi pronti</p>
+          <div className="grid grid-cols-2 gap-2.5">
+            {PRESETS.map(p => (
+              <PresetCard key={p.name} preset={p} active={isActive(p)} onApply={() => onApplyPreset(p)} />
+            ))}
+          </div>
+        </div>
+
+        {/* Font unico */}
+        <div>
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-2">Font del menu</p>
+          <FontSelector label="Carattere" value={curFont} curated={[...SERIF_FONTS, ...SANS_FONTS, ...DISPLAY_FONTS]}
+            category="serif" onChange={onFont} customFonts={customFonts}
+            onUploadFont={onUploadFont} uploading={fontUploading} />
+          <p className="text-[11px] text-gray-400 mt-1.5">Applicato a titoli, piatti, descrizioni e prezzi.</p>
+        </div>
+
+        {/* Colori */}
+        <div className="space-y-3">
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Colori</p>
+          <ColorRow label="Sfondo"  value={curBg}     onChange={onSurface} />
+          <ColorRow label="Testo"   value={curText}   onChange={onText} />
+          <ColorRow label="Accento" value={curAccent} onChange={onAccent} />
+          <p className="text-[11px] text-gray-400 leading-snug">
+            Lo sfondo copre landing, foglio del menu e card; l’accento colora prezzi, decori e bordi.
+          </p>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 export default function CustomizationClient({
@@ -1751,6 +1864,10 @@ export default function CustomizationClient({
   const [activeEditor, setActiveEditor] = useState<string | null>(null)
   const [previewZoom,  setPreviewZoom]  = useState(1)
   const [isMobile,     setIsMobile]     = useState(false)
+  // Livello dell'editor: 'base' = preset + 4 leve globali; 'advanced' = editor
+  // completo attuale (controllo per-elemento). Cambiare livello non altera il
+  // tema, solo l'interfaccia.
+  const [editorLevel,  setEditorLevel]  = useState<'base' | 'advanced'>('advanced')
 
   // On mobile there's no separate "preview vs edit" mode — the chip bar is
   // the only way to open editors, so the iframe should always be tappable.
@@ -2023,6 +2140,32 @@ export default function CustomizationClient({
     finally { setSaving(false) }
   }
 
+  // ── Base mode handlers ────────────────────────────────────────────────────────
+  // Applicano un preset completo o propagano una singola leva (font/colore) su
+  // tutto il tema, override per-menu inclusi (vedi lib/themePresets.ts).
+  function applyPreset(p: ThemePreset) {
+    setSaved(false)
+    setTheme(t => ({ ...structuredClone(p.theme), customFonts: structuredClone(t.customFonts) }))
+  }
+  function baseFont(font: string)     { setSaved(false); setTheme(t => applyBaseFont(t, font)) }
+  function baseAccent(color: string)  { setSaved(false); setTheme(t => applyBaseAccent(t, color)) }
+  function baseSurface(color: string) {
+    // Cambiando lo sfondo, ricalcola anche i "muted" derivati dalla coppia testo/sfondo.
+    setSaved(false)
+    setTheme(t => applyBaseText(applyBaseSurface(t, color), t.menu.dishes.titleColor, color))
+  }
+  function baseText(color: string) {
+    setSaved(false)
+    setTheme(t => applyBaseText(t, color, t.menu.pageBackground.color))
+  }
+
+  // Passando a "base" la tab Pop-up (esclusiva dell'avanzata) non ha senso.
+  function changeEditorLevel(level: 'base' | 'advanced') {
+    if (level === 'base' && previewMode === 'hint') setPreviewMode('menu')
+    setEditorLevel(level)
+  }
+  const baseMode = editorLevel === 'base'
+
   const setters: SidebarSetters = {
     setLBg, setLLogo, setLTitle, setLDesc, setLBu, setL,
     setMDishes, setMDescs, setMPrices, setMCats, setMLayout, setMDivider, setMBg, setMPageBg, setMNav, setMSticky, setMHint, setMAllergens, setM,
@@ -2048,8 +2191,22 @@ export default function CustomizationClient({
       {/* ── Control bar ─────────────────────────────────────────────────── */}
       <div className="flex items-center gap-2 sm:gap-3 pb-3 mb-3 border-b border-gray-100 flex-wrap shrink-0">
 
-        {/* Mode tabs */}
-        {(['landing', 'menu', 'card', 'hint'] as const).map(mode => (
+        {/* Livello editor: Base / Avanzata */}
+        <div className="flex items-center rounded-full border border-gray-200 p-0.5 shrink-0">
+          {(['base', 'advanced'] as const).map(lvl => (
+            <button key={lvl} type="button" onClick={() => changeEditorLevel(lvl)}
+              className={`px-3 py-1 text-[10px] font-semibold uppercase tracking-wider rounded-full transition-colors ${
+                editorLevel === lvl ? 'bg-gray-900 text-white' : 'text-gray-500 hover:text-gray-800'
+              }`}>
+              {lvl === 'base' ? 'Base' : 'Avanzata'}
+            </button>
+          ))}
+        </div>
+
+        <div className="hidden sm:block w-px h-5 bg-gray-200 mx-0.5 shrink-0" />
+
+        {/* Mode tabs — la tab Pop-up esiste solo in modalità avanzata */}
+        {(baseMode ? (['landing', 'menu', 'card'] as const) : (['landing', 'menu', 'card', 'hint'] as const)).map(mode => (
           <button key={mode} type="button" onClick={() => setPreviewMode(mode)}
             className={`px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider border transition-colors ${
               previewMode === mode
@@ -2081,32 +2238,37 @@ export default function CustomizationClient({
           </div>
         )}
 
-        <div className="hidden sm:block w-px h-5 bg-gray-200 mx-1 shrink-0" />
+        {/* Strumenti dell'editor avanzato — nascosti in modalità base */}
+        {!baseMode && (
+          <>
+            <div className="hidden sm:block w-px h-5 bg-gray-200 mx-1 shrink-0" />
 
-        {/* Pencil toggle */}
-        <label className="flex items-center gap-2 cursor-pointer select-none">
-          <Toggle checked={editMode} onChange={setEditMode} />
-          <span className="flex items-center gap-1.5 text-xs font-medium text-gray-700">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5 shrink-0">
-              <path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
-            </svg>
-            <span className="hidden sm:inline">Modifica</span>
-          </span>
-        </label>
+            {/* Pencil toggle */}
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <Toggle checked={editMode} onChange={setEditMode} />
+              <span className="flex items-center gap-1.5 text-xs font-medium text-gray-700">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5 shrink-0">
+                  <path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+                </svg>
+                <span className="hidden sm:inline">Modifica</span>
+              </span>
+            </label>
 
-        {/* Dummy data checkbox — only enabled in edit mode */}
-        <label className={`flex items-center gap-1.5 select-none text-xs ${editMode ? 'cursor-pointer text-gray-600' : 'cursor-not-allowed text-gray-300'}`}>
-          <input type="checkbox" disabled={!editMode} checked={showDummyData}
-            onChange={e => setShowDummyData(e.target.checked)}
-            className="accent-gray-900 w-3.5 h-3.5" />
-          <span className="hidden sm:inline">Dati fittizi</span>
-          <span className="sm:hidden">Fittizi</span>
-        </label>
+            {/* Dummy data checkbox — only enabled in edit mode */}
+            <label className={`flex items-center gap-1.5 select-none text-xs ${editMode ? 'cursor-pointer text-gray-600' : 'cursor-not-allowed text-gray-300'}`}>
+              <input type="checkbox" disabled={!editMode} checked={showDummyData}
+                onChange={e => setShowDummyData(e.target.checked)}
+                className="accent-gray-900 w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Dati fittizi</span>
+              <span className="sm:hidden">Fittizi</span>
+            </label>
 
-        {editMode && (
-          <span className="hidden md:inline ml-1 text-[10px] text-gray-400">
-            {activeEditor ? `Modifica: ${EDITOR_TARGETS[activeEditor]?.title ?? activeEditor}` : 'Clicca un elemento per modificarlo'}
-          </span>
+            {editMode && (
+              <span className="hidden md:inline ml-1 text-[10px] text-gray-400">
+                {activeEditor ? `Modifica: ${EDITOR_TARGETS[activeEditor]?.title ?? activeEditor}` : 'Clicca un elemento per modificarlo'}
+              </span>
+            )}
+          </>
         )}
 
         {/* Spacer */}
@@ -2142,6 +2304,27 @@ export default function CustomizationClient({
           Desktop: side-by-side (preview shrinks as panel opens).
           Mobile:  full-width preview with chip bar above; dropdown overlays
                    the top portion of the iframe leaving most of it visible. */}
+      {baseMode ? (
+        /* ── Modalità base: anteprima + pannello preset/leve, sempre aperto.
+              Desktop affiancati; mobile impilati (pannello scrollabile sotto). */
+        <div className="flex-1 flex flex-col sm:flex-row min-h-0 rounded-lg border border-gray-200 overflow-hidden">
+          <div className="flex-1 min-w-0 flex items-center justify-center bg-gradient-to-br from-gray-100 to-gray-200 p-3 sm:p-5 min-h-0">
+            <LivePreview
+              qrToken={qrToken} theme={theme} previewMode={previewMode} activeMenuId={activeMenuTab}
+              editMode={isMobile} showDummyData={false}
+              onElementClick={() => {}} onViewChange={setPreviewMode} zoom={previewZoom}
+            />
+          </div>
+          <aside className="shrink-0 w-full sm:w-[380px] bg-white border-t sm:border-t-0 sm:border-l border-gray-200 overflow-hidden max-h-[48dvh] sm:max-h-none">
+            <BasePanel
+              theme={theme} customFonts={theme.customFonts}
+              onUploadFont={handleFontUpload} fontUploading={fontUploading}
+              onApplyPreset={applyPreset}
+              onFont={baseFont} onSurface={baseSurface} onText={baseText} onAccent={baseAccent}
+            />
+          </aside>
+        </div>
+      ) : (
       <div className="flex-1 flex min-h-0 rounded-lg border border-gray-200" style={{ overflow: 'visible' }}>
 
         {/* Preview column — chip bar + iframe stacked on mobile */}
@@ -2199,6 +2382,7 @@ export default function CustomizationClient({
           )}
         </aside>
       </div>
+      )}
 
     </div>
   )
