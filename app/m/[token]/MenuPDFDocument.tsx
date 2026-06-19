@@ -597,19 +597,27 @@ export function MenuPDFDocument({ restaurant, menu, theme: themeProp, registered
     const lastFlags = (dishes: PDFDish[], offset: number) => dishes.map((_, i) => offset + i === n - 1)
 
     if (perPage <= 0) {
-      // For non-compact classic mode, estimate a safe dishes-per-page threshold:
-      // if the category exceeds it, split into explicit blocks so each
-      // continuation page renders a reference header.
       if (!compact) {
-        const autoSize = isElegant ? 8 : isBoxed ? 5 : isGrid2 ? 8 : isGrid3 ? 12 : isMinimal ? 18 : 12
-        if (n > autoSize) {
-          chunk(cat.dishes, autoSize).forEach((dishes, ci) => {
-            blocks.push({ key: `${cat.name}-${ci}`, breakBefore: ci > 0 || catIdx > 0, catIdx, cat, st, showHeader: ci === 0, isGrid, dishes, lastFlags: lastFlags(dishes, ci * autoSize) })
+        // Non-compact auto mode: always split into layout-tuned chunks so that
+        // continuation pages are explicit blocks and always get a reference header.
+        // The chunk size is a conservative per-page estimate for each layout; single-
+        // chunk categories (n ≤ autoSize) produce one block — no forced page break.
+        const autoSize = isElegant ? 6 : isBoxed ? 5 : isGrid2 ? 8 : isGrid3 ? 12 : isMinimal ? 14 : 8
+        chunk(cat.dishes, autoSize).forEach((dishes, ci) => {
+          blocks.push({
+            key: `${cat.name}-${ci}`,
+            breakBefore: ci > 0 || catIdx > 0,
+            catIdx, cat, st,
+            showHeader: ci === 0,
+            isGrid,
+            dishes,
+            lastFlags: isGrid ? dishes.map(() => false) : lastFlags(dishes, ci * autoSize),
           })
-          return
-        }
+        })
+        return
       }
-      blocks.push({ key: cat.name, breakBefore: !compact && catIdx > 0, catIdx, cat, st, showHeader: true, isGrid, dishes: cat.dishes, lastFlags: lastFlags(cat.dishes, 0) })
+      // Compact mode: natural continuous flow — no per-category page break.
+      blocks.push({ key: cat.name, breakBefore: false, catIdx, cat, st, showHeader: true, isGrid, dishes: cat.dishes, lastFlags: lastFlags(cat.dishes, 0) })
       return
     }
 
