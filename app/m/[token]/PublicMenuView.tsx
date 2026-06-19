@@ -22,8 +22,10 @@ import type { RestaurantTheme } from '@/lib/theme'
 import {
   isLang, uiText, dishName, dishDescription, categoryName,
   menuName as translatedMenuName, hintTitle, hintText,
+  ALL_LANGS, LANG_LABELS,
   type Lang, type DishTranslations, type MenuTranslations, type HintTranslations,
 } from '@/lib/translations'
+import { FlagIcon } from '@/components/ui/FlagIcon'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -165,6 +167,7 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
 
   // ── Lingua del menu — italiano di default, scelta persistita sul device ────
   const [lang, setLangState] = useState<Lang>('it')
+  const [landingLangOpen, setLandingLangOpen] = useState(false)
   // langReady: diventa true dopo che la preferenza lingua salvata è stata applicata.
   // Necessario per il pop-up hint: senza questo gate, l'effetto del hint gira una
   // prima volta con lang='it' (valore iniziale) e potrebbe mostrare l'overlay anche
@@ -672,6 +675,62 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
         </p>
         <div className="absolute bottom-0 inset-x-0 h-px"
           style={{ background: `linear-gradient(90deg,transparent,${l.accent}55,transparent)` }} />
+
+        {/* ── Selettore lingua — bandierina in alto a destra della landing ─────
+             Mostra la lingua corrente come flag SVG; al tap apre un popover
+             con tutte le lingue disponibili. Overlay trasparente chiude al tap
+             fuori. Nascosto in editMode (il bottone Sfondo occupa lo stesso
+             angolo). ── */}
+        {!editMode && (
+          <div className="absolute top-3 right-3 z-[200]">
+            <button
+              onClick={() => setLandingLangOpen(o => !o)}
+              aria-label={`Lingua: ${LANG_LABELS[lang]}`}
+              className="flex items-center justify-center w-9 h-9 rounded-full transition-opacity hover:opacity-70 active:opacity-50"
+              style={{ background: `${l.title.color}18` }}
+            >
+              <FlagIcon lang={lang} className="w-6 h-4" />
+            </button>
+
+            {landingLangOpen && (
+              <>
+                <div
+                  className="fixed inset-0 z-[199]"
+                  onClick={() => setLandingLangOpen(false)}
+                />
+                <div
+                  className="absolute right-0 top-full mt-1 z-[200] overflow-hidden shadow-2xl rounded-[6px] min-w-[140px]"
+                  style={{
+                    background: l.background.type === 'color'
+                      ? (l.background.value + 'e8')
+                      : 'rgba(20,18,14,0.92)',
+                    border: `1px solid ${l.accent}33`,
+                    backdropFilter: 'blur(8px)',
+                    WebkitBackdropFilter: 'blur(8px)',
+                  }}
+                >
+                  {ALL_LANGS.map(lng => (
+                    <button
+                      key={lng}
+                      onClick={() => { setLang(lng); setLandingLangOpen(false) }}
+                      className="flex items-center gap-2.5 w-full text-left px-3.5 py-2.5 transition-opacity hover:opacity-70"
+                      style={{
+                        color:      lng === lang ? l.accent : l.title.color + 'bb',
+                        fontFamily: fontStack(l.buttons.font, 'sans'),
+                        fontSize:   '10px',
+                        letterSpacing: '0.18em',
+                        textTransform: 'uppercase',
+                      }}
+                    >
+                      <FlagIcon lang={lng} className="w-6 h-4 shrink-0" />
+                      {LANG_LABELS[lng]}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        )}
       </div>
 
       {/* ── LOADING OVERLAY — shown while PDF is generating ──────────────── */}

@@ -6,6 +6,7 @@ import { useIsMobilePreview } from './EditHandle'
 import { fontStack, hexToRgb, toOpaqueColor, PAGINATION_OPTIONS, menuBackgroundCss } from '@/lib/theme'
 import type { RestaurantTheme } from '@/lib/theme'
 import { ALL_LANGS, LANG_FLAGS, LANG_LABELS, uiText, type Lang } from '@/lib/translations'
+import { FlagIcon } from '@/components/ui/FlagIcon'
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // ⚙️  MENU CONFIG
@@ -870,13 +871,13 @@ export default function FlipbookViewer({
               <button
                 onClick={() => setLangMenuOpen(o => !o)}
                 aria-label={`Lingua: ${LANG_LABELS[lang]}`}
-                className="sticky right-0 shrink-0 px-4 py-3 text-base leading-none self-stretch ml-auto transition-opacity duration-200 hover:opacity-70"
+                className="sticky right-0 shrink-0 px-3.5 py-2.5 self-stretch ml-auto flex items-center transition-opacity duration-200 hover:opacity-70"
                 style={{
                   background:  theme.navBgOpaque,
                   borderLeft: `1px solid ${theme.navColor}1a`,
                 }}
               >
-                {LANG_FLAGS[lang]}
+                <FlagIcon lang={lang} className="w-6 h-4" />
               </button>
             ) : totalPages > 0 ? (
               <span
@@ -926,7 +927,7 @@ export default function FlipbookViewer({
                   fontFamily: theme.fontSans,
                 }}
               >
-                <span className="text-base leading-none">{LANG_FLAGS[l]}</span>
+                <FlagIcon lang={l} className="w-6 h-4 shrink-0" />
                 {LANG_LABELS[l]}
               </button>
             ))}
