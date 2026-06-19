@@ -134,6 +134,13 @@ function readableOn(textColor: string, bgColor: string): string {
   return lb > 0.5 ? '#1a1a1a' : '#ede8e0'     // otherwise stay legible
 }
 
+// Blend two hex colours: t=0 → c1, t=1 → c2.
+function mixColors(c1: string, c2: string, t: number): string {
+  const p1 = parseHex(c1); const p2 = parseHex(c2)
+  if (!p1 || !p2) return c1
+  return `#${[0, 1, 2].map(i => Math.round(p1[i] + (p2[i] - p1[i]) * t).toString(16).padStart(2, '0')).join('')}`
+}
+
 // ── Dynamic styles ────────────────────────────────────────────────────────────
 
 // Mirror an alignment horizontally — used by the alternating compact mode so a
@@ -145,11 +152,13 @@ function flipAlign(a: 'left' | 'center' | 'right'): 'left' | 'center' | 'right' 
 function makeStyles(theme: RestaurantTheme, registered: Set<string>, flipped = false) {
   const m         = theme.menu
   const compact   = m.pdfLayout === 'compact'
-  const catLineColor = lightenHex(m.accent, 0.55)
+  const catLineColor  = lightenHex(m.accent, 0.55)
   const divColor  = m.layout.divider.color
   const divWidth  = m.layout.divider.width || 0.5
   const divWidthPct = m.layout.divider.widthPercent || 100
   const bg        = m.pageBackground.color
+  // Muted category colour for the continuation reference header (50% blend to bg).
+  const catContColor = readableOn(mixColors(m.categories.color, bg, 0.52), bg)
   const spacing   = m.layout.dishSpacing || 0
   // Inter-dish gap: identical TOTAL distance whatever the divider type, so the
   // spacing slider behaves uniformly (gapBase + spacing between any two dishes).
@@ -159,6 +168,7 @@ function makeStyles(theme: RestaurantTheme, registered: Set<string>, flipped = f
   const general   = m.layout.dishAlignment === 'center' ? 'center' : m.layout.dishAlignment === 'right' ? 'right' : 'left'
   const maybeFlip = (a: 'left' | 'center' | 'right') => flipped ? flipAlign(a) : a
   const catAlign  = maybeFlip(resolveAlign(m.categories.align, general))
+  const contLineAlignSelf = catAlign === 'center' ? 'center' as const : catAlign === 'right' ? 'flex-end' as const : 'flex-start' as const
   const nameAlign = maybeFlip(resolveAlign(m.dishes.align,     general))
   // Description & allergens inherit from the DISH TITLE alignment (not the
   // general one) so they "follow the title" until explicitly overridden.
@@ -231,6 +241,29 @@ function makeStyles(theme: RestaurantTheme, registered: Set<string>, flipped = f
       height:          0.5,
       backgroundColor: catLineColor,
       marginBottom:    compact ? 12 : 18,
+    },
+    // Continuation reference header — shown at the top of 2nd+ pages of the
+    // same category: category name in smaller/muted text + a short accent line.
+    catContinuationWrap: {
+      marginBottom: compact ? 5 : 8,
+    },
+    catContinuationLabel: {
+      fontFamily:    catFamily,
+      fontWeight:    catBold,
+      fontSize:      (compact ? 7 : 8.5) * catScale,
+      color:         catContColor,
+      textTransform: 'uppercase',
+      letterSpacing: compact ? 1 : 1.5,
+      textAlign:     catAlign,
+    },
+    catContinuationLine: {
+      height:          0.4,
+      width:           '30%',
+      alignSelf:       contLineAlignSelf,
+      backgroundColor: catLineColor,
+      opacity:         0.55,
+      marginTop:       compact ? 2 : 3,
+      marginBottom:    compact ? 6 : 10,
     },
     // ── List layout ─────────────────────────────────────────────────────────
     dishRow: {
@@ -564,6 +597,18 @@ export function MenuPDFDocument({ restaurant, menu, theme: themeProp, registered
     const lastFlags = (dishes: PDFDish[], offset: number) => dishes.map((_, i) => offset + i === n - 1)
 
     if (perPage <= 0) {
+      // For non-compact classic mode, estimate a safe dishes-per-page threshold:
+      // if the category exceeds it, split into explicit blocks so each
+      // continuation page renders a reference header.
+      if (!compact) {
+        const autoSize = isElegant ? 8 : isBoxed ? 5 : isGrid2 ? 8 : isGrid3 ? 12 : isMinimal ? 18 : 12
+        if (n > autoSize) {
+          chunk(cat.dishes, autoSize).forEach((dishes, ci) => {
+            blocks.push({ key: `${cat.name}-${ci}`, breakBefore: ci > 0 || catIdx > 0, catIdx, cat, st, showHeader: ci === 0, isGrid, dishes, lastFlags: lastFlags(dishes, ci * autoSize) })
+          })
+          return
+        }
+      }
       blocks.push({ key: cat.name, breakBefore: !compact && catIdx > 0, catIdx, cat, st, showHeader: true, isGrid, dishes: cat.dishes, lastFlags: lastFlags(cat.dishes, 0) })
       return
     }
@@ -614,9 +659,20 @@ export function MenuPDFDocument({ restaurant, menu, theme: themeProp, registered
         {blocks.map(b => (
           <View key={b.key} break={b.breakBefore}>
 
+            {/* Full category header on the first block of each category. */}
             {b.showHeader && compact && b.catIdx > 0 && <View style={s.catSpacer} />}
             {b.showHeader && categoryHeader(b.cat, b.st)}
             {b.showHeader && <View style={s.catLine} />}
+
+            {/* Compact continuation reference on 2nd+ pages of the same category:
+                category name in smaller/muted text so the reader always knows
+                which section they're in, without cluttering the page. */}
+            {!b.showHeader && (
+              <View style={b.st.catContinuationWrap}>
+                <Text style={b.st.catContinuationLabel}>{b.cat.name}</Text>
+                <View style={b.st.catContinuationLine} />
+              </View>
+            )}
 
             {b.isGrid ? (
               <View style={s.gridRow}>
