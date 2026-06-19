@@ -1463,6 +1463,17 @@ function EditorSidebar({ target, theme, setters, previewMode, activeMenuId, onCl
                       className="w-full accent-gray-900" />
                   </div>
                 )}
+                {m.layout.divider.type === 'wavy' && (
+                  <div>
+                    <div className="flex justify-between items-center mb-1">
+                      <label className="text-xs text-gray-600">Spessore</label>
+                      <span className="text-[10px] font-mono text-gray-400">{m.layout.divider.width}px</span>
+                    </div>
+                    <input type="range" min={0.5} max={1} step={0.5} value={m.layout.divider.width}
+                      onChange={e => setters.setMDivider({ width: Number(e.target.value) })}
+                      className="w-full accent-gray-900" />
+                  </div>
+                )}
                 <div>
                   <div className="flex justify-between items-center mb-1">
                     <label className="text-xs text-gray-600">Larghezza</label>
