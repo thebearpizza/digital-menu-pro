@@ -1452,13 +1452,13 @@ function EditorSidebar({ target, theme, setters, previewMode, activeMenuId, onCl
               <div className="mt-2 space-y-2">
                 <ColorRow label="Colore divisore" value={m.layout.divider.color}
                   onChange={v => setters.setMDivider({ color: v })} />
-                {(m.layout.divider.type === 'solid' || m.layout.divider.type === 'dashed' || m.layout.divider.type === 'dotted' || m.layout.divider.type === 'double' || m.layout.divider.type === 'gradient' || m.layout.divider.type === 'wavy') && (
+                {(m.layout.divider.type === 'solid' || m.layout.divider.type === 'dashed' || m.layout.divider.type === 'dotted' || m.layout.divider.type === 'double' || m.layout.divider.type === 'gradient') && (
                   <div>
                     <div className="flex justify-between items-center mb-1">
                       <label className="text-xs text-gray-600">Spessore</label>
                       <span className="text-[10px] font-mono text-gray-400">{m.layout.divider.width}px</span>
                     </div>
-                    <input type="range" min={0.5} max={5} step={0.5} value={m.layout.divider.width}
+                    <input type="range" min={1} max={5} step={0.5} value={m.layout.divider.width}
                       onChange={e => setters.setMDivider({ width: Number(e.target.value) })}
                       className="w-full accent-gray-900" />
                   </div>
