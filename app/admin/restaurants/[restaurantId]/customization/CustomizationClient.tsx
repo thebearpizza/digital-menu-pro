@@ -1447,7 +1447,13 @@ function EditorSidebar({ target, theme, setters, previewMode, activeMenuId, onCl
             <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Divisore (sotto ogni piatto)</p>
             <PillGroup
               options={[{ label:'Nessuno', value:'none' },{ label:'Solido', value:'solid' },{ label:'Tratteg.', value:'dashed' },{ label:'Punteg.', value:'dotted' },{ label:'Doppio', value:'double' },{ label:'Gradiente', value:'gradient' },{ label:'Ornamento', value:'ornament' },{ label:'Ondulato', value:'wavy' }]}
-              value={m.layout.divider.type} onChange={v => setters.setMDivider({ type: v as DividerType })} />
+              value={m.layout.divider.type} onChange={v => {
+                const t = v as DividerType
+                // Reset width to each type's own default when switching, so
+                // settings from the previous type never bleed into the new one.
+                const defaultWidth = (t === 'wavy' || t === 'ornament' || t === 'none') ? 0.5 : 1
+                setters.setMDivider({ type: t, width: defaultWidth })
+              }} />
             {m.layout.divider.type !== 'none' && (
               <div className="mt-2 space-y-2">
                 <ColorRow label="Colore divisore" value={m.layout.divider.color}
