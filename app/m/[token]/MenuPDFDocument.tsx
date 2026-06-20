@@ -449,8 +449,67 @@ function chunk<T>(arr: T[], n: number): T[][] {
   return out
 }
 
-// ── Embedded text block (info / allergen page) ────────────────────────────────
+// ── Embedded text block (info / allergen page) — HTML-aware renderer ─────────
 
+function decodeEntities(s: string): string {
+  return s
+    .replace(/&amp;/g,  '&')
+    .replace(/&lt;/g,   '<')
+    .replace(/&gt;/g,   '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g,  "'")
+    .replace(/&nbsp;/g, ' ')
+}
+
+function boldVariant(family: string, registered: Set<string>): string {
+  if (registered.has(family)) return family   // Google Font: use fontWeight
+  if (family === 'Times-Roman') return 'Times-Bold'
+  if (family === 'Courier')     return 'Courier-Bold'
+  return 'Helvetica-Bold'                     // default or Helvetica
+}
+
+type InlineStyle = { fontFamily: string; fontWeight?: number; fontStyle?: 'normal' | 'italic' | 'oblique'; fontSize: number; color: string; lineHeight: number }
+
+// Parse inline HTML marks (<strong>, <em>, <span style="color:...">) and
+// return an array of Text nodes (strings or nested <Text> elements).
+function parseInline(
+  html: string,
+  base: InlineStyle,
+  registered: Set<string>,
+  keyPrefix: string,
+): React.ReactNode[] {
+  const result: React.ReactNode[] = []
+  const re = /<(strong|em|span)\b([^>]*)>([\s\S]*?)<\/\1>|<br\s*\/?>|([^<]+)/g
+  let m
+  while ((m = re.exec(html)) !== null) {
+    const [, tag, attrs, inner, text] = m
+    if (text !== undefined) {
+      const decoded = decodeEntities(text)
+      if (decoded) result.push(decoded)
+      continue
+    }
+    if (!tag) { result.push('\n'); continue }
+
+    let style: typeof base = { ...base }
+    if (tag === 'strong') {
+      style = { ...style, fontFamily: boldVariant(base.fontFamily, registered), fontWeight: 700 }
+    } else if (tag === 'em') {
+      style = { ...style, fontStyle: 'italic' as const }
+    } else if (tag === 'span') {
+      const cm = attrs.match(/color:\s*([^;"']+)/)
+      if (cm) style = { ...style, color: cm[1].trim() }
+    }
+    result.push(
+      <Text key={`${keyPrefix}-${result.length}`} style={style}>
+        {parseInline(inner, style, registered, `${keyPrefix}-${result.length}`)}
+      </Text>
+    )
+  }
+  return result
+}
+
+// Render an EmbeddedPageContent body (HTML or plain text) as react-pdf nodes.
+// Each block element (h1–h3, p) becomes a separate <Text> with its own style.
 function EmbeddedTextBlock({
   page, bg, registered,
 }: {
@@ -458,21 +517,89 @@ function EmbeddedTextBlock({
   bg:         string
   registered: Set<string>
 }) {
-  const fontFamily = registered.has(page.font) ? page.font : 'Helvetica'
-  const textColor  = readableOn(page.color, bg)
-  return (
-    <Text style={{
+  const baseFontFamily = registered.has(page.font) ? page.font : 'Helvetica'
+  const baseFontSize   = Math.max(8, Math.min(36, page.fontSize))
+  const defaultColor   = readableOn(page.color, bg)
+  const body           = page.body ?? ''
+
+  // Detect HTML body vs legacy plain text
+  const isHtml = body.trimStart().startsWith('<')
+
+  if (!isHtml) {
+    // Legacy plain text: render as single Text block
+    return (
+      <Text style={{
+        fontFamily:  baseFontFamily,
+        fontWeight:  page.bold   ? 700 : 400,
+        fontStyle:   page.italic ? 'italic' : 'normal',
+        fontSize:    baseFontSize,
+        color:       defaultColor,
+        textAlign:   page.align,
+        lineHeight:  page.lineHeight,
+      }}>
+        {body}
+      </Text>
+    )
+  }
+
+  // Parse HTML blocks and render as react-pdf Text elements
+  const blockRe = /<(h[1-3]|p)([^>]*)>([\s\S]*?)<\/\1>/g
+  const blocks: React.ReactNode[] = []
+  let m: RegExpExecArray | null
+  let blockIdx = 0
+
+  while ((m = blockRe.exec(body)) !== null) {
+    const [, tag, attrs, inner] = m
+    const isH1 = tag === 'h1', isH2 = tag === 'h2', isH3 = tag === 'h3'
+    const isHeading = isH1 || isH2 || isH3
+
+    // Paragraph-level alignment from Tiptap style attribute
+    const alignM = attrs.match(/text-align:\s*(left|center|right)/)
+    const textAlign = (alignM ? alignM[1] : page.align) as 'left' | 'center' | 'right'
+
+    const scale     = isH1 ? 2.2 : isH2 ? 1.6 : isH3 ? 1.25 : 1.0
+    const fontSize  = baseFontSize * scale
+    const fontWeight= isHeading ? 700 : (page.bold ? 700 : 400)
+    const fontFamily= (isHeading || fontWeight === 700)
+      ? boldVariant(baseFontFamily, registered)
+      : baseFontFamily
+
+    const fontStyleVal = ((!isHeading && page.italic) ? 'italic' : 'normal') as 'normal' | 'italic'
+    const blockStyle = {
       fontFamily,
-      fontWeight:  page.bold   ? 700  : 400,
-      fontStyle:   page.italic ? 'italic' : 'normal',
-      fontSize:    Math.max(8, Math.min(32, page.fontSize)),
-      color:       textColor,
-      textAlign:   page.align,
-      lineHeight:  page.lineHeight,
-    }}>
-      {page.body}
-    </Text>
-  )
+      fontWeight,
+      fontStyle:    fontStyleVal,
+      fontSize,
+      color:        defaultColor,
+      textAlign,
+      lineHeight:   page.lineHeight,
+      marginBottom: isH1 ? 6 : isH2 ? 5 : isH3 ? 4 : 3,
+    }
+
+    // Empty <p></p> → add spacing
+    if (!inner.trim()) {
+      blocks.push(<Text key={blockIdx++} style={{ ...blockStyle, fontSize: baseFontSize * 0.45 }}>{' '}</Text>)
+      continue
+    }
+
+    const inlineBase: InlineStyle = { fontFamily, fontWeight, fontStyle: fontStyleVal, fontSize, color: defaultColor, lineHeight: page.lineHeight }
+    blocks.push(
+      <Text key={blockIdx++} style={blockStyle}>
+        {parseInline(inner, inlineBase, registered, String(blockIdx))}
+      </Text>
+    )
+  }
+
+  // Fallback: no blocks matched → render raw
+  if (blocks.length === 0) {
+    return (
+      <Text style={{ fontFamily: baseFontFamily, fontSize: baseFontSize, color: defaultColor, lineHeight: page.lineHeight, textAlign: page.align }}>
+        {decodeEntities(body.replace(/<[^>]+>/g, ' '))}
+      </Text>
+    )
+  }
+
+  return <>{blocks}</>
 }
 
 // ── Dish menu ─────────────────────────────────────────────────────────────────
