@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useEditor, EditorContent } from '@tiptap/react'
 import type { Editor } from '@tiptap/react'
 import { StarterKit } from '@tiptap/starter-kit'
@@ -10,24 +10,31 @@ import { TextAlign } from '@tiptap/extension-text-align'
 import { updateMenuExtraPages } from '../actions'
 import type { MenuExtraPages, EmbeddedPageContent } from '../menuExtraPages'
 import { Spinner } from '@/components/ui/Spinner'
+import { SERIF_FONTS, SANS_FONTS, DISPLAY_FONTS, googleFontsUrl, customFontFaceCss } from '@/lib/theme'
 
-const TEXT_FONTS: { label: string; value: string; css: string }[] = [
-  { label: 'Helvetica',          value: 'Helvetica',          css: 'Helvetica, Arial, sans-serif' },
-  { label: 'Times New Roman',    value: 'Times-Roman',        css: '"Times New Roman", Times, serif' },
-  { label: 'Courier',            value: 'Courier',            css: '"Courier New", Courier, monospace' },
-  { label: 'Cormorant Garamond', value: 'Cormorant Garamond', css: '"Cormorant Garamond", serif' },
-  { label: 'Lato',               value: 'Lato',               css: 'Lato, sans-serif' },
-  { label: 'Merriweather',       value: 'Merriweather',       css: 'Merriweather, serif' },
-  { label: 'Montserrat',         value: 'Montserrat',         css: 'Montserrat, sans-serif' },
-  { label: 'Open Sans',          value: 'Open Sans',          css: '"Open Sans", sans-serif' },
-  { label: 'Playfair Display',   value: 'Playfair Display',   css: '"Playfair Display", serif' },
-  { label: 'Raleway',            value: 'Raleway',            css: 'Raleway, sans-serif' },
-  { label: 'Roboto',             value: 'Roboto',             css: 'Roboto, sans-serif' },
+// ── Font catalogue ────────────────────────────────────────────────────────────
+
+type FontOption = { label: string; value: string; css: string }
+
+// PDF built-in fonts (no network load needed — always available in react-pdf)
+const PDF_BUILTIN_FONTS: FontOption[] = [
+  { label: 'Helvetica',       value: 'Helvetica',   css: 'Helvetica, Arial, sans-serif' },
+  { label: 'Times New Roman', value: 'Times-Roman', css: '"Times New Roman", Times, serif' },
+  { label: 'Courier',         value: 'Courier',     css: '"Courier New", Courier, monospace' },
 ]
 
-const GOOGLE_FONT_NAMES = TEXT_FONTS
-  .filter(f => !['Helvetica', 'Times-Roman', 'Courier'].includes(f.value))
-  .map(f => f.value).join('&family=')
+// Curated Google fonts — same lists as the customization panel
+const SERIF_FONT_OPTS:   FontOption[] = SERIF_FONTS.map(n   => ({ label: n, value: n, css: `'${n}', Georgia, serif` }))
+const SANS_FONT_OPTS:    FontOption[] = SANS_FONTS.map(n    => ({ label: n, value: n, css: `'${n}', system-ui, sans-serif` }))
+const DISPLAY_FONT_OPTS: FontOption[] = DISPLAY_FONTS.map(n => ({ label: n, value: n, css: `'${n}', sans-serif` }))
+
+// Values of all known (non-custom) fonts, for detecting custom-font entries
+const KNOWN_FONT_VALUES = new Set([
+  ...PDF_BUILTIN_FONTS.map(f => f.value),
+  ...SERIF_FONT_OPTS.map(f => f.value),
+  ...SANS_FONT_OPTS.map(f => f.value),
+  ...DISPLAY_FONT_OPTS.map(f => f.value),
+])
 
 const FONT_SIZES   = [8, 9, 10, 11, 12, 13, 14, 16, 18, 20, 22, 24, 28, 32, 36]
 const LINE_HEIGHTS = [1.0, 1.2, 1.4, 1.5, 1.6, 1.8, 2.0, 2.4]
@@ -43,8 +50,9 @@ function toHtml(body: string): string {
 // ── Rich text toolbar ─────────────────────────────────────────────────────────
 
 interface ToolbarProps {
-  editor: Editor | null
-  page: EmbeddedPageContent
+  editor:  Editor | null
+  page:    EmbeddedPageContent
+  fonts:   FontOption[]
   onChange: (page: EmbeddedPageContent) => void
 }
 
@@ -68,11 +76,14 @@ function ToolbarBtn({
   )
 }
 
-function RichToolbar({ editor, page, onChange }: ToolbarProps) {
+function RichToolbar({ editor, page, fonts, onChange }: ToolbarProps) {
   if (!editor) return null
 
-  const currentFont = TEXT_FONTS.find(f => f.value === page.font) ?? TEXT_FONTS[0]
+  const currentFont = fonts.find(f => f.value === page.font) ?? fonts[0]
   const selColor = editor.getAttributes('textStyle').color as string | undefined
+
+  // Extract custom-font options (anything not in the static lists)
+  const customFontOpts = fonts.filter(f => !KNOWN_FONT_VALUES.has(f.value))
 
   return (
     <div className="bg-gray-50 border border-gray-200 p-2 flex flex-wrap items-center gap-1.5">
@@ -166,17 +177,41 @@ function RichToolbar({ editor, page, onChange }: ToolbarProps) {
 
       <div className="w-px h-6 bg-gray-300" />
 
-      {/* ── Page-level defaults ─────────────────────────────────────────── */}
+      {/* ── Font family — grouped by category ──────────────────────────── */}
       <select
         value={page.font}
         onChange={e => onChange({ ...page, font: e.target.value })}
-        className="text-sm border border-gray-300 px-2 py-1.5 focus:outline-none focus:border-blue-500 min-w-[140px]"
-        style={{ fontFamily: currentFont.css }}
+        className="text-sm border border-gray-300 px-2 py-1.5 focus:outline-none focus:border-blue-500 min-w-[160px]"
+        style={{ fontFamily: currentFont?.css }}
         title="Carattere base"
       >
-        {TEXT_FONTS.map(f => (
-          <option key={f.value} value={f.value} style={{ fontFamily: f.css }}>{f.label}</option>
-        ))}
+        <optgroup label="PDF Built-in">
+          {PDF_BUILTIN_FONTS.map(f => (
+            <option key={f.value} value={f.value} style={{ fontFamily: f.css }}>{f.label}</option>
+          ))}
+        </optgroup>
+        <optgroup label="Serif">
+          {SERIF_FONT_OPTS.map(f => (
+            <option key={f.value} value={f.value} style={{ fontFamily: f.css }}>{f.label}</option>
+          ))}
+        </optgroup>
+        <optgroup label="Sans-serif">
+          {SANS_FONT_OPTS.map(f => (
+            <option key={f.value} value={f.value} style={{ fontFamily: f.css }}>{f.label}</option>
+          ))}
+        </optgroup>
+        <optgroup label="Display">
+          {DISPLAY_FONT_OPTS.map(f => (
+            <option key={f.value} value={f.value} style={{ fontFamily: f.css }}>{f.label}</option>
+          ))}
+        </optgroup>
+        {customFontOpts.length > 0 && (
+          <optgroup label="Personalizzati">
+            {customFontOpts.map(f => (
+              <option key={f.value} value={f.value} style={{ fontFamily: f.css }}>{f.label}</option>
+            ))}
+          </optgroup>
+        )}
       </select>
 
       <select
@@ -221,11 +256,12 @@ function RichToolbar({ editor, page, onChange }: ToolbarProps) {
 
 interface PageEditorProps {
   page:     EmbeddedPageContent
+  fonts:    FontOption[]
   onChange: (page: EmbeddedPageContent) => void
 }
 
-function PageEditor({ page, onChange }: PageEditorProps) {
-  const currentFont = TEXT_FONTS.find(f => f.value === page.font) ?? TEXT_FONTS[0]
+function PageEditor({ page, fonts, onChange }: PageEditorProps) {
+  const currentFont = fonts.find(f => f.value === page.font) ?? fonts[0]
 
   const editor = useEditor({
     immediatelyRender: false,
@@ -248,11 +284,11 @@ function PageEditor({ page, onChange }: PageEditorProps) {
 
   return (
     <div className="mt-3 flex flex-col gap-2">
-      <RichToolbar editor={editor} page={page} onChange={onChange} />
+      <RichToolbar editor={editor} page={page} fonts={fonts} onChange={onChange} />
       <div
         className="dmp-rte border border-gray-200 bg-white cursor-text"
         style={{
-          fontFamily: currentFont.css,
+          fontFamily: currentFont?.css,
           fontSize:   `${page.fontSize}px`,
           color:      page.color,
           lineHeight: page.lineHeight,
@@ -270,12 +306,13 @@ function PageEditor({ page, onChange }: PageEditorProps) {
 interface SectionProps {
   label:        string
   page:         EmbeddedPageContent
+  fonts:        FontOption[]
   onChangePage: (p: EmbeddedPageContent) => void
   isOpen:       boolean
   setIsOpen:    (v: boolean) => void
 }
 
-function Section({ label, page, onChangePage, isOpen, setIsOpen }: SectionProps) {
+function Section({ label, page, fonts, onChangePage, isOpen, setIsOpen }: SectionProps) {
   return (
     <div className="border border-gray-200 mb-3">
       <button
@@ -331,7 +368,7 @@ function Section({ label, page, onChangePage, isOpen, setIsOpen }: SectionProps)
           </div>
 
           {page.enabled && (
-            <PageEditor page={page} onChange={onChangePage} />
+            <PageEditor page={page} fonts={fonts} onChange={onChangePage} />
           )}
         </div>
       )}
@@ -345,9 +382,10 @@ interface Props {
   restaurantId: string
   menuId:       string
   initialPages: MenuExtraPages
+  customFonts?: Record<string, string>
 }
 
-export default function TextPagesPanel({ restaurantId, menuId, initialPages }: Props) {
+export default function TextPagesPanel({ restaurantId, menuId, initialPages, customFonts }: Props) {
   const [pages,    setPages]    = useState<MenuExtraPages>(initialPages)
   const [saving,   setSaving]   = useState(false)
   const [saved,    setSaved]    = useState(true)
@@ -355,14 +393,43 @@ export default function TextPagesPanel({ restaurantId, menuId, initialPages }: P
   const [infoOpen, setInfoOpen] = useState(false)
   const [algOpen,  setAlgOpen]  = useState(false)
 
+  // Build font list: curated Google fonts + uploaded custom fonts
+  const customFontOpts = useMemo<FontOption[]>(() =>
+    Object.keys(customFonts ?? {}).map(n => ({ label: n, value: n, css: `'${n}', sans-serif` })),
+  [customFonts])
+
+  const allFonts = useMemo<FontOption[]>(() => [
+    ...PDF_BUILTIN_FONTS,
+    ...SERIF_FONT_OPTS,
+    ...SANS_FONT_OPTS,
+    ...DISPLAY_FONT_OPTS,
+    ...customFontOpts,
+  ], [customFontOpts])
+
+  // Load all curated Google fonts + custom @font-face for the editor preview
   useEffect(() => {
-    const famParam = encodeURIComponent(GOOGLE_FONT_NAMES)
-    const link = document.createElement('link')
-    link.rel  = 'stylesheet'
-    link.href = `https://fonts.googleapis.com/css2?family=${famParam.replace(/%20/g, '+').replace(/%26family%3D/g, '&family=')}&display=swap`
-    document.head.appendChild(link)
-    return () => { document.head.removeChild(link) }
-  }, [])
+    const url = googleFontsUrl([...SERIF_FONTS, ...SANS_FONTS, ...DISPLAY_FONTS])
+    let link: HTMLLinkElement | null = null
+    if (url) {
+      link = document.createElement('link')
+      link.rel  = 'stylesheet'
+      link.href = url
+      document.head.appendChild(link)
+    }
+    let styleEl: HTMLStyleElement | null = null
+    const customCss = customFonts && Object.keys(customFonts).length > 0
+      ? customFontFaceCss(customFonts)
+      : ''
+    if (customCss) {
+      styleEl = document.createElement('style')
+      styleEl.textContent = customCss
+      document.head.appendChild(styleEl)
+    }
+    return () => {
+      if (link)    document.head.removeChild(link)
+      if (styleEl) document.head.removeChild(styleEl)
+    }
+  }, [customFonts]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const updateInfo     = useCallback((info:     EmbeddedPageContent) => { setPages(p => ({...p, info}));     setSaved(false) }, [])
   const updateAllergen = useCallback((allergen: EmbeddedPageContent) => { setPages(p => ({...p, allergen})); setSaved(false) }, [])
@@ -406,6 +473,7 @@ export default function TextPagesPanel({ restaurantId, menuId, initialPages }: P
       <Section
         label="Pagina informativa"
         page={pages.info}
+        fonts={allFonts}
         onChangePage={updateInfo}
         isOpen={infoOpen}
         setIsOpen={setInfoOpen}
@@ -413,6 +481,7 @@ export default function TextPagesPanel({ restaurantId, menuId, initialPages }: P
       <Section
         label="Pagina allergeni"
         page={pages.allergen}
+        fonts={allFonts}
         onChangePage={updateAllergen}
         isOpen={algOpen}
         setIsOpen={setAlgOpen}

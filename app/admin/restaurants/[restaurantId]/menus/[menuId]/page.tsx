@@ -100,6 +100,7 @@ export default async function MenuDishesPage({
         restaurantId={params.restaurantId}
         menuId={params.menuId}
         initialPages={extraPages}
+        customFonts={theme.customFonts}
       />
     </div>
   )
