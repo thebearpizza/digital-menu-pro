@@ -106,6 +106,7 @@ interface Props {
   theme?:        RestaurantTheme
   editMode?:     boolean
   onEditTarget?: (target: string) => void
+  onDishOpen?:   (dishId: string) => void
   // Lingua corrente + cambio lingua: se onLangChange è presente, la barra
   // categorie mostra la bandierina al posto del contatore pagine.
   lang?:         Lang
@@ -125,6 +126,7 @@ export default function FlipbookViewer({
   theme: themeProp,
   editMode,
   onEditTarget,
+  onDishOpen,
   lang: langProp,
   onLangChange,
 }: Props) {
@@ -191,6 +193,8 @@ export default function FlipbookViewer({
   // piatti con lo stesso nome in categorie diverse (match per pagina corrente).
   const categoriesRef = useRef(categories)
   useEffect(() => { categoriesRef.current = categories }, [categories])
+  const onDishOpenRef = useRef(onDishOpen)
+  useEffect(() => { onDishOpenRef.current = onDishOpen }, [onDishOpen])
   const [modalStack, setModalStack] = useState<DishData[]>([])
 
   // Sincronizza activeCatIdx quando currentPage cambia (sfoglio manuale)
@@ -418,6 +422,7 @@ export default function FlipbookViewer({
             evt.stopPropagation()
             if (moved) return            // era uno swipe, non un tap
             evt.preventDefault()
+            onDishOpenRef.current?.(captured.id)
             setModalStack([captured])
           }, { passive: false })
 
@@ -427,6 +432,7 @@ export default function FlipbookViewer({
           span.addEventListener('click', (evt) => {
             evt.stopPropagation()
             evt.preventDefault()
+            onDishOpenRef.current?.(captured.id)
             setModalStack([captured])
           })
         }

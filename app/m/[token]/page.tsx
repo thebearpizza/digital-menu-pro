@@ -145,6 +145,7 @@ export default async function PublicMenuPage({
         banners={(banners ?? []) as any[]}
         info={info ?? null}
         defaultMenuId={defaultMenuId}
+        restaurantId={restaurant.id as string}
       />
     </>
   )

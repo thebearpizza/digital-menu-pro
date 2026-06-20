@@ -5,7 +5,8 @@
 // toggled via opacity so the background video never needs to re-initialize.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useState, useEffect, useRef, useMemo } from 'react'
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
+import { createClient } from '@/lib/supabase/client'
 import FlipbookViewer  from './FlipbookViewer'
 import DishModal       from './DishModal'
 import type { DishData } from './DishModal'
@@ -55,6 +56,7 @@ export interface Restaurant {
 interface Props {
   restaurant: Restaurant; menus: Menu[]; banners: Banner[]
   info: Info | null; defaultMenuId?: string | null
+  restaurantId: string
 }
 
 type VisKey = 'name'|'description'|'logo'|'instagram'|'facebook'|'website'|'tripadvisor'|'google_maps'
@@ -160,11 +162,20 @@ function BannerCarousel({ banners, accent }: { banners: Banner[]; accent: string
 
 // ── Main ──────────────────────────────────────────────────────────────────────
 
-export default function PublicMenuView({ restaurant, menus, banners, defaultMenuId }: Props) {
+export default function PublicMenuView({ restaurant, menus, banners, defaultMenuId, restaurantId }: Props) {
   // selectedMenuId: what the user has chosen to view (null = landing)
   const [selectedMenuId, setSelectedMenuId] = useState<string | null>(defaultMenuId ?? null)
   // pendingMenuId: set during immersive video transition (PDF generation starts early)
   const [pendingMenuId, setPendingMenuId]   = useState<string | null>(null)
+
+  // ── Tracking — fire-and-forget insert in menu_events ─────────────────────
+  const sbTrackRef = useRef<ReturnType<typeof createClient> | null>(null)
+  useEffect(() => { sbTrackRef.current = createClient() }, [])
+  const track = useCallback((event_type: 'menu_open' | 'dish_click', menu_id: string, dish_id?: string) => {
+    void sbTrackRef.current?.from('menu_events').insert({
+      restaurant_id: restaurantId, menu_id, dish_id: dish_id ?? null, event_type,
+    })
+  }, [restaurantId])
 
   // ── Lingua del menu — italiano di default, scelta persistita sul device ────
   const [lang, setLangState] = useState<Lang>('it')
@@ -402,6 +413,7 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
   // ── Immersive transition driver ────────────────────────────────────────────
   function openMenu(menuId: string) {
     if (editMode) return
+    track('menu_open', menuId)
     if (l.background.immersiveTransition && l.background.type === 'video') {
       setPendingMenuId(menuId)
     } else {
@@ -774,6 +786,7 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
             theme={effectiveTheme}
             editMode={editMode && !cardPreviewOpen}
             onEditTarget={sendEdit}
+            onDishOpen={!editMode && activeMenuId ? (dishId) => track('dish_click', activeMenuId, dishId) : undefined}
             lang={lang}
             onLangChange={setLang}
           />

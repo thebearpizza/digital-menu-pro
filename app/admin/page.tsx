@@ -3,6 +3,7 @@ import Link from 'next/link'
 import DashboardCounters from './DashboardCounters'
 import InactiveDishesPanel from './InactiveDishesPanel'
 import ScanStatsTable from './ScanStatsTable'
+import MenuStatsTable from './MenuStatsTable'
 
 export default async function AdminPage() {
   const supabase = await createClient()
@@ -89,6 +90,11 @@ export default async function AdminPage() {
       <InactiveDishesPanel groups={groups} />
 
       <ScanStatsTable
+        restaurantIds={restaurantIds}
+        restaurantNames={restaurantNames}
+      />
+
+      <MenuStatsTable
         restaurantIds={restaurantIds}
         restaurantNames={restaurantNames}
       />
