@@ -445,16 +445,28 @@ export default function FlipbookViewer({
         }
       }
 
-      // Pass 1b: multi-group matching for dishes whose name wraps to 2 lines.
-      // Tries combining 2 then 3 consecutive unmatched groups (within 4 tol-units
-      // vertically, so only lines that visually belong to the same dish block).
+      // Pass 1b: multi-group matching for dishes whose name wraps to 2+ lines.
+      // Tries combining 2–4 consecutive unmatched groups within 5 topPx-units
+      // (< inter-dish spacing of ~6 units), stopping early at already-matched
+      // groups (clear dish-boundary markers) to avoid false positives.
       for (let i = 0; i < sortedGroups.length; i++) {
         if (matchedIdx.has(i)) continue
-        for (let len = 2; len <= 3; len++) {
+        // Don't start from a pure allergen/price row (no dish text to anchor on)
+        if (!sortedGroups[i].spans.some(s => isDishText(s.textContent ?? ''))) continue
+
+        for (let len = 2; len <= 4; len++) {
           const lastIdx = i + len - 1
           if (lastIdx >= sortedGroups.length) break
-          if (sortedGroups[lastIdx].topPx - sortedGroups[i].topPx > 4) break
-          const combined = []
+          // Stop if the window spans more than ~5% — prevents crossing to next dish
+          if (sortedGroups[lastIdx].topPx - sortedGroups[i].topPx > 5) break
+          // Stop if any intermediate group is already matched (= next dish started)
+          let crossesMatch = false
+          for (let k = i + 1; k <= lastIdx; k++) {
+            if (matchedIdx.has(k)) { crossesMatch = true; break }
+          }
+          if (crossesMatch) break
+
+          const combined: HTMLElement[] = []
           for (let k = i; k < i + len; k++) {
             combined.push(...sortedGroups[k].spans.filter(s => isDishText(s.textContent ?? '')))
           }
