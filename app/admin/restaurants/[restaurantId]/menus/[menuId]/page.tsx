@@ -3,8 +3,8 @@ import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import DishList from './DishList'
 import TextPagesPanel from './TextPagesPanel'
-import { defaultExtraPages } from '../actions'
-import type { MenuExtraPages } from '../actions'
+import { defaultExtraPages } from '../menuExtraPages'
+import type { MenuExtraPages } from '../menuExtraPages'
 
 export default async function MenuDishesPage({
   params,

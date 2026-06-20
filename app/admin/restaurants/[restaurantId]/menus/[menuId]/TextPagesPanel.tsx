@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { updateMenuExtraPages } from '../actions'
-import type { MenuExtraPages, EmbeddedPageContent } from '../actions'
+import type { MenuExtraPages, EmbeddedPageContent } from '../menuExtraPages'
 import { Spinner } from '@/components/ui/Spinner'
 
 const TEXT_FONTS: { label: string; value: string; css: string }[] = [
