@@ -368,31 +368,37 @@ export default function FlipbookViewer({
         g.spans.sort((a, b) => (parseFloat(a.style.left) || 0) - (parseFloat(b.style.left) || 0))
       }
 
-      // Step C: match each line's concatenated text against dish names
+      // Disambiguate when multiple dishes share the same name across categories.
+      function pickDish(norm: string): DishData | undefined {
+        const all = dishesRef.current.filter(d => d.name.trim().toUpperCase() === norm)
+        if (!all.length) return undefined
+        if (all.length === 1) return all[0]
+        const cats = categoriesRef.current ?? []
+        let currentCat: string | undefined
+        for (let i = 0; i < cats.length; i++) {
+          if (pageNum >= cats[i].targetPage) currentCat = cats[i].label
+        }
+        return all.find(d => d.category === currentCat) ?? all[0]
+      }
+
+      // Step C: for each line try ALL contiguous span windows, shortest first.
+      //   window=1 → standard fonts: one span = full dish name (price is a separate span)
+      //   window=N → custom/subset fonts: one span = one glyph; name is spread across
+      //              consecutive spans; the window finds the name prefix before price glyphs
       const anchors: DishAnchor[] = []
 
       for (const { topPx, spans } of lineGroups) {
-        const lineText = spans.map(s => s.textContent ?? '').join('').trim().replace(/\s+/g, ' ')
-        if (!lineText) continue
-
-        const candidates = dishesRef.current.filter(
-          d => d.name.trim().toUpperCase() === lineText.toUpperCase()
-        )
-        let match: DishData | undefined = candidates[0]
-        if (candidates.length > 1) {
-          // Stesso nome in più categorie: disambigua in base alla categoria
-          // la cui sezione PDF contiene questa pagina (stesso criterio di
-          // activeCatIdx sopra: ultima categoria con targetPage <= pageNum).
-          const cats = categoriesRef.current ?? []
-          let currentCat: string | undefined
-          for (let i = 0; i < cats.length; i++) {
-            if (pageNum >= cats[i].targetPage) currentCat = cats[i].label
+        sizeLoop: for (let size = 1; size <= spans.length; size++) {
+          for (let start = 0; start <= spans.length - size; start++) {
+            const text = spans.slice(start, start + size)
+              .map(s => s.textContent ?? '').join('').trim().replace(/\s+/g, ' ')
+            const dish = pickDish(text.toUpperCase())
+            if (dish) {
+              for (let k = start; k < start + size; k++) spans[k].dataset.dishId = dish.id
+              anchors.push({ dish, topPx })
+              break sizeLoop
+            }
           }
-          match = candidates.find(d => d.category === currentCat) ?? candidates[0]
-        }
-        if (match) {
-          for (const span of spans) { span.dataset.dishId = match.id }  // CSS gold-highlight
-          anchors.push({ dish: match, topPx })
         }
       }
 
