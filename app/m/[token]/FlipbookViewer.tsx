@@ -419,27 +419,54 @@ export default function FlipbookViewer({
         return all.find(d => d.category === currentCat) ?? all[0]
       }
 
-      // Step C: for each line group, strip allergen/price spans, concatenate
-      // the remaining dish-name text, and match against dish names.
-      // Two normalizations are tried:
-      //   (a) spaces collapsed → standard fonts where word spaces are preserved
-      //   (b) spaces stripped  → custom fonts where empty spans replace spaces,
-      //       causing "FOCACCIA"+"COME" to concatenate as "FOCACCIACOME"
+      // Step C: match dish names against line groups.
+      // Sorted once by topPx so consecutive-group matching works in reading order.
+      const sortedGroups = [...lineGroups].sort((a, b) => a.topPx - b.topPx)
+
       const anchors: DishAnchor[] = []
+      const matchedIdx = new Set<number>()  // indices into sortedGroups
 
-      for (const { topPx, spans } of lineGroups) {
-        const dishSpans = spans.filter(s => isDishText(s.textContent ?? ''))
-        if (!dishSpans.length) continue
-
+      function tryMatch(dishSpans: HTMLElement[]): DishData | undefined {
+        if (!dishSpans.length) return undefined
         const raw  = dishSpans.map(s => s.textContent ?? '').join('').trim().replace(/\s+/g, ' ')
         const noSp = raw.replace(/\s+/g, '').toUpperCase()
-
-        const dish = pickDish(raw.toUpperCase())
+        return pickDish(raw.toUpperCase())
           ?? (noSp.length > 2 ? pickDish(noSp, true) : undefined)
+      }
 
+      // Pass 1a: single-group matching (standard and custom fonts)
+      for (let i = 0; i < sortedGroups.length; i++) {
+        const { topPx, spans } = sortedGroups[i]
+        const dish = tryMatch(spans.filter(s => isDishText(s.textContent ?? '')))
         if (dish) {
           for (const span of spans) { span.dataset.dishId = dish.id }
           anchors.push({ dish, topPx })
+          matchedIdx.add(i)
+        }
+      }
+
+      // Pass 1b: multi-group matching for dishes whose name wraps to 2 lines.
+      // Tries combining 2 then 3 consecutive unmatched groups (within 4 tol-units
+      // vertically, so only lines that visually belong to the same dish block).
+      for (let i = 0; i < sortedGroups.length; i++) {
+        if (matchedIdx.has(i)) continue
+        for (let len = 2; len <= 3; len++) {
+          const lastIdx = i + len - 1
+          if (lastIdx >= sortedGroups.length) break
+          if (sortedGroups[lastIdx].topPx - sortedGroups[i].topPx > 4) break
+          const combined = []
+          for (let k = i; k < i + len; k++) {
+            combined.push(...sortedGroups[k].spans.filter(s => isDishText(s.textContent ?? '')))
+          }
+          const dish = tryMatch(combined)
+          if (dish) {
+            for (let k = i; k < i + len; k++) {
+              for (const span of sortedGroups[k].spans) { span.dataset.dishId = dish.id }
+            }
+            anchors.push({ dish, topPx: sortedGroups[i].topPx })
+            matchedIdx.add(i)
+            break
+          }
         }
       }
 
