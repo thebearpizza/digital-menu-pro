@@ -428,7 +428,12 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
     setPosterVisible(false)
     const finish = () => { setSelectedMenuId(pendingMenuId); setPendingMenuId(null) }
     v.addEventListener('ended', finish, { once: true })
-    const fallback = setTimeout(finish, 8000)
+    // Safety fallback: duration + 3 s buffer so longer videos aren't cut short.
+    // The previous hardcoded 8 s fired finish() mid-playback on videos > 8 s.
+    const safetyMs = v.duration && isFinite(v.duration)
+      ? Math.ceil(v.duration * 1000) + 3000
+      : 60000
+    const fallback = setTimeout(finish, safetyMs)
     const p = v.play()
     if (p?.catch) p.catch(() => finish())
     return () => { v.removeEventListener('ended', finish); clearTimeout(fallback) }
