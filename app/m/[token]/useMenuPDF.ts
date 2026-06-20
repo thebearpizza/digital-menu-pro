@@ -11,8 +11,10 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useEffect, useRef, useState } from 'react'
-import type { PDFMenu, PDFRestaurant } from './MenuPDFDocument'
+import type { PDFMenu, PDFRestaurant, TextMenuContent } from './MenuPDFDocument'
 import { groupByCategory } from './MenuPDFDocument'
+
+export type { TextMenuContent }
 import type { RestaurantTheme } from '@/lib/theme'
 
 // Same CDN as FlipbookViewer — script deduplication prevents double-loading.
@@ -127,8 +129,12 @@ export function useMenuPDF(
   const customFontsKey = theme?.customFonts ? JSON.stringify(theme.customFonts) : undefined
 
   useEffect(() => {
-    // No menu → show nothing (welcome screen will render instead).
-    if (!menu || !restaurant || !menu.dishes.length) {
+    // No menu, or dish menu with no dishes, or text menu with empty body → show welcome screen.
+    const isTextMenu = menu?.menu_type === 'text'
+    const hasContent = isTextMenu
+      ? !!(menu?.text_content?.body?.trim())
+      : (menu?.dishes?.length ?? 0) > 0
+    if (!menu || !restaurant || !hasContent) {
       if (activeUrlRef.current) {
         URL.revokeObjectURL(activeUrlRef.current)
         activeUrlRef.current = null
@@ -153,14 +159,16 @@ export function useMenuPDF(
         const { pdf, Font } = reactPdf as any
 
         // Embed the real Google fonts chosen in the theme so the PDF typography
-        // matches the editor. Falls back to built-ins for anything unavailable.
+        // matches the editor. For text menus, also register the body font.
+        const textMenuFont = isTextMenu ? (menu.text_content?.font ?? '') : ''
         const registeredFonts = theme
           ? registerThemeFonts(Font, [
               theme.menu.dishes.titleFont,
               theme.menu.descriptions.font,
               theme.menu.prices.font,
               theme.menu.categories.font,
-            ], theme.customFonts)
+              textMenuFont,
+            ].filter(Boolean), theme.customFonts)
           : new Set<string>()
 
         // ── Generate PDF blob ──────────────────────────────────────────────────
@@ -182,13 +190,17 @@ export function useMenuPDF(
         if (cancelled) { URL.revokeObjectURL(newUrl); return }
 
         // ── Detect exact category page numbers ─────────────────────────────────
-        const categoryNames = groupByCategory(menu.dishes).map(c => c.name)
-        // Sequential fallback: cat1=1, cat2=2, …
-        const fallback: CategoryNav[] = categoryNames.map((name, i) => ({
-          label: name, targetPage: i + 1,
-        }))
-
-        const categories = await detectCategoryPages(newUrl, categoryNames, fallback)
+        // Text menus have no categories (single text page).
+        let categories: CategoryNav[]
+        if (isTextMenu) {
+          categories = []
+        } else {
+          const categoryNames = groupByCategory(menu.dishes).map(c => c.name)
+          const fallback: CategoryNav[] = categoryNames.map((name, i) => ({
+            label: name, targetPage: i + 1,
+          }))
+          categories = await detectCategoryPages(newUrl, categoryNames, fallback)
+        }
         if (cancelled) { URL.revokeObjectURL(newUrl); return }
 
         // Revoke the previous URL only after the new one is ready (no gap).
@@ -241,6 +253,11 @@ export function useMenuPDF(
     theme?.menu.categories.flourishWidth, theme?.menu.categories.flourishThickness,
     theme?.menu.layout.boxedBorderWidth,
     customFontsKey,
+    // text menu content — regenerate whenever body/formatting changes
+    menu?.menu_type, menu?.text_content?.body, menu?.text_content?.font,
+    menu?.text_content?.fontSize, menu?.text_content?.align,
+    menu?.text_content?.color, menu?.text_content?.bold,
+    menu?.text_content?.italic, menu?.text_content?.lineHeight,
   ]) // eslint-disable-line react-hooks/exhaustive-deps
 
   return result

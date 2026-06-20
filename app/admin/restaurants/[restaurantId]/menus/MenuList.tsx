@@ -13,7 +13,7 @@ import {
   useSortable,
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { createMenu, deleteMenu, duplicateMenu, reorderMenus, updateMenuName, toggleMenuActive, updateMenuSchedule } from './actions'
+import { createMenu, deleteMenu, duplicateMenu, reorderMenus, updateMenuName, toggleMenuActive, updateMenuSchedule, createAllergenMenu, createInfoMenu } from './actions'
 import VisibilityToggle from '@/components/ui/VisibilityToggle'
 import { Spinner } from '@/components/ui/Spinner'
 import { scheduleLabel } from '@/lib/menuSchedule'
@@ -27,6 +27,7 @@ interface Menu {
   schedule_enabled: boolean | null
   schedule_from: string | null
   schedule_until: string | null
+  menu_type?: 'dishes' | 'text'
 }
 
 interface Props {
@@ -125,10 +126,17 @@ function SortableMenu({
         <>
           {/* Nome menu — flex-1 assorbe lo spazio, truncate previene overflow */}
           <Link
-            href={`/admin/restaurants/${restaurantId}/menus/${menu.id}`}
+            href={menu.menu_type === 'text'
+              ? `/admin/restaurants/${restaurantId}/menus/${menu.id}/text-editor`
+              : `/admin/restaurants/${restaurantId}/menus/${menu.id}`}
             className="flex-1 min-w-0 text-sm font-medium text-gray-900 hover:text-blue-600 hover:underline truncate"
           >
             {menu.name}
+            {menu.menu_type === 'text' && (
+              <span className="ml-2 text-[10px] font-normal text-purple-600 bg-purple-50 border border-purple-200 px-1.5 py-0.5 rounded whitespace-nowrap">
+                Testo
+              </span>
+            )}
             {scheduleLabel(menu) && (
               <span className="ml-2 text-[10px] font-normal text-amber-600 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded whitespace-nowrap">
                 🕐 {scheduleLabel(menu)}
@@ -182,12 +190,21 @@ function SortableMenu({
           </div>
 
           {/* CTA primario — sempre visibile, mai sacrificato */}
-          <Link
-            href={`/admin/restaurants/${restaurantId}/menus/${menu.id}`}
-            className="shrink-0 text-xs bg-blue-600 text-white px-3 py-1.5 hover:bg-blue-700 transition-colors whitespace-nowrap"
-          >
-            Piatti →
-          </Link>
+          {menu.menu_type === 'text' ? (
+            <Link
+              href={`/admin/restaurants/${restaurantId}/menus/${menu.id}/text-editor`}
+              className="shrink-0 text-xs bg-purple-600 text-white px-3 py-1.5 hover:bg-purple-700 transition-colors whitespace-nowrap"
+            >
+              Testo →
+            </Link>
+          ) : (
+            <Link
+              href={`/admin/restaurants/${restaurantId}/menus/${menu.id}`}
+              className="shrink-0 text-xs bg-blue-600 text-white px-3 py-1.5 hover:bg-blue-700 transition-colors whitespace-nowrap"
+            >
+              Piatti →
+            </Link>
+          )}
         </>
       )}
     </div>
@@ -269,12 +286,16 @@ function ScheduleModal({ menu, onSave, onClose }: {
 }
 
 export default function MenuList({ restaurantId, initialMenus }: Props) {
-  const [menus,    setMenus]    = useState(initialMenus)
-  const [newName,  setNewName]  = useState('')
-  const [creating, setCreating] = useState(false)
-  const [error,    setError]    = useState<string | null>(null)
-  const [schedMenu, setSchedMenu] = useState<Menu | null>(null)
+  const [menus,            setMenus]            = useState(initialMenus)
+  const [newName,          setNewName]          = useState('')
+  const [creating,         setCreating]         = useState(false)
+  const [creatingSpecial,  setCreatingSpecial]  = useState<'allergeni' | 'info' | null>(null)
+  const [error,            setError]            = useState<string | null>(null)
+  const [schedMenu,        setSchedMenu]        = useState<Menu | null>(null)
   const listRef = useStaggerEntrance<HTMLDivElement>({ duration: 450, staggerMs: 60, translateY: 8 })
+
+  const hasAllergenMenu = menus.some(m => m.menu_type === 'text' && m.name === 'Allergeni')
+  const hasInfoMenu     = menus.some(m => m.menu_type === 'text' && m.name === 'Info')
 
   const sensors = useSensors(useSensor(PointerSensor))
 
@@ -332,9 +353,25 @@ export default function MenuList({ restaurantId, initialMenus }: Props) {
     try {
       await toggleMenuActive(restaurantId, id, active)
     } catch {
-      // Ripristina lo stato precedente: l'ottimistico non è andato a buon fine.
       setMenus(prev => prev.map(m => m.id === id ? { ...m, is_active: !active } : m))
       setError('Errore nel cambio stato menu.')
+    }
+  }
+
+  async function handleCreateSpecial(type: 'allergeni' | 'info') {
+    setCreatingSpecial(type)
+    try {
+      const created = type === 'allergeni'
+        ? await createAllergenMenu(restaurantId)
+        : await createInfoMenu(restaurantId)
+      setMenus(prev => [...prev, {
+        ...created,
+        schedule_enabled: null, schedule_from: null, schedule_until: null,
+      } as Menu])
+    } catch (err: any) {
+      setError(err.message ?? 'Errore nella creazione del menu speciale.')
+    } finally {
+      setCreatingSpecial(null)
     }
   }
 
@@ -407,6 +444,38 @@ export default function MenuList({ restaurantId, initialMenus }: Props) {
               ))}
             </SortableContext>
           </DndContext>
+        </div>
+      )}
+
+      {/* ── Menu testo speciali ─────────────────────────────────────────────── */}
+      {(!hasAllergenMenu || !hasInfoMenu) && (
+        <div className="mt-6 border border-purple-200 bg-purple-50 p-4">
+          <p className="text-xs font-semibold text-purple-700 uppercase tracking-wide mb-1">
+            Pagine speciali
+          </p>
+          <p className="text-xs text-purple-600 mb-3">
+            Pagine di testo libero che appaiono nel flipbook e nel PDF (non contengono piatti).
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {!hasAllergenMenu && (
+              <button
+                onClick={() => handleCreateSpecial('allergeni')}
+                disabled={creatingSpecial === 'allergeni'}
+                className="text-xs bg-purple-600 text-white px-3 py-2 hover:bg-purple-700 disabled:opacity-50 transition-colors flex items-center gap-1.5 min-h-[36px]"
+              >
+                {creatingSpecial === 'allergeni' ? <Spinner color="#fff" /> : '+ Aggiungi pagina Allergeni'}
+              </button>
+            )}
+            {!hasInfoMenu && (
+              <button
+                onClick={() => handleCreateSpecial('info')}
+                disabled={creatingSpecial === 'info'}
+                className="text-xs bg-purple-600 text-white px-3 py-2 hover:bg-purple-700 disabled:opacity-50 transition-colors flex items-center gap-1.5 min-h-[36px]"
+              >
+                {creatingSpecial === 'info' ? <Spinner color="#fff" /> : '+ Aggiungi pagina Info'}
+              </button>
+            )}
+          </div>
         </div>
       )}
 

@@ -11,7 +11,7 @@ export default async function MenusPage({ params }: { params: { restaurantId: st
 
   const { data: menus } = await supabase
     .from('menus')
-    .select('id, name, sort_order, is_active, schedule_enabled, schedule_from, schedule_until')
+    .select('id, name, sort_order, is_active, schedule_enabled, schedule_from, schedule_until, menu_type')
     .eq('restaurant_id', params.restaurantId)
     .order('sort_order', { ascending: true })
 

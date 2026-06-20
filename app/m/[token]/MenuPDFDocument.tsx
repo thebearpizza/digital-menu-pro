@@ -60,6 +60,17 @@ export interface PDFDish {
   allergens: number[]
 }
 
+export interface TextMenuContent {
+  body: string
+  font?: string
+  fontSize?: number
+  align?: 'left' | 'center' | 'right'
+  color?: string
+  bold?: boolean
+  italic?: boolean
+  lineHeight?: number
+}
+
 export interface PDFMenu {
   id: string
   name: string
@@ -67,6 +78,8 @@ export interface PDFMenu {
   // Lingua del menu già tradotto (nomi/descrizioni/categorie arrivano tradotti
   // dal chiamante): serve solo per le etichette fisse, es. gli allergeni.
   lang?: string
+  menu_type?: 'dishes' | 'text'
+  text_content?: TextMenuContent | null
 }
 
 export interface PDFRestaurant {
@@ -430,7 +443,61 @@ function chunk<T>(arr: T[], n: number): T[][] {
   return out
 }
 
+// ── Text menu page ────────────────────────────────────────────────────────────
+
+function TextMenuPage({ restaurant, menu, theme: themeProp, registeredFonts }: Props) {
+  const theme   = themeProp ?? DEFAULT_THEME
+  const m       = theme.menu
+  const compact = m.pdfLayout === 'compact'
+  const bg      = m.pageBackground.color
+  const tc      = menu.text_content ?? { body: '' }
+
+  const fontFamily = (registeredFonts?.has(tc.font ?? '') ? tc.font : undefined) ?? 'Helvetica'
+  const fontSize   = Math.max(8, Math.min(32, tc.fontSize ?? 12))
+  const textColor  = readableOn(tc.color ?? '#1a1a1a', bg)
+  const align      = tc.align ?? 'left'
+  const lineHeight = tc.lineHeight ?? 1.6
+  const fontWeight = tc.bold ? 700 : 400
+  const fontStyle  = tc.italic ? 'italic' : 'normal'
+
+  const pageStyle = {
+    backgroundColor: bg,
+    paddingTop:    compact ? 38 : 52,
+    paddingBottom: compact ? 64 : 56,
+    paddingHorizontal: compact ? 44 : 54,
+  }
+
+  return (
+    <Document
+      title={`${restaurant.name} — ${menu.name}`}
+      author={restaurant.name}
+      creator="Digital Menu Pro"
+    >
+      <Page size="A4" style={pageStyle} wrap>
+        <PageBackgroundLayer bg={m.pageBackground} compact={compact} />
+        <View>
+          <Text style={{
+            fontFamily, fontWeight, fontStyle,
+            fontSize, color: textColor,
+            textAlign: align,
+            lineHeight,
+          }}>
+            {tc.body}
+          </Text>
+        </View>
+      </Page>
+    </Document>
+  )
+}
+
+// ── Dish menu ─────────────────────────────────────────────────────────────────
+
 export function MenuPDFDocument({ restaurant, menu, theme: themeProp, registeredFonts }: Props) {
+  // Delegate to the text page renderer for text-type menus.
+  if (menu.menu_type === 'text') {
+    return <TextMenuPage restaurant={restaurant} menu={menu} theme={themeProp} registeredFonts={registeredFonts} />
+  }
+
   const theme      = themeProp ?? DEFAULT_THEME
   const m          = theme.menu
   const reg        = registeredFonts ?? new Set<string>()
