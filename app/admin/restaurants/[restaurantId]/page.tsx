@@ -30,7 +30,7 @@ export default async function RestaurantInfoPage({
         <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">
           QR Code
         </h2>
-        <QRCodeCard token={restaurant.qr_public_token} restaurantName={restaurant.name} />
+        <QRCodeCard restaurantId={params.restaurantId} token={restaurant.qr_public_token} restaurantName={restaurant.name} />
       </div>
     </div>
   )

@@ -1,17 +1,17 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import Link from 'next/link'
 import QRCode from 'qrcode'
 
-// Production URL — QR codes are physically printed in restaurants.
-// This must always point to the production domain, not the current window origin.
-// See CLAUDE.md → "URL del QR code stabile per sempre"
 const PROD_URL = 'https://digital-menu-pro-blush.vercel.app'
 
 export function QRCodeCard({
+  restaurantId,
   token,
   restaurantName,
 }: {
+  restaurantId: string
   token: string
   restaurantName: string
 }) {
@@ -50,12 +50,19 @@ export function QRCodeCard({
 
       <div>
         <p className="text-[10px] text-gray-400 mb-1">URL pubblico (production)</p>
-        <div className="flex items-center gap-2">
-          <code className="flex-1 text-[10px] text-gray-600 bg-gray-50 px-2 py-1.5 border border-gray-200 break-all font-mono leading-snug min-w-0">
-            {menuUrl}
+        <Link
+          href={`/admin/restaurants/${restaurantId}/customization`}
+          className="flex items-center gap-2 group"
+        >
+          <code className="flex-1 text-[10px] text-gray-600 bg-gray-50 px-2 py-1.5 border border-gray-200 break-all font-mono leading-snug min-w-0 group-hover:border-gray-400 group-hover:bg-gray-100 transition-colors cursor-pointer">
+            {PROD_URL}
           </code>
           <button
-            onClick={handleCopy}
+            onClick={e => {
+              e.preventDefault()
+              handleCopy()
+            }}
+            type="button"
             className={`shrink-0 text-xs px-2.5 py-1.5 border transition-colors ${
               copied
                 ? 'border-green-200 bg-green-50 text-green-700'
@@ -64,7 +71,7 @@ export function QRCodeCard({
           >
             {copied ? '✓' : 'Copia'}
           </button>
-        </div>
+        </Link>
       </div>
 
       <div className="flex gap-2">
@@ -78,11 +85,19 @@ export function QRCodeCard({
         </a>
         <button
           onClick={handleDownload}
+          type="button"
           className="flex-1 text-xs font-medium py-1.5 border border-gray-300 text-gray-600 hover:bg-gray-50 transition-colors"
         >
           Scarica PNG
         </button>
       </div>
+
+      <Link
+        href={`/admin/restaurants/${restaurantId}/customization`}
+        className="block w-full text-center text-xs font-medium py-2 bg-blue-600 text-white border border-blue-600 hover:bg-blue-700 transition-colors"
+      >
+        Gestisci
+      </Link>
     </div>
   )
 }
