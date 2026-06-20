@@ -331,8 +331,14 @@ export default function FlipbookViewer({
 
       // ── Chirurgical hotspot — two-pass, zero vertical bleed ─────────────────
       //
-      // Pass 1: identify dish-name spans by exact text match → build a sorted
-      //   list of (dish, topPx) anchors from PDF.js's style.top values.
+      // Pass 1: identify dish-name lines → build sorted (dish, topPx) anchors.
+      //
+      //   With standard fonts PDF.js produces one span per dish name → direct
+      //   text match works. With custom/subset fonts PDF.js may split each
+      //   glyph into its own span on the same baseline. We therefore GROUP all
+      //   spans whose style.top values are within LINE_TOLERANCE px, sort them
+      //   left→right, concatenate their text, and match the full line string.
+      //   Both cases are handled by the same code path.
       //
       // Pass 2: for EVERY span whose style.top falls inside a dish's vertical
       //   range [dishName.top, nextDishName.top), extend it to full page width
@@ -343,14 +349,34 @@ export default function FlipbookViewer({
       // Footer exclusion: the bottom 10% of the page (restaurant name +
       //   page number text items) is capped out of the last dish's range.
 
+      const LINE_TOLERANCE = 4  // px — groups glyphs on the same baseline
+
+      // Step A: bucket spans into lines by top value
+      type LineGroup  = { topPx: number; spans: HTMLElement[] }
       type DishAnchor = { dish: DishData; topPx: number }
-      const anchors: DishAnchor[] = []
+      const lineGroups: LineGroup[] = []
 
       for (const div of textDivs) {
-        const text = div.textContent?.trim() ?? ''
-        if (!text) continue
+        const topPx = parseFloat(div.style.top) || 0
+        const grp   = lineGroups.find(g => Math.abs(g.topPx - topPx) < LINE_TOLERANCE)
+        if (grp) { grp.spans.push(div) }
+        else      { lineGroups.push({ topPx, spans: [div] }) }
+      }
+
+      // Step B: sort each line left → right (reading order)
+      for (const g of lineGroups) {
+        g.spans.sort((a, b) => (parseFloat(a.style.left) || 0) - (parseFloat(b.style.left) || 0))
+      }
+
+      // Step C: match each line's concatenated text against dish names
+      const anchors: DishAnchor[] = []
+
+      for (const { topPx, spans } of lineGroups) {
+        const lineText = spans.map(s => s.textContent ?? '').join('').trim().replace(/\s+/g, ' ')
+        if (!lineText) continue
+
         const candidates = dishesRef.current.filter(
-          d => d.name.trim().toUpperCase() === text.toUpperCase()
+          d => d.name.trim().toUpperCase() === lineText.toUpperCase()
         )
         let match: DishData | undefined = candidates[0]
         if (candidates.length > 1) {
@@ -365,8 +391,8 @@ export default function FlipbookViewer({
           match = candidates.find(d => d.category === currentCat) ?? candidates[0]
         }
         if (match) {
-          div.dataset.dishId = match.id  // CSS gold-highlight on name span
-          anchors.push({ dish: match, topPx: parseFloat(div.style.top) || 0 })
+          for (const span of spans) { span.dataset.dishId = match.id }  // CSS gold-highlight
+          anchors.push({ dish: match, topPx })
         }
       }
 
