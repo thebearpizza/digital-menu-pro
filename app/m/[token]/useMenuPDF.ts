@@ -61,6 +61,7 @@ async function detectCategoryPages(
   blobUrl:       string,
   categoryNames: string[],
   fallback:      CategoryNav[],
+  startPage:     number,   // skip pages before this (embedded info/allergen pages)
 ): Promise<CategoryNav[]> {
   try {
     await requireScript(PDFJS_CDN)
@@ -74,8 +75,9 @@ async function detectCategoryPages(
     const pageMap  = new Map<string, number>()
     const pending  = new Set(categoryNames)
 
-    // Scan from page 1 forward — stop early once all found.
-    for (let p = 1; p <= numPages && pending.size > 0; p++) {
+    // Start scanning from startPage (skip embedded pages before dishes) to
+    // avoid false positives where category names appear in the info/allergen text.
+    for (let p = startPage; p <= numPages && pending.size > 0; p++) {
       const page   = await pdfDoc.getPage(p)
       const tc     = await page.getTextContent()
       const text   = (tc.items as any[]).map(i => i.str).join(' ').toLowerCase()
@@ -92,7 +94,7 @@ async function detectCategoryPages(
     // mancante. Restituire result parziale (es. 1 su N categorie) nasconde le
     // tab rimanenti. Le stime sono clampate alla pagina della categoria
     // precedente: una tab non deve mai puntare prima della sezione che la precede.
-    let lastPage = 1
+    let lastPage = startPage
     return categoryNames.map((name, i) => {
       const pg = pageMap.get(name) ?? Math.max(lastPage, fallback[i].targetPage)
       lastPage = pg
@@ -189,10 +191,19 @@ export function useMenuPDF(
 
         // ── Detect exact category page numbers ─────────────────────────────────
         const categoryNames = groupByCategory(menu.dishes).map(c => c.name)
+        // Count embedded pages that appear BEFORE the dish categories (position:'first').
+        // These pages occupy the first N pages of the PDF, so categories start at N+1.
+        // The filter mirrors the logic in MenuPDFDocument's firstEmbedded array.
+        const ep = menu.extra_pages
+        const firstEmbedCount = [
+          ep?.info?.enabled     && ep.info.position     === 'first' && ep.info.body?.trim(),
+          ep?.allergen?.enabled && ep.allergen.position === 'first' && ep.allergen.body?.trim(),
+        ].filter(Boolean).length
+        const catStartPage = firstEmbedCount + 1
         const fallback: CategoryNav[] = categoryNames.map((name, i) => ({
-          label: name, targetPage: i + 1,
+          label: name, targetPage: catStartPage + i,
         }))
-        const categories = await detectCategoryPages(newUrl, categoryNames, fallback)
+        const categories = await detectCategoryPages(newUrl, categoryNames, fallback, catStartPage)
         if (cancelled) { URL.revokeObjectURL(newUrl); return }
 
         // Revoke the previous URL only after the new one is ready (no gap).
