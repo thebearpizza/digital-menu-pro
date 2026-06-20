@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
 import DashboardCounters from './DashboardCounters'
 import InactiveDishesPanel from './InactiveDishesPanel'
+import ScanStatsTable from './ScanStatsTable'
 
 export default async function AdminPage() {
   const supabase = await createClient()
@@ -13,7 +14,8 @@ export default async function AdminPage() {
     .eq('owner_id', user!.id)
     .order('name')
 
-  const restaurantIds = (restaurants ?? []).map(r => r.id)
+  const restaurantIds   = (restaurants ?? []).map(r => r.id)
+  const restaurantNames = Object.fromEntries((restaurants ?? []).map(r => [r.id, r.name]))
 
   let activeDishCount   = 0
   let inactiveDishCount = 0
@@ -85,6 +87,11 @@ export default async function AdminPage() {
       )}
 
       <InactiveDishesPanel groups={groups} />
+
+      <ScanStatsTable
+        restaurantIds={restaurantIds}
+        restaurantNames={restaurantNames}
+      />
     </div>
   )
 }
