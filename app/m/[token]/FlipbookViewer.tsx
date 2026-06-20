@@ -168,8 +168,6 @@ export default function FlipbookViewer({
   const [totalPages,    setTotalPages]   = useState(0)
   // categoria attiva come state diretto — aggiornata immediatamente al click
   const [activeCatIdx,  setActiveCatIdx] = useState(0)
-  // Temporary diagnostic overlay — remove after debugging custom-font issue
-  const [debugOverlay,  setDebugOverlay] = useState('')
   const catNavRef  = useRef<HTMLElement>(null)
   const catBtnRefs = useRef<(HTMLButtonElement | null)[]>([])
 
@@ -480,44 +478,6 @@ export default function FlipbookViewer({
             break
           }
         }
-      }
-
-      // DEBUG overlay: targeted at "trancio" dish if still unmatched — remove after fix confirmed
-      const trancioGrpIdx = sortedGroups.findIndex(g =>
-        g.spans.some(s => (s.textContent ?? '').toLowerCase().includes('trancio'))
-      )
-      const trancioInAnchors = anchors.some(a => a.dish.name.toLowerCase().includes('trancio'))
-      if (trancioGrpIdx >= 0 && !trancioInAnchors) {
-        const startGrp = Math.max(0, trancioGrpIdx - 1)
-        const endGrp   = Math.min(sortedGroups.length - 1, trancioGrpIdx + 7)
-        const groupLines = sortedGroups.slice(startGrp, endGrp + 1).map((g, j) => {
-          const idx  = startGrp + j
-          const raw  = g.spans.map(s => s.textContent ?? '').join('')
-          const filt = g.spans.filter(s => isDishText(s.textContent ?? '')).map(s => s.textContent ?? '').join('')
-          return `[${idx}]${matchedIdx.has(idx) ? '✓' : ' '} top=${g.topPx.toFixed(2)} raw:"${raw.slice(0, 35)}" filt:"${filt.slice(0, 30)}"`
-        }).join('\n')
-        const combined: HTMLElement[] = []
-        for (let k = trancioGrpIdx; k < Math.min(trancioGrpIdx + 6, sortedGroups.length); k++) {
-          combined.push(...sortedGroups[k].spans.filter(s => isDishText(s.textContent ?? '')))
-        }
-        const combinedText = combined.map(s => s.textContent ?? '').join('').trim()
-        const noSp = combinedText.replace(/\s+/g, '').toUpperCase()
-        const dbNames = dishesRef.current.map(d =>
-          `"${d.name.replace(/\s+/g, '').toUpperCase().slice(0, 50)}"`
-        ).join('\n')
-        setDebugOverlay([
-          `[TRANCIO non trovato] pg=${pageNum} tol=${LINE_TOL} GRP=${lineGroups.length} MATCH=${anchors.length}`,
-          '',
-          'Gruppi intorno a "trancio":',
-          groupLines,
-          '',
-          `Testo combinato (grp ${trancioGrpIdx}..${trancioGrpIdx + 5}):`,
-          `"${combinedText.slice(0, 80)}"`,
-          `NoSpazi: "${noSp.slice(0, 80)}"`,
-          '',
-          'DB piatti (no spazi):',
-          dbNames,
-        ].join('\n'))
       }
 
       if (anchors.length > 0) {
@@ -1128,22 +1088,6 @@ export default function FlipbookViewer({
         />
       )}
 
-      {/* ── Temporary debug overlay — remove after diagnosing custom-font issue ── */}
-      {debugOverlay && (
-        <button
-          onClick={() => setDebugOverlay('')}
-          style={{
-            position: 'fixed', inset: 0, zIndex: 999999,
-            background: 'rgba(0,0,0,0.97)', color: '#22c55e',
-            fontSize: 10, padding: 16, overflow: 'auto',
-            fontFamily: 'monospace', whiteSpace: 'pre',
-            textAlign: 'left', touchAction: 'auto', border: 'none',
-            lineHeight: 1.5,
-          }}
-        >
-          {'=== FLIPBOOK DEBUG (tap to dismiss) ===\n\n' + debugOverlay}
-        </button>
-      )}
 
     </div>
   )
