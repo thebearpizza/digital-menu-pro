@@ -168,6 +168,8 @@ export default function FlipbookViewer({
   const [totalPages,    setTotalPages]   = useState(0)
   // categoria attiva come state diretto — aggiornata immediatamente al click
   const [activeCatIdx,  setActiveCatIdx] = useState(0)
+  // Temporary diagnostic overlay — remove after debugging custom-font issue
+  const [debugOverlay,  setDebugOverlay] = useState('')
   const catNavRef  = useRef<HTMLElement>(null)
   const catBtnRefs = useRef<(HTMLButtonElement | null)[]>([])
 
@@ -383,15 +385,21 @@ export default function FlipbookViewer({
         g.spans.sort((a, b) => (parseFloat(a.style.left) || 0) - (parseFloat(b.style.left) || 0))
       }
 
-      // DEBUG — remove after diagnosis
-      console.debug(
-        `[Flipbook p.${pageNum}]`,
-        `spans=${textDivs.length}`,
-        `tops=[${textDivs.slice(0, 8).map(d => d.style.top).join(',')}]`,
-        `texts=[${textDivs.slice(0, 8).map(d => JSON.stringify(d.textContent)).join(',')}]`,
-        `lineGroups=${lineGroups.length}:`,
-        lineGroups.slice(0, 6).map(g => `${g.topPx.toFixed(1)}→"${g.spans.map(s => s.textContent).join('')}"`).join(' | '),
-      )
+      // DEBUG visual overlay (page 1 only) — remove after diagnosis
+      if (pageNum === 1) {
+        const spanLines = textDivs.slice(0, 8).map(d =>
+          `top:${d.style.top || '?'} tx:"${d.style.transform?.slice(0,20) || ''}" txt:${JSON.stringify(d.textContent)}`
+        ).join('\n')
+        const groupLines = lineGroups.slice(0, 6).map(g =>
+          `${g.topPx.toFixed(1)}px (${g.spans.length}sp): "${g.spans.map(s => s.textContent).join('')}"`
+        ).join('\n')
+        // populated after anchors block below — hoisted via closure update
+        ;(window as any).__dbgSpanLines  = spanLines
+        ;(window as any).__dbgGroupLines = groupLines
+        ;(window as any).__dbgSpanCount  = textDivs.length
+        ;(window as any).__dbgGroupCount = lineGroups.length
+        ;(window as any).__dbgDishes     = dishesRef.current.map(d => d.name)
+      }
 
       // Disambiguate when multiple dishes share the same name across categories.
       function pickDish(norm: string): DishData | undefined {
@@ -431,10 +439,23 @@ export default function FlipbookViewer({
         }
       }
 
-      console.debug(`[Flipbook p.${pageNum}] anchors:`, anchors.length
-        ? anchors.map(a => `"${a.dish.name}"@${a.topPx.toFixed(1)}`).join(', ')
-        : 'NONE — dishes expected:', dishesRef.current.map(d => d.name).join(', ')
-      )
+      if (pageNum === 1) {
+        const anchorLines = anchors.length
+          ? anchors.map(a => `✓ "${a.dish.name}" @ ${a.topPx.toFixed(1)}px`).join('\n')
+          : '✗ NESSUN MATCH\nPiatti attesi:\n' + (window as any).__dbgDishes?.join('\n')
+        setDebugOverlay([
+          `SPANS: ${(window as any).__dbgSpanCount}  GRUPPI: ${(window as any).__dbgGroupCount}  MATCH: ${anchors.length}`,
+          '',
+          'Primi 8 span:',
+          (window as any).__dbgSpanLines,
+          '',
+          'Primi 6 gruppi:',
+          (window as any).__dbgGroupLines,
+          '',
+          'Anchors p.1:',
+          anchorLines,
+        ].join('\n'))
+      }
 
       if (anchors.length > 0) {
         anchors.sort((a, b) => a.topPx - b.topPx)
@@ -1032,6 +1053,23 @@ export default function FlipbookViewer({
           theme={themeProp}
           lang={lang}
         />
+      )}
+
+      {/* ── Temporary debug overlay — remove after diagnosing custom-font issue ── */}
+      {debugOverlay && (
+        <button
+          onClick={() => setDebugOverlay('')}
+          style={{
+            position: 'fixed', inset: 0, zIndex: 999999,
+            background: 'rgba(0,0,0,0.97)', color: '#22c55e',
+            fontSize: 10, padding: 16, overflow: 'auto',
+            fontFamily: 'monospace', whiteSpace: 'pre',
+            textAlign: 'left', touchAction: 'auto', border: 'none',
+            lineHeight: 1.5,
+          }}
+        >
+          {'=== FLIPBOOK DEBUG (tap to dismiss) ===\n\n' + debugOverlay}
+        </button>
       )}
 
     </div>
