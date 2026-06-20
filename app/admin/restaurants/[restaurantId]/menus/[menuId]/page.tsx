@@ -3,7 +3,9 @@ import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import DishList from './DishList'
 import TextPagesPanel from './TextPagesPanel'
+import DownloadPDFButton from './DownloadPDFButton'
 import { defaultExtraPages } from '../menuExtraPages'
+import { parseTheme } from '@/lib/theme'
 import type { MenuExtraPages } from '../menuExtraPages'
 
 export default async function MenuDishesPage({
@@ -13,7 +15,7 @@ export default async function MenuDishesPage({
 }) {
   const supabase = await createClient()
 
-  const [{ data: menu }, { data: dishes }, { data: allDishes }, { data: allMenus }] = await Promise.all([
+  const [{ data: menu }, { data: dishes }, { data: allDishes }, { data: allMenus }, { data: restaurant }] = await Promise.all([
     supabase
       .from('menus').select('id, name, restaurant_id, category_order, text_content')
       .eq('id', params.menuId).eq('restaurant_id', params.restaurantId).single(),
@@ -34,15 +36,33 @@ export default async function MenuDishesPage({
       .select('id, name')
       .eq('restaurant_id', params.restaurantId)
       .order('sort_order', { ascending: true }),
+    supabase
+      .from('restaurants')
+      .select('name, theme_config')
+      .eq('id', params.restaurantId)
+      .single(),
   ])
 
   if (!menu) notFound()
 
-  // Merge saved extra pages with defaults so new menus show sensible UI
   const rawPages = (menu as any).text_content
   const extraPages: MenuExtraPages = (rawPages?.info || rawPages?.allergen)
     ? rawPages as MenuExtraPages
     : defaultExtraPages()
+
+  const theme = parseTheme((restaurant as any)?.theme_config ?? null)
+
+  // Only active dishes are included in the PDF (mirrors the public menu).
+  const pdfDishes = (dishes ?? [])
+    .filter((d: any) => d.is_active)
+    .map((d: any) => ({
+      id:          d.id as string,
+      name:        d.name as string,
+      description: (d.description ?? null) as string | null,
+      price:       (d.price ?? null) as number | null,
+      category:    d.category as string,
+      allergens:   (d.allergens ?? []) as number[],
+    }))
 
   return (
     <div>
@@ -56,6 +76,15 @@ export default async function MenuDishesPage({
           </div>
           <h1 className="text-lg font-semibold text-gray-900">{menu.name}</h1>
         </div>
+
+        <DownloadPDFButton
+          restaurantName={(restaurant as any)?.name ?? ''}
+          menuId={menu.id}
+          menuName={menu.name}
+          dishes={pdfDishes}
+          extraPages={extraPages}
+          theme={theme}
+        />
       </div>
 
       <DishList
