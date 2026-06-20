@@ -351,18 +351,20 @@ export default function FlipbookViewer({
       // Footer exclusion: the bottom 10% of the page (restaurant name +
       //   page number text items) is capped out of the last dish's range.
 
-      const LINE_TOLERANCE = 6  // px — groups glyphs on the same baseline
+      // style.top from PDF.js 3.x can be either px ("120px") or % ("14.1%").
+      // Detect the unit from the first span and set tolerance accordingly:
+      //   px → 6 px is a safe same-line tolerance
+      //   %  → 1.5 percentage-points (6% would span multiple visual lines)
+      const topIsPct  = (textDivs[0]?.style.top ?? '').includes('%')
+      const LINE_TOL  = topIsPct ? 1.5 : 6
 
-      // Step A: bucket spans into lines by top value.
-      // For PDF.js 3.x, style.top is the primary Y position. Some fonts may
-      // use matrix() transforms for positioning — extract ty as fallback.
       type LineGroup  = { topPx: number; spans: HTMLElement[] }
       type DishAnchor = { dish: DishData; topPx: number }
 
-      function spanTopPx(div: HTMLElement): number {
+      function spanTopVal(div: HTMLElement): number {
         const t = parseFloat(div.style.top)
         if (!isNaN(t) && t > 0) return t
-        // Fallback: extract ty from matrix(a,b,c,d,tx,ty)
+        // Fallback: extract ty from CSS matrix(a,b,c,d,tx,ty)
         const m = (div.style.transform ?? '').match(/matrix\(([^)]+)\)/)
         if (m) {
           const parts = m[1].split(',').map(Number)
@@ -371,13 +373,13 @@ export default function FlipbookViewer({
         return t || 0
       }
 
+      // Step A: bucket spans into lines by their top value
       const lineGroups: LineGroup[] = []
-
       for (const div of textDivs) {
-        const topPx = spanTopPx(div)
-        const grp   = lineGroups.find(g => Math.abs(g.topPx - topPx) < LINE_TOLERANCE)
-        if (grp) { grp.spans.push(div) }
-        else      { lineGroups.push({ topPx, spans: [div] }) }
+        const topPx = spanTopVal(div)
+        const grp   = lineGroups.find(g => Math.abs(g.topPx - topPx) < LINE_TOL)
+        if (grp) grp.spans.push(div)
+        else      lineGroups.push({ topPx, spans: [div] })
       }
 
       // Step B: sort each line left → right (reading order)
@@ -385,25 +387,28 @@ export default function FlipbookViewer({
         g.spans.sort((a, b) => (parseFloat(a.style.left) || 0) - (parseFloat(b.style.left) || 0))
       }
 
-      // DEBUG visual overlay (page 1 only) — remove after diagnosis
-      if (pageNum === 1) {
-        const spanLines = textDivs.slice(0, 8).map(d =>
-          `top:${d.style.top || '?'} tx:"${d.style.transform?.slice(0,20) || ''}" txt:${JSON.stringify(d.textContent)}`
-        ).join('\n')
-        const groupLines = lineGroups.slice(0, 6).map(g =>
-          `${g.topPx.toFixed(1)}px (${g.spans.length}sp): "${g.spans.map(s => s.textContent).join('')}"`
-        ).join('\n')
-        // populated after anchors block below — hoisted via closure update
-        ;(window as any).__dbgSpanLines  = spanLines
-        ;(window as any).__dbgGroupLines = groupLines
-        ;(window as any).__dbgSpanCount  = textDivs.length
-        ;(window as any).__dbgGroupCount = lineGroups.length
-        ;(window as any).__dbgDishes     = dishesRef.current.map(d => d.name)
+      // Returns false for allergen-label spans ("(Allergeni): …"), pure-number
+      // allergen codes ("2 - 4 14"), price spans ("€ 20.00"), and empty spans.
+      // Everything else (dish name words, descriptions) returns true.
+      function isDishText(text: string): boolean {
+        const t = text.trim()
+        if (!t) return false
+        if (/\(allergeni\)/i.test(t)) return false
+        if (/^\s*€/.test(t)) return false
+        // Pure numbers or number-dash-number sequences: "4", "2 - 4 14", "14"
+        if (/^\s*\d+(\s*[-–]\s*\d+)*\s*$/.test(t)) return false
+        return /[a-zA-ZÀ-ÿ]/.test(t)  // must contain at least one real letter
       }
 
-      // Disambiguate when multiple dishes share the same name across categories.
-      function pickDish(norm: string): DishData | undefined {
-        const all = dishesRef.current.filter(d => d.name.trim().toUpperCase() === norm)
+      // Disambiguate: when multiple dishes share the same name, pick by
+      // the category whose PDF section contains the current page number.
+      // When stripSpaces=true, compare dish names without spaces (handles
+      // custom fonts that lose word-separator spaces during extraction).
+      function pickDish(norm: string, stripSpaces = false): DishData | undefined {
+        const all = dishesRef.current.filter(d => {
+          const dn = d.name.trim().toUpperCase()
+          return stripSpaces ? dn.replace(/\s+/g, '') === norm : dn === norm
+        })
         if (!all.length) return undefined
         if (all.length === 1) return all[0]
         const cats = categoriesRef.current ?? []
@@ -414,43 +419,45 @@ export default function FlipbookViewer({
         return all.find(d => d.category === currentCat) ?? all[0]
       }
 
-      // Step C: for each line try ALL contiguous span windows, shortest first.
-      //   window=1  → standard fonts: one span = full dish name (price in a separate span)
-      //   window=N  → custom/subset fonts: one span per glyph; name spread over N spans
-      //   Two normalizations tried per window:
-      //     (a) with internal spaces collapsed  → "Pasta al Pesto"
-      //     (b) with ALL spaces stripped        → custom fonts that emit spaces between glyphs
+      // Step C: for each line group, strip allergen/price spans, concatenate
+      // the remaining dish-name text, and match against dish names.
+      // Two normalizations are tried:
+      //   (a) spaces collapsed → standard fonts where word spaces are preserved
+      //   (b) spaces stripped  → custom fonts where empty spans replace spaces,
+      //       causing "FOCACCIA"+"COME" to concatenate as "FOCACCIACOME"
       const anchors: DishAnchor[] = []
 
       for (const { topPx, spans } of lineGroups) {
-        sizeLoop: for (let size = 1; size <= spans.length; size++) {
-          for (let start = 0; start <= spans.length - size; start++) {
-            const raw  = spans.slice(start, start + size).map(s => s.textContent ?? '').join('')
-            const norm = raw.trim().replace(/\s+/g, ' ').toUpperCase()
-            const normNoSp = raw.replace(/\s+/g, '').toUpperCase()
+        const dishSpans = spans.filter(s => isDishText(s.textContent ?? ''))
+        if (!dishSpans.length) continue
 
-            const dish = pickDish(norm) ?? (normNoSp.length > 1 ? pickDish(normNoSp) : undefined)
-            if (dish) {
-              for (let k = start; k < start + size; k++) spans[k].dataset.dishId = dish.id
-              anchors.push({ dish, topPx })
-              break sizeLoop
-            }
-          }
+        const raw  = dishSpans.map(s => s.textContent ?? '').join('').trim().replace(/\s+/g, ' ')
+        const noSp = raw.replace(/\s+/g, '').toUpperCase()
+
+        const dish = pickDish(raw.toUpperCase())
+          ?? (noSp.length > 2 ? pickDish(noSp, true) : undefined)
+
+        if (dish) {
+          for (const span of spans) { span.dataset.dishId = dish.id }
+          anchors.push({ dish, topPx })
         }
       }
 
+      // DEBUG overlay (page 1 only) — remove after custom-font diagnosis
       if (pageNum === 1) {
+        const groupLines = lineGroups.slice(0, 6).map(g => {
+          const filtered = g.spans.filter(s => isDishText(s.textContent ?? ''))
+            .map(s => s.textContent).join('')
+          return `${g.topPx.toFixed(1)} (${g.spans.length}sp) raw:"${g.spans.map(s=>s.textContent).join('')}" filtered:"${filtered}"`
+        }).join('\n')
         const anchorLines = anchors.length
-          ? anchors.map(a => `✓ "${a.dish.name}" @ ${a.topPx.toFixed(1)}px`).join('\n')
-          : '✗ NESSUN MATCH\nPiatti attesi:\n' + (window as any).__dbgDishes?.join('\n')
+          ? anchors.map(a => `✓ "${a.dish.name}" @ ${a.topPx.toFixed(1)}`).join('\n')
+          : '✗ NESSUN MATCH\nPiatti attesi:\n' + dishesRef.current.slice(0, 8).map(d => d.name).join('\n')
         setDebugOverlay([
-          `SPANS: ${(window as any).__dbgSpanCount}  GRUPPI: ${(window as any).__dbgGroupCount}  MATCH: ${anchors.length}`,
+          `unit:${topIsPct?'%':'px'} tol:${LINE_TOL}  SPANS:${textDivs.length}  GRUPPI:${lineGroups.length}  MATCH:${anchors.length}`,
           '',
-          'Primi 8 span:',
-          (window as any).__dbgSpanLines,
-          '',
-          'Primi 6 gruppi:',
-          (window as any).__dbgGroupLines,
+          'Gruppi p.1:',
+          groupLines,
           '',
           'Anchors p.1:',
           anchorLines,
