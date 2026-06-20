@@ -6,7 +6,6 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
-import { createClient } from '@/lib/supabase/client'
 import FlipbookViewer  from './FlipbookViewer'
 import DishModal       from './DishModal'
 import type { DishData } from './DishModal'
@@ -168,12 +167,12 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
   // pendingMenuId: set during immersive video transition (PDF generation starts early)
   const [pendingMenuId, setPendingMenuId]   = useState<string | null>(null)
 
-  // ── Tracking — fire-and-forget insert in menu_events ─────────────────────
-  const sbTrackRef = useRef<ReturnType<typeof createClient> | null>(null)
-  useEffect(() => { sbTrackRef.current = createClient() }, [])
+  // ── Tracking — fire-and-forget POST verso l'API route server-side ────────
   const track = useCallback((event_type: 'menu_open' | 'dish_click', menu_id: string, dish_id?: string) => {
-    void sbTrackRef.current?.from('menu_events').insert({
-      restaurant_id: restaurantId, menu_id, dish_id: dish_id ?? null, event_type,
+    void fetch('/api/track', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ restaurant_id: restaurantId, menu_id, dish_id: dish_id ?? null, event_type }),
     })
   }, [restaurantId])
 
