@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
 import RestaurantDeleteButton from './RestaurantDeleteButton'
+import RestaurantsTableBody from './RestaurantsTableBody'
 
 export default async function RestaurantsPage() {
   const supabase = await createClient()
@@ -49,7 +50,7 @@ export default async function RestaurantsPage() {
                 <th className="px-4 py-3" />
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100">
+            <RestaurantsTableBody>
               {restaurants.map(r => (
                 <tr key={r.id} className="hover:bg-gray-50">
                   <td className="px-4 py-3 text-sm font-medium text-gray-900">{r.name}</td>
@@ -81,7 +82,7 @@ export default async function RestaurantsPage() {
                   </td>
                 </tr>
               ))}
-            </tbody>
+            </RestaurantsTableBody>
           </table>
         </div>
       )}
