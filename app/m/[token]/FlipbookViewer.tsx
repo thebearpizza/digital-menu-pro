@@ -331,8 +331,14 @@ export default function FlipbookViewer({
 
       // ── Chirurgical hotspot — two-pass, zero vertical bleed ─────────────────
       //
-      // Pass 1: identify dish-name spans by exact text match → build a sorted
-      //   list of (dish, topPx) anchors from PDF.js's style.top values.
+      // Pass 1: identify dish-name lines → build sorted (dish, topPx) anchors.
+      //
+      //   With standard fonts PDF.js produces one span per dish name → direct
+      //   text match works. With custom/subset fonts PDF.js may split each
+      //   glyph into its own span on the same baseline. We therefore GROUP all
+      //   spans whose style.top values are within LINE_TOLERANCE px, sort them
+      //   left→right, concatenate their text, and match the full line string.
+      //   Both cases are handled by the same code path.
       //
       // Pass 2: for EVERY span whose style.top falls inside a dish's vertical
       //   range [dishName.top, nextDishName.top), extend it to full page width
@@ -343,30 +349,134 @@ export default function FlipbookViewer({
       // Footer exclusion: the bottom 10% of the page (restaurant name +
       //   page number text items) is capped out of the last dish's range.
 
-      type DishAnchor = { dish: DishData; topPx: number }
-      const anchors: DishAnchor[] = []
+      // style.top from PDF.js 3.x can be either px ("120px") or % ("14.1%").
+      // Detect the unit from the first span and set tolerance accordingly:
+      //   px → 6 px is a safe same-line tolerance
+      //   %  → 1.5 percentage-points (6% would span multiple visual lines)
+      const topIsPct  = (textDivs[0]?.style.top ?? '').includes('%')
+      const LINE_TOL  = topIsPct ? 1.5 : 6
 
-      for (const div of textDivs) {
-        const text = div.textContent?.trim() ?? ''
-        if (!text) continue
-        const candidates = dishesRef.current.filter(
-          d => d.name.trim().toUpperCase() === text.toUpperCase()
-        )
-        let match: DishData | undefined = candidates[0]
-        if (candidates.length > 1) {
-          // Stesso nome in più categorie: disambigua in base alla categoria
-          // la cui sezione PDF contiene questa pagina (stesso criterio di
-          // activeCatIdx sopra: ultima categoria con targetPage <= pageNum).
-          const cats = categoriesRef.current ?? []
-          let currentCat: string | undefined
-          for (let i = 0; i < cats.length; i++) {
-            if (pageNum >= cats[i].targetPage) currentCat = cats[i].label
-          }
-          match = candidates.find(d => d.category === currentCat) ?? candidates[0]
+      type LineGroup  = { topPx: number; spans: HTMLElement[] }
+      type DishAnchor = { dish: DishData; topPx: number }
+
+      function spanTopVal(div: HTMLElement): number {
+        const t = parseFloat(div.style.top)
+        if (!isNaN(t) && t > 0) return t
+        // Fallback: extract ty from CSS matrix(a,b,c,d,tx,ty)
+        const m = (div.style.transform ?? '').match(/matrix\(([^)]+)\)/)
+        if (m) {
+          const parts = m[1].split(',').map(Number)
+          if (parts.length >= 6 && parts[5] > 0) return parts[5]
         }
-        if (match) {
-          div.dataset.dishId = match.id  // CSS gold-highlight on name span
-          anchors.push({ dish: match, topPx: parseFloat(div.style.top) || 0 })
+        return t || 0
+      }
+
+      // Step A: bucket spans into lines by their top value
+      const lineGroups: LineGroup[] = []
+      for (const div of textDivs) {
+        const topPx = spanTopVal(div)
+        const grp   = lineGroups.find(g => Math.abs(g.topPx - topPx) < LINE_TOL)
+        if (grp) grp.spans.push(div)
+        else      lineGroups.push({ topPx, spans: [div] })
+      }
+
+      // Step B: sort each line left → right (reading order)
+      for (const g of lineGroups) {
+        g.spans.sort((a, b) => (parseFloat(a.style.left) || 0) - (parseFloat(b.style.left) || 0))
+      }
+
+      // Returns false for allergen-label spans ("(Allergeni): …"), pure-number
+      // allergen codes ("2 - 4 14"), price spans ("€ 20.00"), and empty spans.
+      // Everything else (dish name words, descriptions) returns true.
+      function isDishText(text: string): boolean {
+        const t = text.trim()
+        if (!t) return false
+        if (/\(allergeni\)/i.test(t)) return false
+        if (/^\s*€/.test(t)) return false
+        // Pure numbers or number-dash-number sequences: "4", "2 - 4 14", "14"
+        if (/^\s*\d+(\s*[-–]\s*\d+)*\s*$/.test(t)) return false
+        return /[a-zA-ZÀ-ÿ]/.test(t)  // must contain at least one real letter
+      }
+
+      // Disambiguate: when multiple dishes share the same name, pick by
+      // the category whose PDF section contains the current page number.
+      // When stripSpaces=true, compare dish names without spaces (handles
+      // custom fonts that lose word-separator spaces during extraction).
+      function pickDish(norm: string, stripSpaces = false): DishData | undefined {
+        const all = dishesRef.current.filter(d => {
+          const dn = d.name.trim().toUpperCase()
+          return stripSpaces ? dn.replace(/[-\s]+/g, '') === norm : dn === norm
+        })
+        if (!all.length) return undefined
+        if (all.length === 1) return all[0]
+        const cats = categoriesRef.current ?? []
+        let currentCat: string | undefined
+        for (let i = 0; i < cats.length; i++) {
+          if (pageNum >= cats[i].targetPage) currentCat = cats[i].label
+        }
+        return all.find(d => d.category === currentCat) ?? all[0]
+      }
+
+      // Step C: match dish names against line groups.
+      // Sorted once by topPx so consecutive-group matching works in reading order.
+      const sortedGroups = [...lineGroups].sort((a, b) => a.topPx - b.topPx)
+
+      const anchors: DishAnchor[] = []
+      const matchedIdx = new Set<number>()  // indices into sortedGroups
+
+      function tryMatch(dishSpans: HTMLElement[]): DishData | undefined {
+        if (!dishSpans.length) return undefined
+        const raw  = dishSpans.map(s => s.textContent ?? '').join('').trim().replace(/\s+/g, ' ')
+        // Strip both spaces and end-of-line hyphens (PDF hyphenation artifact: "MILLE-\nFOGLIE")
+        const noSp = raw.replace(/[-\s]+/g, '').toUpperCase()
+        return pickDish(raw.toUpperCase())
+          ?? (noSp.length > 2 ? pickDish(noSp, true) : undefined)
+      }
+
+      // Pass 1a: single-group matching (standard and custom fonts)
+      for (let i = 0; i < sortedGroups.length; i++) {
+        const { topPx, spans } = sortedGroups[i]
+        const dish = tryMatch(spans.filter(s => isDishText(s.textContent ?? '')))
+        if (dish) {
+          for (const span of spans) { span.dataset.dishId = dish.id }
+          anchors.push({ dish, topPx })
+          matchedIdx.add(i)
+        }
+      }
+
+      // Pass 1b: multi-group matching for dishes whose name wraps to 2+ lines.
+      // Tries combining 2–6 consecutive unmatched groups within 10 topPx-units,
+      // stopping early at already-matched groups (clear dish-boundary markers).
+      for (let i = 0; i < sortedGroups.length; i++) {
+        if (matchedIdx.has(i)) continue
+        // Don't start from a pure allergen/price row (no dish text to anchor on)
+        if (!sortedGroups[i].spans.some(s => isDishText(s.textContent ?? ''))) continue
+
+        for (let len = 2; len <= 6; len++) {
+          const lastIdx = i + len - 1
+          if (lastIdx >= sortedGroups.length) break
+          // Stop if the window spans more than 10 units — inter-dish spacing
+          if (sortedGroups[lastIdx].topPx - sortedGroups[i].topPx > 10) break
+          // Stop if any intermediate group is already matched (= next dish started)
+          let crossesMatch = false
+          for (let k = i + 1; k <= lastIdx; k++) {
+            if (matchedIdx.has(k)) { crossesMatch = true; break }
+          }
+          if (crossesMatch) break
+
+          const combined: HTMLElement[] = []
+          for (let k = i; k < i + len; k++) {
+            combined.push(...sortedGroups[k].spans.filter(s => isDishText(s.textContent ?? '')))
+          }
+          const dish = tryMatch(combined)
+          if (dish) {
+            for (let k = i; k < i + len; k++) {
+              for (const span of sortedGroups[k].spans) { span.dataset.dishId = dish.id }
+            }
+            anchors.push({ dish, topPx: sortedGroups[i].topPx })
+            matchedIdx.add(i)
+            break
+          }
         }
       }
 
@@ -383,9 +493,20 @@ export default function FlipbookViewer({
             : footerCutoff,           // last dish: up to footer safe-zone
         }))
 
+        // Build a map from every span to its line-group's representative topPx.
+        // This prevents individual spans whose style.top deviates slightly from
+        // the group representative (e.g. price span at 19.9% vs dish name at
+        // 20.3%) from falling into the PRECEDING dish's range in Pass 2.
+        const spanGroupTop = new Map<HTMLElement, number>()
+        for (const { topPx, spans: gSpans } of lineGroups) {
+          for (const s of gSpans) { spanGroupTop.set(s, topPx) }
+        }
+
         // Pass 2: extend every span inside a dish range.
         for (const span of textDivs) {
-          const spanTop = parseFloat(span.style.top) || 0
+          // Use the group's representative topPx — not the span's own style.top —
+          // so all spans in the same line group get the same range lookup result.
+          const spanTop = spanGroupTop.get(span) ?? (spanTopVal(span))
           const range   = ranges.find(r => spanTop >= r.minTop && spanTop < r.maxTop)
           if (!range) continue
 
@@ -395,14 +516,15 @@ export default function FlipbookViewer({
           span.style.pointerEvents = 'auto'
           if (!span.dataset.dishId) span.dataset.dishId = captured.id
 
-          // Stop touch/mouse events from ever reaching the turn.js container.
-          // touchstart passive:true keeps scroll intent intact on the span itself.
-          let moved   = false
-          let startX  = 0
-          let startY  = 0
+          let moved  = false
+          let startX = 0
+          let startY = 0
 
+          // Do NOT stopPropagation on touchstart: turn.js needs to receive the
+          // event to detect swipe gestures (page turns). Taps are handled on
+          // touchend after verifying the `moved` flag — a tap never triggers
+          // a turn.js page flip because it has no displacement.
           span.addEventListener('touchstart', (evt) => {
-            evt.stopPropagation()
             moved = false
             const t = evt.touches[0]
             if (t) { startX = t.clientX; startY = t.clientY }
@@ -415,20 +537,18 @@ export default function FlipbookViewer({
             }
           }, { passive: true })
 
-          // Apertura su touchend = singolo tap garantito (niente attesa del
-          // click sintetico, niente "primo tap assorbito dall'hover" su iOS).
-          // preventDefault sopprime il ghost-click successivo → nessun doppio fire.
+          // Tap confirmed on touchend: preventDefault stops the ghost-click.
           span.addEventListener('touchend', (evt) => {
-            evt.stopPropagation()
-            if (moved) return            // era uno swipe, non un tap
+            if (moved) return
             evt.preventDefault()
+            evt.stopPropagation()
             onDishOpenRef.current?.(captured.id)
             setModalStack([captured])
           }, { passive: false })
 
           span.addEventListener('mousedown', (evt) => { evt.stopPropagation() })
 
-          // Desktop / fallback (mouse): nessun touchend → questo gestisce il click.
+          // Desktop / fallback (mouse): handled by click event.
           span.addEventListener('click', (evt) => {
             evt.stopPropagation()
             evt.preventDefault()
@@ -967,6 +1087,7 @@ export default function FlipbookViewer({
           lang={lang}
         />
       )}
+
 
     </div>
   )
