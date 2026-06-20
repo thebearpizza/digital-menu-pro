@@ -60,15 +60,22 @@ export interface PDFDish {
   allergens: number[]
 }
 
-export interface TextMenuContent {
-  body: string
-  font?: string
-  fontSize?: number
-  align?: 'left' | 'center' | 'right'
-  color?: string
-  bold?: boolean
-  italic?: boolean
-  lineHeight?: number
+export interface EmbeddedPageContent {
+  enabled:    boolean
+  position:   'first' | 'last'
+  body:       string
+  font:       string
+  fontSize:   number
+  align:      'left' | 'center' | 'right'
+  color:      string
+  bold:       boolean
+  italic:     boolean
+  lineHeight: number
+}
+
+export interface MenuExtraPages {
+  info:     EmbeddedPageContent
+  allergen: EmbeddedPageContent
 }
 
 export interface PDFMenu {
@@ -78,8 +85,7 @@ export interface PDFMenu {
   // Lingua del menu già tradotto (nomi/descrizioni/categorie arrivano tradotti
   // dal chiamante): serve solo per le etichette fisse, es. gli allergeni.
   lang?: string
-  menu_type?: 'dishes' | 'text'
-  text_content?: TextMenuContent | null
+  extra_pages?: MenuExtraPages | null
 }
 
 export interface PDFRestaurant {
@@ -443,65 +449,40 @@ function chunk<T>(arr: T[], n: number): T[][] {
   return out
 }
 
-// ── Text menu page ────────────────────────────────────────────────────────────
+// ── Embedded text block (info / allergen page) ────────────────────────────────
 
-function TextMenuPage({ restaurant, menu, theme: themeProp, registeredFonts }: Props) {
-  const theme   = themeProp ?? DEFAULT_THEME
-  const m       = theme.menu
-  const compact = m.pdfLayout === 'compact'
-  const bg      = m.pageBackground.color
-  const tc      = menu.text_content ?? { body: '' }
-
-  const fontFamily = (registeredFonts?.has(tc.font ?? '') ? tc.font : undefined) ?? 'Helvetica'
-  const fontSize   = Math.max(8, Math.min(32, tc.fontSize ?? 12))
-  const textColor  = readableOn(tc.color ?? '#1a1a1a', bg)
-  const align      = tc.align ?? 'left'
-  const lineHeight = tc.lineHeight ?? 1.6
-  const fontWeight = tc.bold ? 700 : 400
-  const fontStyle  = tc.italic ? 'italic' : 'normal'
-
-  const pageStyle = {
-    backgroundColor: bg,
-    paddingTop:    compact ? 38 : 52,
-    paddingBottom: compact ? 64 : 56,
-    paddingHorizontal: compact ? 44 : 54,
-  }
-
+function EmbeddedTextBlock({
+  page, bg, registered,
+}: {
+  page:       EmbeddedPageContent
+  bg:         string
+  registered: Set<string>
+}) {
+  const fontFamily = registered.has(page.font) ? page.font : 'Helvetica'
+  const textColor  = readableOn(page.color, bg)
   return (
-    <Document
-      title={`${restaurant.name} — ${menu.name}`}
-      author={restaurant.name}
-      creator="Digital Menu Pro"
-    >
-      <Page size="A4" style={pageStyle} wrap>
-        <PageBackgroundLayer bg={m.pageBackground} compact={compact} />
-        <View>
-          <Text style={{
-            fontFamily, fontWeight, fontStyle,
-            fontSize, color: textColor,
-            textAlign: align,
-            lineHeight,
-          }}>
-            {tc.body}
-          </Text>
-        </View>
-      </Page>
-    </Document>
+    <Text style={{
+      fontFamily,
+      fontWeight:  page.bold   ? 700  : 400,
+      fontStyle:   page.italic ? 'italic' : 'normal',
+      fontSize:    Math.max(8, Math.min(32, page.fontSize)),
+      color:       textColor,
+      textAlign:   page.align,
+      lineHeight:  page.lineHeight,
+    }}>
+      {page.body}
+    </Text>
   )
 }
 
 // ── Dish menu ─────────────────────────────────────────────────────────────────
 
 export function MenuPDFDocument({ restaurant, menu, theme: themeProp, registeredFonts }: Props) {
-  // Delegate to the text page renderer for text-type menus.
-  if (menu.menu_type === 'text') {
-    return <TextMenuPage restaurant={restaurant} menu={menu} theme={themeProp} registeredFonts={registeredFonts} />
-  }
-
   const theme      = themeProp ?? DEFAULT_THEME
   const m          = theme.menu
   const reg        = registeredFonts ?? new Set<string>()
   const compact    = m.pdfLayout === 'compact'
+  const bg         = m.pageBackground.color
   const alternating= compact && m.compactMode === 'alternating'
   // Two style sets: base and horizontally mirrored. The alternating compact
   // mode applies the mirrored set to ODD categories so the WHOLE category
@@ -509,6 +490,18 @@ export function MenuPDFDocument({ restaurant, menu, theme: themeProp, registered
   const s          = makeStyles(theme, reg, false)
   const sFlip      = alternating ? makeStyles(theme, reg, true) : s
   const categories = groupByCategory(menu.dishes)
+
+  // Collect enabled embedded pages sorted into 'first' and 'last' groups.
+  // Info precedes allergen within each group (natural document order).
+  const ep = menu.extra_pages
+  const firstEmbedded: EmbeddedPageContent[] = [
+    ep?.info?.enabled     && ep.info.position     === 'first' ? ep.info     : null,
+    ep?.allergen?.enabled && ep.allergen.position === 'first' ? ep.allergen : null,
+  ].filter((x): x is EmbeddedPageContent => !!x && !!x.body.trim())
+  const lastEmbedded: EmbeddedPageContent[] = [
+    ep?.info?.enabled     && ep.info.position     === 'last'  ? ep.info     : null,
+    ep?.allergen?.enabled && ep.allergen.position === 'last'  ? ep.allergen : null,
+  ].filter((x): x is EmbeddedPageContent => !!x && !!x.body.trim())
   const layout     = m.layout.dishLayout
   const isGrid2    = layout === 'grid-2'
   const isGrid3    = layout === 'grid-3'
@@ -731,8 +724,16 @@ export function MenuPDFDocument({ restaurant, menu, theme: themeProp, registered
     >
       <Page size="A4" style={s.page} wrap>
         <PageBackgroundLayer bg={m.pageBackground} compact={compact} />
-        {blocks.map(b => (
-          <View key={b.key} break={b.breakBefore}>
+
+        {/* Embedded pages that appear before all dish categories */}
+        {firstEmbedded.map((page, i) => (
+          <View key={`first-${i}`} break={i > 0}>
+            <EmbeddedTextBlock page={page} bg={bg} registered={reg} />
+          </View>
+        ))}
+
+        {blocks.map((b, i) => (
+          <View key={b.key} break={b.breakBefore || (i === 0 && firstEmbedded.length > 0)}>
 
             {/* Full category header on the first block of each category. */}
             {b.showHeader && compact && b.catIdx > 0 && <View style={s.catSpacer} />}
@@ -770,6 +771,13 @@ export function MenuPDFDocument({ restaurant, menu, theme: themeProp, registered
               b.dishes.map((dish, i) => renderDish(dish, b.lastFlags[i], b.st))
             )}
 
+          </View>
+        ))}
+
+        {/* Embedded pages that appear after all dish categories */}
+        {lastEmbedded.map((page, i) => (
+          <View key={`last-${i}`} break>
+            <EmbeddedTextBlock page={page} bg={bg} registered={reg} />
           </View>
         ))}
       </Page>

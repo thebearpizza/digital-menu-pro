@@ -50,7 +50,7 @@ export async function createMenu(restaurantId: string, name: string) {
   const { data, error } = await supabase
     .from('menus')
     .insert({ restaurant_id: restaurantId, name, sort_order: (last?.sort_order ?? -1) + 1 })
-    .select('id, name, sort_order, is_active, menu_type').single()
+    .select('id, name, sort_order, is_active').single()
 
   if (error) throw new Error(error.message)
   await autoTranslateMenuName(supabase, data.id, name)
@@ -58,9 +58,9 @@ export async function createMenu(restaurantId: string, name: string) {
   return data
 }
 
-// ── Text menus ────────────────────────────────────────────────────────────────
+// ── Pagine extra (Info + Allergeni) embedded in ogni menu piatti ──────────────
 
-const ALLERGENI_DEFAULT_TEXT = `ALLERGENI
+export const ALLERGENI_DEFAULT_TEXT = `ALLERGENI
 
 Secondo il Regolamento UE 1169/2011, gli ingredienti e le sostanze che possono causare allergie o intolleranze devono essere riconoscibili nell'elenco degli ingredienti.
 
@@ -83,71 +83,53 @@ I 14 allergeni principali:
 
 Per qualsiasi informazione sugli allergeni presenti nei nostri piatti, il nostro staff è a vostra disposizione.`
 
-export async function createTextMenu(
-  restaurantId: string,
-  name: string,
-  initialText?: string,
-) {
-  const supabase = await createClient()
-  await verifyOwnership(supabase, restaurantId)
+export interface EmbeddedPageContent {
+  enabled:    boolean
+  position:   'first' | 'last'
+  body:       string
+  font:       string
+  fontSize:   number
+  align:      'left' | 'center' | 'right'
+  color:      string
+  bold:       boolean
+  italic:     boolean
+  lineHeight: number
+}
 
-  const { data: last } = await supabase
-    .from('menus').select('sort_order').eq('restaurant_id', restaurantId)
-    .order('sort_order', { ascending: false }).limit(1).single()
+export interface MenuExtraPages {
+  info:     EmbeddedPageContent
+  allergen: EmbeddedPageContent
+}
 
-  const textContent = {
-    body:       initialText ?? '',
-    font:       'Helvetica',
-    fontSize:   12,
-    align:      'left',
-    color:      '#1a1a1a',
-    bold:       false,
-    italic:     false,
-    lineHeight: 1.6,
+export function defaultExtraPages(): MenuExtraPages {
+  return {
+    info: {
+      enabled: false, position: 'first',
+      body: '', font: 'Helvetica', fontSize: 12,
+      align: 'left', color: '#1a1a1a', bold: false, italic: false, lineHeight: 1.6,
+    },
+    allergen: {
+      enabled: false, position: 'last',
+      body: ALLERGENI_DEFAULT_TEXT, font: 'Helvetica', fontSize: 11,
+      align: 'left', color: '#1a1a1a', bold: false, italic: false, lineHeight: 1.5,
+    },
   }
-
-  const { data, error } = await supabase
-    .from('menus')
-    .insert({
-      restaurant_id: restaurantId,
-      name,
-      sort_order:    (last?.sort_order ?? -1) + 1,
-      menu_type:     'text',
-      text_content:  textContent,
-    })
-    .select('id, name, sort_order, is_active, menu_type, text_content').single()
-
-  if (error) throw new Error(error.message)
-  revalidate(restaurantId)
-  return data
 }
 
-export async function createAllergenMenu(restaurantId: string) {
-  return createTextMenu(restaurantId, 'Allergeni', ALLERGENI_DEFAULT_TEXT)
-}
-
-export async function createInfoMenu(restaurantId: string) {
-  return createTextMenu(restaurantId, 'Info', '')
-}
-
-export async function updateTextContent(
+export async function updateMenuExtraPages(
   restaurantId: string,
   menuId: string,
-  textContent: {
-    body: string; font?: string; fontSize?: number
-    align?: string; color?: string; bold?: boolean
-    italic?: boolean; lineHeight?: number
-  },
+  pages: MenuExtraPages,
 ) {
   const supabase = await createClient()
   await verifyOwnership(supabase, restaurantId)
 
   const { error } = await supabase
     .from('menus')
-    .update({ text_content: textContent })
+    .update({ text_content: pages })
     .eq('id', menuId).eq('restaurant_id', restaurantId)
   if (error) throw new Error(error.message)
-  revalidatePath(`/admin/restaurants/${restaurantId}/menus/${menuId}/text-editor`)
+  revalidatePath(`/admin/restaurants/${restaurantId}/menus/${menuId}`)
 }
 
 export async function updateMenuName(restaurantId: string, menuId: string, name: string) {
@@ -204,7 +186,7 @@ export async function duplicateMenu(restaurantId: string, menuId: string) {
   await verifyOwnership(supabase, restaurantId)
 
   const { data: source } = await supabase
-    .from('menus').select('name, sort_order, category_order, translations, menu_type, text_content').eq('id', menuId).single()
+    .from('menus').select('name, sort_order, category_order, translations, text_content').eq('id', menuId).single()
   if (!source) throw new Error('Menu non trovato')
 
   const { data: newMenu, error: menuErr } = await supabase
@@ -215,31 +197,27 @@ export async function duplicateMenu(restaurantId: string, menuId: string) {
       sort_order: source.sort_order + 1,
       category_order: source.category_order,
       translations: source.translations ?? {},
-      menu_type:    source.menu_type ?? 'dishes',
       text_content: source.text_content ?? null,
     })
-    .select('id, name, sort_order, is_active, menu_type').single()
+    .select('id, name, sort_order, is_active').single()
   if (menuErr) throw new Error(menuErr.message)
 
-  // Only duplicate dishes for dish-type menus
-  if ((source.menu_type ?? 'dishes') === 'dishes') {
-    const { data: dishes } = await supabase
-      .from('dishes')
-      .select('name, description, price, category, image_url, allergens, sort_order, pairing_label, is_active, translations')
-      .eq('menu_id', menuId)
+  const { data: dishes } = await supabase
+    .from('dishes')
+    .select('name, description, price, category, image_url, allergens, sort_order, pairing_label, is_active, translations')
+    .eq('menu_id', menuId)
 
-    if (dishes?.length) {
-      const { error: dishErr } = await supabase.from('dishes').insert(
-        dishes.map(d => ({
-          ...d,
-          id: undefined,
-          restaurant_id: restaurantId,
-          menu_id: newMenu!.id,
-          master_dish_id: null,
-        }))
-      )
-      if (dishErr) throw new Error(`Menu copiato ma piatti non duplicati: ${dishErr.message}`)
-    }
+  if (dishes?.length) {
+    const { error: dishErr } = await supabase.from('dishes').insert(
+      dishes.map(d => ({
+        ...d,
+        id: undefined,
+        restaurant_id: restaurantId,
+        menu_id: newMenu!.id,
+        master_dish_id: null,
+      }))
+    )
+    if (dishErr) throw new Error(`Menu copiato ma piatti non duplicati: ${dishErr.message}`)
   }
 
   revalidate(restaurantId)

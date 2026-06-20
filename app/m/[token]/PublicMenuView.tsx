@@ -38,8 +38,7 @@ export interface Dish {
 export interface Menu {
   id: string; name: string; dishes: Dish[]
   translations?: MenuTranslations
-  menu_type?: 'dishes' | 'text'
-  text_content?: import('./useMenuPDF').TextMenuContent | null
+  extra_pages?: import('./MenuPDFDocument').MenuExtraPages | null
 }
 export interface Banner { id: string; media_url: string | null; media_type: string; title: string | null; subtitle: string | null }
 export interface Info   { title: string | null; content: string | null }
@@ -296,8 +295,7 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
     { name: restaurant.name },
     activeMenu ? {
       id: activeMenu.id, name: activeMenu.name, lang,
-      menu_type: activeMenu.menu_type ?? 'dishes',
-      text_content: activeMenu.text_content ?? null,
+      extra_pages: activeMenu.extra_pages ?? null,
       dishes: activeMenu.dishes.map(d => ({
         id: d.id, name: d.name, description: d.description,
         price: d.price, category: d.category||'Menu', allergens: d.allergens,
