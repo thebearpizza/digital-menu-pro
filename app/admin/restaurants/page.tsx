@@ -39,21 +39,25 @@ export default async function RestaurantsPage() {
         </div>
       ) : (
         <div className="bg-white border border-gray-200 overflow-x-auto">
-          <table className="w-full min-w-[520px]">
+          <table className="w-full min-w-[420px]">
             <thead>
               <tr className="border-b border-gray-200 bg-gray-50 text-left">
                 <th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Nome</th>
                 <th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Stato</th>
-                <th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide hidden md:table-cell">
-                  Token QR
-                </th>
                 <th className="px-4 py-3" />
               </tr>
             </thead>
             <RestaurantsTableBody>
               {restaurants.map(r => (
                 <tr key={r.id} className="hover:bg-gray-50">
-                  <td className="px-4 py-3 text-sm font-medium text-gray-900">{r.name}</td>
+                  <td className="px-4 py-3">
+                    <Link
+                      href={`/admin/restaurants/${r.id}`}
+                      className="text-sm font-medium text-gray-900 hover:text-blue-600 hover:underline"
+                    >
+                      {r.name}
+                    </Link>
+                  </td>
                   <td className="px-4 py-3">
                     <span className={`inline-block text-xs px-2 py-0.5 font-medium border ${
                       r.is_active
@@ -63,16 +67,13 @@ export default async function RestaurantsPage() {
                       {r.is_active ? 'Attivo' : 'Inattivo'}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-xs text-gray-400 font-mono hidden md:table-cell">
-                    {r.qr_public_token}
-                  </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center justify-end gap-3 whitespace-nowrap">
                       <Link
                         href={`/admin/restaurants/${r.id}`}
                         className="text-sm text-blue-600 hover:underline"
                       >
-                        Gestisci →
+                        Gestisci
                       </Link>
                       <RestaurantDeleteButton
                         restaurantId={r.id}
