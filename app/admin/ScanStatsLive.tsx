@@ -4,92 +4,101 @@ import { useEffect, useRef, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import Link from 'next/link'
 
-// ── CSS keyframes — solo la metà inferiore si piega, come il cartellone reale ─
+// ── Keyframes ─────────────────────────────────────────────────────────────────
 const FLIP_CSS = `
 @keyframes sflapDown {
-  from { transform: perspective(10em) rotateX(0deg);   }
-  to   { transform: perspective(10em) rotateX(-90deg); }
+  from { transform: perspective(12em) rotateX(0deg);   }
+  to   { transform: perspective(12em) rotateX(-90deg); }
 }
 @keyframes sflapUp {
-  from { transform: perspective(10em) rotateX(90deg);  }
-  to   { transform: perspective(10em) rotateX(0deg);   }
+  from { transform: perspective(12em) rotateX(90deg);  }
+  to   { transform: perspective(12em) rotateX(0deg);   }
 }
 `
 
-// ── Singolo carattere con vera meccanica split-flap ───────────────────────────
-//   Top half: statica — mostra il vecchio char (fase 1) poi il nuovo (fase 2)
-//   Bottom statica: sempre mostra il nuovo char (visibile quando il flap si apre)
-//   Bottom flap: la linguetta animata — vecchio char va giù, nuovo char sale su
+// ── Singolo carattere split-flap ──────────────────────────────────────────────
+//
+//  Ogni layer è un elemento full-size (inset:0) con il carattere centrato
+//  via flex. clip-path: inset() taglia top o bottom half in coordinate LOCALI,
+//  prima di qualsiasi transform — nessun calcolo di offset a percentuale
+//  (evita il bug CSS: margin-top% è relativo alla larghezza, non all'altezza).
+//
+//  Il flap usa transformOrigin:'50% 50%' = centro del card = cerniera.
+//  clip-path viene applicato prima del rotateX, quindi la linguetta ruota
+//  come una scheda fisica che si piega attorno alla cerniera.
+//
 function Digit({ char, prevChar }: { char: string; prevChar: string }) {
   const shouldAnim = char !== prevChar && char !== '' && prevChar !== ''
-  const [topChar, setTopChar] = useState(char)
-  const [phase,   setPhase]   = useState<0 | 1 | 2>(0) // 0=idle 1=flap-down 2=flap-up
+  const [topChar,   setTopChar]   = useState(char)
+  const [flapChar,  setFlapChar]  = useState(char)
+  const [flapPhase, setFlapPhase] = useState<0 | 1 | 2>(0)
 
   useEffect(() => {
-    if (!shouldAnim) { setTopChar(char); setPhase(0); return }
-
-    // Avvia animazione: top mostra old, flap scende con old
+    if (!shouldAnim) { setTopChar(char); return }
     setTopChar(prevChar)
-    setPhase(1)
-
-    // Metà percorso: top diventa new, flap sale con new
-    const t1 = setTimeout(() => { setTopChar(char); setPhase(2) }, 200)
-    // Fine: flap sparisce
-    const t2 = setTimeout(() => setPhase(0), 420)
-
+    setFlapChar(prevChar)
+    setFlapPhase(1)
+    const t1 = setTimeout(() => { setTopChar(char); setFlapChar(char); setFlapPhase(2) }, 210)
+    const t2 = setTimeout(() => setFlapPhase(0), 440)
     return () => { clearTimeout(t1); clearTimeout(t2) }
   }, [char, prevChar]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const bg     = '#2563eb'  // blue-600
-  const text   = '#ffffff'
-  const r      = '0.12em'
-  const hinge  = '1.5px solid rgba(0,0,0,0.22)'
-  const c      = char     || ' '
-  const p      = prevChar || ' '
+  const BG   = '#2563eb'
+  const TEXT = '#ffffff'
+  const FONT = 'ui-monospace,"Courier New",monospace'
+
+  // Stile base condiviso da tutti i layer: full-size, carattere centrato
+  const layer: React.CSSProperties = {
+    position: 'absolute', inset: 0,
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    background: BG, color: TEXT,
+    fontFamily: FONT, fontWeight: 700, fontSize: 'inherit', lineHeight: 1,
+  }
 
   return (
-    <span style={{ display: 'inline-block', position: 'relative', width: '0.78em', height: '1.15em', fontSize: 'inherit', userSelect: 'none' }}>
+    <span style={{
+      display: 'inline-block', position: 'relative',
+      width: '0.88em', height: '1.32em',
+      fontSize: 'inherit', userSelect: 'none',
+    }}>
 
-      {/* ── Metà superiore statica ── */}
+      {/* Top half statico — clip taglia via la metà inferiore */}
       <span style={{
-        position: 'absolute', top: 0, left: 0, right: 0, height: '50%',
-        overflow: 'hidden', background: bg,
-        borderRadius: `${r} ${r} 0 0`,
-        boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.15)',
+        ...layer,
+        clipPath: 'inset(0 0 50% 0 round 0.12em 0.12em 0 0)',
+        boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.14)',
       }}>
-        <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '200%', color: text, fontFamily: 'ui-monospace,"Courier New",monospace', fontWeight: 700 }}>
-          {topChar}
-        </span>
+        {topChar || char}
       </span>
 
-      {/* ── Cerniera ── */}
-      <span style={{ position: 'absolute', left: 0, right: 0, top: '50%', height: hinge, background: 'rgba(0,0,0,0.25)', zIndex: 20, transform: 'translateY(-50%)' }} />
-
-      {/* ── Metà inferiore statica (mostra il nuovo char, dietro il flap) ── */}
+      {/* Bottom half statico — mostra il NUOVO char, visibile sotto il flap */}
       <span style={{
-        position: 'absolute', bottom: 0, left: 0, right: 0, height: '50%',
-        overflow: 'hidden', background: bg,
-        borderRadius: `0 0 ${r} ${r}`,
+        ...layer,
+        clipPath: 'inset(50% 0 0 0 round 0 0 0.12em 0.12em)',
       }}>
-        <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '200%', marginTop: '-100%', color: text, fontFamily: 'ui-monospace,"Courier New",monospace', fontWeight: 700 }}>
-          {c}
-        </span>
+        {char}
       </span>
 
-      {/* ── Linguetta animata ── */}
-      {phase > 0 && (
+      {/* Cerniera */}
+      <span style={{
+        position: 'absolute', inset: '50% 0 auto',
+        height: '2px', background: 'rgba(0,0,0,0.22)',
+        transform: 'translateY(-50%)', zIndex: 20,
+      }} />
+
+      {/* Linguetta animata — bottom half che ruota attorno alla cerniera */}
+      {flapPhase > 0 && (
         <span style={{
-          position: 'absolute', bottom: 0, left: 0, right: 0, height: '50%',
-          overflow: 'hidden', background: bg,
-          borderRadius: `0 0 ${r} ${r}`,
-          transformOrigin: 'top center',
-          animation: phase === 1 ? 'sflapDown 200ms ease-in forwards' : 'sflapUp 220ms ease-out forwards',
-          zIndex: 10,
-          boxShadow: '0 0.3em 0.6em rgba(0,0,0,0.25)',
+          ...layer,
+          clipPath: 'inset(50% 0 0 0 round 0 0 0.12em 0.12em)',
+          transformOrigin: '50% 50%',   // centro card = cerniera
+          animation: flapPhase === 1
+            ? 'sflapDown 210ms ease-in  forwards'
+            : 'sflapUp   225ms ease-out forwards',
+          zIndex: 15,
+          boxShadow: '0 0.5em 1em rgba(0,0,0,0.22)',
         }}>
-          <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '200%', marginTop: '-100%', color: text, fontFamily: 'ui-monospace,"Courier New",monospace', fontWeight: 700 }}>
-            {phase === 1 ? p : c}
-          </span>
+          {flapChar}
         </span>
       )}
     </span>
@@ -220,7 +229,6 @@ export default function ScanStatsLive({
   const grand7d    = rows.reduce((s, r) => s + r.last7d,  0)
   const grand30d   = rows.reduce((s, r) => s + r.last30d, 0)
 
-  // Font-size del totale — si restringe oltre le 4 cifre
   const totalFontSize = `${Math.max(1.8, 3 - Math.max(0, String(grandTotal).length - 3) * 0.35)}rem`
 
   return (
@@ -249,9 +257,9 @@ export default function ScanStatsLive({
         {/* Periodo */}
         <div className="grid grid-cols-3 gap-6 mb-6" style={{ fontSize: '1.55rem' }}>
           {[
-            { label: 'Oggi',     value: grandToday },
-            { label: '7 giorni', value: grand7d    },
-            { label: '30 giorni',value: grand30d   },
+            { label: 'Oggi',      value: grandToday },
+            { label: '7 giorni',  value: grand7d    },
+            { label: '30 giorni', value: grand30d   },
           ].map(({ label, value }) => (
             <div key={label}>
               <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1.5">{label}</p>
