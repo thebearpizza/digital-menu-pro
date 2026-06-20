@@ -4,28 +4,28 @@ import { useEffect, useRef, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import Link from 'next/link'
 
-// ── CSS keyframes for split-flap effect ──────────────────────────────────────
+// ── CSS keyframes ─────────────────────────────────────────────────────────────
 const FLIP_CSS = `
 @keyframes sflap {
-  0%   { transform: perspective(80px) rotateX(0deg);   }
-  40%  { transform: perspective(80px) rotateX(-88deg); }
-  60%  { transform: perspective(80px) rotateX(88deg);  }
-  100% { transform: perspective(80px) rotateX(0deg);   }
+  0%   { transform: perspective(6em) rotateX(0deg);   }
+  40%  { transform: perspective(6em) rotateX(-88deg); }
+  60%  { transform: perspective(6em) rotateX(88deg);  }
+  100% { transform: perspective(6em) rotateX(0deg);   }
 }
 `
 
-// ── Single character "flap" card ──────────────────────────────────────────────
-function Digit({ ch, seq }: { ch: string; seq: number }) {
-  const ref      = useRef<HTMLSpanElement>(null)
-  const prevSeq  = useRef(seq)
+// ── Single flap card — sizing via em so parent font-size controls scale ───────
+function Digit({ ch, seq, color = '#f5e4b0' }: { ch: string; seq: number; color?: string }) {
+  const ref     = useRef<HTMLSpanElement>(null)
+  const prevSeq = useRef(seq)
 
   useEffect(() => {
     if (seq === prevSeq.current || !ref.current) return
     prevSeq.current = seq
     const el = ref.current
     el.style.animation = 'none'
-    void el.offsetWidth          // force reflow to restart animation
-    el.style.animation = 'sflap 155ms ease-in-out'
+    void el.offsetWidth
+    el.style.animation = 'sflap 160ms ease-in-out'
   }, [seq])
 
   return (
@@ -34,27 +34,27 @@ function Digit({ ch, seq }: { ch: string; seq: number }) {
       style={{
         display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
         position: 'relative',
-        width: '0.72rem', height: '1.08rem',
-        background: '#1c1c1e', color: '#f5f0e8',
+        width: '0.78em', height: '1.15em',
+        fontSize: 'inherit',
         fontFamily: 'ui-monospace, "Courier New", monospace',
-        fontWeight: 700, fontSize: '0.78rem',
-        borderRadius: '2px',
-        boxShadow: '0 1px 3px rgba(0,0,0,0.45)',
+        fontWeight: 700,
+        background: '#1c1c1e',
+        color,
+        borderRadius: '0.1em',
+        boxShadow: '0 0.05em 0.2em rgba(0,0,0,0.6), inset 0 -0.05em 0 rgba(255,255,255,0.04)',
       }}
     >
-      {/* hinge line */}
       <span style={{
         position: 'absolute', left: 0, right: 0, top: '50%',
-        height: '1px', background: 'rgba(0,0,0,0.45)',
-        pointerEvents: 'none',
+        height: '1px', background: 'rgba(0,0,0,0.55)', pointerEvents: 'none',
       }} />
       {ch}
     </span>
   )
 }
 
-// ── Number split into individual digit cards ──────────────────────────────────
-function FlipNumber({ value }: { value: number }) {
+// ── Number made of digit cards ────────────────────────────────────────────────
+function FlipNumber({ value, color }: { value: number; color?: string }) {
   const prevRef = useRef(value)
   const ivRef   = useRef<ReturnType<typeof setInterval> | null>(null)
   const [disp, setDisp] = useState(value)
@@ -64,9 +64,7 @@ function FlipNumber({ value }: { value: number }) {
     const from = prevRef.current
     prevRef.current = value
     if (from === value) return
-
     if (ivRef.current) clearInterval(ivRef.current)
-
     let cur = from
     ivRef.current = setInterval(() => {
       cur += value > from ? 1 : -1
@@ -74,14 +72,13 @@ function FlipNumber({ value }: { value: number }) {
       setSeq(s => s + 1)
       if (cur === value) { clearInterval(ivRef.current!); ivRef.current = null }
     }, 80)
-
     return () => { if (ivRef.current) clearInterval(ivRef.current) }
   }, [value])
 
   return (
-    <span style={{ display: 'inline-flex', gap: '2px' }}>
+    <span style={{ display: 'inline-flex', gap: '0.1em' }}>
       {String(disp).split('').map((ch, i) => (
-        <Digit key={i} ch={ch} seq={seq} />
+        <Digit key={i} ch={ch} seq={seq} color={color} />
       ))}
     </span>
   )
@@ -107,182 +104,174 @@ export default function ScanStatsLive({
   restaurantIds:   string[]
   restaurantNames: Record<string, string>
 }) {
-  const [rows,     setRows]     = useState<ScanRow[]>(initial)
+  const [rows,      setRows]    = useState<ScanRow[]>(initial)
   const [updatedAt, setUpdated] = useState<Date>(new Date())
+  const [live,      setLive]    = useState(false)
 
-  // ── Aggregate raw views into ScanRow[] ────────────────────────────────────
   function aggregate(views: { restaurant_id: string; created_at: string }[]): ScanRow[] {
     const now        = new Date()
     const todayStart = new Date(now); todayStart.setHours(0, 0, 0, 0)
     const ago7d      = new Date(now.getTime() - 7  * 86_400_000)
     const ago30d     = new Date(now.getTime() - 30 * 86_400_000)
-
     const map = new Map<string, { today: number; last7d: number; last30d: number; total: number }>()
     for (const id of restaurantIds) map.set(id, { today: 0, last7d: 0, last30d: 0, total: 0 })
-
     for (const v of views) {
-      const row = map.get(v.restaurant_id)
-      if (!row) continue
+      const row = map.get(v.restaurant_id); if (!row) continue
       const ts = new Date(v.created_at)
       row.total++
       if (ts >= ago30d)     row.last30d++
       if (ts >= ago7d)      row.last7d++
       if (ts >= todayStart) row.today++
     }
-
     return restaurantIds
       .map(id => ({ restaurantId: id, restaurantName: restaurantNames[id] ?? id, ...map.get(id)! }))
       .filter(r => r.total > 0)
       .sort((a, b) => b.total - a.total)
   }
 
-  // ── Apply a single new INSERT to current rows ─────────────────────────────
   function applyInsert(restaurantId: string, createdAt: string) {
     const now        = new Date()
     const todayStart = new Date(now); todayStart.setHours(0, 0, 0, 0)
     const ago7d      = new Date(now.getTime() - 7  * 86_400_000)
     const ago30d     = new Date(now.getTime() - 30 * 86_400_000)
     const ts         = new Date(createdAt)
-
+    const delta = {
+      total:   1,
+      last30d: ts >= ago30d     ? 1 : 0,
+      last7d:  ts >= ago7d      ? 1 : 0,
+      today:   ts >= todayStart ? 1 : 0,
+    }
     setRows(prev => {
-      const existing = prev.find(r => r.restaurantId === restaurantId)
-      const delta = {
-        total:  1,
-        last30d: ts >= ago30d     ? 1 : 0,
-        last7d:  ts >= ago7d      ? 1 : 0,
-        today:   ts >= todayStart ? 1 : 0,
-      }
-      if (existing) {
-        return prev
-          .map(r => r.restaurantId !== restaurantId ? r : {
-            ...r,
-            total:   r.total   + delta.total,
+      const exists = prev.some(r => r.restaurantId === restaurantId)
+      const next = exists
+        ? prev.map(r => r.restaurantId !== restaurantId ? r : {
+            ...r, total: r.total + 1,
             last30d: r.last30d + delta.last30d,
             last7d:  r.last7d  + delta.last7d,
             today:   r.today   + delta.today,
           })
-          .sort((a, b) => b.total - a.total)
-      }
-      // New restaurant appearing in stats
-      return [
-        ...prev,
-        {
-          restaurantId,
-          restaurantName: restaurantNames[restaurantId] ?? restaurantId,
-          ...delta,
-        },
-      ].sort((a, b) => b.total - a.total)
+        : [...prev, { restaurantId, restaurantName: restaurantNames[restaurantId] ?? restaurantId, ...delta }]
+      return next.sort((a, b) => b.total - a.total)
     })
     setUpdated(new Date())
   }
 
-  // ── Supabase Realtime subscription ────────────────────────────────────────
+  // Realtime subscription
   useEffect(() => {
     if (!restaurantIds.length) return
     const supabase = createClient()
-
-    const channel = supabase
+    const ch = supabase
       .channel('scan-stats-live')
-      .on(
-        'postgres_changes' as any,
+      .on('postgres_changes' as any,
         { event: 'INSERT', schema: 'public', table: 'page_views' },
         (payload: any) => {
           const rid = payload.new?.restaurant_id as string | undefined
-          if (rid && restaurantIds.includes(rid)) {
-            applyInsert(rid, payload.new.created_at)
-          }
-        },
-      )
-      .subscribe()
-
-    return () => { supabase.removeChannel(channel) }
+          if (rid && restaurantIds.includes(rid)) applyInsert(rid, payload.new.created_at)
+        })
+      .subscribe(status => { if (status === 'SUBSCRIBED') setLive(true) })
+    return () => { supabase.removeChannel(ch) }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [restaurantIds.join(',')])
 
-  // ── Polling fallback every 60 s (covers realtime gaps) ───────────────────
+  // Polling fallback every 60 s
   useEffect(() => {
     if (!restaurantIds.length) return
     const supabase = createClient()
-
     const iv = setInterval(async () => {
       const { data } = await supabase
-        .from('page_views')
-        .select('restaurant_id, created_at')
-        .in('restaurant_id', restaurantIds)
+        .from('page_views').select('restaurant_id, created_at').in('restaurant_id', restaurantIds)
       if (data) { setRows(aggregate(data)); setUpdated(new Date()) }
     }, 60_000)
-
     return () => clearInterval(iv)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [restaurantIds.join(',')])
 
+  // ── Aggregated totals ─────────────────────────────────────────────────────
+  const grandTotal  = rows.reduce((s, r) => s + r.total,  0)
+  const grandToday  = rows.reduce((s, r) => s + r.today,  0)
+  const grand7d     = rows.reduce((s, r) => s + r.last7d,  0)
+  const grand30d    = rows.reduce((s, r) => s + r.last30d, 0)
+
   // ── Render ────────────────────────────────────────────────────────────────
-  const grandTotal = rows.reduce((s, r) => s + r.total, 0)
-
-  if (!rows.length) {
-    return (
-      <p className="text-sm text-gray-400 mt-1">Nessuna scansione ancora registrata.</p>
-    )
-  }
-
   return (
     <>
       <style>{FLIP_CSS}</style>
 
-      <div className="flex items-center gap-3 mb-2">
-        <span className="text-sm text-gray-500 flex items-center gap-1.5">
-          <FlipNumber value={grandTotal} />
-          <span className="text-gray-400 ml-1">totali</span>
-        </span>
-        <span className="text-[10px] text-gray-300">
-          · {updatedAt.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-        </span>
-      </div>
+      {/* ── Hero tabellone ── */}
+      <div style={{ background: '#0a0a0a', border: '1px solid #222' }} className="p-6 mb-4">
 
-      <div className="bg-white border border-gray-200 overflow-x-auto">
-        <table className="w-full min-w-[480px]">
-          <thead>
-            <tr className="border-b border-gray-100 text-left bg-gray-50">
-              <th className="px-4 py-2.5 text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Ristorante</th>
-              <th className="px-4 py-2.5 text-[10px] font-semibold text-gray-400 uppercase tracking-wide text-right">Oggi</th>
-              <th className="px-4 py-2.5 text-[10px] font-semibold text-gray-400 uppercase tracking-wide text-right">7 giorni</th>
-              <th className="px-4 py-2.5 text-[10px] font-semibold text-gray-400 uppercase tracking-wide text-right">30 giorni</th>
-              <th className="px-4 py-2.5 text-[10px] font-semibold text-gray-400 uppercase tracking-wide text-right">Totale</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-50">
-            {rows.map(r => (
-              <tr key={r.restaurantId} className="hover:bg-gray-50">
-                <td className="px-4 py-3">
+        {/* Header row */}
+        <div className="flex items-center justify-between mb-6">
+          <span style={{ color: '#444', fontSize: '0.65rem', fontFamily: 'ui-monospace, monospace', letterSpacing: '0.15em', textTransform: 'uppercase' }}>
+            Scansioni QR
+          </span>
+          <span className="flex items-center gap-1.5" style={{ color: live ? '#4ade80' : '#555', fontSize: '0.65rem', fontFamily: 'ui-monospace, monospace', letterSpacing: '0.12em' }}>
+            <span style={{
+              width: '6px', height: '6px', borderRadius: '50%',
+              background: live ? '#4ade80' : '#555',
+              display: 'inline-block',
+              animation: live ? 'pulse 2s cubic-bezier(0.4,0,0.6,1) infinite' : 'none',
+            }} />
+            {live ? 'LIVE' : 'CONNECTING'}
+          </span>
+        </div>
+
+        {/* Big total number */}
+        <div className="mb-1" style={{ fontSize: grandTotal === 0 ? '2.8rem' : `${Math.max(1.6, 2.8 - Math.max(0, String(grandTotal).length - 3) * 0.3)}rem` }}>
+          {grandTotal === 0
+            ? <span style={{ color: '#333', fontFamily: 'ui-monospace, monospace', fontWeight: 700 }}>—</span>
+            : <FlipNumber value={grandTotal} color="#f5e4b0" />}
+        </div>
+        <div style={{ color: '#444', fontSize: '0.65rem', fontFamily: 'ui-monospace, monospace', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: '2rem' }}>
+          totali
+        </div>
+
+        {/* Period breakdown */}
+        <div className="grid grid-cols-3 gap-6">
+          {[
+            { label: 'OGGI',      value: grandToday },
+            { label: '7 GIORNI',  value: grand7d    },
+            { label: '30 GIORNI', value: grand30d   },
+          ].map(({ label, value }) => (
+            <div key={label}>
+              <div style={{ color: '#3a3a3a', fontSize: '0.6rem', fontFamily: 'ui-monospace, monospace', letterSpacing: '0.15em', marginBottom: '0.4rem' }}>
+                {label}
+              </div>
+              <div style={{ fontSize: '1.5rem' }}>
+                {value === 0
+                  ? <span style={{ color: '#2a2a2a', fontFamily: 'ui-monospace, monospace', fontWeight: 700 }}>0</span>
+                  : <FlipNumber value={value} color="#d4c49a" />}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Per-restaurant mini list */}
+        {rows.length > 0 && (
+          <div style={{ borderTop: '1px solid #1a1a1a', marginTop: '1.5rem', paddingTop: '1rem' }}>
+            <div className="flex flex-col gap-1.5">
+              {rows.map(r => (
+                <div key={r.restaurantId} className="flex items-baseline justify-between">
                   <Link
                     href={`/admin/restaurants/${r.restaurantId}`}
-                    className="text-sm font-medium text-gray-900 hover:text-blue-600 hover:underline"
+                    style={{ color: '#555', fontSize: '0.72rem', fontFamily: 'ui-monospace, monospace' }}
+                    className="hover:text-gray-300 transition-colors truncate max-w-[60%]"
                   >
                     {r.restaurantName}
                   </Link>
-                </td>
-                <td className="px-4 py-3 text-right">
-                  {r.today > 0
-                    ? <FlipNumber value={r.today} />
-                    : <span className="text-gray-300 text-sm">—</span>}
-                </td>
-                <td className="px-4 py-3 text-right">
-                  {r.last7d > 0
-                    ? <FlipNumber value={r.last7d} />
-                    : <span className="text-gray-300 text-sm">—</span>}
-                </td>
-                <td className="px-4 py-3 text-right">
-                  {r.last30d > 0
-                    ? <FlipNumber value={r.last30d} />
-                    : <span className="text-gray-300 text-sm">—</span>}
-                </td>
-                <td className="px-4 py-3 text-right">
-                  <FlipNumber value={r.total} />
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+                  <span style={{ fontSize: '0.8rem' }}>
+                    <FlipNumber value={r.total} color="#888" />
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Timestamp */}
+        <div style={{ marginTop: '1rem', color: '#2a2a2a', fontSize: '0.58rem', fontFamily: 'ui-monospace, monospace' }}>
+          {updatedAt.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+        </div>
       </div>
     </>
   )
