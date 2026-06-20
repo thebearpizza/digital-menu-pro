@@ -78,8 +78,11 @@ export default function NavigationProgress() {
     <div
       ref={barRef}
       aria-hidden
-      className="fixed top-0 left-0 z-[100] h-[3px] bg-blue-600 pointer-events-none"
-      style={{ width: '0%', opacity: 0 }}
+      className="fixed top-0 left-0 z-[100] h-[4px] bg-blue-600 pointer-events-none"
+      style={{
+        width: '0%', opacity: 0,
+        boxShadow: '0 0 10px 2px rgba(37,99,235,0.5)',
+      }}
     />
   )
 }
