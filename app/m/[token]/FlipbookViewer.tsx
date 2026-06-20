@@ -477,9 +477,20 @@ export default function FlipbookViewer({
             : footerCutoff,           // last dish: up to footer safe-zone
         }))
 
+        // Build a map from every span to its line-group's representative topPx.
+        // This prevents individual spans whose style.top deviates slightly from
+        // the group representative (e.g. price span at 19.9% vs dish name at
+        // 20.3%) from falling into the PRECEDING dish's range in Pass 2.
+        const spanGroupTop = new Map<HTMLElement, number>()
+        for (const { topPx, spans: gSpans } of lineGroups) {
+          for (const s of gSpans) { spanGroupTop.set(s, topPx) }
+        }
+
         // Pass 2: extend every span inside a dish range.
         for (const span of textDivs) {
-          const spanTop = parseFloat(span.style.top) || 0
+          // Use the group's representative topPx — not the span's own style.top —
+          // so all spans in the same line group get the same range lookup result.
+          const spanTop = spanGroupTop.get(span) ?? (spanTopVal(span))
           const range   = ranges.find(r => spanTop >= r.minTop && spanTop < r.maxTop)
           if (!range) continue
 
@@ -489,14 +500,15 @@ export default function FlipbookViewer({
           span.style.pointerEvents = 'auto'
           if (!span.dataset.dishId) span.dataset.dishId = captured.id
 
-          // Stop touch/mouse events from ever reaching the turn.js container.
-          // touchstart passive:true keeps scroll intent intact on the span itself.
-          let moved   = false
-          let startX  = 0
-          let startY  = 0
+          let moved  = false
+          let startX = 0
+          let startY = 0
 
+          // Do NOT stopPropagation on touchstart: turn.js needs to receive the
+          // event to detect swipe gestures (page turns). Taps are handled on
+          // touchend after verifying the `moved` flag — a tap never triggers
+          // a turn.js page flip because it has no displacement.
           span.addEventListener('touchstart', (evt) => {
-            evt.stopPropagation()
             moved = false
             const t = evt.touches[0]
             if (t) { startX = t.clientX; startY = t.clientY }
@@ -509,20 +521,18 @@ export default function FlipbookViewer({
             }
           }, { passive: true })
 
-          // Apertura su touchend = singolo tap garantito (niente attesa del
-          // click sintetico, niente "primo tap assorbito dall'hover" su iOS).
-          // preventDefault sopprime il ghost-click successivo → nessun doppio fire.
+          // Tap confirmed on touchend: preventDefault stops the ghost-click.
           span.addEventListener('touchend', (evt) => {
-            evt.stopPropagation()
-            if (moved) return            // era uno swipe, non un tap
+            if (moved) return
             evt.preventDefault()
+            evt.stopPropagation()
             onDishOpenRef.current?.(captured.id)
             setModalStack([captured])
           }, { passive: false })
 
           span.addEventListener('mousedown', (evt) => { evt.stopPropagation() })
 
-          // Desktop / fallback (mouse): nessun touchend → questo gestisce il click.
+          // Desktop / fallback (mouse): handled by click event.
           span.addEventListener('click', (evt) => {
             evt.stopPropagation()
             evt.preventDefault()
