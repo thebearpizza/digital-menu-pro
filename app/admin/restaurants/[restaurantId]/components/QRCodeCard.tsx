@@ -74,7 +74,7 @@ export function QRCodeCard({
           rel="noopener noreferrer"
           className="flex-1 text-center text-xs font-medium py-1.5 border border-gray-300 text-gray-600 hover:bg-gray-50 transition-colors"
         >
-          Anteprima ↗
+          Anteprima
         </a>
         <button
           onClick={handleDownload}
