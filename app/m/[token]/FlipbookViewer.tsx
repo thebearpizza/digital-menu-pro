@@ -446,19 +446,18 @@ export default function FlipbookViewer({
       }
 
       // Pass 1b: multi-group matching for dishes whose name wraps to 2+ lines.
-      // Tries combining 2–4 consecutive unmatched groups within 5 topPx-units
-      // (< inter-dish spacing of ~6 units), stopping early at already-matched
-      // groups (clear dish-boundary markers) to avoid false positives.
+      // Tries combining 2–6 consecutive unmatched groups within 10 topPx-units,
+      // stopping early at already-matched groups (clear dish-boundary markers).
       for (let i = 0; i < sortedGroups.length; i++) {
         if (matchedIdx.has(i)) continue
         // Don't start from a pure allergen/price row (no dish text to anchor on)
         if (!sortedGroups[i].spans.some(s => isDishText(s.textContent ?? ''))) continue
 
-        for (let len = 2; len <= 4; len++) {
+        for (let len = 2; len <= 6; len++) {
           const lastIdx = i + len - 1
           if (lastIdx >= sortedGroups.length) break
-          // Stop if the window spans more than ~5% — prevents crossing to next dish
-          if (sortedGroups[lastIdx].topPx - sortedGroups[i].topPx > 5) break
+          // Stop if the window spans more than 10 units — inter-dish spacing
+          if (sortedGroups[lastIdx].topPx - sortedGroups[i].topPx > 10) break
           // Stop if any intermediate group is already matched (= next dish started)
           let crossesMatch = false
           for (let k = i + 1; k <= lastIdx; k++) {
@@ -482,24 +481,41 @@ export default function FlipbookViewer({
         }
       }
 
-      // DEBUG overlay (page 1 only) — remove after custom-font diagnosis
-      if (pageNum === 1) {
-        const groupLines = lineGroups.slice(0, 6).map(g => {
-          const filtered = g.spans.filter(s => isDishText(s.textContent ?? ''))
-            .map(s => s.textContent).join('')
-          return `${g.topPx.toFixed(1)} (${g.spans.length}sp) raw:"${g.spans.map(s=>s.textContent).join('')}" filtered:"${filtered}"`
+      // DEBUG overlay: targeted at "trancio" dish if still unmatched — remove after fix confirmed
+      const trancioGrpIdx = sortedGroups.findIndex(g =>
+        g.spans.some(s => (s.textContent ?? '').toLowerCase().includes('trancio'))
+      )
+      const trancioInAnchors = anchors.some(a => a.dish.name.toLowerCase().includes('trancio'))
+      if (trancioGrpIdx >= 0 && !trancioInAnchors) {
+        const startGrp = Math.max(0, trancioGrpIdx - 1)
+        const endGrp   = Math.min(sortedGroups.length - 1, trancioGrpIdx + 7)
+        const groupLines = sortedGroups.slice(startGrp, endGrp + 1).map((g, j) => {
+          const idx  = startGrp + j
+          const raw  = g.spans.map(s => s.textContent ?? '').join('')
+          const filt = g.spans.filter(s => isDishText(s.textContent ?? '')).map(s => s.textContent ?? '').join('')
+          return `[${idx}]${matchedIdx.has(idx) ? '✓' : ' '} top=${g.topPx.toFixed(2)} raw:"${raw.slice(0, 35)}" filt:"${filt.slice(0, 30)}"`
         }).join('\n')
-        const anchorLines = anchors.length
-          ? anchors.map(a => `✓ "${a.dish.name}" @ ${a.topPx.toFixed(1)}`).join('\n')
-          : '✗ NESSUN MATCH\nPiatti attesi:\n' + dishesRef.current.slice(0, 8).map(d => d.name).join('\n')
+        const combined: HTMLElement[] = []
+        for (let k = trancioGrpIdx; k < Math.min(trancioGrpIdx + 6, sortedGroups.length); k++) {
+          combined.push(...sortedGroups[k].spans.filter(s => isDishText(s.textContent ?? '')))
+        }
+        const combinedText = combined.map(s => s.textContent ?? '').join('').trim()
+        const noSp = combinedText.replace(/\s+/g, '').toUpperCase()
+        const dbNames = dishesRef.current.map(d =>
+          `"${d.name.replace(/\s+/g, '').toUpperCase().slice(0, 50)}"`
+        ).join('\n')
         setDebugOverlay([
-          `unit:${topIsPct?'%':'px'} tol:${LINE_TOL}  SPANS:${textDivs.length}  GRUPPI:${lineGroups.length}  MATCH:${anchors.length}`,
+          `[TRANCIO non trovato] pg=${pageNum} tol=${LINE_TOL} GRP=${lineGroups.length} MATCH=${anchors.length}`,
           '',
-          'Gruppi p.1:',
+          'Gruppi intorno a "trancio":',
           groupLines,
           '',
-          'Anchors p.1:',
-          anchorLines,
+          `Testo combinato (grp ${trancioGrpIdx}..${trancioGrpIdx + 5}):`,
+          `"${combinedText.slice(0, 80)}"`,
+          `NoSpazi: "${noSp.slice(0, 80)}"`,
+          '',
+          'DB piatti (no spazi):',
+          dbNames,
         ].join('\n'))
       }
 
