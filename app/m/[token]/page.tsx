@@ -31,10 +31,10 @@ export default async function PublicMenuPage({
 
   if (!restaurant) notFound()
 
-  // Track QR scan — fire and forget, never blocks render
-  void supabase
-    .from('page_views')
-    .insert({ restaurant_id: restaurant.id })
+  // Track QR scan — awaited so the insert completes before response is sent
+  try {
+    await supabase.from('page_views').insert({ restaurant_id: restaurant.id })
+  } catch {}
 
   const [{ data: rawMenus }, { data: banners }, { data: info }] = await Promise.all([
     supabase
