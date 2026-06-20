@@ -34,7 +34,7 @@ export default async function PublicMenuPage({
   const [{ data: rawMenus }, { data: banners }, { data: info }] = await Promise.all([
     supabase
       .from('menus')
-      .select('id, name, sort_order, category_order, schedule_enabled, schedule_from, schedule_until, translations')
+      .select('id, name, sort_order, category_order, schedule_enabled, schedule_from, schedule_until, translations, text_content')
       .eq('restaurant_id', restaurant.id)
       .eq('is_active', true)
       .order('sort_order', { ascending: true }),
@@ -87,6 +87,7 @@ export default async function PublicMenuPage({
         id:           menu.id as string,
         name:         menu.name as string,
         translations: ((menu as any).translations ?? {}) as Record<string, any>,
+        extra_pages: (menu as any).text_content ?? null,
         dishes: sorted.map(d => ({
           id:              d.id as string,
           name:            d.name as string,

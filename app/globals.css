@@ -148,3 +148,30 @@ body.menu-locked {
   to   { opacity: 1; }
 }
 
+
+/* ─── Tiptap rich-text editor (TextPagesPanel) ─────────────────────────── */
+.dmp-rte .ProseMirror {
+  outline: none;
+  min-height: 200px;
+  padding: 16px;
+  font-size: inherit;
+  font-family: inherit;
+  color: inherit;
+  line-height: inherit;
+}
+.dmp-rte .ProseMirror:focus { box-shadow: none; }
+
+.dmp-rte .ProseMirror > * + * { margin-top: 0.25em; }
+
+.dmp-rte .ProseMirror h1 { font-size: 2.2em;  font-weight: 700; margin-bottom: 0.2em; }
+.dmp-rte .ProseMirror h2 { font-size: 1.6em;  font-weight: 700; margin-bottom: 0.18em; }
+.dmp-rte .ProseMirror h3 { font-size: 1.25em; font-weight: 600; margin-bottom: 0.15em; }
+.dmp-rte .ProseMirror p  { margin-bottom: 0; }
+
+.dmp-rte .ProseMirror p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  color: #9ca3af;
+  pointer-events: none;
+  height: 0;
+}

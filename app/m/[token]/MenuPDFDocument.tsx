@@ -60,6 +60,24 @@ export interface PDFDish {
   allergens: number[]
 }
 
+export interface EmbeddedPageContent {
+  enabled:    boolean
+  position:   'first' | 'last'
+  body:       string
+  font:       string
+  fontSize:   number
+  align:      'left' | 'center' | 'right'
+  color:      string
+  bold:       boolean
+  italic:     boolean
+  lineHeight: number
+}
+
+export interface MenuExtraPages {
+  info:     EmbeddedPageContent
+  allergen: EmbeddedPageContent
+}
+
 export interface PDFMenu {
   id: string
   name: string
@@ -67,6 +85,7 @@ export interface PDFMenu {
   // Lingua del menu già tradotto (nomi/descrizioni/categorie arrivano tradotti
   // dal chiamante): serve solo per le etichette fisse, es. gli allergeni.
   lang?: string
+  extra_pages?: MenuExtraPages | null
 }
 
 export interface PDFRestaurant {
@@ -430,11 +449,167 @@ function chunk<T>(arr: T[], n: number): T[][] {
   return out
 }
 
+// ── Embedded text block (info / allergen page) — HTML-aware renderer ─────────
+
+function decodeEntities(s: string): string {
+  return s
+    .replace(/&amp;/g,  '&')
+    .replace(/&lt;/g,   '<')
+    .replace(/&gt;/g,   '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g,  "'")
+    .replace(/&nbsp;/g, ' ')
+}
+
+function boldVariant(family: string, registered: Set<string>): string {
+  if (registered.has(family)) return family   // Google Font: use fontWeight
+  if (family === 'Times-Roman') return 'Times-Bold'
+  if (family === 'Courier')     return 'Courier-Bold'
+  return 'Helvetica-Bold'                     // default or Helvetica
+}
+
+type InlineStyle = { fontFamily: string; fontWeight?: number; fontStyle?: 'normal' | 'italic' | 'oblique'; fontSize: number; color: string; lineHeight: number }
+
+// Parse inline HTML marks (<strong>, <em>, <span style="color:...">) and
+// return an array of Text nodes (strings or nested <Text> elements).
+function parseInline(
+  html: string,
+  base: InlineStyle,
+  registered: Set<string>,
+  keyPrefix: string,
+): React.ReactNode[] {
+  const result: React.ReactNode[] = []
+  const re = /<(strong|em|span)\b([^>]*)>([\s\S]*?)<\/\1>|<br\s*\/?>|([^<]+)/g
+  let m
+  while ((m = re.exec(html)) !== null) {
+    const [, tag, attrs, inner, text] = m
+    if (text !== undefined) {
+      const decoded = decodeEntities(text)
+      if (decoded) result.push(decoded)
+      continue
+    }
+    if (!tag) { result.push('\n'); continue }
+
+    let style: typeof base = { ...base }
+    if (tag === 'strong') {
+      style = { ...style, fontFamily: boldVariant(base.fontFamily, registered), fontWeight: 700 }
+    } else if (tag === 'em') {
+      style = { ...style, fontStyle: 'italic' as const }
+    } else if (tag === 'span') {
+      const cm = attrs.match(/color:\s*([^;"']+)/)
+      if (cm) style = { ...style, color: cm[1].trim() }
+    }
+    result.push(
+      <Text key={`${keyPrefix}-${result.length}`} style={style}>
+        {parseInline(inner, style, registered, `${keyPrefix}-${result.length}`)}
+      </Text>
+    )
+  }
+  return result
+}
+
+// Render an EmbeddedPageContent body (HTML or plain text) as react-pdf nodes.
+// Each block element (h1–h3, p) becomes a separate <Text> with its own style.
+function EmbeddedTextBlock({
+  page, bg, registered,
+}: {
+  page:       EmbeddedPageContent
+  bg:         string
+  registered: Set<string>
+}) {
+  const baseFontFamily = registered.has(page.font) ? page.font : 'Helvetica'
+  const baseFontSize   = Math.max(8, Math.min(36, page.fontSize))
+  const defaultColor   = readableOn(page.color, bg)
+  const body           = page.body ?? ''
+
+  // Detect HTML body vs legacy plain text
+  const isHtml = body.trimStart().startsWith('<')
+
+  if (!isHtml) {
+    // Legacy plain text: render as single Text block
+    return (
+      <Text style={{
+        fontFamily:  baseFontFamily,
+        fontWeight:  page.bold   ? 700 : 400,
+        fontStyle:   page.italic ? 'italic' : 'normal',
+        fontSize:    baseFontSize,
+        color:       defaultColor,
+        textAlign:   page.align,
+        lineHeight:  page.lineHeight,
+      }}>
+        {body}
+      </Text>
+    )
+  }
+
+  // Parse HTML blocks and render as react-pdf Text elements
+  const blockRe = /<(h[1-3]|p)([^>]*)>([\s\S]*?)<\/\1>/g
+  const blocks: React.ReactNode[] = []
+  let m: RegExpExecArray | null
+  let blockIdx = 0
+
+  while ((m = blockRe.exec(body)) !== null) {
+    const [, tag, attrs, inner] = m
+    const isH1 = tag === 'h1', isH2 = tag === 'h2', isH3 = tag === 'h3'
+    const isHeading = isH1 || isH2 || isH3
+
+    // Paragraph-level alignment from Tiptap style attribute
+    const alignM = attrs.match(/text-align:\s*(left|center|right)/)
+    const textAlign = (alignM ? alignM[1] : page.align) as 'left' | 'center' | 'right'
+
+    const scale     = isH1 ? 2.2 : isH2 ? 1.6 : isH3 ? 1.25 : 1.0
+    const fontSize  = baseFontSize * scale
+    const fontWeight= isHeading ? 700 : (page.bold ? 700 : 400)
+    const fontFamily= (isHeading || fontWeight === 700)
+      ? boldVariant(baseFontFamily, registered)
+      : baseFontFamily
+
+    const fontStyleVal = ((!isHeading && page.italic) ? 'italic' : 'normal') as 'normal' | 'italic'
+    const blockStyle = {
+      fontFamily,
+      fontWeight,
+      fontStyle:    fontStyleVal,
+      fontSize,
+      color:        defaultColor,
+      textAlign,
+      lineHeight:   page.lineHeight,
+      marginBottom: isH1 ? 6 : isH2 ? 5 : isH3 ? 4 : 3,
+    }
+
+    // Empty <p></p> → add spacing
+    if (!inner.trim()) {
+      blocks.push(<Text key={blockIdx++} style={{ ...blockStyle, fontSize: baseFontSize * 0.45 }}>{' '}</Text>)
+      continue
+    }
+
+    const inlineBase: InlineStyle = { fontFamily, fontWeight, fontStyle: fontStyleVal, fontSize, color: defaultColor, lineHeight: page.lineHeight }
+    blocks.push(
+      <Text key={blockIdx++} style={blockStyle}>
+        {parseInline(inner, inlineBase, registered, String(blockIdx))}
+      </Text>
+    )
+  }
+
+  // Fallback: no blocks matched → render raw
+  if (blocks.length === 0) {
+    return (
+      <Text style={{ fontFamily: baseFontFamily, fontSize: baseFontSize, color: defaultColor, lineHeight: page.lineHeight, textAlign: page.align }}>
+        {decodeEntities(body.replace(/<[^>]+>/g, ' '))}
+      </Text>
+    )
+  }
+
+  return <>{blocks}</>
+}
+
+// ── Dish menu ─────────────────────────────────────────────────────────────────
+
 export function MenuPDFDocument({ restaurant, menu, theme: themeProp, registeredFonts }: Props) {
   const theme      = themeProp ?? DEFAULT_THEME
   const m          = theme.menu
   const reg        = registeredFonts ?? new Set<string>()
   const compact    = m.pdfLayout === 'compact'
+  const bg         = m.pageBackground.color
   const alternating= compact && m.compactMode === 'alternating'
   // Two style sets: base and horizontally mirrored. The alternating compact
   // mode applies the mirrored set to ODD categories so the WHOLE category
@@ -442,6 +617,18 @@ export function MenuPDFDocument({ restaurant, menu, theme: themeProp, registered
   const s          = makeStyles(theme, reg, false)
   const sFlip      = alternating ? makeStyles(theme, reg, true) : s
   const categories = groupByCategory(menu.dishes)
+
+  // Collect enabled embedded pages sorted into 'first' and 'last' groups.
+  // Info precedes allergen within each group (natural document order).
+  const ep = menu.extra_pages
+  const firstEmbedded: EmbeddedPageContent[] = [
+    ep?.info?.enabled     && ep.info.position     === 'first' ? ep.info     : null,
+    ep?.allergen?.enabled && ep.allergen.position === 'first' ? ep.allergen : null,
+  ].filter((x): x is EmbeddedPageContent => !!x && !!x.body.trim())
+  const lastEmbedded: EmbeddedPageContent[] = [
+    ep?.info?.enabled     && ep.info.position     === 'last'  ? ep.info     : null,
+    ep?.allergen?.enabled && ep.allergen.position === 'last'  ? ep.allergen : null,
+  ].filter((x): x is EmbeddedPageContent => !!x && !!x.body.trim())
   const layout     = m.layout.dishLayout
   const isGrid2    = layout === 'grid-2'
   const isGrid3    = layout === 'grid-3'
@@ -664,8 +851,16 @@ export function MenuPDFDocument({ restaurant, menu, theme: themeProp, registered
     >
       <Page size="A4" style={s.page} wrap>
         <PageBackgroundLayer bg={m.pageBackground} compact={compact} />
-        {blocks.map(b => (
-          <View key={b.key} break={b.breakBefore}>
+
+        {/* Embedded pages that appear before all dish categories */}
+        {firstEmbedded.map((page, i) => (
+          <View key={`first-${i}`} break={i > 0}>
+            <EmbeddedTextBlock page={page} bg={bg} registered={reg} />
+          </View>
+        ))}
+
+        {blocks.map((b, i) => (
+          <View key={b.key} break={b.breakBefore || (i === 0 && firstEmbedded.length > 0)}>
 
             {/* Full category header on the first block of each category. */}
             {b.showHeader && compact && b.catIdx > 0 && <View style={s.catSpacer} />}
@@ -703,6 +898,13 @@ export function MenuPDFDocument({ restaurant, menu, theme: themeProp, registered
               b.dishes.map((dish, i) => renderDish(dish, b.lastFlags[i], b.st))
             )}
 
+          </View>
+        ))}
+
+        {/* Embedded pages that appear after all dish categories */}
+        {lastEmbedded.map((page, i) => (
+          <View key={`last-${i}`} break>
+            <EmbeddedTextBlock page={page} bg={bg} registered={reg} />
           </View>
         ))}
       </Page>

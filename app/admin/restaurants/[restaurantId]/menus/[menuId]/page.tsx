@@ -2,6 +2,9 @@ import { createClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import DishList from './DishList'
+import TextPagesPanel from './TextPagesPanel'
+import { defaultExtraPages } from '../menuExtraPages'
+import type { MenuExtraPages } from '../menuExtraPages'
 
 export default async function MenuDishesPage({
   params,
@@ -12,7 +15,7 @@ export default async function MenuDishesPage({
 
   const [{ data: menu }, { data: dishes }, { data: allDishes }, { data: allMenus }] = await Promise.all([
     supabase
-      .from('menus').select('id, name, restaurant_id, category_order')
+      .from('menus').select('id, name, restaurant_id, category_order, text_content')
       .eq('id', params.menuId).eq('restaurant_id', params.restaurantId).single(),
     supabase
       .from('dishes')
@@ -20,14 +23,12 @@ export default async function MenuDishesPage({
       .eq('menu_id', params.menuId)
       .order('category', { ascending: true })
       .order('sort_order', { ascending: true }),
-    // All dishes of this restaurant for pairing selector
     supabase
       .from('dishes')
       .select('id, name, category')
       .eq('restaurant_id', params.restaurantId)
       .eq('is_active', true)
       .order('category').order('sort_order'),
-    // All menus of this restaurant for multi-menu selector
     supabase
       .from('menus')
       .select('id, name')
@@ -36,6 +37,12 @@ export default async function MenuDishesPage({
   ])
 
   if (!menu) notFound()
+
+  // Merge saved extra pages with defaults so new menus show sensible UI
+  const rawPages = (menu as any).text_content
+  const extraPages: MenuExtraPages = (rawPages?.info || rawPages?.allergen)
+    ? rawPages as MenuExtraPages
+    : defaultExtraPages()
 
   return (
     <div>
@@ -58,6 +65,12 @@ export default async function MenuDishesPage({
         allDishes={(allDishes ?? []) as any[]}
         allMenus={(allMenus ?? []) as any[]}
         initialCategoryOrder={(menu.category_order as string[] | null) ?? null}
+      />
+
+      <TextPagesPanel
+        restaurantId={params.restaurantId}
+        menuId={params.menuId}
+        initialPages={extraPages}
       />
     </div>
   )

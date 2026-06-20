@@ -4,6 +4,8 @@ import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { translateItems, translateEnabled } from '@/lib/translateEngine'
 import { TARGET_LANGS, type MenuTranslations } from '@/lib/translations'
+import { ALLERGENI_DEFAULT_TEXT } from './menuExtraPages'
+import type { MenuExtraPages } from './menuExtraPages'
 
 async function verifyOwnership(supabase: any, restaurantId: string) {
   const { data: { user } } = await supabase.auth.getUser()
@@ -56,6 +58,24 @@ export async function createMenu(restaurantId: string, name: string) {
   await autoTranslateMenuName(supabase, data.id, name)
   revalidate(restaurantId)
   return data
+}
+
+// ── Pagine extra (Info + Allergeni) embedded in ogni menu piatti ──────────────
+
+export async function updateMenuExtraPages(
+  restaurantId: string,
+  menuId: string,
+  pages: MenuExtraPages,
+) {
+  const supabase = await createClient()
+  await verifyOwnership(supabase, restaurantId)
+
+  const { error } = await supabase
+    .from('menus')
+    .update({ text_content: pages })
+    .eq('id', menuId).eq('restaurant_id', restaurantId)
+  if (error) throw new Error(error.message)
+  revalidatePath(`/admin/restaurants/${restaurantId}/menus/${menuId}`)
 }
 
 export async function updateMenuName(restaurantId: string, menuId: string, name: string) {
@@ -112,7 +132,7 @@ export async function duplicateMenu(restaurantId: string, menuId: string) {
   await verifyOwnership(supabase, restaurantId)
 
   const { data: source } = await supabase
-    .from('menus').select('name, sort_order, category_order, translations').eq('id', menuId).single()
+    .from('menus').select('name, sort_order, category_order, translations, text_content').eq('id', menuId).single()
   if (!source) throw new Error('Menu non trovato')
 
   const { data: newMenu, error: menuErr } = await supabase
@@ -123,11 +143,11 @@ export async function duplicateMenu(restaurantId: string, menuId: string) {
       sort_order: source.sort_order + 1,
       category_order: source.category_order,
       translations: source.translations ?? {},
+      text_content: source.text_content ?? null,
     })
     .select('id, name, sort_order, is_active').single()
   if (menuErr) throw new Error(menuErr.message)
 
-  // Duplicate dishes
   const { data: dishes } = await supabase
     .from('dishes')
     .select('name, description, price, category, image_url, allergens, sort_order, pairing_label, is_active, translations')
