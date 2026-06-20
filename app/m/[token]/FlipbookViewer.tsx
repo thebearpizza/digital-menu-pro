@@ -349,15 +349,30 @@ export default function FlipbookViewer({
       // Footer exclusion: the bottom 10% of the page (restaurant name +
       //   page number text items) is capped out of the last dish's range.
 
-      const LINE_TOLERANCE = 4  // px — groups glyphs on the same baseline
+      const LINE_TOLERANCE = 6  // px — groups glyphs on the same baseline
 
-      // Step A: bucket spans into lines by top value
+      // Step A: bucket spans into lines by top value.
+      // For PDF.js 3.x, style.top is the primary Y position. Some fonts may
+      // use matrix() transforms for positioning — extract ty as fallback.
       type LineGroup  = { topPx: number; spans: HTMLElement[] }
       type DishAnchor = { dish: DishData; topPx: number }
+
+      function spanTopPx(div: HTMLElement): number {
+        const t = parseFloat(div.style.top)
+        if (!isNaN(t) && t > 0) return t
+        // Fallback: extract ty from matrix(a,b,c,d,tx,ty)
+        const m = (div.style.transform ?? '').match(/matrix\(([^)]+)\)/)
+        if (m) {
+          const parts = m[1].split(',').map(Number)
+          if (parts.length >= 6 && parts[5] > 0) return parts[5]
+        }
+        return t || 0
+      }
+
       const lineGroups: LineGroup[] = []
 
       for (const div of textDivs) {
-        const topPx = parseFloat(div.style.top) || 0
+        const topPx = spanTopPx(div)
         const grp   = lineGroups.find(g => Math.abs(g.topPx - topPx) < LINE_TOLERANCE)
         if (grp) { grp.spans.push(div) }
         else      { lineGroups.push({ topPx, spans: [div] }) }
@@ -367,6 +382,16 @@ export default function FlipbookViewer({
       for (const g of lineGroups) {
         g.spans.sort((a, b) => (parseFloat(a.style.left) || 0) - (parseFloat(b.style.left) || 0))
       }
+
+      // DEBUG — remove after diagnosis
+      console.debug(
+        `[Flipbook p.${pageNum}]`,
+        `spans=${textDivs.length}`,
+        `tops=[${textDivs.slice(0, 8).map(d => d.style.top).join(',')}]`,
+        `texts=[${textDivs.slice(0, 8).map(d => JSON.stringify(d.textContent)).join(',')}]`,
+        `lineGroups=${lineGroups.length}:`,
+        lineGroups.slice(0, 6).map(g => `${g.topPx.toFixed(1)}→"${g.spans.map(s => s.textContent).join('')}"`).join(' | '),
+      )
 
       // Disambiguate when multiple dishes share the same name across categories.
       function pickDish(norm: string): DishData | undefined {
@@ -382,17 +407,21 @@ export default function FlipbookViewer({
       }
 
       // Step C: for each line try ALL contiguous span windows, shortest first.
-      //   window=1 → standard fonts: one span = full dish name (price is a separate span)
-      //   window=N → custom/subset fonts: one span = one glyph; name is spread across
-      //              consecutive spans; the window finds the name prefix before price glyphs
+      //   window=1  → standard fonts: one span = full dish name (price in a separate span)
+      //   window=N  → custom/subset fonts: one span per glyph; name spread over N spans
+      //   Two normalizations tried per window:
+      //     (a) with internal spaces collapsed  → "Pasta al Pesto"
+      //     (b) with ALL spaces stripped        → custom fonts that emit spaces between glyphs
       const anchors: DishAnchor[] = []
 
       for (const { topPx, spans } of lineGroups) {
         sizeLoop: for (let size = 1; size <= spans.length; size++) {
           for (let start = 0; start <= spans.length - size; start++) {
-            const text = spans.slice(start, start + size)
-              .map(s => s.textContent ?? '').join('').trim().replace(/\s+/g, ' ')
-            const dish = pickDish(text.toUpperCase())
+            const raw  = spans.slice(start, start + size).map(s => s.textContent ?? '').join('')
+            const norm = raw.trim().replace(/\s+/g, ' ').toUpperCase()
+            const normNoSp = raw.replace(/\s+/g, '').toUpperCase()
+
+            const dish = pickDish(norm) ?? (normNoSp.length > 1 ? pickDish(normNoSp) : undefined)
             if (dish) {
               for (let k = start; k < start + size; k++) spans[k].dataset.dishId = dish.id
               anchors.push({ dish, topPx })
@@ -401,6 +430,11 @@ export default function FlipbookViewer({
           }
         }
       }
+
+      console.debug(`[Flipbook p.${pageNum}] anchors:`, anchors.length
+        ? anchors.map(a => `"${a.dish.name}"@${a.topPx.toFixed(1)}`).join(', ')
+        : 'NONE — dishes expected:', dishesRef.current.map(d => d.name).join(', ')
+      )
 
       if (anchors.length > 0) {
         anchors.sort((a, b) => a.topPx - b.topPx)
