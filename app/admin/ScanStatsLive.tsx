@@ -3,6 +3,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import Link from 'next/link'
+import {
+  AreaChart, Area, XAxis, YAxis, Tooltip,
+  ResponsiveContainer, CartesianGrid,
+} from 'recharts'
 
 // ── Keyframes ─────────────────────────────────────────────────────────────────
 const FLIP_CSS = `
@@ -135,6 +139,103 @@ function FlipNumber({ value }: { value: number }) {
   )
 }
 
+// ── Tooltip personalizzato per il grafico ─────────────────────────────────────
+function ChartTooltip({ active, payload, label }: any) {
+  if (!active || !payload?.length) return null
+  const date = new Date(label + 'T00:00:00')
+  const formatted = date.toLocaleDateString('it-IT', { day: 'numeric', month: 'short' })
+  return (
+    <div style={{
+      background: '#fff', border: '1px solid #e5e7eb',
+      borderRadius: '0.375rem', padding: '0.5rem 0.75rem',
+      fontSize: '0.75rem', color: '#374151',
+      boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
+    }}>
+      <p style={{ fontWeight: 600, marginBottom: '0.2rem' }}>{formatted}</p>
+      <p style={{ color: '#2563eb' }}>{payload[0].value} scansioni</p>
+    </div>
+  )
+}
+
+// ── Grafico trend ─────────────────────────────────────────────────────────────
+function ScanChart({ data }: { data: ChartPoint[] }) {
+  const [period, setPeriod] = useState<7 | 30>(30)
+  const displayed = period === 7 ? data.slice(-7) : data
+
+  // X-axis tick: show only a few evenly-spaced labels to avoid crowding
+  const tickFormatter = (day: string) => {
+    const d = new Date(day + 'T00:00:00')
+    return d.toLocaleDateString('it-IT', { day: 'numeric', month: 'short' })
+  }
+
+  const ticks = period === 7
+    ? displayed.map(p => p.date)
+    : displayed.filter((_, i) => i % 5 === 0 || i === displayed.length - 1).map(p => p.date)
+
+  const maxVal = Math.max(...displayed.map(p => p.scans), 1)
+
+  return (
+    <div className="mt-6">
+      {/* Period toggle */}
+      <div className="flex items-center justify-between mb-3">
+        <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Andamento</span>
+        <div className="flex gap-1">
+          {([7, 30] as const).map(p => (
+            <button
+              key={p}
+              onClick={() => setPeriod(p)}
+              className={`text-[10px] font-semibold px-2 py-0.5 rounded transition-colors ${
+                period === p
+                  ? 'bg-blue-600 text-white'
+                  : 'text-gray-400 hover:text-gray-600'
+              }`}
+            >
+              {p}g
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <ResponsiveContainer width="100%" height={120}>
+        <AreaChart data={displayed} margin={{ top: 4, right: 4, left: -28, bottom: 0 }}>
+          <defs>
+            <linearGradient id="scanGrad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="5%"  stopColor="#2563eb" stopOpacity={0.18} />
+              <stop offset="95%" stopColor="#2563eb" stopOpacity={0} />
+            </linearGradient>
+          </defs>
+          <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" vertical={false} />
+          <XAxis
+            dataKey="date"
+            ticks={ticks}
+            tickFormatter={tickFormatter}
+            tick={{ fontSize: 9, fill: '#9ca3af' }}
+            axisLine={false}
+            tickLine={false}
+          />
+          <YAxis
+            allowDecimals={false}
+            domain={[0, maxVal + 1]}
+            tick={{ fontSize: 9, fill: '#9ca3af' }}
+            axisLine={false}
+            tickLine={false}
+          />
+          <Tooltip content={<ChartTooltip />} />
+          <Area
+            type="monotone"
+            dataKey="scans"
+            stroke="#2563eb"
+            strokeWidth={2}
+            fill="url(#scanGrad)"
+            dot={false}
+            activeDot={{ r: 3, fill: '#2563eb', strokeWidth: 0 }}
+          />
+        </AreaChart>
+      </ResponsiveContainer>
+    </div>
+  )
+}
+
 // ── Tipi ──────────────────────────────────────────────────────────────────────
 export interface ScanRow {
   restaurantId:   string
@@ -145,19 +246,27 @@ export interface ScanRow {
   total:          number
 }
 
+export interface ChartPoint {
+  date:  string  // 'YYYY-MM-DD'
+  scans: number
+}
+
 // ── Componente principale ─────────────────────────────────────────────────────
 export default function ScanStatsLive({
   initial,
   restaurantIds,
   restaurantNames,
+  chartData: initialChartData,
 }: {
-  initial:         ScanRow[]
-  restaurantIds:   string[]
-  restaurantNames: Record<string, string>
+  initial:          ScanRow[]
+  restaurantIds:    string[]
+  restaurantNames:  Record<string, string>
+  chartData:        ChartPoint[]
 }) {
-  const [rows,      setRows]    = useState<ScanRow[]>(initial)
-  const [updatedAt, setUpdated] = useState<Date>(new Date())
-  const [live,      setLive]    = useState(false)
+  const [rows,      setRows]      = useState<ScanRow[]>(initial)
+  const [chartData, setChartData] = useState<ChartPoint[]>(initialChartData)
+  const [updatedAt, setUpdated]   = useState<Date>(new Date())
+  const [live,      setLive]      = useState(false)
 
   function aggregate(views: { restaurant_id: string; created_at: string }[]): ScanRow[] {
     const now = new Date()
@@ -180,6 +289,25 @@ export default function ScanStatsLive({
       .sort((a, b) => b.total - a.total)
   }
 
+  function aggregateChart(views: { restaurant_id: string; created_at: string }[]): ChartPoint[] {
+    const now   = new Date()
+    const ago30 = new Date(now.getTime() - 30 * 86_400_000)
+    const daily = new Map<string, number>()
+    for (const v of views) {
+      const ts = new Date(v.created_at)
+      if (ts < ago30) continue
+      const day = ts.toISOString().slice(0, 10)
+      daily.set(day, (daily.get(day) ?? 0) + 1)
+    }
+    const result: ChartPoint[] = []
+    for (let i = 29; i >= 0; i--) {
+      const d   = new Date(now.getTime() - i * 86_400_000)
+      const day = d.toISOString().slice(0, 10)
+      result.push({ date: day, scans: daily.get(day) ?? 0 })
+    }
+    return result
+  }
+
   function applyInsert(restaurantId: string, createdAt: string) {
     const now = new Date()
     const todayStart = new Date(now); todayStart.setHours(0, 0, 0, 0)
@@ -194,6 +322,11 @@ export default function ScanStatsLive({
         : [...prev, { restaurantId, restaurantName: restaurantNames[restaurantId] ?? restaurantId, ...delta }]
       return next.sort((a, b) => b.total - a.total)
     })
+    // Increment today's chart bucket
+    if (ts >= ago30d) {
+      const day = ts.toISOString().slice(0, 10)
+      setChartData(prev => prev.map(p => p.date === day ? { ...p, scans: p.scans + 1 } : p))
+    }
     setUpdated(new Date())
   }
 
@@ -218,7 +351,11 @@ export default function ScanStatsLive({
     const supabase = createClient()
     const iv = setInterval(async () => {
       const { data } = await supabase.from('page_views').select('restaurant_id, created_at').in('restaurant_id', restaurantIds)
-      if (data) { setRows(aggregate(data)); setUpdated(new Date()) }
+      if (data) {
+        setRows(aggregate(data))
+        setChartData(aggregateChart(data))
+        setUpdated(new Date())
+      }
     }, 60_000)
     return () => clearInterval(iv)
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -270,9 +407,12 @@ export default function ScanStatsLive({
           ))}
         </div>
 
+        {/* Grafico andamento */}
+        <ScanChart data={chartData} />
+
         {/* Per ristorante */}
         {rows.length > 0 && (
-          <div className="border-t border-gray-100 pt-4 space-y-2">
+          <div className="border-t border-gray-100 pt-4 mt-6 space-y-2">
             {rows.map(r => (
               <div key={r.restaurantId} className="flex items-center justify-between gap-4">
                 <Link

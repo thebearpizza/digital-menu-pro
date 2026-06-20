@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
-import ScanStatsLive, { type ScanRow } from './ScanStatsLive'
+import ScanStatsLive, { type ScanRow, type ChartPoint } from './ScanStatsLive'
 
 export default async function ScanStatsTable({
   restaurantIds,
@@ -25,14 +25,29 @@ export default async function ScanStatsTable({
   const map = new Map<string, { today: number; last7d: number; last30d: number; total: number }>()
   for (const id of restaurantIds) map.set(id, { today: 0, last7d: 0, last30d: 0, total: 0 })
 
+  // 30-day daily buckets: key = 'YYYY-MM-DD'
+  const dailyMap = new Map<string, number>()
+
   for (const v of (views ?? [])) {
     const row = map.get(v.restaurant_id)
     if (!row) continue
     const ts = new Date(v.created_at)
     row.total++
-    if (ts >= ago30d)     row.last30d++
+    if (ts >= ago30d) {
+      row.last30d++
+      const day = ts.toISOString().slice(0, 10)
+      dailyMap.set(day, (dailyMap.get(day) ?? 0) + 1)
+    }
     if (ts >= ago7d)      row.last7d++
     if (ts >= todayStart) row.today++
+  }
+
+  // Fill all 30 days (including zeros) so the chart has a continuous x-axis
+  const chartData: ChartPoint[] = []
+  for (let i = 29; i >= 0; i--) {
+    const d = new Date(now.getTime() - i * 86_400_000)
+    const day = d.toISOString().slice(0, 10)
+    chartData.push({ date: day, scans: dailyMap.get(day) ?? 0 })
   }
 
   const initial: ScanRow[] = restaurantIds
@@ -49,6 +64,7 @@ export default async function ScanStatsTable({
         initial={initial}
         restaurantIds={restaurantIds}
         restaurantNames={restaurantNames}
+        chartData={chartData}
       />
     </div>
   )
