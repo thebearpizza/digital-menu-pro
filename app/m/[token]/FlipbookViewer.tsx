@@ -407,7 +407,7 @@ export default function FlipbookViewer({
       function pickDish(norm: string, stripSpaces = false): DishData | undefined {
         const all = dishesRef.current.filter(d => {
           const dn = d.name.trim().toUpperCase()
-          return stripSpaces ? dn.replace(/\s+/g, '') === norm : dn === norm
+          return stripSpaces ? dn.replace(/[-\s]+/g, '') === norm : dn === norm
         })
         if (!all.length) return undefined
         if (all.length === 1) return all[0]
@@ -429,7 +429,8 @@ export default function FlipbookViewer({
       function tryMatch(dishSpans: HTMLElement[]): DishData | undefined {
         if (!dishSpans.length) return undefined
         const raw  = dishSpans.map(s => s.textContent ?? '').join('').trim().replace(/\s+/g, ' ')
-        const noSp = raw.replace(/\s+/g, '').toUpperCase()
+        // Strip both spaces and end-of-line hyphens (PDF hyphenation artifact: "MILLE-\nFOGLIE")
+        const noSp = raw.replace(/[-\s]+/g, '').toUpperCase()
         return pickDish(raw.toUpperCase())
           ?? (noSp.length > 2 ? pickDish(noSp, true) : undefined)
       }
