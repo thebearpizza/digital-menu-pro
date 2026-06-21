@@ -33,22 +33,10 @@ export function useIsMobilePreview(): boolean {
 }
 
 export function EditHandle({
-  target, children, editMode, className = '', style,
+  children, className = '', style,
 }: {
   target: string; children: React.ReactNode; editMode: boolean
   className?: string; style?: React.CSSProperties
 }) {
-  const mobile = useIsMobilePreview()
-  if (!editMode || mobile) return <>{children}</>
-  return (
-    <div
-      className={`relative ${className}`}
-      style={{ ...style, cursor: 'pointer' }}
-      onClick={e => { e.stopPropagation(); sendEdit(target) }}
-      role="button" tabIndex={0} aria-label={`Edit ${target}`}
-    >
-      {children}
-      <div className="absolute inset-0 border-2 border-dashed border-blue-400/60 rounded pointer-events-none" />
-    </div>
-  )
+  return <>{children}</>
 }

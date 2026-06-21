@@ -2231,7 +2231,7 @@ export default function CustomizationClient({
   // La tab "Pop-up" ha un solo target: il pannello si apre da sé, senza
   // bisogno della modalità Modifica né di un click nell'anteprima.
   const sidebarTarget = previewMode === 'hint' ? 'menu-hint' : activeEditor
-  const sidebarOpen   = previewMode === 'hint' || (editMode && activeEditor !== null)
+  const sidebarOpen   = previewMode === 'hint' || activeEditor !== null
   const closeSidebar  = previewMode === 'hint' ? () => setPreviewMode('menu') : () => setActiveEditor(null)
 
 
@@ -2389,7 +2389,7 @@ export default function CustomizationClient({
 
           {/* Mobile chip bar: sm:hidden, scrollable chips for current tab's targets.
               La tab "Pop-up" ha un solo target e si apre da sé: niente chip. */}
-          <div className="sm:hidden shrink-0 bg-white border-b border-gray-100 relative z-20">
+          <div className="shrink-0 bg-white border-b border-gray-100 relative z-20">
             {previewMode !== 'hint' && (
               <div className="flex gap-1.5 px-3 py-2 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
                 {MOBILE_TARGETS[previewMode].map(target => (
@@ -2405,9 +2405,9 @@ export default function CustomizationClient({
                 ))}
               </div>
             )}
-            {/* Dropdown editor panel — overlays iframe from top, max 48dvh */}
+            {/* Dropdown editor panel — overlays iframe from top, max 48dvh (mobile only) */}
             {sidebarTarget !== null && (previewMode === 'hint' || MOBILE_TARGETS[previewMode].includes(sidebarTarget)) && (
-              <div className="absolute top-full left-0 right-0 bg-white shadow-xl z-50 overflow-y-auto"
+              <div className="sm:hidden absolute top-full left-0 right-0 bg-white shadow-xl z-50 overflow-y-auto"
                 style={{ maxHeight: '48dvh', borderBottom: '1px solid #e5e7eb' }}>
                 <EditorSidebar target={sidebarTarget} theme={theme} setters={setters}
                   previewMode={previewMode} activeMenuId={activeMenuTab} onClose={closeSidebar}

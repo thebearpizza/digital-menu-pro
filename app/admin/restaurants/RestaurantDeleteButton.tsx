@@ -38,7 +38,7 @@ export default function RestaurantDeleteButton({
       {open && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/40" onClick={() => !deleting && setOpen(false)} />
-          <div className="relative bg-white border border-gray-200 shadow-xl w-full max-w-sm z-10 p-6">
+          <div className="relative bg-white border border-gray-200 shadow-xl w-full max-w-md z-10 p-6">
             <h2 className="text-sm font-semibold text-gray-900 mb-2">Elimina ristorante</h2>
             <p className="text-xs text-gray-500 mb-1">
               Stai per eliminare <strong>{restaurantName}</strong>.
