@@ -902,46 +902,6 @@ export default function FlipbookViewer({
           </div>
         </div>
 
-        {/* ── Edit toolbar — admin preview only, between book and category nav.
-             Hidden on mobile: the chip bar already exposes these same targets. ── */}
-        {editMode && pagesReady && !isMobilePreview && (
-          <div
-            className="shrink-0 flex items-center gap-2 px-3 overflow-x-auto"
-            style={{
-              height: 36,
-              background: 'rgba(2,6,18,0.94)',
-              borderTop: '1px solid rgba(96,165,250,0.25)',
-              scrollbarWidth: 'none',
-              WebkitOverflowScrolling: 'touch',
-            } as React.CSSProperties}
-          >
-            {([
-              ['category-title',   'Categoria'],
-              ['dish-title',       'Titolo'],
-              ['dish-description', 'Descrizione'],
-              ['dish-price',       'Prezzi'],
-              ['allergens',        'Allergeni'],
-              ['sticky-categories','Barra cat.'],
-              ['background-layout','Sfondo & Layout'],
-            ] as [string, string][]).map(([target, label]) => (
-              <button
-                key={target}
-                className="shrink-0 px-3 py-1 text-[10px] uppercase tracking-widest transition-colors"
-                style={{
-                  border:       '1.5px dashed rgba(96,165,250,0.6)',
-                  color:        'rgba(147,197,253,0.9)',
-                  background:   'rgba(30,58,138,0.25)',
-                  borderRadius: 3,
-                  whiteSpace:   'nowrap',
-                  touchAction:  'auto',
-                }}
-                onClick={() => onEditTarget?.(target)}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-        )}
 
         {/* ── B. Barra Categorie — sempre visibile quando il libro è pronto.
              Il tasto ← Menù è il primo elemento (sticky a sinistra) e il
