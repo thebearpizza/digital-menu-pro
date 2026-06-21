@@ -480,6 +480,82 @@ export default function FlipbookViewer({
         }
       }
 
+      // ── Grid column pass — grid-2 / grid-3 dish layouts ──────────────────────
+      // In multi-column grid layouts multiple dish names share the same lineGroup
+      // (identical topPx). Pass 1a/1b fail because tryMatch concatenates them
+      // ("DISH_A DISH_B") and finds no match.
+      //
+      // This pass splits each still-unmatched lineGroup into horizontal clusters
+      // wherever a gap ≥ COL_GAP exists between consecutive isDishText spans
+      // (sorted left→right). Each cluster is tried independently; when matched,
+      // click handlers are attached directly to those spans — no width:100%
+      // expansion, which would cause column overlap. Matched spans are flagged
+      // with data-dish-grid so Pass 2 skips them entirely.
+      //
+      // For all other layouts (list, minimal, boxed, elegant) isDishText spans
+      // within any single lineGroup are horizontally clustered together (< 22%
+      // gap), so cols.length is always 1 and the inner body never executes.
+      const COL_GAP = topIsPct ? 22 : viewport.width * 0.22  // ≥22% page width
+
+      for (let i = 0; i < sortedGroups.length; i++) {
+        if (matchedIdx.has(i)) continue
+        const { topPx: gTopPx, spans: gSpans } = sortedGroups[i]
+        const dishSpans = gSpans.filter(s => isDishText(s.textContent ?? ''))
+        if (dishSpans.length < 2) continue
+
+        // Sort dishText spans left→right and split where gap > COL_GAP
+        const byLeft = [...dishSpans].sort((a, b) =>
+          (parseFloat(a.style.left) || 0) - (parseFloat(b.style.left) || 0))
+        const cols: HTMLElement[][] = [[byLeft[0]]]
+        for (let j = 1; j < byLeft.length; j++) {
+          const gap = (parseFloat(byLeft[j].style.left) || 0) - (parseFloat(byLeft[j - 1].style.left) || 0)
+          if (gap > COL_GAP) cols.push([])
+          cols[cols.length - 1].push(byLeft[j])
+        }
+        if (cols.length < 2) continue  // no column split — not a grid row
+
+        let anyColMatched = false
+        for (const colSpans of cols) {
+          const dish = tryMatch(colSpans)
+          if (!dish) continue
+          const captured = dish
+          anyColMatched = true
+          for (const span of colSpans) {
+            span.dataset.dishId   = captured.id
+            span.dataset.dishGrid = '1'
+            span.style.transform  = 'none'
+            span.style.pointerEvents = 'auto'
+            span.style.cursor     = 'pointer'
+
+            let moved = false; let startX = 0; let startY = 0
+            span.addEventListener('touchstart', (evt) => {
+              moved = false
+              const t = evt.touches[0]
+              if (t) { startX = t.clientX; startY = t.clientY }
+            }, { passive: true })
+            span.addEventListener('touchmove', (evt) => {
+              const t = evt.touches[0]
+              if (t && (Math.abs(t.clientX - startX) > 10 || Math.abs(t.clientY - startY) > 10)) moved = true
+            }, { passive: true })
+            span.addEventListener('touchend', (evt) => {
+              if (moved) return
+              evt.preventDefault()
+              evt.stopPropagation()
+              onDishOpenRef.current?.(captured.id)
+              setModalStack([captured])
+            }, { passive: false })
+            span.addEventListener('mousedown', (evt) => { evt.stopPropagation() })
+            span.addEventListener('click', (evt) => {
+              evt.stopPropagation()
+              evt.preventDefault()
+              onDishOpenRef.current?.(captured.id)
+              setModalStack([captured])
+            })
+          }
+        }
+        if (anyColMatched) matchedIdx.add(i)
+      }
+
       if (anchors.length > 0) {
         anchors.sort((a, b) => a.topPx - b.topPx)
 
@@ -504,6 +580,7 @@ export default function FlipbookViewer({
 
         // Pass 2: extend every span inside a dish range.
         for (const span of textDivs) {
+          if (span.dataset.dishGrid) continue  // handled by grid column pass
           // Use the group's representative topPx — not the span's own style.top —
           // so all spans in the same line group get the same range lookup result.
           const spanTop = spanGroupTop.get(span) ?? (spanTopVal(span))
