@@ -2,6 +2,15 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ─── No-zoom base ──────────────────────────────────────────
+   touch-action: manipulation disabilita il doppio-tap zoom e il delay di
+   300ms mantenendo intatti pan e swipe (turn.js). La prevenzione del pinch
+   zoom su iOS è in <NoZoom />. Selettori specifici (es. .menu-locked
+   touch-action:none) restano prioritari dove serve. */
+html, body {
+  touch-action: manipulation;
+}
+
 /* ─── Global scroll lock (customer menu) ────────────────── */
 html.menu-locked,
 body.menu-locked {
