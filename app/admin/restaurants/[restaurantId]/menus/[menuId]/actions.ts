@@ -5,6 +5,83 @@ import { revalidatePath } from 'next/cache'
 import { translateItems, translateEnabled } from '@/lib/translateEngine'
 import { TARGET_LANGS, type DishTranslations } from '@/lib/translations'
 
+// ── Allergen AI detection ─────────────────────────────────────────────────────
+
+const ALLERGEN_PROMPT = `Sei un esperto di allergeni alimentari EU (Reg. 1169/2011).
+Analizza nome e descrizione di un piatto e restituisci gli id degli allergeni CHIARAMENTE presenti.
+
+Mappa id → allergene:
+1 Cereali e glutine (grano, farina, pasta, pane, orzo, segale, avena, farro, cous cous, pangrattato)
+2 Crostacei (gamberi, astice, granchio, scampi, mazzancolle)
+3 Uova (uovo, maionese, pasta all'uovo, frittata)
+4 Pesce (pesce, tonno, salmone, acciuga, baccalà, branzino, orata, merluzzo)
+5 Arachidi
+6 Soia (tofu, edamame, miso, salsa di soia, tempeh)
+7 Latte e latticini (latte, burro, panna, formaggio, mozzarella, parmigiano, grana, pecorino, ricotta, yogurt, besciamella)
+8 Frutta a guscio (noci, nocciole, mandorle, pistacchi, anacardi, pinoli, noci di macadamia, castagne — NON arachidi)
+9 Sedano (sedano, sedano rapa, gambi di sedano)
+10 Senape (senape, curry)
+11 Semi di sesamo (sesamo, tahini, pasta di sesamo)
+12 Solfiti (vino, aceto di vino, alcune carni lavorate, frutta secca, mosto)
+13 Lupini (farina di lupini, biscotti con lupini)
+14 Molluschi (cozze, vongole, seppie, polpo, calamari, ostrica)
+
+REGOLE:
+- Includi un id SOLO se l'allergene è un ingrediente esplicito o altamente probabile dal nome/descrizione.
+- Sii conservativo: non aggiungere allergeni per semplici tracce o rischi di contaminazione.
+- Se nome e descrizione non menzionano ingredienti chiari, restituisci lista vuota.`
+
+const GEMINI_MODELS = () => Array.from(new Set([
+  process.env.GEMINI_MODEL ?? 'gemini-2.5-flash',
+  'gemini-2.0-flash',
+  'gemini-2.5-flash-lite',
+]))
+
+const ALLERGEN_SCHEMA = {
+  type: 'OBJECT',
+  properties: {
+    allergen_ids: { type: 'ARRAY', items: { type: 'INTEGER' } },
+  },
+  required: ['allergen_ids'],
+}
+
+export async function detectAllergens(name: string, description: string): Promise<number[]> {
+  const apiKey = process.env.GEMINI_API_KEY
+  if (!apiKey) throw new Error('Gemini non configurato (GEMINI_API_KEY mancante).')
+
+  const userText = `Nome: ${name.trim()}${description.trim() ? `\nDescrizione: ${description.trim()}` : ''}`
+
+  for (const model of GEMINI_MODELS()) {
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          system_instruction: { parts: [{ text: ALLERGEN_PROMPT }] },
+          contents: [{ role: 'user', parts: [{ text: userText }] }],
+          generationConfig: { temperature: 0, responseMimeType: 'application/json', responseSchema: ALLERGEN_SCHEMA },
+        }),
+      }
+    )
+    if (res.status === 404) continue
+    if (!res.ok) {
+      const b = await res.text().catch(() => '')
+      if (res.status === 503 || res.status === 429 || res.status >= 500) continue
+      throw new Error(`Gemini ${res.status}: ${b.slice(0, 200)}`)
+    }
+    const body = await res.json().catch(() => null)
+    const raw = body?.candidates?.[0]?.content?.parts?.[0]?.text
+    if (!raw) throw new Error('Risposta Gemini vuota.')
+    const ids: number[] = (JSON.parse(raw)?.allergen_ids ?? [])
+      .map(Number)
+      .filter((n: number) => Number.isInteger(n) && n >= 1 && n <= 14)
+      .sort((a: number, b: number) => a - b)
+    return ids
+  }
+  throw new Error('Gemini non disponibile.')
+}
+
 /**
  * Rigenera le traduzioni automatiche di nome+descrizione di un piatto,
  * preservando gli override manuali. Ritorna null se il traduttore non è

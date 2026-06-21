@@ -2,7 +2,7 @@
 
 import React, { useState, useRef, useCallback, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { createDish, updateDish } from './actions'
+import { createDish, updateDish, detectAllergens } from './actions'
 import { ALLERGENS } from '@/lib/allergens'
 import { Spinner } from '@/components/ui/Spinner'
 
@@ -167,6 +167,11 @@ export default function DishForm({
   const [uploading, setUploading]     = useState(false)
   const [saving, setSaving]           = useState(false)
   const [error, setError]             = useState<string | null>(null)
+  const [aiLoading, setAiLoading]     = useState(false)
+  const [aiError, setAiError]         = useState<string | null>(null)
+  // Bumped to force AllergenGrid remount with new AI-suggested values.
+  const [allergenKey, setAllergenKey] = useState(() => dish?.id ?? 'new')
+  const [allergenInit, setAllergenInit] = useState(() => (dish?.allergens ?? []).map(Number))
 
   // Extra menus to copy this dish into when creating
   const [extraMenuIds, setExtraMenuIds] = useState<Set<string>>(new Set())
@@ -180,6 +185,23 @@ export default function DishForm({
 
   // Dirty fields tracking — tracks which fields were actually changed in this session
   const dirtyRef = useRef<Set<string>>(new Set())
+
+  async function handleAiAllergens() {
+    if (!name.trim()) return
+    setAiLoading(true)
+    setAiError(null)
+    try {
+      const ids = await detectAllergens(name, description)
+      allergensRef.current = ids
+      dirtyRef.current.add('allergens')
+      setAllergenInit(ids)
+      setAllergenKey(`ai-${Date.now()}`)
+    } catch (err: any) {
+      setAiError(err.message ?? 'Errore AI.')
+    } finally {
+      setAiLoading(false)
+    }
+  }
 
   // Unique sorted categories from all dishes in this restaurant
   const existingCategories = Array.from(
@@ -337,10 +359,24 @@ export default function DishForm({
 
           {/* Allergens */}
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-2">Allergeni</label>
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-xs font-medium text-gray-600">Allergeni</label>
+              <button
+                type="button"
+                onClick={handleAiAllergens}
+                disabled={aiLoading || !name.trim()}
+                className="text-xs text-gray-500 border border-gray-300 px-2.5 py-1 hover:bg-gray-50 disabled:opacity-40 transition-colors flex items-center gap-1.5"
+              >
+                {aiLoading && <Spinner color="#6b7280" />}
+                Allergeni AI
+              </button>
+            </div>
+            {aiError && (
+              <p className="text-xs text-red-500 mb-2">{aiError}</p>
+            )}
             <AllergenGrid
-              key={dish?.id ?? 'new'}
-              initial={(dish?.allergens ?? []).map(Number)}
+              key={allergenKey}
+              initial={allergenInit}
               onChange={handleAllergenChange}
             />
           </div>
