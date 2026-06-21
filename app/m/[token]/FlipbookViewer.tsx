@@ -35,7 +35,7 @@ const menuConfig = {
 
   // ── 📖 Flipbook ───────────────────────────────────────────────────────────────
   flipbook: {
-    duration:            1200,       // ms animazione sfoglio turn.js
+    duration:            500,        // ms animazione sfoglio turn.js
     elevation:           50,         // shadow depth — identico al repo di riferimento
     pageRatio:           210 / 297,  // A4 portrait (width / height)
     marginX:             12,         // px margine laterale minimo per lato
@@ -786,6 +786,7 @@ export default function FlipbookViewer({
                 } else {
                   return
                 }
+                setCurrentPage(dest)
                 paintReveal(cur, dest)
               } catch (_) {}
             },
