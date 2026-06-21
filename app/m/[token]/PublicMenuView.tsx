@@ -342,7 +342,10 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
     if (hint.showOnce) {
       try { if (localStorage.getItem(hintKey(lang))) return } catch {}
     }
-    setShowHint(true)
+    // Short delay so the popup doesn't snap in the instant the video ends —
+    // lets the landing→menu fade (0.5 s) finish before the hint appears.
+    const t = setTimeout(() => setShowHint(true), 500)
+    return () => clearTimeout(t)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [langReady, menuReady, hint.enabled, lang])
   function dismissHint() {
@@ -805,7 +808,7 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
         && (!!hintTitleText.trim() || !!hintBodyText.trim()) && (
         <div
           className="absolute inset-0 flex items-center justify-center px-8"
-          style={{ zIndex: 450, background: 'rgba(0,0,0,0.62)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)' }}
+          style={{ zIndex: 450, background: 'rgba(0,0,0,0.62)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)', animation: 'dish-fade-in 0.7s ease both' }}
           onClick={dismissHint}
         >
           <div
@@ -816,7 +819,7 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
               border:       `1px solid ${m.accent}26`,
               padding:      '30px 26px',
               fontFamily:   fontStack(hint.font, 'sans'),
-              animation:    'dish-fade-in 0.25s ease-out both',
+              animation:    'dish-fade-in 0.6s ease 0.1s both',
             }}
             onClick={e => e.stopPropagation()}
           >
