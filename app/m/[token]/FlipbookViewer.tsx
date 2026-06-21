@@ -35,7 +35,7 @@ const menuConfig = {
 
   // ── 📖 Flipbook ───────────────────────────────────────────────────────────────
   flipbook: {
-    duration:            1500,       // ms animazione sfoglio turn.js
+    duration:            1200,       // ms animazione sfoglio turn.js
     elevation:           50,         // shadow depth — identico al repo di riferimento
     pageRatio:           210 / 297,  // A4 portrait (width / height)
     marginX:             12,         // px margine laterale minimo per lato
@@ -168,12 +168,8 @@ export default function FlipbookViewer({
   const [totalPages,    setTotalPages]   = useState(0)
   // categoria attiva come state diretto — aggiornata immediatamente al click
   const [activeCatIdx,  setActiveCatIdx] = useState(0)
-  const catNavRef     = useRef<HTMLElement>(null)
-  const catBtnRefs    = useRef<(HTMLButtonElement | null)[]>([])
-  // Queued-flip: when the user swipes while an animation is in progress, we
-  // store the intended direction/page and fire it as soon as `turned` fires.
-  const isFlippingRef  = useRef(false)
-  const pendingFlipRef = useRef<number | 'next' | 'prev' | null>(null)
+  const catNavRef  = useRef<HTMLElement>(null)
+  const catBtnRefs = useRef<(HTMLButtonElement | null)[]>([])
 
   // Auto-scroll: porta il tab attivo al centro della barra quando cambia categoria
   useEffect(() => {
@@ -772,19 +768,10 @@ export default function FlipbookViewer({
             // TASTI: corner è null, ma opts.next è già impostato e affidabile.
             start(_evt: Event, opts: any, corner: any) {
               // Disabilita SOLO gli angoli superiori: nessun giro pagina da tl/tr.
+              // preventDefault è il meccanismo nativo di turn.js per annullare la
+              // piega — gli angoli inferiori (bl/br) e lo swipe restano intatti.
               if (corner === 'tl' || corner === 'tr') {
                 (_evt as any).preventDefault?.()
-                return
-              }
-              // Animazione già in corso → accoda la prossima piega e cancella
-              // questa richiesta; `turned` la eseguirà appena l'animazione finisce.
-              if (isFlippingRef.current) {
-                if (typeof corner === 'string') {
-                  pendingFlipRef.current = corner.charAt(1) === 'l' ? 'prev' : 'next'
-                } else if (typeof opts?.next === 'number') {
-                  pendingFlipRef.current = opts.next
-                }
-                ;(_evt as any).preventDefault?.()
                 return
               }
               try {
@@ -799,24 +786,12 @@ export default function FlipbookViewer({
                 } else {
                   return
                 }
-                isFlippingRef.current = true
-                setCurrentPage(dest)
                 paintReveal(cur, dest)
               } catch (_) {}
             },
             turned(_evt: Event, page: number) {
-              isFlippingRef.current = false
               setCurrentPage(page)
               try { clearReveal() } catch (_) {}
-              // Esegui la piega accodata, se presente.
-              const pending = pendingFlipRef.current
-              pendingFlipRef.current = null
-              if (pending !== null) {
-                try {
-                  if (typeof pending === 'number') window.$(el).turn('page', pending)
-                  else window.$(el).turn(pending)
-                } catch (_) {}
-              }
             },
           },
         })
