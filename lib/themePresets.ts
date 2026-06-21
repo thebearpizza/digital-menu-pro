@@ -324,4 +324,66 @@ export const PRESETS: ThemePreset[] = [
     dishLayout: 'elegant', dishAlign: 'center', divider: 'ornament', flourish: 'diamond',
     aroundEffect: 'gold-leaf', radius: 'none', titleWeight: 'bold',
   }),
+
+  // ── New presets ──────────────────────────────────────────────────────────────
+
+  buildPreset({
+    name: 'Ardesia', mood: 'Slate urbano, freddo e nitido',
+    font: 'Syne', bodyFont: 'Barlow',
+    around: '#1c1f24', page: '#22262d', text: '#d8dde8', accent: '#64b5f6',
+    dishLayout: 'minimal-row', dishAlign: 'left', divider: 'solid', flourish: 'none',
+    aroundEffect: 'slate', buttonShape: 'rounded', radius: 'sm', titleWeight: 'bold',
+  }),
+  buildPreset({
+    name: 'Cipresso', mood: 'Foresta profonda, speziato e caldo',
+    font: 'Merriweather', bodyFont: 'Outfit',
+    around: '#0d1a0f', page: '#122017', text: '#e8f0e4', accent: '#c5a35a',
+    dishLayout: 'list', dishAlign: 'left', divider: 'dotted', flourish: 'lines',
+    aroundEffect: 'linen', pageEffect: 'fine-grain', buttonShape: 'flat', radius: 'sm', titleWeight: 'normal',
+  }),
+  buildPreset({
+    name: 'Cobalto', mood: 'Blu abissale, alto mare e oro antico',
+    font: 'Josefin Slab', bodyFont: 'Josefin Sans',
+    around: '#05122b', page: '#071836', text: '#e2eaf8', accent: '#f0c040',
+    dishLayout: 'elegant', dishAlign: 'center', divider: 'gradient', flourish: 'diamond',
+    aroundEffect: 'mesh-cool', buttonShape: 'pill', radius: 'md', titleWeight: 'light',
+  }),
+  buildPreset({
+    name: 'Nebbia Alpina', mood: 'Fresco nordico, luce naturale',
+    font: 'Spectral', bodyFont: 'Raleway',
+    around: '#e8eaed', page: '#f5f7f9', text: '#1d2535', accent: '#0d4f6e',
+    dishLayout: 'list', dishAlign: 'left', divider: 'solid', flourish: 'dots',
+    buttonShape: 'rounded', radius: 'none', titleWeight: 'normal', cardLayout: 'photo-side',
+  }),
+  buildPreset({
+    name: 'Ambra', mood: 'Speakeasy anni Venti, caldo e avvolgente',
+    font: 'Abril Fatface', bodyFont: 'Nunito',
+    around: '#1a0f00', page: '#221300', text: '#fcebd0', accent: '#f0940a',
+    dishLayout: 'grid-2', dishAlign: 'left', divider: 'none', flourish: 'none',
+    aroundEffect: 'leather', buttonShape: 'pill', radius: 'md', titleWeight: 'bold',
+    pricePosition: 'below',
+  }),
+  buildPreset({
+    name: 'Rame', mood: 'Officina, rame e materia grezza',
+    font: 'Righteous', bodyFont: 'Poppins',
+    around: '#120b0a', page: '#1a100e', text: '#f0e2d8', accent: '#c86b2a',
+    dishLayout: 'boxed-card', dishAlign: 'left', divider: 'solid', flourish: 'none',
+    aroundEffect: 'grunge', buttonShape: 'flat', radius: 'none', titleWeight: 'bold',
+    cardLayout: 'minimal',
+  }),
+  buildPreset({
+    name: 'Lavanda', mood: 'Botanico luminoso, fiori di campo',
+    font: 'Della Respira', bodyFont: 'Poppins',
+    around: '#f0ebf8', page: '#f8f5fd', text: '#2d1a4a', accent: '#6b21a8',
+    dishLayout: 'elegant', dishAlign: 'center', divider: 'gradient', flourish: 'diamond',
+    buttonShape: 'pill', radius: 'md', titleWeight: 'light',
+  }),
+  buildPreset({
+    name: 'Grano', mood: 'Mercato bio, luce calda e naturale',
+    font: 'Sorts Mill Goudy', bodyFont: 'Outfit',
+    around: '#f6f0e6', page: '#fdfaf3', text: '#2a1f0e', accent: '#5e3308',
+    dishLayout: 'grid-3', dishAlign: 'left', divider: 'none', flourish: 'none',
+    aroundEffect: 'linen', buttonShape: 'rounded', radius: 'sm', titleWeight: 'normal',
+    pricePosition: 'below',
+  }),
 ]
