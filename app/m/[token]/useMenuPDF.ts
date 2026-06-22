@@ -62,11 +62,11 @@ async function detectCategoryPages(
   categoryNames: string[],
   fallback:      CategoryNav[],
   startPage:     number,   // skip pages before this (embedded info/allergen pages)
-): Promise<CategoryNav[]> {
+): Promise<{ categories: CategoryNav[], totalPages: number }> {
   try {
     await requireScript(PDFJS_CDN)
     const lib = (window as any).pdfjsLib
-    if (!lib) return fallback
+    if (!lib) return { categories: fallback, totalPages: 0 }
     lib.GlobalWorkerOptions.workerSrc = PDFJS_WORKER
 
     const pdfDoc   = await lib.getDocument(blobUrl).promise
@@ -95,13 +95,14 @@ async function detectCategoryPages(
     // tab rimanenti. Le stime sono clampate alla pagina della categoria
     // precedente: una tab non deve mai puntare prima della sezione che la precede.
     let lastPage = startPage
-    return categoryNames.map((name, i) => {
+    const categories = categoryNames.map((name, i) => {
       const pg = pageMap.get(name) ?? Math.max(lastPage, fallback[i].targetPage)
       lastPage = pg
       return { label: name, targetPage: pg }
     })
+    return { categories, totalPages: numPages }
   } catch {
-    return fallback
+    return { categories: fallback, totalPages: 0 }
   }
 }
 
@@ -203,8 +204,33 @@ export function useMenuPDF(
         const fallback: CategoryNav[] = categoryNames.map((name, i) => ({
           label: name, targetPage: catStartPage + i,
         }))
-        const categories = await detectCategoryPages(newUrl, categoryNames, fallback, catStartPage)
+        const { categories: dishCats, totalPages } =
+          await detectCategoryPages(newUrl, categoryNames, fallback, catStartPage)
         if (cancelled) { URL.revokeObjectURL(newUrl); return }
+
+        // ── Add Info / Allergeni nav entries at their correct pages ───────────
+        // Each extra_page is exactly one PDF page. Order within each group:
+        // info before allergen (mirrors MenuPDFDocument's firstEmbedded/lastEmbedded).
+        const infoFirst     = !!(ep?.info?.enabled     && ep.info.position     === 'first' && ep.info.body?.trim())
+        const allergenFirst = !!(ep?.allergen?.enabled && ep.allergen.position === 'first' && ep.allergen.body?.trim())
+        const infoLast      = !!(ep?.info?.enabled     && ep.info.position     === 'last'  && ep.info.body?.trim())
+        const allergenLast  = !!(ep?.allergen?.enabled && ep.allergen.position === 'last'  && ep.allergen.body?.trim())
+
+        let infoPageNum:     number | null = null
+        let allergenPageNum: number | null = null
+        if (infoFirst)     infoPageNum     = 1
+        if (allergenFirst) allergenPageNum = infoFirst ? 2 : 1
+        if (infoLast && totalPages > 0)
+          infoPageNum     = totalPages - (allergenLast ? 1 : 0)
+        if (allergenLast && totalPages > 0)
+          allergenPageNum = totalPages
+
+        const categories: CategoryNav[] = []
+        if (infoFirst     && infoPageNum     !== null) categories.push({ label: 'Info',      targetPage: infoPageNum })
+        if (allergenFirst && allergenPageNum !== null) categories.push({ label: 'Allergeni', targetPage: allergenPageNum })
+        categories.push(...dishCats)
+        if (infoLast      && infoPageNum     !== null) categories.push({ label: 'Info',      targetPage: infoPageNum })
+        if (allergenLast  && allergenPageNum !== null) categories.push({ label: 'Allergeni', targetPage: allergenPageNum })
 
         // Revoke the previous URL only after the new one is ready (no gap).
         if (activeUrlRef.current) URL.revokeObjectURL(activeUrlRef.current)
