@@ -226,6 +226,7 @@ export interface AdConfig {
   mediaUrl?:          string                      // video promo
   backupImageUrl:     string                      // foto sfondo Ken Burns
   dishName:           string
+  dishDescription?:   string                      // descrizione visibile nella pagina promo
   badgeText?:         string
   price?:             string                      // prezzo originale
   promoPrice?:        string                      // prezzo scontato

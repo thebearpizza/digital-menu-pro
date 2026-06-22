@@ -2464,7 +2464,7 @@ export default function CustomizationClient({
 
 interface MenuOption { id: string; name: string }
 interface DishOption {
-  id: string; name: string; price: number | null
+  id: string; name: string; price: number | null; description: string | null
   image_url: string | null; category: string; menu_id: string; menu_name: string
 }
 
@@ -2473,7 +2473,7 @@ function AdsPanel({ ads, setAds, restaurantId }: {
 }) {
   const EMPTY = (): AdConfig => ({
     insertAfterPdfPage: 1, menuId: '', dishId: '', mode: 'auto_generated',
-    backupImageUrl: '', dishName: '', badgeText: '', price: '', promoPrice: '', promoPriceMode: 'solo',
+    backupImageUrl: '', dishName: '', dishDescription: '', badgeText: '', price: '', promoPrice: '', promoPriceMode: 'solo',
   })
 
   const [adding,        setAdding]        = useState(false)
@@ -2497,7 +2497,7 @@ function AdsPanel({ ads, setAds, restaurantId }: {
       const supabase = createClient()
       const { data: menus } = await supabase
         .from('menus')
-        .select('id, name, dishes(id, name, price, image_url, category)')
+        .select('id, name, dishes(id, name, description, price, image_url, category)')
         .eq('restaurant_id', restaurantId)
         .eq('is_active', true)
         .order('sort_order', { ascending: true })
@@ -2551,6 +2551,7 @@ function AdsPanel({ ads, setAds, restaurantId }: {
     if (!d) { setForm(f => ({ ...f, dishId: '' })); return }
     setForm(f => ({
       ...f, dishId: d.id, dishName: d.name,
+      dishDescription: d.description ?? '',
       price: d.price != null ? `€ ${d.price.toFixed(2).replace('.', ',')}` : f.price,
       backupImageUrl: d.image_url ?? f.backupImageUrl,
     }))
@@ -2564,12 +2565,13 @@ function AdsPanel({ ads, setAds, restaurantId }: {
     setAds([...ads, {
       ...form,
       insertAfterPdfPage: n,
-      menuId:         form.menuId    || undefined,
-      badgeText:      form.badgeText?.trim()   || undefined,
-      price:          form.price?.trim()        || undefined,
-      promoPrice:     form.promoPrice?.trim()   || undefined,
-      promoPriceMode: form.promoPrice?.trim()   ? (form.promoPriceMode ?? 'solo') : undefined,
-      mediaUrl:       form.mediaUrl?.trim()     || undefined,
+      menuId:          form.menuId    || undefined,
+      dishDescription: form.dishDescription?.trim() || undefined,
+      badgeText:       form.badgeText?.trim()   || undefined,
+      price:           form.price?.trim()        || undefined,
+      promoPrice:      form.promoPrice?.trim()   || undefined,
+      promoPriceMode:  form.promoPrice?.trim()   ? (form.promoPriceMode ?? 'solo') : undefined,
+      mediaUrl:        form.mediaUrl?.trim()     || undefined,
     }])
     resetForm()
     setAdding(false)
@@ -2649,6 +2651,15 @@ function AdsPanel({ ads, setAds, restaurantId }: {
                 <input className={INPUT} value={form.dishName}
                   onChange={e => setForm(f => ({ ...f, dishName: e.target.value }))}
                   placeholder="es. Tagliere Gourmet" />
+              </label>
+
+              {/* ── 3b. Descrizione ── */}
+              <label className="col-span-2 block">
+                <span className="text-[11px] text-gray-500">Descrizione (opzionale — appare sotto il nome)</span>
+                <textarea className={INPUT + ' resize-none'} rows={2}
+                  value={form.dishDescription ?? ''}
+                  onChange={e => setForm(f => ({ ...f, dishDescription: e.target.value }))}
+                  placeholder="es. Selezione di salumi e formaggi artigianali…" />
               </label>
 
               {/* ── 4. Pagina (fix: stringa locale, valida solo su blur) ── */}

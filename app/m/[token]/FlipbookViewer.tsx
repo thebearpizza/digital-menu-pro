@@ -286,6 +286,7 @@ export default function FlipbookViewer({
     const pdfPageObjects: any[] = []
     const renderTasks  = new Map<number, { cancel(): void }>()
     const pageDataUrls = new Map<number, string>()
+    const adVideoMap   = new Map<number, HTMLVideoElement>()
 
     // devicePixelRatio: buffer fisicamente grande → testo nitido su retina.
     // Cappato a 3 per evitare allocazioni eccessive su display ultra-HiDPI.
@@ -725,7 +726,7 @@ export default function FlipbookViewer({
         pdfToTurnRef.current = pdfToTurn
 
         // ── Helper: costruisce il DOM di una pagina Ad ───────────────────────
-        const buildAdPageDOM = (config: AdConfig): HTMLElement => {
+        const buildAdPageDOM = (config: AdConfig): { el: HTMLElement; video?: HTMLVideoElement } => {
           const container = document.createElement('div')
           container.style.cssText = 'width:100%;height:100%;display:flex;flex-direction:column;'
 
@@ -733,11 +734,21 @@ export default function FlipbookViewer({
           const main = document.createElement('div')
           main.className = 'ad-root'
 
+          let videoEl: HTMLVideoElement | undefined
+
           if (config.mode === 'custom_media' && config.mediaUrl) {
-            const vid = document.createElement('video')
-            vid.src = config.mediaUrl; vid.autoplay = true; vid.loop = true
-            vid.muted = true; vid.playsInline = true; vid.className = 'ad-video'
-            main.appendChild(vid)
+            videoEl = document.createElement('video')
+            videoEl.src = config.mediaUrl
+            // autoplay = false — play/pause gestito manualmente (precaricato prima)
+            videoEl.autoplay  = false
+            videoEl.loop      = true
+            videoEl.muted     = true
+            videoEl.playsInline = true
+            videoEl.preload   = 'auto'
+            videoEl.className = 'ad-video'
+            // Mostra la foto di backup come poster mentre il video si carica
+            if (config.backupImageUrl) videoEl.poster = config.backupImageUrl
+            main.appendChild(videoEl)
           } else if (config.backupImageUrl) {
             const kb = document.createElement('div')
             kb.className = 'ad-kb-img'
@@ -764,6 +775,14 @@ export default function FlipbookViewer({
           nameEl.style.fontFamily = theme.fontSerif
           nameEl.textContent = config.dishName
           titleBlock.appendChild(nameEl)
+
+          if (config.dishDescription) {
+            const descEl = document.createElement('span')
+            descEl.className = 'ad-dish-desc'
+            descEl.style.fontFamily = theme.fontSans
+            descEl.textContent = config.dishDescription
+            titleBlock.appendChild(descEl)
+          }
 
           // Prezzo — normale / prezzo promo barrato / solo promo
           if (config.promoPrice && config.promoPriceMode === 'strikethrough' && config.price) {
@@ -808,7 +827,7 @@ export default function FlipbookViewer({
 
           container.appendChild(main)
           container.appendChild(safe)
-          return container
+          return { el: container, video: videoEl }
         }
 
         // ── FASE 2: div + canvas nel DOM ─────────────────────────────────────
@@ -816,7 +835,7 @@ export default function FlipbookViewer({
         // canvas CSS width:100%;height:100% → turn.js scala via transform CSS,
         // senza mai toccare gli attributi → il context 2D non viene mai resettato.
         el.innerHTML = ''
-        for (const page of pages) {
+        for (const [domIdx, page] of Array.from(pages.entries())) {
           const pageDiv = document.createElement('div')
           pageDiv.style.cssText =
             `width:${dims.w}px;height:${dims.h}px;overflow:hidden;` +
@@ -824,7 +843,9 @@ export default function FlipbookViewer({
             `backface-visibility:hidden;-webkit-backface-visibility:hidden;`
 
           if (page.type === 'ad') {
-            pageDiv.appendChild(buildAdPageDOM(page.config))
+            const { el: adEl, video } = buildAdPageDOM(page.config)
+            pageDiv.appendChild(adEl)
+            if (video) adVideoMap.set(domIdx + 1, video)  // 1-based turn page
             el.appendChild(pageDiv)
             continue
           }
@@ -839,6 +860,10 @@ export default function FlipbookViewer({
           pageDiv.appendChild(canvas)
           el.appendChild(pageDiv)
         }
+        // Precarica tutti i video ads — il browser inizia a bufferare SUBITO,
+        // prima che l'utente raggiunga quelle pagine. Su iOS best-effort
+        // (il browser richiede interazione utente prima di bufferare).
+        adVideoMap.forEach(vid => { try { vid.load() } catch (_) {} })
         if (cancelled) return
 
         // ── FASE 2.5: render tutte le pagine in parallelo ────────────────────
@@ -926,8 +951,6 @@ export default function FlipbookViewer({
             // TASTI: corner è null, ma opts.next è già impostato e affidabile.
             start(_evt: Event, opts: any, corner: any) {
               // Disabilita SOLO gli angoli superiori: nessun giro pagina da tl/tr.
-              // preventDefault è il meccanismo nativo di turn.js per annullare la
-              // piega — gli angoli inferiori (bl/br) e lo swipe restano intatti.
               if (corner === 'tl' || corner === 'tr') {
                 (_evt as any).preventDefault?.()
                 return
@@ -935,6 +958,8 @@ export default function FlipbookViewer({
               try {
                 const cur = opts?.page as number
                 if (!cur) return
+                // Pausa il video della pagina corrente appena inizia la piega
+                adVideoMap.get(cur)?.pause()
                 let dest: number
                 if (typeof corner === 'string' &&
                     (corner.charAt(1) === 'l' || corner.charAt(1) === 'r')) {
@@ -950,6 +975,15 @@ export default function FlipbookViewer({
             turned(_evt: Event, page: number) {
               setCurrentPage(page)
               try { clearReveal() } catch (_) {}
+              // Avvia il video dell'ad corrente (già precaricato), pausa tutti gli altri
+              adVideoMap.forEach((vid, turnPage) => {
+                if (turnPage === page) {
+                  vid.currentTime = 0
+                  vid.play().catch(() => {})
+                } else {
+                  try { vid.pause() } catch (_) {}
+                }
+              })
             },
           },
         })
@@ -962,6 +996,8 @@ export default function FlipbookViewer({
         }
 
         setCurrentPage(1)
+        // Se la prima pagina è un video ad, avvialo subito (già precaricato)
+        adVideoMap.get(1)?.play().catch(() => {})
         setTotalPages(pages.length)  // include le pagine Ad
         setPagesReady(true)
         setLoadPhase('ready')
@@ -976,6 +1012,7 @@ export default function FlipbookViewer({
       cancelled = true
       el.removeEventListener('touchstart', onBookTouchStart)
       renderTasks.forEach(t => { try { t.cancel() } catch (_) {} })
+      adVideoMap.forEach(vid => { try { vid.pause() } catch (_) {} })
       try { if (el && window.$?.fn?.turn) window.$(el).turn('destroy') } catch (_) {}
       if (el) el.innerHTML = ''
     }
