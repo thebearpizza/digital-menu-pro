@@ -78,7 +78,18 @@ const menuConfig = {
   // { insertAfterPdfPage: 1, dishId: '', mode: 'auto_generated',
   //   backupImageUrl: 'https://picsum.photos/seed/dmp/600/900',
   //   dishName: 'Specialità della Casa', badgeText: 'Oggi consigliamo', price: '€ 14' }
-  ads: [] as AdConfig[],
+  ads: [
+    // DEMO — rimuovere prima del merge in produzione
+    {
+      insertAfterPdfPage: 1,
+      dishId:             '',
+      mode:               'auto_generated',
+      backupImageUrl:     'https://picsum.photos/seed/dmp/600/900',
+      dishName:           'Tagliere Gourmet',
+      badgeText:          'Oggi consigliamo',
+      price:              '€ 18',
+    },
+  ] as AdConfig[],
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
