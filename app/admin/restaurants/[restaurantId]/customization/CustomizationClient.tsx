@@ -2372,7 +2372,7 @@ export default function CustomizationClient({
           Mobile:  full-width preview with chip bar above; dropdown overlays
                    the top portion of the iframe leaving most of it visible. */}
       {adsOpen ? (
-        <AdsPanel ads={theme.ads} setAds={setAds} />
+        <AdsPanel ads={theme.ads} setAds={setAds} restaurantId={restaurantId} />
       ) : baseMode ? (
         /* ── Modalità base: anteprima + pannello preset/leve, sempre aperto.
               Desktop affiancati; mobile impilati (pannello scrollabile sotto). */
@@ -2462,18 +2462,55 @@ export default function CustomizationClient({
 
 // ── AdsPanel ──────────────────────────────────────────────────────────────────
 
-function AdsPanel({ ads, setAds }: { ads: AdConfig[]; setAds: (a: AdConfig[]) => void }) {
+interface DishOption {
+  id: string; name: string; price: number | null
+  image_url: string | null; category: string; menu_name: string
+}
+
+function AdsPanel({ ads, setAds, restaurantId }: {
+  ads: AdConfig[]; setAds: (a: AdConfig[]) => void; restaurantId: string
+}) {
   const EMPTY = (): AdConfig => ({
-    insertAfterPdfPage: 1,
-    dishId: '',
-    mode: 'auto_generated',
-    backupImageUrl: '',
-    dishName: '',
-    badgeText: '',
-    price: '',
+    insertAfterPdfPage: 1, dishId: '', mode: 'auto_generated',
+    backupImageUrl: '', dishName: '', badgeText: '', price: '',
   })
-  const [adding, setAdding] = useState(false)
-  const [form,   setForm]   = useState<AdConfig>(EMPTY())
+  const [adding,  setAdding]  = useState(false)
+  const [form,    setForm]    = useState<AdConfig>(EMPTY())
+  const [dishes,  setDishes]  = useState<DishOption[]>([])
+  const [loading, setLoading] = useState(true)
+
+  // Carica piatti dal DB (una sola volta al mount del pannello)
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      const supabase = createClient()
+      const { data: menus } = await supabase
+        .from('menus')
+        .select('id, name, dishes(id, name, price, image_url, category)')
+        .eq('restaurant_id', restaurantId)
+        .eq('is_active', true)
+        .order('sort_order', { ascending: true })
+      if (cancelled || !menus) return
+      const flat: DishOption[] = (menus as any[]).flatMap(m =>
+        (m.dishes as any[]).map((d: any) => ({ ...d, menu_name: m.name }))
+      )
+      setDishes(flat)
+      setLoading(false)
+    })()
+    return () => { cancelled = true }
+  }, [restaurantId])
+
+  function pickDish(dishId: string) {
+    const d = dishes.find(x => x.id === dishId)
+    if (!d) { setForm(f => ({ ...f, dishId: '' })); return }
+    setForm(f => ({
+      ...f,
+      dishId:         d.id,
+      dishName:       d.name,
+      price:          d.price != null ? `€ ${d.price.toFixed(2).replace('.', ',')}` : f.price,
+      backupImageUrl: d.image_url ?? f.backupImageUrl,
+    }))
+  }
 
   function handleAdd() {
     if (!form.dishName.trim()) return
@@ -2487,6 +2524,8 @@ function AdsPanel({ ads, setAds }: { ads: AdConfig[]; setAds: (a: AdConfig[]) =>
     setAdding(false)
   }
 
+  const INPUT = 'mt-1 w-full text-xs border border-gray-200 rounded px-2.5 py-1.5 focus:outline-none focus:border-gray-400 bg-white'
+
   return (
     <div className="flex-1 overflow-y-auto p-6 bg-white rounded-lg border border-gray-200">
       <div className="max-w-xl mx-auto space-y-6">
@@ -2494,8 +2533,9 @@ function AdsPanel({ ads, setAds }: { ads: AdConfig[]; setAds: (a: AdConfig[]) =>
         <div>
           <h2 className="text-sm font-semibold text-gray-900">Promozioni nel flipbook</h2>
           <p className="mt-1 text-xs text-gray-500 leading-relaxed">
-            Pagine con animazione Ken Burns (o video) iniettate tra le pagine del menu.
-            Ogni voce appare dopo la pagina PDF indicata. Ricorda di <strong>Salvare</strong> il tema.
+            Pagine con animazione Ken Burns iniettate tra le pagine del menu.
+            Collega un piatto: al click sull&apos;annuncio si apre la card completa.
+            Ricorda di <strong>Salvare</strong> dopo le modifiche.
           </p>
         </div>
 
@@ -2510,9 +2550,10 @@ function AdsPanel({ ads, setAds }: { ads: AdConfig[]; setAds: (a: AdConfig[]) =>
               <div className="flex-1 min-w-0">
                 <p className="text-xs font-medium text-gray-900 truncate">{ad.dishName}</p>
                 <p className="text-[11px] text-gray-500 mt-0.5">
-                  Dopo pag. PDF {ad.insertAfterPdfPage}
+                  Dopo pag. {ad.insertAfterPdfPage}
                   {ad.badgeText && <span> · <em>{ad.badgeText}</em></span>}
                   {ad.price     && <span> · {ad.price}</span>}
+                  {ad.dishId    && <span className="text-green-600"> · card collegata ✓</span>}
                 </p>
               </div>
               <button type="button" onClick={() => setAds(ads.filter((_, i) => i !== idx))}
@@ -2527,10 +2568,35 @@ function AdsPanel({ ads, setAds }: { ads: AdConfig[]; setAds: (a: AdConfig[]) =>
           <div className="rounded-lg border border-gray-200 p-4 space-y-3 bg-gray-50">
             <p className="text-xs font-semibold text-gray-700">Nuova promozione</p>
 
+            {/* Dish picker */}
+            <label className="block">
+              <span className="text-[11px] text-gray-500">
+                Collega a un piatto {loading ? '(caricamento…)' : ''}
+              </span>
+              <select
+                className={INPUT}
+                value={form.dishId}
+                onChange={e => pickDish(e.target.value)}
+                disabled={loading}
+              >
+                <option value="">— nessun collegamento —</option>
+                {dishes.map(d => (
+                  <option key={d.id} value={d.id}>
+                    {d.menu_name} › {d.name}{d.category ? ` (${d.category})` : ''}
+                  </option>
+                ))}
+              </select>
+              {form.dishId && (
+                <p className="mt-1 text-[11px] text-green-600">
+                  ✓ Al click sull&apos;annuncio si aprirà la card del piatto
+                </p>
+              )}
+            </label>
+
             <div className="grid grid-cols-2 gap-3">
               <label className="col-span-2 block">
-                <span className="text-[11px] text-gray-500">Nome piatto *</span>
-                <input className="mt-1 w-full text-xs border border-gray-200 rounded px-2.5 py-1.5 focus:outline-none focus:border-gray-400 bg-white"
+                <span className="text-[11px] text-gray-500">Nome mostrato nella promo *</span>
+                <input className={INPUT}
                   value={form.dishName}
                   onChange={e => setForm(f => ({ ...f, dishName: e.target.value }))}
                   placeholder="es. Tagliere Gourmet" />
@@ -2538,15 +2604,14 @@ function AdsPanel({ ads, setAds }: { ads: AdConfig[]; setAds: (a: AdConfig[]) =>
 
               <label className="block">
                 <span className="text-[11px] text-gray-500">Dopo pagina PDF n°</span>
-                <input type="number" min={1}
-                  className="mt-1 w-full text-xs border border-gray-200 rounded px-2.5 py-1.5 focus:outline-none focus:border-gray-400 bg-white"
+                <input type="number" min={1} className={INPUT}
                   value={form.insertAfterPdfPage}
                   onChange={e => setForm(f => ({ ...f, insertAfterPdfPage: Math.max(1, Number(e.target.value) || 1) }))} />
               </label>
 
               <label className="block">
-                <span className="text-[11px] text-gray-500">Prezzo (opzionale)</span>
-                <input className="mt-1 w-full text-xs border border-gray-200 rounded px-2.5 py-1.5 focus:outline-none focus:border-gray-400 bg-white"
+                <span className="text-[11px] text-gray-500">Prezzo</span>
+                <input className={INPUT}
                   value={form.price ?? ''}
                   onChange={e => setForm(f => ({ ...f, price: e.target.value }))}
                   placeholder="es. € 18" />
@@ -2554,18 +2619,21 @@ function AdsPanel({ ads, setAds }: { ads: AdConfig[]; setAds: (a: AdConfig[]) =>
 
               <label className="col-span-2 block">
                 <span className="text-[11px] text-gray-500">Badge (opzionale)</span>
-                <input className="mt-1 w-full text-xs border border-gray-200 rounded px-2.5 py-1.5 focus:outline-none focus:border-gray-400 bg-white"
+                <input className={INPUT}
                   value={form.badgeText ?? ''}
                   onChange={e => setForm(f => ({ ...f, badgeText: e.target.value }))}
                   placeholder="es. Specialità della Casa" />
               </label>
 
               <label className="col-span-2 block">
-                <span className="text-[11px] text-gray-500">URL foto sfondo (Ken Burns)</span>
-                <input className="mt-1 w-full text-xs border border-gray-200 rounded px-2.5 py-1.5 focus:outline-none focus:border-gray-400 bg-white"
+                <span className="text-[11px] text-gray-500">URL foto sfondo — Ken Burns</span>
+                <input className={INPUT}
                   value={form.backupImageUrl}
                   onChange={e => setForm(f => ({ ...f, backupImageUrl: e.target.value }))}
                   placeholder="https://..." />
+                <p className="mt-0.5 text-[10px] text-gray-400">
+                  Puoi usare la foto del piatto caricata nel gestionale.
+                </p>
               </label>
             </div>
 
