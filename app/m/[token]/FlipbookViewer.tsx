@@ -9,6 +9,24 @@ import { ALL_LANGS, LANG_FLAGS, LANG_LABELS, uiText, type Lang } from '@/lib/tra
 import { FlagIcon } from '@/components/ui/FlagIcon'
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// ADS — Pagine pubblicitarie iniettabili nel flipbook
+// ═══════════════════════════════════════════════════════════════════════════════
+export interface AdConfig {
+  insertAfterPdfPage: number          // inietta dopo questa pagina PDF
+  dishId:             string          // apre la card del piatto ('' = nessuna azione)
+  mode:               'custom_media' | 'auto_generated'
+  mediaUrl?:          string          // video/gif per custom_media
+  backupImageUrl:     string          // foto del piatto per il Ken Burns engine
+  dishName:           string
+  badgeText?:         string          // es. "Specialità della Casa"
+  price?:             string          // es. "€ 12"
+}
+
+type FlipbookPage =
+  | { type: 'pdf'; pdfPage: number }
+  | { type: 'ad';  config:  AdConfig }
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // ⚙️  MENU CONFIG
 // Modifica qui ogni aspetto visivo e comportamentale — nessun'altra modifica
 // necessaria nel codice sotto.
@@ -53,6 +71,14 @@ const menuConfig = {
     { label: 'Secondi',   targetPage: 5 },
     { label: 'Dessert',   targetPage: 7 },
   ] as Array<{ label: string; targetPage: number }>,
+
+  // ── 📢 Ads ────────────────────────────────────────────────────────────────────
+  // Pagine pubblicitarie iniettate nel flipbook dopo la pagina PDF indicata.
+  // Lascia [] per nessun ad in produzione. Esempio demo:
+  // { insertAfterPdfPage: 1, dishId: '', mode: 'auto_generated',
+  //   backupImageUrl: 'https://picsum.photos/seed/dmp/600/900',
+  //   dishName: 'Specialità della Casa', badgeText: 'Oggi consigliamo', price: '€ 14' }
+  ads: [] as AdConfig[],
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -180,7 +206,7 @@ export default function FlipbookViewer({
   const [pagesReady,    setPagesReady]   = useState(false)
   const isMobilePreview = useIsMobilePreview()
 
-  const { flipbook } = menuConfig
+  const { flipbook, ads } = menuConfig
   // Le categorie vengono ESCLUSIVAMENTE dal menu selezionato tramite useMenuPDF.
   // Nessun fallback hardcoded — ogni menu ha le sue categorie dinamiche.
   const categories = categoriesProp ?? EMPTY_CATEGORIES
@@ -189,24 +215,43 @@ export default function FlipbookViewer({
   // senza richiedere il re-init del flipbook quando i piatti cambiano.
   const dishesRef = useRef<DishData[]>(dishes ?? [])
   useEffect(() => { dishesRef.current = dishes ?? [] }, [dishes])
+
+  // Mapping PDF page → turn.js page (ricostruito al caricamento del PDF).
+  // Quando non ci sono ads è identità (N→N). Usato per remappare le categorie.
+  const pdfToTurnRef = useRef(new Map<number, number>())
+
+  // Categorie rimappate a numeri di pagina turn.js (che includono le pagine Ad).
+  // Vuoto finché il PDF non è caricato: fino ad allora usa le categorie raw.
+  const [remappedCats, setRemappedCats] = useState<Array<{ label: string; targetPage: number }>>([])
+  const displayCategories = remappedCats.length > 0 ? remappedCats : categories
+
   // Stesso pattern per le categorie: servono al text layer per disambiguare
   // piatti con lo stesso nome in categorie diverse (match per pagina corrente).
-  const categoriesRef = useRef(categories)
-  useEffect(() => { categoriesRef.current = categories }, [categories])
+  const categoriesRef = useRef(displayCategories)
+  useEffect(() => { categoriesRef.current = displayCategories }, [displayCategories])
+
+  // Riremap quando le categorie dal PDF cambiano (es. cambio menu).
+  useEffect(() => {
+    if (!categories.length) return
+    const map = pdfToTurnRef.current
+    if (!map.size) { setRemappedCats(categories); return }
+    setRemappedCats(categories.map(c => ({ ...c, targetPage: map.get(c.targetPage) ?? c.targetPage })))
+  }, [categories])
+
   const onDishOpenRef = useRef(onDishOpen)
   useEffect(() => { onDishOpenRef.current = onDishOpen }, [onDishOpen])
   const [modalStack, setModalStack] = useState<DishData[]>([])
 
   // Sincronizza activeCatIdx quando currentPage cambia (sfoglio manuale)
-  // o quando le categorie cambiano (cambio menu).
+  // o quando le categorie cambiano (cambio menu o caricamento ads).
   useEffect(() => {
-    if (!categories.length) return
+    if (!displayCategories.length) return
     let idx = 0
-    for (let i = 0; i < categories.length; i++) {
-      if (currentPage >= categories[i].targetPage) idx = i
+    for (let i = 0; i < displayCategories.length; i++) {
+      if (currentPage >= displayCategories[i].targetPage) idx = i
     }
     setActiveCatIdx(idx)
-  }, [currentPage, categories])
+  }, [currentPage, displayCategories])
 
   // ── Scroll-lock (disabilita scroll e overscroll su tutto il documento) ────────
   useEffect(() => {
@@ -298,12 +343,13 @@ export default function FlipbookViewer({
 
     // Builds a transparent text layer over pageDiv and wires dish-name spans to setModalStack.
     // Called AFTER canvas rendering and BEFORE turn.js init (FASE 2.7).
-    async function renderTextLayer(pageNum: number, logicalScale: number): Promise<void> {
+    async function renderTextLayer(pageNum: number, logicalScale: number, domIdx?: number): Promise<void> {
       if (cancelled) return
       const pdfPage = pdfPageObjects[pageNum - 1]
       if (!pdfPage) return
 
-      const pageDiv = el!.children[pageNum - 1] as HTMLElement | null
+      // domIdx: posizione DOM reale (diversa da pageNum-1 se ci sono pagine Ad iniettate)
+      const pageDiv = el!.children[domIdx ?? pageNum - 1] as HTMLElement | null
       if (!pageDiv || cancelled) return
 
       const lib = window.pdfjsLib
@@ -668,18 +714,106 @@ export default function FlipbookViewer({
         cw = Math.round(vp0.width)
         ch = Math.round(vp0.height)
 
+        // ── Build FlipbookPage list — PDF pages + injected Ad pages ─────────
+        // Con ads=[] è identica a [{type:'pdf', pdfPage:1}, ...] — zero overhead.
+        const pages: FlipbookPage[] = []
+        for (let p = 1; p <= numPages; p++) {
+          pages.push({ type: 'pdf', pdfPage: p })
+          for (const ad of ads) {
+            if (ad.insertAfterPdfPage === p) pages.push({ type: 'ad', config: ad })
+          }
+        }
+
+        // Mapping bidirezionale PDF page ↔ turn.js page (identity senza ads).
+        const pdfToTurn = new Map<number, number>()
+        const turnToPdf = new Map<number, number>()
+        pages.forEach((p, i) => {
+          if (p.type === 'pdf') { pdfToTurn.set(p.pdfPage, i + 1); turnToPdf.set(i + 1, p.pdfPage) }
+        })
+        pdfToTurnRef.current = pdfToTurn
+
+        // ── Helper: costruisce il DOM di una pagina Ad ───────────────────────
+        const buildAdPageDOM = (config: AdConfig): HTMLElement => {
+          const container = document.createElement('div')
+          container.style.cssText = 'width:100%;height:100%;display:flex;flex-direction:column;'
+
+          // Zona cliccabile (92%) — video o Ken Burns
+          const main = document.createElement('div')
+          main.className = 'ad-root'
+
+          if (config.mode === 'custom_media' && config.mediaUrl) {
+            const vid = document.createElement('video')
+            vid.src = config.mediaUrl; vid.autoplay = true; vid.loop = true
+            vid.muted = true; vid.playsInline = true; vid.className = 'ad-video'
+            main.appendChild(vid)
+          } else if (config.backupImageUrl) {
+            const kb = document.createElement('div')
+            kb.className = 'ad-kb-img'
+            kb.style.backgroundImage = `url("${config.backupImageUrl}")`
+            main.appendChild(kb)
+          }
+
+          const overlay = document.createElement('div')
+          overlay.className = 'ad-overlay'
+          main.appendChild(overlay)
+
+          if (config.badgeText) {
+            const badge = document.createElement('div')
+            badge.className = 'ad-badge'
+            badge.textContent = config.badgeText
+            main.appendChild(badge)
+          }
+
+          const titleBlock = document.createElement('div')
+          titleBlock.className = 'ad-title-block'
+          const nameEl = document.createElement('span')
+          nameEl.className = 'ad-dish-name'; nameEl.textContent = config.dishName
+          titleBlock.appendChild(nameEl)
+          if (config.price) {
+            const priceEl = document.createElement('span')
+            priceEl.className = 'ad-price'; priceEl.textContent = config.price
+            titleBlock.appendChild(priceEl)
+          }
+          main.appendChild(titleBlock)
+
+          // Click apre la card del piatto collegato
+          main.addEventListener('click', (e) => {
+            e.stopPropagation()
+            if (!config.dishId) return
+            const dish = dishesRef.current.find(d => d.id === config.dishId)
+            if (dish) setModalStack([dish])
+          })
+          // Blocca swipe su turn.js dentro la zona ad
+          main.addEventListener('touchend', (e) => { e.stopPropagation() }, { passive: false })
+
+          // Safe area (8%) — trasparente, nessun evento
+          const safe = document.createElement('div')
+          safe.className = 'ad-safe-area'
+
+          container.appendChild(main)
+          container.appendChild(safe)
+          return container
+        }
+
         // ── FASE 2: div + canvas nel DOM ─────────────────────────────────────
         // canvas.width / canvas.height = dimensioni pixel FISSE (mai cambiate).
         // canvas CSS width:100%;height:100% → turn.js scala via transform CSS,
         // senza mai toccare gli attributi → il context 2D non viene mai resettato.
         el.innerHTML = ''
-        for (let i = 1; i <= numPages; i++) {
+        for (const page of pages) {
           const pageDiv = document.createElement('div')
           pageDiv.style.cssText =
             `width:${dims.w}px;height:${dims.h}px;overflow:hidden;` +
             `background:${pageBgColor};` +
             `backface-visibility:hidden;-webkit-backface-visibility:hidden;`
 
+          if (page.type === 'ad') {
+            pageDiv.appendChild(buildAdPageDOM(page.config))
+            el.appendChild(pageDiv)
+            continue
+          }
+
+          const i = page.pdfPage
           const canvas = document.createElement('canvas')
           canvas.width        = cw
           canvas.height       = ch
@@ -701,9 +835,14 @@ export default function FlipbookViewer({
         // ── FASE 2.7: text layer interattivo sopra i canvas ──────────────────
         // Aggiunge span trasparenti con coordinate PDF.js sui piatti riconosciuti.
         // Eseguito solo se ci sono piatti — dopo i canvas, prima di turn.js.
+        // Le pagine Ad non hanno canvas → vengono saltate.
         if (dishesRef.current.length > 0) {
           await Promise.all(
-            Array.from({ length: numPages }, (_, i) => renderTextLayer(i + 1, scale / dpr))
+            pages.map((page, domIdx) =>
+              page.type === 'pdf'
+                ? renderTextLayer(page.pdfPage, scale / dpr, domIdx)
+                : Promise.resolve()
+            )
           )
         }
         if (cancelled) return
@@ -729,10 +868,13 @@ export default function FlipbookViewer({
         // scatta all'inizio sia per drag che per navigazione a tasti.
 
         // Dipinge la pagina `dest` sotto la pagina che si piega (`cur`).
+        // dest è un numero di pagina turn.js → convertiamo in PDF page per la data URL.
+        // Se dest è una pagina Ad non c'è data URL → la zona revealed rimane bianca.
         const paintReveal = (cur: number, dest: number): void => {
           const data = window.$(el!).turn('data') as any
           const wrap = data?.pageWrap?.[cur]
-          const src  = pageDataUrls.get(dest)
+          const pdfPage = turnToPdf.get(dest)
+          const src = pdfPage !== undefined ? pageDataUrls.get(pdfPage) : undefined
           if (wrap && src) {
             window.$(wrap).css({
               backgroundImage:    `url("${src}")`,
@@ -796,8 +938,15 @@ export default function FlipbookViewer({
           },
         })
 
+        // Riremap categorie con il mapping appena costruito (turn page numbers).
+        if (categoriesRef.current.length) {
+          setRemappedCats(categoriesRef.current.map(c => ({
+            ...c, targetPage: pdfToTurn.get(c.targetPage) ?? c.targetPage,
+          })))
+        }
+
         setCurrentPage(1)
-        setTotalPages(numPages)
+        setTotalPages(pages.length)  // include le pagine Ad
         setPagesReady(true)
         setLoadPhase('ready')
         el.addEventListener('touchstart', onBookTouchStart, { passive: true })
@@ -1010,7 +1159,7 @@ export default function FlipbookViewer({
               {uiText('backToMenu', lang)}
             </button>
 
-            {categories.map((cat, idx) => (
+            {displayCategories.map((cat, idx) => (
               <button
                 key={cat.label}
                 ref={el => { catBtnRefs.current[idx] = el }}

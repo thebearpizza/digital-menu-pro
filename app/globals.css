@@ -158,6 +158,44 @@ body.menu-locked {
 }
 
 
+/* ─── Interstitial Ads — Ken Burns cinematic engine ─────────────────────── */
+@keyframes ad-ken-burns {
+  0%   { transform: scale(1)    translate(0,   0);     }
+  100% { transform: scale(1.15) translate(-2%, -1.5%); }
+}
+@keyframes ad-badge-in {
+  from { opacity: 0; transform: translateY(10px) scale(0.95); }
+  to   { opacity: 1; transform: translateY(0)    scale(1);    }
+}
+@keyframes ad-badge-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.7; }
+}
+.ad-root      { position: relative; overflow: hidden; cursor: pointer; height: 92%; background: #111; }
+.ad-safe-area { height: 8%; pointer-events: none; }
+.ad-kb-img {
+  position: absolute; inset: -5%;
+  background-size: cover; background-position: center;
+  animation: ad-ken-burns 9s ease-in-out infinite alternate;
+  will-change: transform;
+}
+.ad-video     { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.ad-overlay   {
+  position: absolute; inset: 0;
+  background: linear-gradient(to top, rgba(0,0,0,0.88) 0%, rgba(0,0,0,0.30) 45%, rgba(0,0,0,0.10) 100%);
+}
+.ad-badge {
+  position: absolute; top: 20px; left: 20px;
+  background: rgba(255,255,255,0.14); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+  border: 1px solid rgba(255,255,255,0.28);
+  padding: 5px 13px; border-radius: 20px;
+  color: #fff; font-size: 10px; letter-spacing: 0.15em; text-transform: uppercase;
+  animation: ad-badge-in 0.7s ease-out 0.3s both, ad-badge-pulse 3s ease-in-out 1.5s infinite;
+}
+.ad-title-block { position: absolute; bottom: 28px; left: 20px; right: 20px; color: #fff; }
+.ad-dish-name   { display: block; font-size: clamp(22px, 6vw, 32px); font-weight: 300; letter-spacing: 0.04em; line-height: 1.15; }
+.ad-price       { display: block; font-size: 14px; opacity: 0.65; margin-top: 5px; letter-spacing: 0.1em; }
+
 /* ─── Tiptap rich-text editor (TextPagesPanel) ─────────────────────────── */
 .dmp-rte .ProseMirror {
   outline: none;
