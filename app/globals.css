@@ -192,9 +192,14 @@ body.menu-locked {
   color: #fff; font-size: 10px; letter-spacing: 0.15em; text-transform: uppercase;
   animation: ad-badge-in 0.7s ease-out 0.3s both, ad-badge-pulse 3s ease-in-out 1.5s infinite;
 }
-.ad-title-block { position: absolute; bottom: 28px; left: 20px; right: 20px; color: #fff; }
-.ad-dish-name   { display: block; font-size: clamp(22px, 6vw, 32px); font-weight: 300; letter-spacing: 0.04em; line-height: 1.15; }
-.ad-price       { display: block; font-size: 14px; opacity: 0.65; margin-top: 5px; letter-spacing: 0.1em; }
+.ad-title-block    { position: absolute; bottom: 28px; left: 20px; right: 20px; color: #fff; }
+.ad-dish-name      { display: block; font-size: clamp(22px, 6vw, 32px); font-weight: 300; letter-spacing: 0.04em; line-height: 1.15; }
+/* prezzi */
+.ad-price          { display: block; font-size: 14px; opacity: 0.65; margin-top: 5px; letter-spacing: 0.1em; }
+.ad-price-row      { display: flex; align-items: baseline; gap: 7px; margin-top: 6px; flex-wrap: wrap; }
+.ad-price-original { font-size: 11px; opacity: 0.45; text-decoration: line-through; letter-spacing: 0.07em; }
+.ad-price-promo    { font-size: 15px; font-weight: 500; letter-spacing: 0.05em; }
+.ad-price-solo     { display: block; font-size: 16px; font-weight: 500; letter-spacing: 0.09em; margin-top: 6px; }
 
 /* ─── Tiptap rich-text editor (TextPagesPanel) ─────────────────────────── */
 .dmp-rte .ProseMirror {

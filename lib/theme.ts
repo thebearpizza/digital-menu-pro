@@ -220,13 +220,16 @@ export interface MenuTheme {
 // Pagine pubblicitarie iniettate nel flipbook (salvate in theme_config.ads).
 export interface AdConfig {
   insertAfterPdfPage: number
+  menuId?:            string                      // menu a cui appartiene (vuoto = tutti)
   dishId:             string
   mode:               'custom_media' | 'auto_generated'
-  mediaUrl?:          string
-  backupImageUrl:     string
+  mediaUrl?:          string                      // video promo
+  backupImageUrl:     string                      // foto sfondo Ken Burns
   dishName:           string
   badgeText?:         string
-  price?:             string
+  price?:             string                      // prezzo originale
+  promoPrice?:        string                      // prezzo scontato
+  promoPriceMode?:    'strikethrough' | 'solo'   // barrato+promo oppure solo promo
 }
 
 export interface RestaurantTheme {

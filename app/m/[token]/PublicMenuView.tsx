@@ -787,7 +787,7 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
             onDishOpen={!editMode && activeMenuId ? (dishId) => track('dish_click', activeMenuId, dishId) : undefined}
             lang={lang}
             onLangChange={setLang}
-            ads={t.ads}
+            ads={t.ads.filter(a => !a.menuId || a.menuId === activeMenuId)}
           />
         </div>
       )}

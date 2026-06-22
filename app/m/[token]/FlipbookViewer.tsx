@@ -758,14 +758,38 @@ export default function FlipbookViewer({
 
           const titleBlock = document.createElement('div')
           titleBlock.className = 'ad-title-block'
+
           const nameEl = document.createElement('span')
-          nameEl.className = 'ad-dish-name'; nameEl.textContent = config.dishName
+          nameEl.className = 'ad-dish-name'
+          nameEl.style.fontFamily = theme.fontSerif
+          nameEl.textContent = config.dishName
           titleBlock.appendChild(nameEl)
-          if (config.price) {
+
+          // Prezzo — normale / prezzo promo barrato / solo promo
+          if (config.promoPrice && config.promoPriceMode === 'strikethrough' && config.price) {
+            const row = document.createElement('div')
+            row.className = 'ad-price-row'
+            row.style.fontFamily = theme.fontSans
+            const origEl = document.createElement('span')
+            origEl.className = 'ad-price-original'; origEl.textContent = config.price
+            const promoEl = document.createElement('span')
+            promoEl.className = 'ad-price-promo'; promoEl.textContent = config.promoPrice
+            row.appendChild(origEl); row.appendChild(promoEl)
+            titleBlock.appendChild(row)
+          } else if (config.promoPrice) {
+            const promoEl = document.createElement('span')
+            promoEl.className = 'ad-price-solo'
+            promoEl.style.fontFamily = theme.fontSans
+            promoEl.textContent = config.promoPrice
+            titleBlock.appendChild(promoEl)
+          } else if (config.price) {
             const priceEl = document.createElement('span')
-            priceEl.className = 'ad-price'; priceEl.textContent = config.price
+            priceEl.className = 'ad-price'
+            priceEl.style.fontFamily = theme.fontSans
+            priceEl.textContent = config.price
             titleBlock.appendChild(priceEl)
           }
+
           main.appendChild(titleBlock)
 
           // Click apre la card del piatto collegato
