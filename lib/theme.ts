@@ -217,6 +217,22 @@ export interface MenuTheme {
 
 // ── Root ──────────────────────────────────────────────────────────────────────
 
+// Pagine pubblicitarie iniettate nel flipbook (salvate in theme_config.ads).
+export interface AdConfig {
+  insertAfterPdfPage: number
+  menuId?:            string                      // menu a cui appartiene (vuoto = tutti)
+  dishId:             string
+  mode:               'custom_media' | 'auto_generated'
+  mediaUrl?:          string                      // video promo
+  backupImageUrl:     string                      // foto sfondo Ken Burns
+  dishName:           string
+  dishDescription?:   string                      // descrizione visibile nella pagina promo
+  badgeText?:         string
+  price?:             string                      // prezzo originale
+  promoPrice?:        string                      // prezzo scontato
+  promoPriceMode?:    'strikethrough' | 'solo'   // barrato+promo oppure solo promo
+}
+
 export interface RestaurantTheme {
   landing: LandingTheme
   menu:    MenuTheme
@@ -230,6 +246,8 @@ export interface RestaurantTheme {
   // can reference a key here by name; @font-face rules are injected at runtime
   // on the public pages (and in the admin preview) via customFontFaceCss().
   customFonts: Record<string, string>
+  // Pagine pubblicitarie iniettate nel flipbook (Ken Burns / video). Vuoto = nessun ad.
+  ads: AdConfig[]
 }
 
 // ── Defaults ──────────────────────────────────────────────────────────────────
@@ -305,6 +323,7 @@ export const DEFAULT_THEME: RestaurantTheme = {
     closeButton: { color: '#555555', position: 'top-right', shape: 'none', show: true, size: 1.25 },
   },
   customFonts: {},
+  ads: [],
 }
 
 // ── Parse helpers ─────────────────────────────────────────────────────────────
@@ -554,6 +573,7 @@ function parseNested(r: Record<string, unknown>): RestaurantTheme {
       },
     },
     customFonts: strRecord(r.customFonts),
+    ads: Array.isArray(r.ads) ? (r.ads as AdConfig[]) : [],
   }
 }
 
@@ -642,6 +662,7 @@ export function migrateFlat(r: Record<string, unknown>): RestaurantTheme {
       pairing:  { ...d.card.pairing, labelColor: accent },
     },
     customFonts: strRecord(r.customFonts),
+    ads: Array.isArray(r.ads) ? (r.ads as AdConfig[]) : [],
   }
 }
 

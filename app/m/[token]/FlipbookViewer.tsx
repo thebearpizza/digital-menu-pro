@@ -4,9 +4,15 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import DishModal, { DishData } from './DishModal'
 import { useIsMobilePreview } from './EditHandle'
 import { fontStack, hexToRgb, toOpaqueColor, PAGINATION_OPTIONS, menuBackgroundCss } from '@/lib/theme'
-import type { RestaurantTheme } from '@/lib/theme'
+import type { RestaurantTheme, AdConfig } from '@/lib/theme'
 import { ALL_LANGS, LANG_FLAGS, LANG_LABELS, uiText, type Lang } from '@/lib/translations'
 import { FlagIcon } from '@/components/ui/FlagIcon'
+
+// AdConfig is defined in lib/theme.ts and re-used here.
+
+type FlipbookPage =
+  | { type: 'pdf'; pdfPage: number }
+  | { type: 'ad';  config:  AdConfig }
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // ⚙️  MENU CONFIG
@@ -53,6 +59,14 @@ const menuConfig = {
     { label: 'Secondi',   targetPage: 5 },
     { label: 'Dessert',   targetPage: 7 },
   ] as Array<{ label: string; targetPage: number }>,
+
+  // ── 📢 Ads ────────────────────────────────────────────────────────────────────
+  // Pagine pubblicitarie iniettate nel flipbook dopo la pagina PDF indicata.
+  // Lascia [] per nessun ad in produzione. Esempio demo:
+  // { insertAfterPdfPage: 1, dishId: '', mode: 'auto_generated',
+  //   backupImageUrl: 'https://picsum.photos/seed/dmp/600/900',
+  //   dishName: 'Specialità della Casa', badgeText: 'Oggi consigliamo', price: '€ 14' }
+  ads: [] as AdConfig[],  // default se non arriva nulla dal DB
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -111,6 +125,8 @@ interface Props {
   // categorie mostra la bandierina al posto del contatore pagine.
   lang?:         Lang
   onLangChange?: (l: Lang) => void
+  // Pagine pubblicitarie dal pannello admin (sovrascrivono menuConfig.ads).
+  ads?: AdConfig[]
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -129,6 +145,7 @@ export default function FlipbookViewer({
   onDishOpen,
   lang: langProp,
   onLangChange,
+  ads: adsProp,
 }: Props) {
   const lang = langProp ?? 'it'
   const [langMenuOpen, setLangMenuOpen] = useState(false)
@@ -181,6 +198,7 @@ export default function FlipbookViewer({
   const isMobilePreview = useIsMobilePreview()
 
   const { flipbook } = menuConfig
+  const ads = adsProp ?? menuConfig.ads
   // Le categorie vengono ESCLUSIVAMENTE dal menu selezionato tramite useMenuPDF.
   // Nessun fallback hardcoded — ogni menu ha le sue categorie dinamiche.
   const categories = categoriesProp ?? EMPTY_CATEGORIES
@@ -189,24 +207,43 @@ export default function FlipbookViewer({
   // senza richiedere il re-init del flipbook quando i piatti cambiano.
   const dishesRef = useRef<DishData[]>(dishes ?? [])
   useEffect(() => { dishesRef.current = dishes ?? [] }, [dishes])
+
+  // Mapping PDF page → turn.js page (ricostruito al caricamento del PDF).
+  // Quando non ci sono ads è identità (N→N). Usato per remappare le categorie.
+  const pdfToTurnRef = useRef(new Map<number, number>())
+
+  // Categorie rimappate a numeri di pagina turn.js (che includono le pagine Ad).
+  // Vuoto finché il PDF non è caricato: fino ad allora usa le categorie raw.
+  const [remappedCats, setRemappedCats] = useState<Array<{ label: string; targetPage: number }>>([])
+  const displayCategories = remappedCats.length > 0 ? remappedCats : categories
+
   // Stesso pattern per le categorie: servono al text layer per disambiguare
   // piatti con lo stesso nome in categorie diverse (match per pagina corrente).
-  const categoriesRef = useRef(categories)
-  useEffect(() => { categoriesRef.current = categories }, [categories])
+  const categoriesRef = useRef(displayCategories)
+  useEffect(() => { categoriesRef.current = displayCategories }, [displayCategories])
+
+  // Riremap quando le categorie dal PDF cambiano (es. cambio menu).
+  useEffect(() => {
+    if (!categories.length) return
+    const map = pdfToTurnRef.current
+    if (!map.size) { setRemappedCats(categories); return }
+    setRemappedCats(categories.map(c => ({ ...c, targetPage: map.get(c.targetPage) ?? c.targetPage })))
+  }, [categories])
+
   const onDishOpenRef = useRef(onDishOpen)
   useEffect(() => { onDishOpenRef.current = onDishOpen }, [onDishOpen])
   const [modalStack, setModalStack] = useState<DishData[]>([])
 
   // Sincronizza activeCatIdx quando currentPage cambia (sfoglio manuale)
-  // o quando le categorie cambiano (cambio menu).
+  // o quando le categorie cambiano (cambio menu o caricamento ads).
   useEffect(() => {
-    if (!categories.length) return
+    if (!displayCategories.length) return
     let idx = 0
-    for (let i = 0; i < categories.length; i++) {
-      if (currentPage >= categories[i].targetPage) idx = i
+    for (let i = 0; i < displayCategories.length; i++) {
+      if (currentPage >= displayCategories[i].targetPage) idx = i
     }
     setActiveCatIdx(idx)
-  }, [currentPage, categories])
+  }, [currentPage, displayCategories])
 
   // ── Scroll-lock (disabilita scroll e overscroll su tutto il documento) ────────
   useEffect(() => {
@@ -249,6 +286,7 @@ export default function FlipbookViewer({
     const pdfPageObjects: any[] = []
     const renderTasks  = new Map<number, { cancel(): void }>()
     const pageDataUrls = new Map<number, string>()
+    const adVideoMap   = new Map<number, HTMLVideoElement>()
 
     // devicePixelRatio: buffer fisicamente grande → testo nitido su retina.
     // Cappato a 3 per evitare allocazioni eccessive su display ultra-HiDPI.
@@ -298,12 +336,13 @@ export default function FlipbookViewer({
 
     // Builds a transparent text layer over pageDiv and wires dish-name spans to setModalStack.
     // Called AFTER canvas rendering and BEFORE turn.js init (FASE 2.7).
-    async function renderTextLayer(pageNum: number, logicalScale: number): Promise<void> {
+    async function renderTextLayer(pageNum: number, logicalScale: number, domIdx?: number): Promise<void> {
       if (cancelled) return
       const pdfPage = pdfPageObjects[pageNum - 1]
       if (!pdfPage) return
 
-      const pageDiv = el!.children[pageNum - 1] as HTMLElement | null
+      // domIdx: posizione DOM reale (diversa da pageNum-1 se ci sono pagine Ad iniettate)
+      const pageDiv = el!.children[domIdx ?? pageNum - 1] as HTMLElement | null
       if (!pageDiv || cancelled) return
 
       const lib = window.pdfjsLib
@@ -668,18 +707,150 @@ export default function FlipbookViewer({
         cw = Math.round(vp0.width)
         ch = Math.round(vp0.height)
 
+        // ── Build FlipbookPage list — PDF pages + injected Ad pages ─────────
+        // Con ads=[] è identica a [{type:'pdf', pdfPage:1}, ...] — zero overhead.
+        const pages: FlipbookPage[] = []
+        for (let p = 1; p <= numPages; p++) {
+          pages.push({ type: 'pdf', pdfPage: p })
+          for (const ad of ads) {
+            if (ad.insertAfterPdfPage === p) pages.push({ type: 'ad', config: ad })
+          }
+        }
+
+        // Mapping bidirezionale PDF page ↔ turn.js page (identity senza ads).
+        const pdfToTurn = new Map<number, number>()
+        const turnToPdf = new Map<number, number>()
+        pages.forEach((p, i) => {
+          if (p.type === 'pdf') { pdfToTurn.set(p.pdfPage, i + 1); turnToPdf.set(i + 1, p.pdfPage) }
+        })
+        pdfToTurnRef.current = pdfToTurn
+
+        // ── Helper: costruisce il DOM di una pagina Ad ───────────────────────
+        const buildAdPageDOM = (config: AdConfig): { el: HTMLElement; video?: HTMLVideoElement } => {
+          const container = document.createElement('div')
+          container.style.cssText = 'width:100%;height:100%;display:flex;flex-direction:column;'
+
+          // Zona cliccabile (92%) — video o Ken Burns
+          const main = document.createElement('div')
+          main.className = 'ad-root'
+
+          let videoEl: HTMLVideoElement | undefined
+
+          if (config.mode === 'custom_media' && config.mediaUrl) {
+            videoEl = document.createElement('video')
+            videoEl.src = config.mediaUrl
+            // autoplay = false — play/pause gestito manualmente (precaricato prima)
+            videoEl.autoplay  = false
+            videoEl.loop      = true
+            videoEl.muted     = true
+            videoEl.playsInline = true
+            videoEl.preload   = 'auto'
+            videoEl.className = 'ad-video'
+            // Mostra la foto di backup come poster mentre il video si carica
+            if (config.backupImageUrl) videoEl.poster = config.backupImageUrl
+            main.appendChild(videoEl)
+          } else if (config.backupImageUrl) {
+            const kb = document.createElement('div')
+            kb.className = 'ad-kb-img'
+            kb.style.backgroundImage = `url("${config.backupImageUrl}")`
+            main.appendChild(kb)
+          }
+
+          const overlay = document.createElement('div')
+          overlay.className = 'ad-overlay'
+          main.appendChild(overlay)
+
+          if (config.badgeText) {
+            const badge = document.createElement('div')
+            badge.className = 'ad-badge'
+            badge.textContent = config.badgeText
+            main.appendChild(badge)
+          }
+
+          const titleBlock = document.createElement('div')
+          titleBlock.className = 'ad-title-block'
+
+          const nameEl = document.createElement('span')
+          nameEl.className = 'ad-dish-name'
+          nameEl.style.fontFamily = theme.fontSerif
+          nameEl.textContent = config.dishName
+          titleBlock.appendChild(nameEl)
+
+          if (config.dishDescription) {
+            const descEl = document.createElement('span')
+            descEl.className = 'ad-dish-desc'
+            descEl.style.fontFamily = theme.fontSans
+            descEl.textContent = config.dishDescription
+            titleBlock.appendChild(descEl)
+          }
+
+          // Prezzo — normale / prezzo promo barrato / solo promo
+          if (config.promoPrice && config.promoPriceMode === 'strikethrough' && config.price) {
+            const row = document.createElement('div')
+            row.className = 'ad-price-row'
+            row.style.fontFamily = theme.fontSans
+            const origEl = document.createElement('span')
+            origEl.className = 'ad-price-original'; origEl.textContent = config.price
+            const promoEl = document.createElement('span')
+            promoEl.className = 'ad-price-promo'; promoEl.textContent = config.promoPrice
+            row.appendChild(origEl); row.appendChild(promoEl)
+            titleBlock.appendChild(row)
+          } else if (config.promoPrice) {
+            const promoEl = document.createElement('span')
+            promoEl.className = 'ad-price-solo'
+            promoEl.style.fontFamily = theme.fontSans
+            promoEl.textContent = config.promoPrice
+            titleBlock.appendChild(promoEl)
+          } else if (config.price) {
+            const priceEl = document.createElement('span')
+            priceEl.className = 'ad-price'
+            priceEl.style.fontFamily = theme.fontSans
+            priceEl.textContent = config.price
+            titleBlock.appendChild(priceEl)
+          }
+
+          main.appendChild(titleBlock)
+
+          // Click apre la card del piatto collegato
+          main.addEventListener('click', (e) => {
+            e.stopPropagation()
+            if (!config.dishId) return
+            const dish = dishesRef.current.find(d => d.id === config.dishId)
+            if (dish) setModalStack([dish])
+          })
+          // Blocca swipe su turn.js dentro la zona ad
+          main.addEventListener('touchend', (e) => { e.stopPropagation() }, { passive: false })
+
+          // Safe area (8%) — trasparente, nessun evento
+          const safe = document.createElement('div')
+          safe.className = 'ad-safe-area'
+
+          container.appendChild(main)
+          container.appendChild(safe)
+          return { el: container, video: videoEl }
+        }
+
         // ── FASE 2: div + canvas nel DOM ─────────────────────────────────────
         // canvas.width / canvas.height = dimensioni pixel FISSE (mai cambiate).
         // canvas CSS width:100%;height:100% → turn.js scala via transform CSS,
         // senza mai toccare gli attributi → il context 2D non viene mai resettato.
         el.innerHTML = ''
-        for (let i = 1; i <= numPages; i++) {
+        for (const [domIdx, page] of Array.from(pages.entries())) {
           const pageDiv = document.createElement('div')
           pageDiv.style.cssText =
             `width:${dims.w}px;height:${dims.h}px;overflow:hidden;` +
             `background:${pageBgColor};` +
             `backface-visibility:hidden;-webkit-backface-visibility:hidden;`
 
+          if (page.type === 'ad') {
+            const { el: adEl, video } = buildAdPageDOM(page.config)
+            pageDiv.appendChild(adEl)
+            if (video) adVideoMap.set(domIdx + 1, video)  // 1-based turn page
+            el.appendChild(pageDiv)
+            continue
+          }
+
+          const i = page.pdfPage
           const canvas = document.createElement('canvas')
           canvas.width        = cw
           canvas.height       = ch
@@ -689,6 +860,10 @@ export default function FlipbookViewer({
           pageDiv.appendChild(canvas)
           el.appendChild(pageDiv)
         }
+        // Precarica tutti i video ads — il browser inizia a bufferare SUBITO,
+        // prima che l'utente raggiunga quelle pagine. Su iOS best-effort
+        // (il browser richiede interazione utente prima di bufferare).
+        adVideoMap.forEach(vid => { try { vid.load() } catch (_) {} })
         if (cancelled) return
 
         // ── FASE 2.5: render tutte le pagine in parallelo ────────────────────
@@ -701,9 +876,14 @@ export default function FlipbookViewer({
         // ── FASE 2.7: text layer interattivo sopra i canvas ──────────────────
         // Aggiunge span trasparenti con coordinate PDF.js sui piatti riconosciuti.
         // Eseguito solo se ci sono piatti — dopo i canvas, prima di turn.js.
+        // Le pagine Ad non hanno canvas → vengono saltate.
         if (dishesRef.current.length > 0) {
           await Promise.all(
-            Array.from({ length: numPages }, (_, i) => renderTextLayer(i + 1, scale / dpr))
+            pages.map((page, domIdx) =>
+              page.type === 'pdf'
+                ? renderTextLayer(page.pdfPage, scale / dpr, domIdx)
+                : Promise.resolve()
+            )
           )
         }
         if (cancelled) return
@@ -729,10 +909,13 @@ export default function FlipbookViewer({
         // scatta all'inizio sia per drag che per navigazione a tasti.
 
         // Dipinge la pagina `dest` sotto la pagina che si piega (`cur`).
+        // dest è un numero di pagina turn.js → convertiamo in PDF page per la data URL.
+        // Se dest è una pagina Ad non c'è data URL → la zona revealed rimane bianca.
         const paintReveal = (cur: number, dest: number): void => {
           const data = window.$(el!).turn('data') as any
           const wrap = data?.pageWrap?.[cur]
-          const src  = pageDataUrls.get(dest)
+          const pdfPage = turnToPdf.get(dest)
+          const src = pdfPage !== undefined ? pageDataUrls.get(pdfPage) : undefined
           if (wrap && src) {
             window.$(wrap).css({
               backgroundImage:    `url("${src}")`,
@@ -768,8 +951,6 @@ export default function FlipbookViewer({
             // TASTI: corner è null, ma opts.next è già impostato e affidabile.
             start(_evt: Event, opts: any, corner: any) {
               // Disabilita SOLO gli angoli superiori: nessun giro pagina da tl/tr.
-              // preventDefault è il meccanismo nativo di turn.js per annullare la
-              // piega — gli angoli inferiori (bl/br) e lo swipe restano intatti.
               if (corner === 'tl' || corner === 'tr') {
                 (_evt as any).preventDefault?.()
                 return
@@ -777,6 +958,8 @@ export default function FlipbookViewer({
               try {
                 const cur = opts?.page as number
                 if (!cur) return
+                // Pausa il video della pagina corrente appena inizia la piega
+                adVideoMap.get(cur)?.pause()
                 let dest: number
                 if (typeof corner === 'string' &&
                     (corner.charAt(1) === 'l' || corner.charAt(1) === 'r')) {
@@ -792,12 +975,30 @@ export default function FlipbookViewer({
             turned(_evt: Event, page: number) {
               setCurrentPage(page)
               try { clearReveal() } catch (_) {}
+              // Avvia il video dell'ad corrente (già precaricato), pausa tutti gli altri
+              adVideoMap.forEach((vid, turnPage) => {
+                if (turnPage === page) {
+                  vid.currentTime = 0
+                  vid.play().catch(() => {})
+                } else {
+                  try { vid.pause() } catch (_) {}
+                }
+              })
             },
           },
         })
 
+        // Riremap categorie con il mapping appena costruito (turn page numbers).
+        if (categoriesRef.current.length) {
+          setRemappedCats(categoriesRef.current.map(c => ({
+            ...c, targetPage: pdfToTurn.get(c.targetPage) ?? c.targetPage,
+          })))
+        }
+
         setCurrentPage(1)
-        setTotalPages(numPages)
+        // Se la prima pagina è un video ad, avvialo subito (già precaricato)
+        adVideoMap.get(1)?.play().catch(() => {})
+        setTotalPages(pages.length)  // include le pagine Ad
         setPagesReady(true)
         setLoadPhase('ready')
         el.addEventListener('touchstart', onBookTouchStart, { passive: true })
@@ -811,6 +1012,7 @@ export default function FlipbookViewer({
       cancelled = true
       el.removeEventListener('touchstart', onBookTouchStart)
       renderTasks.forEach(t => { try { t.cancel() } catch (_) {} })
+      adVideoMap.forEach(vid => { try { vid.pause() } catch (_) {} })
       try { if (el && window.$?.fn?.turn) window.$(el).turn('destroy') } catch (_) {}
       if (el) el.innerHTML = ''
     }
@@ -1010,7 +1212,7 @@ export default function FlipbookViewer({
               {uiText('backToMenu', lang)}
             </button>
 
-            {categories.map((cat, idx) => (
+            {displayCategories.map((cat, idx) => (
               <button
                 key={cat.label}
                 ref={el => { catBtnRefs.current[idx] = el }}

@@ -19,7 +19,7 @@ import { Spinner } from '@/components/ui/Spinner'
 import type {
   RestaurantTheme, LandingTheme, LandingBackground, MenuTheme, CardTheme,
   MenuBgEffect, PaginationStyle, AlignOpt, AllergenDisplay, PricePosition, DividerType,
-  CategoryFlourish, DishLayout,
+  CategoryFlourish, DishLayout, AdConfig,
 } from '@/lib/theme'
 
 const MAX_MEDIA_BYTES = 5 * 1024 * 1024 // 5MB
@@ -1897,6 +1897,7 @@ export default function CustomizationClient({
   const [logoUploading, setLogoUploading] = useState(false)
   const [fontUploading, setFontUploading] = useState(false)
   const [previewMode,  setPreviewMode]  = useState<'landing' | 'menu' | 'card' | 'hint'>('landing')
+  const [adsOpen,      setAdsOpen]      = useState(false)
   // Sub-tab attivo dentro "Menu": null = "Generale" (tema condiviso), altrimenti
   // l'id del menu il cui override per-menu si sta modificando.
   const [activeMenuTab, setActiveMenuTab] = useState<string | null>(null)
@@ -2174,6 +2175,8 @@ export default function CustomizationClient({
     setVidUploading(false)
   }
 
+  function setAds(ads: AdConfig[]) { setTheme(t => ({ ...t, ads })); setSaved(false) }
+
   async function handleSave() {
     setSaving(true); setError(null); setSaved(false)
     try { await saveTheme(restaurantId, theme as unknown as object); setSaved(true) }
@@ -2261,15 +2264,25 @@ export default function CustomizationClient({
 
         {/* Mode tabs — la tab Pop-up esiste solo in modalità avanzata */}
         {(baseMode ? (['landing', 'menu', 'card'] as const) : (['landing', 'menu', 'card', 'hint'] as const)).map(mode => (
-          <button key={mode} type="button" onClick={() => setPreviewMode(mode)}
+          <button key={mode} type="button" onClick={() => { setPreviewMode(mode); setAdsOpen(false) }}
             className={`px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider border transition-colors ${
-              previewMode === mode
+              !adsOpen && previewMode === mode
                 ? 'bg-gray-900 text-white border-gray-900'
                 : 'bg-white text-gray-500 border-gray-200 hover:border-gray-400'
             }`}>
             {mode === 'landing' ? 'Landing' : mode === 'menu' ? 'Menu' : mode === 'card' ? 'Card' : 'Pop-up'}
           </button>
         ))}
+
+        {/* Promozioni — gestione pagine Ad nel flipbook */}
+        <button type="button" onClick={() => setAdsOpen(o => !o)}
+          className={`px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider border transition-colors ${
+            adsOpen
+              ? 'bg-gray-900 text-white border-gray-900'
+              : 'bg-white text-gray-500 border-gray-200 hover:border-gray-400'
+          }`}>
+          Promozioni
+        </button>
 
         {/* Sub-tab per-menu: Generale + un tab per ogni menu del ristorante.
             Visibili solo nella tab Menu e solo se c'è più di un menu. */}
@@ -2358,7 +2371,9 @@ export default function CustomizationClient({
           Desktop: side-by-side (preview shrinks as panel opens).
           Mobile:  full-width preview with chip bar above; dropdown overlays
                    the top portion of the iframe leaving most of it visible. */}
-      {baseMode ? (
+      {adsOpen ? (
+        <AdsPanel ads={theme.ads} setAds={setAds} restaurantId={restaurantId} />
+      ) : baseMode ? (
         /* ── Modalità base: anteprima + pannello preset/leve, sempre aperto.
               Desktop affiancati; mobile impilati (pannello scrollabile sotto). */
         <div className="flex-1 flex flex-col sm:flex-row min-h-0 rounded-lg border border-gray-200 overflow-hidden">
@@ -2441,6 +2456,330 @@ export default function CustomizationClient({
       </div>
       )}
 
+    </div>
+  )
+}
+
+// ── AdsPanel ──────────────────────────────────────────────────────────────────
+
+interface MenuOption { id: string; name: string }
+interface DishOption {
+  id: string; name: string; price: number | null; description: string | null
+  image_url: string | null; category: string; menu_id: string; menu_name: string
+}
+
+function AdsPanel({ ads, setAds, restaurantId }: {
+  ads: AdConfig[]; setAds: (a: AdConfig[]) => void; restaurantId: string
+}) {
+  const EMPTY = (): AdConfig => ({
+    insertAfterPdfPage: 1, menuId: '', dishId: '', mode: 'auto_generated',
+    backupImageUrl: '', dishName: '', dishDescription: '', badgeText: '', price: '', promoPrice: '', promoPriceMode: 'solo',
+  })
+
+  const [adding,        setAdding]        = useState(false)
+  const [form,          setForm]          = useState<AdConfig>(EMPTY())
+  // pageStr: stato stringa separato per l'input pagina — evita che il campo si blocchi su "1"
+  const [pageStr,       setPageStr]       = useState('1')
+  const [menuOptions,   setMenuOptions]   = useState<MenuOption[]>([])
+  const [dishes,        setDishes]        = useState<DishOption[]>([])
+  const [loading,       setLoading]       = useState(true)
+  const [imgUploading,  setImgUploading]  = useState(false)
+  const [imgError,      setImgError]      = useState<string | null>(null)
+  const [vidUploading,  setVidUploading]  = useState(false)
+  const [vidError,      setVidError]      = useState<string | null>(null)
+  const imgInputRef = useRef<HTMLInputElement>(null)
+  const vidInputRef = useRef<HTMLInputElement>(null)
+
+  // Carica menu + piatti una sola volta al mount
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      const supabase = createClient()
+      const { data: menus } = await supabase
+        .from('menus')
+        .select('id, name, dishes(id, name, description, price, image_url, category)')
+        .eq('restaurant_id', restaurantId)
+        .eq('is_active', true)
+        .order('sort_order', { ascending: true })
+      if (cancelled || !menus) return
+      setMenuOptions((menus as any[]).map(m => ({ id: m.id, name: m.name })))
+      setDishes((menus as any[]).flatMap(m =>
+        (m.dishes as any[]).map((d: any) => ({ ...d, menu_id: m.id, menu_name: m.name }))
+      ))
+      setLoading(false)
+    })()
+    return () => { cancelled = true }
+  }, [restaurantId])
+
+  async function handleImgUpload(file: File) {
+    if (file.size > MAX_MEDIA_BYTES) { setImgError('Immagine troppo grande (max 5 MB).'); return }
+    setImgUploading(true); setImgError(null)
+    const supabase = createClient()
+    const ext  = file.name.split('.').pop()?.toLowerCase() ?? 'jpg'
+    const { data, error } = await supabase.storage
+      .from('restaurant-assets').upload(`${restaurantId}/ads/${Date.now()}.${ext}`, file, { upsert: false })
+    setImgUploading(false)
+    if (error || !data) { setImgError('Upload fallito: ' + error?.message); return }
+    const { data: pub } = supabase.storage.from('restaurant-assets').getPublicUrl(data.path)
+    setForm(f => ({ ...f, backupImageUrl: pub.publicUrl }))
+  }
+
+  async function handleVidUpload(rawFile: File) {
+    setVidUploading(true); setVidError(null)
+    let file = rawFile
+    if (rawFile.size > MAX_MEDIA_BYTES) {
+      setVidError('Compressione in corso…')
+      file = await compressVideoFile(rawFile)
+      if (file.size > MAX_MEDIA_BYTES) {
+        setVidError(`Video ancora troppo grande (${(file.size / 1024 / 1024).toFixed(1)} MB, max 5 MB). Usa un clip più corto.`)
+        setVidUploading(false); return
+      }
+      setVidError(null)
+    }
+    const supabase = createClient()
+    const ext  = file.name.split('.').pop()?.toLowerCase() ?? 'mp4'
+    const { data, error } = await supabase.storage
+      .from('restaurant-assets').upload(`${restaurantId}/ads/${Date.now()}.${ext}`, file, { upsert: false })
+    setVidUploading(false)
+    if (error || !data) { setVidError('Upload fallito: ' + error?.message); return }
+    const { data: pub } = supabase.storage.from('restaurant-assets').getPublicUrl(data.path)
+    setForm(f => ({ ...f, mediaUrl: pub.publicUrl, mode: 'custom_media' }))
+  }
+
+  function pickDish(dishId: string) {
+    const d = dishes.find(x => x.id === dishId)
+    if (!d) { setForm(f => ({ ...f, dishId: '' })); return }
+    setForm(f => ({
+      ...f, dishId: d.id, dishName: d.name,
+      dishDescription: d.description ?? '',
+      price: d.price != null ? `€ ${d.price.toFixed(2).replace('.', ',')}` : f.price,
+      backupImageUrl: d.image_url ?? f.backupImageUrl,
+    }))
+  }
+
+  function resetForm() { setForm(EMPTY()); setPageStr('1') }
+
+  function handleAdd() {
+    if (!form.dishName.trim() || !form.menuId) return
+    const n = Math.max(1, parseInt(pageStr) || 1)
+    setAds([...ads, {
+      ...form,
+      insertAfterPdfPage: n,
+      menuId:          form.menuId    || undefined,
+      dishDescription: form.dishDescription?.trim() || undefined,
+      badgeText:       form.badgeText?.trim()   || undefined,
+      price:           form.price?.trim()        || undefined,
+      promoPrice:      form.promoPrice?.trim()   || undefined,
+      promoPriceMode:  form.promoPrice?.trim()   ? (form.promoPriceMode ?? 'solo') : undefined,
+      mediaUrl:        form.mediaUrl?.trim()     || undefined,
+    }])
+    resetForm()
+    setAdding(false)
+  }
+
+  const filteredDishes = form.menuId ? dishes.filter(d => d.menu_id === form.menuId) : []
+  const INPUT = 'mt-1 w-full text-xs border border-gray-200 rounded px-2.5 py-1.5 focus:outline-none focus:border-gray-400 bg-white'
+
+  return (
+    <div className="flex-1 overflow-y-auto p-6 bg-white rounded-lg border border-gray-200">
+      <div className="max-w-xl mx-auto space-y-6">
+
+        <div>
+          <h2 className="text-sm font-semibold text-gray-900">Promozioni nel flipbook</h2>
+          <p className="mt-1 text-xs text-gray-500 leading-relaxed">
+            Pagine con animazione Ken Burns o video iniettate tra le pagine del menu.
+            Clicca sulla promo per aprire la card del piatto. Ricorda di <strong>Salvare</strong>.
+          </p>
+        </div>
+
+        {ads.length === 0 && !adding && (
+          <p className="text-xs text-gray-400 italic">Nessuna promozione configurata.</p>
+        )}
+
+        <div className="space-y-2">
+          {ads.map((ad, idx) => (
+            <div key={idx} className="flex items-start justify-between gap-3 px-3 py-2.5 rounded-lg border border-gray-200 bg-gray-50">
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-medium text-gray-900 truncate">{ad.dishName}</p>
+                <p className="text-[11px] text-gray-500 mt-0.5">
+                  {menuOptions.find(m => m.id === ad.menuId)?.name ?? 'Tutti i menu'} · pag. {ad.insertAfterPdfPage}
+                  {ad.badgeText  && <span> · <em>{ad.badgeText}</em></span>}
+                  {ad.promoPrice ? <span> · <s>{ad.price}</s> {ad.promoPrice}</span> : ad.price ? <span> · {ad.price}</span> : null}
+                  {ad.mediaUrl   && <span> · 🎬</span>}
+                  {ad.dishId     && <span className="text-green-600"> · card ✓</span>}
+                </p>
+              </div>
+              <button type="button" onClick={() => setAds(ads.filter((_, i) => i !== idx))}
+                className="shrink-0 text-gray-400 hover:text-red-500 transition-colors text-xl leading-none">×</button>
+            </div>
+          ))}
+        </div>
+
+        {adding ? (
+          <div className="rounded-lg border border-gray-200 p-4 space-y-4 bg-gray-50">
+            <p className="text-xs font-semibold text-gray-700">Nuova promozione</p>
+
+            {/* ── 1. Menu (obbligatorio) ── */}
+            <label className="block">
+              <span className="text-[11px] text-gray-500">Menu * {loading && '(caricamento…)'}</span>
+              <select className={INPUT} value={form.menuId ?? ''} disabled={loading}
+                onChange={e => setForm(f => ({ ...f, menuId: e.target.value, dishId: '', dishName: '', price: '', backupImageUrl: '' }))}>
+                <option value="">— seleziona menu —</option>
+                {menuOptions.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+              </select>
+            </label>
+
+            {/* ── 2. Piatto collegato (opzionale, filtrato per menu) ── */}
+            {form.menuId && (
+              <label className="block">
+                <span className="text-[11px] text-gray-500">Piatto collegato (opzionale — apre la card al click)</span>
+                <select className={INPUT} value={form.dishId}
+                  onChange={e => pickDish(e.target.value)}>
+                  <option value="">— nessun collegamento —</option>
+                  {filteredDishes.map(d => (
+                    <option key={d.id} value={d.id}>{d.name}{d.category ? ` · ${d.category}` : ''}</option>
+                  ))}
+                </select>
+                {form.dishId && <p className="mt-1 text-[11px] text-green-600">✓ Al click si aprirà la card del piatto</p>}
+              </label>
+            )}
+
+            <div className="grid grid-cols-2 gap-3">
+              {/* ── 3. Nome ── */}
+              <label className="col-span-2 block">
+                <span className="text-[11px] text-gray-500">Nome nella promo *</span>
+                <input className={INPUT} value={form.dishName}
+                  onChange={e => setForm(f => ({ ...f, dishName: e.target.value }))}
+                  placeholder="es. Tagliere Gourmet" />
+              </label>
+
+              {/* ── 3b. Descrizione ── */}
+              <label className="col-span-2 block">
+                <span className="text-[11px] text-gray-500">Descrizione (opzionale — appare sotto il nome)</span>
+                <textarea className={INPUT + ' resize-none'} rows={2}
+                  value={form.dishDescription ?? ''}
+                  onChange={e => setForm(f => ({ ...f, dishDescription: e.target.value }))}
+                  placeholder="es. Selezione di salumi e formaggi artigianali…" />
+              </label>
+
+              {/* ── 4. Pagina (fix: stringa locale, valida solo su blur) ── */}
+              <label className="block">
+                <span className="text-[11px] text-gray-500">Dopo pagina PDF n°</span>
+                <input type="number" min={1} className={INPUT}
+                  value={pageStr}
+                  onChange={e => setPageStr(e.target.value)}
+                  onBlur={() => {
+                    const n = Math.max(1, parseInt(pageStr) || 1)
+                    setPageStr(String(n))
+                    setForm(f => ({ ...f, insertAfterPdfPage: n }))
+                  }} />
+              </label>
+
+              {/* ── 5. Badge ── */}
+              <label className="block">
+                <span className="text-[11px] text-gray-500">Badge (opzionale)</span>
+                <input className={INPUT} value={form.badgeText ?? ''}
+                  onChange={e => setForm(f => ({ ...f, badgeText: e.target.value }))}
+                  placeholder="es. Specialità della Casa" />
+              </label>
+
+              {/* ── 6. Prezzi ── */}
+              <label className="block">
+                <span className="text-[11px] text-gray-500">Prezzo originale</span>
+                <input className={INPUT} value={form.price ?? ''}
+                  onChange={e => setForm(f => ({ ...f, price: e.target.value }))}
+                  placeholder="es. € 18,00" />
+              </label>
+
+              <label className="block">
+                <span className="text-[11px] text-gray-500">Prezzo promo</span>
+                <input className={INPUT} value={form.promoPrice ?? ''}
+                  onChange={e => setForm(f => ({ ...f, promoPrice: e.target.value }))}
+                  placeholder="es. € 14,00" />
+              </label>
+
+              {/* ── Modalità prezzo promo (visibile solo se promoPrice è impostato) ── */}
+              {form.promoPrice?.trim() && (
+                <div className="col-span-2">
+                  <span className="text-[11px] text-gray-500 block mb-1.5">Visualizzazione prezzo promo</span>
+                  <div className="flex gap-3">
+                    {([['strikethrough', `${form.price || '€ 18'} → ${form.promoPrice} (barrato)`],
+                       ['solo',          `Solo ${form.promoPrice} in evidenza`]] as const).map(([val, label]) => (
+                      <label key={val} className="flex items-center gap-1.5 cursor-pointer text-[11px] text-gray-700">
+                        <input type="radio" name="promoPriceMode" value={val}
+                          checked={(form.promoPriceMode ?? 'solo') === val}
+                          onChange={() => setForm(f => ({ ...f, promoPriceMode: val }))} />
+                        {label}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* ── 7. Foto sfondo (Ken Burns) ── */}
+            <div>
+              <span className="text-[11px] text-gray-500">Foto sfondo — Ken Burns</span>
+              <div className="mt-1 flex gap-2 items-center">
+                <input className={INPUT + ' flex-1 min-w-0'} value={form.backupImageUrl}
+                  onChange={e => setForm(f => ({ ...f, backupImageUrl: e.target.value }))}
+                  placeholder="https://… oppure carica →" />
+                <button type="button" onClick={() => imgInputRef.current?.click()} disabled={imgUploading}
+                  className="shrink-0 px-3 py-1.5 text-xs border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-50 transition-colors whitespace-nowrap">
+                  {imgUploading ? 'Caricamento…' : 'Sfoglia foto'}
+                </button>
+                <input ref={imgInputRef} type="file" accept="image/*" className="hidden"
+                  onChange={e => { const f = e.target.files?.[0]; if (f) handleImgUpload(f); e.target.value = '' }} />
+              </div>
+              {imgError && <p className="mt-1 text-[11px] text-red-500">{imgError}</p>}
+              {form.backupImageUrl && !imgUploading && (
+                <img src={form.backupImageUrl} alt=""
+                  className="mt-2 h-20 w-full rounded object-cover border border-gray-200"
+                  onError={e => (e.currentTarget.style.display = 'none')} />
+              )}
+            </div>
+
+            {/* ── 8. Video promo (opzionale, sovrascrive foto) ── */}
+            <div>
+              <span className="text-[11px] text-gray-500">Video promo <span className="text-gray-400">(opzionale — sovrascrive la foto)</span></span>
+              <div className="mt-1 flex gap-2 items-center">
+                <input className={INPUT + ' flex-1 min-w-0'} value={form.mediaUrl ?? ''}
+                  onChange={e => setForm(f => ({ ...f, mediaUrl: e.target.value, mode: e.target.value ? 'custom_media' : 'auto_generated' }))}
+                  placeholder="https://… oppure carica →" />
+                <button type="button" onClick={() => vidInputRef.current?.click()} disabled={vidUploading}
+                  className="shrink-0 px-3 py-1.5 text-xs border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-50 transition-colors whitespace-nowrap">
+                  {vidUploading ? 'Caricamento…' : 'Sfoglia video'}
+                </button>
+                <input ref={vidInputRef} type="file" accept="video/*" className="hidden"
+                  onChange={e => { const f = e.target.files?.[0]; if (f) handleVidUpload(f); e.target.value = '' }} />
+              </div>
+              {vidError && <p className="mt-1 text-[11px] text-red-500">{vidError}</p>}
+              {form.mediaUrl && !vidUploading && (
+                <video src={form.mediaUrl} muted playsInline
+                  className="mt-2 h-20 w-full rounded object-cover border border-gray-200" />
+              )}
+            </div>
+
+            <div className="flex items-center gap-2 pt-1 border-t border-gray-200">
+              <button type="button" onClick={handleAdd}
+                disabled={!form.dishName.trim() || !form.menuId}
+                className="px-3 py-1.5 text-xs bg-gray-900 text-white rounded disabled:opacity-40 hover:bg-gray-700 transition-colors">
+                Aggiungi
+              </button>
+              <button type="button" onClick={() => { setAdding(false); resetForm() }}
+                className="px-3 py-1.5 text-xs text-gray-500 hover:text-gray-800 transition-colors">
+                Annulla
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button type="button" onClick={() => setAdding(true)}
+            className="flex items-center gap-1.5 text-xs text-gray-600 hover:text-gray-900 transition-colors">
+            <span className="text-base leading-none font-light">+</span>
+            Aggiungi promozione
+          </button>
+        )}
+      </div>
     </div>
   )
 }
