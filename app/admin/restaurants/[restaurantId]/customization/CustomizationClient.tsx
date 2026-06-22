@@ -2474,10 +2474,27 @@ function AdsPanel({ ads, setAds, restaurantId }: {
     insertAfterPdfPage: 1, dishId: '', mode: 'auto_generated',
     backupImageUrl: '', dishName: '', badgeText: '', price: '',
   })
-  const [adding,  setAdding]  = useState(false)
-  const [form,    setForm]    = useState<AdConfig>(EMPTY())
-  const [dishes,  setDishes]  = useState<DishOption[]>([])
-  const [loading, setLoading] = useState(true)
+  const [adding,       setAdding]       = useState(false)
+  const [form,         setForm]         = useState<AdConfig>(EMPTY())
+  const [dishes,       setDishes]       = useState<DishOption[]>([])
+  const [loading,      setLoading]      = useState(true)
+  const [imgUploading, setImgUploading] = useState(false)
+  const [imgError,     setImgError]     = useState<string | null>(null)
+  const imgInputRef = useRef<HTMLInputElement>(null)
+
+  async function handleImgUpload(file: File) {
+    if (file.size > MAX_MEDIA_BYTES) { setImgError('Immagine troppo grande (max 5 MB).'); return }
+    setImgUploading(true); setImgError(null)
+    const supabase = createClient()
+    const ext  = file.name.split('.').pop()?.toLowerCase() ?? 'jpg'
+    const path = `${restaurantId}/ads/${Date.now()}.${ext}`
+    const { data, error } = await supabase.storage
+      .from('restaurant-assets').upload(path, file, { upsert: false })
+    setImgUploading(false)
+    if (error || !data) { setImgError('Upload fallito: ' + error?.message); return }
+    const { data: pub } = supabase.storage.from('restaurant-assets').getPublicUrl(data.path)
+    setForm(f => ({ ...f, backupImageUrl: pub.publicUrl }))
+  }
 
   // Carica piatti dal DB (una sola volta al mount del pannello)
   useEffect(() => {
@@ -2625,16 +2642,29 @@ function AdsPanel({ ads, setAds, restaurantId }: {
                   placeholder="es. Specialità della Casa" />
               </label>
 
-              <label className="col-span-2 block">
-                <span className="text-[11px] text-gray-500">URL foto sfondo — Ken Burns</span>
-                <input className={INPUT}
-                  value={form.backupImageUrl}
-                  onChange={e => setForm(f => ({ ...f, backupImageUrl: e.target.value }))}
-                  placeholder="https://..." />
-                <p className="mt-0.5 text-[10px] text-gray-400">
-                  Puoi usare la foto del piatto caricata nel gestionale.
-                </p>
-              </label>
+              <div className="col-span-2">
+                <span className="text-[11px] text-gray-500">Foto sfondo — Ken Burns</span>
+                <div className="mt-1 flex gap-2 items-center">
+                  <input className={INPUT + ' flex-1 min-w-0'}
+                    value={form.backupImageUrl}
+                    onChange={e => setForm(f => ({ ...f, backupImageUrl: e.target.value }))}
+                    placeholder="https://... oppure carica →" />
+                  <button type="button"
+                    onClick={() => imgInputRef.current?.click()}
+                    disabled={imgUploading}
+                    className="shrink-0 px-3 py-1.5 text-xs border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-50 transition-colors whitespace-nowrap">
+                    {imgUploading ? 'Caricamento…' : 'Sfoglia'}
+                  </button>
+                  <input ref={imgInputRef} type="file" accept="image/*" className="hidden"
+                    onChange={e => { const f = e.target.files?.[0]; if (f) handleImgUpload(f); e.target.value = '' }} />
+                </div>
+                {imgError && <p className="mt-1 text-[11px] text-red-500">{imgError}</p>}
+                {form.backupImageUrl && !imgUploading && (
+                  <img src={form.backupImageUrl} alt=""
+                    className="mt-2 h-20 w-full rounded object-cover border border-gray-200"
+                    onError={e => (e.currentTarget.style.display = 'none')} />
+                )}
+              </div>
             </div>
 
             <div className="flex items-center gap-2 pt-1">
