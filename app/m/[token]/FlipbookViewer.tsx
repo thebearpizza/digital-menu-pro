@@ -4,23 +4,11 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import DishModal, { DishData } from './DishModal'
 import { useIsMobilePreview } from './EditHandle'
 import { fontStack, hexToRgb, toOpaqueColor, PAGINATION_OPTIONS, menuBackgroundCss } from '@/lib/theme'
-import type { RestaurantTheme } from '@/lib/theme'
+import type { RestaurantTheme, AdConfig } from '@/lib/theme'
 import { ALL_LANGS, LANG_FLAGS, LANG_LABELS, uiText, type Lang } from '@/lib/translations'
 import { FlagIcon } from '@/components/ui/FlagIcon'
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// ADS — Pagine pubblicitarie iniettabili nel flipbook
-// ═══════════════════════════════════════════════════════════════════════════════
-export interface AdConfig {
-  insertAfterPdfPage: number          // inietta dopo questa pagina PDF
-  dishId:             string          // apre la card del piatto ('' = nessuna azione)
-  mode:               'custom_media' | 'auto_generated'
-  mediaUrl?:          string          // video/gif per custom_media
-  backupImageUrl:     string          // foto del piatto per il Ken Burns engine
-  dishName:           string
-  badgeText?:         string          // es. "Specialità della Casa"
-  price?:             string          // es. "€ 12"
-}
+// AdConfig is defined in lib/theme.ts and re-used here.
 
 type FlipbookPage =
   | { type: 'pdf'; pdfPage: number }
@@ -78,18 +66,7 @@ const menuConfig = {
   // { insertAfterPdfPage: 1, dishId: '', mode: 'auto_generated',
   //   backupImageUrl: 'https://picsum.photos/seed/dmp/600/900',
   //   dishName: 'Specialità della Casa', badgeText: 'Oggi consigliamo', price: '€ 14' }
-  ads: [
-    // DEMO — rimuovere prima del merge in produzione
-    {
-      insertAfterPdfPage: 1,
-      dishId:             '',
-      mode:               'auto_generated',
-      backupImageUrl:     'https://picsum.photos/seed/dmp/600/900',
-      dishName:           'Tagliere Gourmet',
-      badgeText:          'Oggi consigliamo',
-      price:              '€ 18',
-    },
-  ] as AdConfig[],
+  ads: [] as AdConfig[],  // default se non arriva nulla dal DB
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -148,6 +125,8 @@ interface Props {
   // categorie mostra la bandierina al posto del contatore pagine.
   lang?:         Lang
   onLangChange?: (l: Lang) => void
+  // Pagine pubblicitarie dal pannello admin (sovrascrivono menuConfig.ads).
+  ads?: AdConfig[]
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -166,6 +145,7 @@ export default function FlipbookViewer({
   onDishOpen,
   lang: langProp,
   onLangChange,
+  ads: adsProp,
 }: Props) {
   const lang = langProp ?? 'it'
   const [langMenuOpen, setLangMenuOpen] = useState(false)
@@ -217,7 +197,8 @@ export default function FlipbookViewer({
   const [pagesReady,    setPagesReady]   = useState(false)
   const isMobilePreview = useIsMobilePreview()
 
-  const { flipbook, ads } = menuConfig
+  const { flipbook } = menuConfig
+  const ads = adsProp ?? menuConfig.ads
   // Le categorie vengono ESCLUSIVAMENTE dal menu selezionato tramite useMenuPDF.
   // Nessun fallback hardcoded — ogni menu ha le sue categorie dinamiche.
   const categories = categoriesProp ?? EMPTY_CATEGORIES

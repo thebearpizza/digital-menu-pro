@@ -19,7 +19,7 @@ import { Spinner } from '@/components/ui/Spinner'
 import type {
   RestaurantTheme, LandingTheme, LandingBackground, MenuTheme, CardTheme,
   MenuBgEffect, PaginationStyle, AlignOpt, AllergenDisplay, PricePosition, DividerType,
-  CategoryFlourish, DishLayout,
+  CategoryFlourish, DishLayout, AdConfig,
 } from '@/lib/theme'
 
 const MAX_MEDIA_BYTES = 5 * 1024 * 1024 // 5MB
@@ -1897,6 +1897,7 @@ export default function CustomizationClient({
   const [logoUploading, setLogoUploading] = useState(false)
   const [fontUploading, setFontUploading] = useState(false)
   const [previewMode,  setPreviewMode]  = useState<'landing' | 'menu' | 'card' | 'hint'>('landing')
+  const [adsOpen,      setAdsOpen]      = useState(false)
   // Sub-tab attivo dentro "Menu": null = "Generale" (tema condiviso), altrimenti
   // l'id del menu il cui override per-menu si sta modificando.
   const [activeMenuTab, setActiveMenuTab] = useState<string | null>(null)
@@ -2174,6 +2175,8 @@ export default function CustomizationClient({
     setVidUploading(false)
   }
 
+  function setAds(ads: AdConfig[]) { setTheme(t => ({ ...t, ads })); setSaved(false) }
+
   async function handleSave() {
     setSaving(true); setError(null); setSaved(false)
     try { await saveTheme(restaurantId, theme as unknown as object); setSaved(true) }
@@ -2261,15 +2264,25 @@ export default function CustomizationClient({
 
         {/* Mode tabs — la tab Pop-up esiste solo in modalità avanzata */}
         {(baseMode ? (['landing', 'menu', 'card'] as const) : (['landing', 'menu', 'card', 'hint'] as const)).map(mode => (
-          <button key={mode} type="button" onClick={() => setPreviewMode(mode)}
+          <button key={mode} type="button" onClick={() => { setPreviewMode(mode); setAdsOpen(false) }}
             className={`px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider border transition-colors ${
-              previewMode === mode
+              !adsOpen && previewMode === mode
                 ? 'bg-gray-900 text-white border-gray-900'
                 : 'bg-white text-gray-500 border-gray-200 hover:border-gray-400'
             }`}>
             {mode === 'landing' ? 'Landing' : mode === 'menu' ? 'Menu' : mode === 'card' ? 'Card' : 'Pop-up'}
           </button>
         ))}
+
+        {/* Promozioni — gestione pagine Ad nel flipbook */}
+        <button type="button" onClick={() => setAdsOpen(o => !o)}
+          className={`px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider border transition-colors ${
+            adsOpen
+              ? 'bg-gray-900 text-white border-gray-900'
+              : 'bg-white text-gray-500 border-gray-200 hover:border-gray-400'
+          }`}>
+          Promozioni
+        </button>
 
         {/* Sub-tab per-menu: Generale + un tab per ogni menu del ristorante.
             Visibili solo nella tab Menu e solo se c'è più di un menu. */}
@@ -2358,7 +2371,9 @@ export default function CustomizationClient({
           Desktop: side-by-side (preview shrinks as panel opens).
           Mobile:  full-width preview with chip bar above; dropdown overlays
                    the top portion of the iframe leaving most of it visible. */}
-      {baseMode ? (
+      {adsOpen ? (
+        <AdsPanel ads={theme.ads} setAds={setAds} />
+      ) : baseMode ? (
         /* ── Modalità base: anteprima + pannello preset/leve, sempre aperto.
               Desktop affiancati; mobile impilati (pannello scrollabile sotto). */
         <div className="flex-1 flex flex-col sm:flex-row min-h-0 rounded-lg border border-gray-200 overflow-hidden">
@@ -2441,6 +2456,138 @@ export default function CustomizationClient({
       </div>
       )}
 
+    </div>
+  )
+}
+
+// ── AdsPanel ──────────────────────────────────────────────────────────────────
+
+function AdsPanel({ ads, setAds }: { ads: AdConfig[]; setAds: (a: AdConfig[]) => void }) {
+  const EMPTY = (): AdConfig => ({
+    insertAfterPdfPage: 1,
+    dishId: '',
+    mode: 'auto_generated',
+    backupImageUrl: '',
+    dishName: '',
+    badgeText: '',
+    price: '',
+  })
+  const [adding, setAdding] = useState(false)
+  const [form,   setForm]   = useState<AdConfig>(EMPTY())
+
+  function handleAdd() {
+    if (!form.dishName.trim()) return
+    setAds([...ads, {
+      ...form,
+      badgeText: form.badgeText?.trim() || undefined,
+      price:     form.price?.trim()     || undefined,
+      mediaUrl:  form.mediaUrl?.trim()  || undefined,
+    }])
+    setForm(EMPTY())
+    setAdding(false)
+  }
+
+  return (
+    <div className="flex-1 overflow-y-auto p-6 bg-white rounded-lg border border-gray-200">
+      <div className="max-w-xl mx-auto space-y-6">
+
+        <div>
+          <h2 className="text-sm font-semibold text-gray-900">Promozioni nel flipbook</h2>
+          <p className="mt-1 text-xs text-gray-500 leading-relaxed">
+            Pagine con animazione Ken Burns (o video) iniettate tra le pagine del menu.
+            Ogni voce appare dopo la pagina PDF indicata. Ricorda di <strong>Salvare</strong> il tema.
+          </p>
+        </div>
+
+        {ads.length === 0 && !adding && (
+          <p className="text-xs text-gray-400 italic">Nessuna promozione configurata.</p>
+        )}
+
+        <div className="space-y-2">
+          {ads.map((ad, idx) => (
+            <div key={idx}
+              className="flex items-start justify-between gap-3 px-3 py-2.5 rounded-lg border border-gray-200 bg-gray-50">
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-medium text-gray-900 truncate">{ad.dishName}</p>
+                <p className="text-[11px] text-gray-500 mt-0.5">
+                  Dopo pag. PDF {ad.insertAfterPdfPage}
+                  {ad.badgeText && <span> · <em>{ad.badgeText}</em></span>}
+                  {ad.price     && <span> · {ad.price}</span>}
+                </p>
+              </div>
+              <button type="button" onClick={() => setAds(ads.filter((_, i) => i !== idx))}
+                className="shrink-0 text-gray-400 hover:text-red-500 transition-colors text-xl leading-none">
+                ×
+              </button>
+            </div>
+          ))}
+        </div>
+
+        {adding ? (
+          <div className="rounded-lg border border-gray-200 p-4 space-y-3 bg-gray-50">
+            <p className="text-xs font-semibold text-gray-700">Nuova promozione</p>
+
+            <div className="grid grid-cols-2 gap-3">
+              <label className="col-span-2 block">
+                <span className="text-[11px] text-gray-500">Nome piatto *</span>
+                <input className="mt-1 w-full text-xs border border-gray-200 rounded px-2.5 py-1.5 focus:outline-none focus:border-gray-400 bg-white"
+                  value={form.dishName}
+                  onChange={e => setForm(f => ({ ...f, dishName: e.target.value }))}
+                  placeholder="es. Tagliere Gourmet" />
+              </label>
+
+              <label className="block">
+                <span className="text-[11px] text-gray-500">Dopo pagina PDF n°</span>
+                <input type="number" min={1}
+                  className="mt-1 w-full text-xs border border-gray-200 rounded px-2.5 py-1.5 focus:outline-none focus:border-gray-400 bg-white"
+                  value={form.insertAfterPdfPage}
+                  onChange={e => setForm(f => ({ ...f, insertAfterPdfPage: Math.max(1, Number(e.target.value) || 1) }))} />
+              </label>
+
+              <label className="block">
+                <span className="text-[11px] text-gray-500">Prezzo (opzionale)</span>
+                <input className="mt-1 w-full text-xs border border-gray-200 rounded px-2.5 py-1.5 focus:outline-none focus:border-gray-400 bg-white"
+                  value={form.price ?? ''}
+                  onChange={e => setForm(f => ({ ...f, price: e.target.value }))}
+                  placeholder="es. € 18" />
+              </label>
+
+              <label className="col-span-2 block">
+                <span className="text-[11px] text-gray-500">Badge (opzionale)</span>
+                <input className="mt-1 w-full text-xs border border-gray-200 rounded px-2.5 py-1.5 focus:outline-none focus:border-gray-400 bg-white"
+                  value={form.badgeText ?? ''}
+                  onChange={e => setForm(f => ({ ...f, badgeText: e.target.value }))}
+                  placeholder="es. Specialità della Casa" />
+              </label>
+
+              <label className="col-span-2 block">
+                <span className="text-[11px] text-gray-500">URL foto sfondo (Ken Burns)</span>
+                <input className="mt-1 w-full text-xs border border-gray-200 rounded px-2.5 py-1.5 focus:outline-none focus:border-gray-400 bg-white"
+                  value={form.backupImageUrl}
+                  onChange={e => setForm(f => ({ ...f, backupImageUrl: e.target.value }))}
+                  placeholder="https://..." />
+              </label>
+            </div>
+
+            <div className="flex items-center gap-2 pt-1">
+              <button type="button" onClick={handleAdd} disabled={!form.dishName.trim()}
+                className="px-3 py-1.5 text-xs bg-gray-900 text-white rounded disabled:opacity-40 hover:bg-gray-700 transition-colors">
+                Aggiungi
+              </button>
+              <button type="button" onClick={() => { setAdding(false); setForm(EMPTY()) }}
+                className="px-3 py-1.5 text-xs text-gray-500 hover:text-gray-800 transition-colors">
+                Annulla
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button type="button" onClick={() => setAdding(true)}
+            className="flex items-center gap-1.5 text-xs text-gray-600 hover:text-gray-900 transition-colors">
+            <span className="text-base leading-none font-light">+</span>
+            Aggiungi promozione
+          </button>
+        )}
+      </div>
     </div>
   )
 }
