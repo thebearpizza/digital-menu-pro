@@ -750,6 +750,10 @@ export default function FlipbookViewer({
         pdfToTurnRef.current = pdfToTurn
 
         // ── Helper: costruisce il DOM di una pagina Ad ───────────────────────
+        // Safe area fissa in px — spazio minimo per rendere visibili i tasti
+        // Prec/Succ (absolute bottom-3 = 12px + testo 10px + buffer = ~28px).
+        // Px fissi (non %) sono immuni al ricalcolo turn.js durante il clone.
+        const AD_SAFE_PX = 28
         const buildAdPageDOM = (config: AdConfig): { el: HTMLElement; video?: HTMLVideoElement; canvas?: HTMLCanvasElement } => {
           const container = document.createElement('div')
           container.style.cssText = 'width:100%;height:100%;display:flex;flex-direction:column;'
@@ -762,7 +766,7 @@ export default function FlipbookViewer({
           // massimizza lo spazio video lasciando i tasti navigazione visibili.
           const main = document.createElement('div')
           main.className = 'ad-root'
-          main.style.setProperty('height', 'calc(100% - 46px)', 'important')
+          main.style.setProperty('height', `calc(100% - ${AD_SAFE_PX}px)`, 'important')
 
           let videoEl: HTMLVideoElement | undefined
           let canvasEl: HTMLCanvasElement | undefined
@@ -790,12 +794,16 @@ export default function FlipbookViewer({
             // via drawImage su loadeddata. Prima del loadeddata è riempito di #111 (scuro).
             canvasEl = document.createElement('canvas')
             canvasEl.width  = dims!.w
-            canvasEl.height = dims!.h
+            // Altezza = solo la zona video (esclusa la safe area).
+            // Così il toDataURL cattura esattamente i pixel che saranno visibili
+            // e paintReveal può usare backgroundSize:'100% calc(100% - AD_SAFE_PX px)'
+            // eliminando il layout shift durante l'animazione.
+            canvasEl.height = dims!.h - AD_SAFE_PX
             canvasEl.style.cssText =
               'position:absolute;inset:0;width:100%;height:100%;' +
               'z-index:10;transition:opacity 0.35s ease;'
             const ctx0 = canvasEl.getContext('2d')
-            if (ctx0) { ctx0.fillStyle = '#111'; ctx0.fillRect(0, 0, dims!.w, dims!.h) }
+            if (ctx0) { ctx0.fillStyle = '#111'; ctx0.fillRect(0, 0, canvasEl.width, canvasEl.height) }
             main.appendChild(canvasEl)
           } else if (config.backupImageUrl) {
             const kb = document.createElement('div')
@@ -872,7 +880,7 @@ export default function FlipbookViewer({
           // Safe area — altezza px FISSA, immune al ricalcolo percentuale di turn.js
           const safe = document.createElement('div')
           safe.className = 'ad-safe-area'
-          safe.style.setProperty('height', '46px', 'important')
+          safe.style.setProperty('height', `${AD_SAFE_PX}px`, 'important')
 
           container.appendChild(main)
           container.appendChild(safe)
@@ -997,9 +1005,13 @@ export default function FlipbookViewer({
             src = adCanvasDataUrls.get(dest)
           }
           if (wrap && src) {
+            // Per le pagine Ad il canvas rappresenta solo la zona video (senza safe area).
+            // backgroundSize 'calc(100% - AD_SAFE_PX px)' in altezza fa sì che l'immagine
+            // occupi esattamente la stessa area durante l'animazione e dopo → zero layout shift.
+            const isAdSrc = pdfPage === undefined
             window.$(wrap).css({
               backgroundImage:    `url("${src}")`,
-              backgroundSize:     '100% 100%',
+              backgroundSize:     isAdSrc ? `100% calc(100% - ${AD_SAFE_PX}px)` : '100% 100%',
               backgroundRepeat:   'no-repeat',
               backgroundPosition: '0 0',
             })
@@ -1015,12 +1027,13 @@ export default function FlipbookViewer({
           }
         }
 
-        // Fa il crossfade canvas→video per una pagina Ad attiva.
-        // Se il video è già in riproduzione (avviato dal listener pointerup durante il
-        // gesto "caldo") rivela immediatamente senza ripetere play().
-        // Altrimenti: re-asserta muted/playsInline, lancia play(), ascolta 'playing'.
-        // Fail-safe 300ms: se 'playing' non scatta (play() già risolto prima della
-        // registrazione del listener, GPU lenta, promessa appesa), rivela comunque.
+        // Crossfade canvas→video per una pagina Ad attiva.
+        // Ascolta SEMPRE 'playing' + failsafe 350ms (no fast-path):
+        //   - se onBookPointerUp ha già chiamato play() (vid.paused=false, buffering):
+        //     'playing' scatterà quando il video è pronto → rivela. Failsafe copertura.
+        //   - se play() non è ancora stato chiamato: lo chiamiamo qui.
+        //   - AbortError (doppio play()): lo ignoriamo — 'playing'/failsafe coprono.
+        //   - Altri errori: rivela subito (mai schermo nero).
         const crossfadeToVideo = (turnPage: number): void => {
           const vid = adVideoMap.get(turnPage)
           const cvs = adCanvasMap.get(turnPage)
@@ -1028,12 +1041,6 @@ export default function FlipbookViewer({
 
           const revealVideo = () => {
             try { vid.style.opacity = '1'; if (cvs) cvs.style.opacity = '0' } catch (_) {}
-          }
-
-          // Video già in riproduzione (avviato dal pointerup nel gesto caldo): rivela subito.
-          if (!vid.paused && !vid.ended && vid.readyState >= 3) {
-            revealVideo()
-            return
           }
 
           let timer: ReturnType<typeof setTimeout>
@@ -1048,16 +1055,16 @@ export default function FlipbookViewer({
             failsafeTimers.delete(timer)
             vid.removeEventListener('playing', onPlaying)
             revealVideo()
-          }, 300)
+          }, 350)
           failsafeTimers.add(timer)
 
-          // Re-asserta gli attributi di sblocco: i browser mobile possono dimenticarli
-          // tra un flip e l'altro (specialmente su iOS con gestione aggressiva della memoria).
           vid.muted      = true
           vid.playsInline = true
-          try { vid.currentTime = 0 } catch (_) {}
-          vid.play().catch(() => {
-            // Play rifiutato esplicitamente — rivela comunque (mai schermo nero).
+          // reset currentTime solo se davvero fermo (non durante un play() pendente)
+          if (vid.paused) { try { vid.currentTime = 0 } catch (_) {} }
+          vid.play().catch((e: DOMException) => {
+            if (e?.name === 'AbortError') return  // play() già pendente da pointerup: ignora
+            // Qualsiasi altro errore (NotAllowedError, ecc.) → rivela il video subito.
             clearTimeout(timer)
             failsafeTimers.delete(timer)
             vid.removeEventListener('playing', onPlaying)
