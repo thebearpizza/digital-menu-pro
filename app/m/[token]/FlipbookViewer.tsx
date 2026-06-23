@@ -787,7 +787,7 @@ export default function FlipbookViewer({
             // Video parte nascosto: il canvas overlay mostra il primo frame durante l'animazione.
             // La GPU può renderizzare i pixel del canvas a 60fps durante CSS 3D transforms;
             // il tag <video> invece si congela sui dispositivi mobile durante le animazioni.
-            videoEl.style.cssText += 'opacity:0;transition:opacity 0.35s ease;'
+            videoEl.style.cssText += 'opacity:0;transition:opacity 0.35s ease;will-change:opacity;'
             main.appendChild(videoEl)
 
             // Canvas overlay — sopra il video (z-index:10), mostra il primo frame catturato
@@ -1028,46 +1028,54 @@ export default function FlipbookViewer({
         }
 
         // Crossfade canvas→video per una pagina Ad attiva.
-        // Ascolta SEMPRE 'playing' + failsafe 350ms (no fast-path):
-        //   - se onBookPointerUp ha già chiamato play() (vid.paused=false, buffering):
-        //     'playing' scatterà quando il video è pronto → rivela. Failsafe copertura.
-        //   - se play() non è ancora stato chiamato: lo chiamiamo qui.
-        //   - AbortError (doppio play()): lo ignoriamo — 'playing'/failsafe coprono.
-        //   - Altri errori: rivela subito (mai schermo nero).
+        // Fast path: se onBookPointerUp ha già avviato il video (vid.paused=false),
+        // rivela immediatamente senza attendere eventi/timer.
+        // Slow path: tenta play() + ascolta 'playing' + failsafe 200ms.
+        // 'revealed' guard impedisce doppie reveal da timer e listener in race.
         const crossfadeToVideo = (turnPage: number): void => {
           const vid = adVideoMap.get(turnPage)
           const cvs = adCanvasMap.get(turnPage)
           if (!vid) return
 
+          let revealed = false
           const revealVideo = () => {
+            if (revealed) return
+            revealed = true
             try { vid.style.opacity = '1'; if (cvs) cvs.style.opacity = '0' } catch (_) {}
           }
 
-          let timer: ReturnType<typeof setTimeout>
+          // Fast path: video già in play (avviato da onBookPointerUp nel gesto "caldo").
+          // vid.paused diventa false immediatamente quando play() è chiamato, anche prima
+          // che il primo frame sia decodificato → reveal ora, il video parte in <1 frame.
+          if (!vid.paused) { revealVideo(); return }
+
+          // Slow path: video ancora in pausa (gesto non intercettato o play() fallito).
+          let timer: ReturnType<typeof setTimeout> | undefined
+
           const onPlaying = () => {
-            clearTimeout(timer)
-            failsafeTimers.delete(timer)
+            if (timer !== undefined) { clearTimeout(timer); failsafeTimers.delete(timer) }
             revealVideo()
           }
 
           vid.addEventListener('playing', onPlaying, { once: true })
+
+          // 200ms è sufficiente: video muted con preload:auto è pronto quasi subito.
           timer = setTimeout(() => {
-            failsafeTimers.delete(timer)
-            vid.removeEventListener('playing', onPlaying)
+            failsafeTimers.delete(timer!)
+            try { vid.removeEventListener('playing', onPlaying) } catch (_) {}
             revealVideo()
-          }, 350)
+          }, 200)
           failsafeTimers.add(timer)
 
-          vid.muted      = true
+          vid.muted       = true
           vid.playsInline = true
-          // reset currentTime solo se davvero fermo (non durante un play() pendente)
-          if (vid.paused) { try { vid.currentTime = 0 } catch (_) {} }
           vid.play().catch((e: DOMException) => {
-            if (e?.name === 'AbortError') return  // play() già pendente da pointerup: ignora
-            // Qualsiasi altro errore (NotAllowedError, ecc.) → rivela il video subito.
-            clearTimeout(timer)
-            failsafeTimers.delete(timer)
-            vid.removeEventListener('playing', onPlaying)
+            // AbortError: play() da onBookPointerUp ancora pendente.
+            // 'playing' o il failsafe gestiranno la reveal.
+            if (e?.name === 'AbortError') return
+            // Qualsiasi altro errore (NotAllowedError, ecc.) → rivela subito.
+            if (timer !== undefined) { clearTimeout(timer); failsafeTimers.delete(timer) }
+            try { vid.removeEventListener('playing', onPlaying) } catch (_) {}
             revealVideo()
           })
         }
