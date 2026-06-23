@@ -958,8 +958,10 @@ export default function FlipbookViewer({
               try {
                 const cur = opts?.page as number
                 if (!cur) return
-                // Pausa il video della pagina corrente appena inizia la piega
-                adVideoMap.get(cur)?.pause()
+                // NON mettiamo in pausa il video corrente: `when.turned` non scatta
+                // su un flip annullato (turn.js design), quindi il video resterebbe
+                // bloccato. Lasciandolo girare, su cancel non succede nulla; su
+                // flip completato, when.turned lo mette in pausa normalmente.
                 let dest: number
                 if (typeof corner === 'string' &&
                     (corner.charAt(1) === 'l' || corner.charAt(1) === 'r')) {
