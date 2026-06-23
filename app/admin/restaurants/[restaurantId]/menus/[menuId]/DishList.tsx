@@ -25,7 +25,7 @@ import {
   deleteDish, reorderCategories, reorderDishes,
   duplicateDish, duplicateCategory, deleteCategory, renameCategory, bulkUpdateDishPrices, findDishTwins, DishTwin,
   toggleDishActive, toggleCategoryActive,
-  moveDishesToCategory, bulkDeleteDishes, bulkMoveDishesToMenu,
+  moveDishesToCategory, bulkDeleteDishes, bulkMoveDishesToMenu, getMenuCategoriesForMove,
 } from './actions'
 import { useStaggerEntrance } from '@/lib/animations'
 
@@ -432,12 +432,16 @@ export default function DishList({
   const [newCatName,   setNewCatName]   = useState('')
 
   // Multi-select state
-  const [selectedIds,    setSelectedIds]    = useState<Set<string>>(new Set())
-  const [bulkPrice,      setBulkPrice]      = useState('')
-  const [bulkSaving,     setBulkSaving]     = useState(false)
-  const [bulkDeleting,   setBulkDeleting]   = useState(false)
-  const [bulkMoveMenuId, setBulkMoveMenuId] = useState('')
-  const [bulkMoving,     setBulkMoving]     = useState(false)
+  const [selectedIds,       setSelectedIds]       = useState<Set<string>>(new Set())
+  const [bulkPrice,         setBulkPrice]         = useState('')
+  const [bulkSaving,        setBulkSaving]        = useState(false)
+  const [bulkDeleting,      setBulkDeleting]      = useState(false)
+  const [bulkMoveMenuId,    setBulkMoveMenuId]    = useState('')
+  const [bulkMoving,        setBulkMoving]        = useState(false)
+  const [bulkMoveCatOpen,   setBulkMoveCatOpen]   = useState(false)
+  const [bulkMoveCats,      setBulkMoveCats]      = useState<string[]>([])
+  const [bulkMoveCat,       setBulkMoveCat]       = useState('')
+  const [bulkMoveCatLoading,setBulkMoveCatLoading]= useState(false)
 
   // Active drag id for DragOverlay preview
   const [activeDragId, setActiveDragId] = useState<string | null>(null)
@@ -482,17 +486,31 @@ export default function DishList({
     finally { setBulkDeleting(false) }
   }
 
-  async function handleBulkMoveToMenu() {
+  async function openBulkMoveCatModal() {
+    if (!bulkMoveMenuId) return
+    setBulkMoveCatLoading(true)
+    try {
+      const cats = await getMenuCategoriesForMove(restaurantId, bulkMoveMenuId)
+      setBulkMoveCats(cats)
+      setBulkMoveCat(cats[0] ?? '__none__')
+      setBulkMoveCatOpen(true)
+    } catch { alert('Errore nel caricamento delle categorie.') }
+    finally { setBulkMoveCatLoading(false) }
+  }
+
+  async function handleBulkMoveToMenu(cat: string) {
     if (!bulkMoveMenuId) return
     const ids = Array.from(selectedIds)
     setBulkMoving(true)
     try {
-      await bulkMoveDishesToMenu(restaurantId, menuId, ids, bulkMoveMenuId)
+      const resolved = cat === '__none__' ? null : cat
+      await bulkMoveDishesToMenu(restaurantId, menuId, ids, bulkMoveMenuId, resolved)
       const next = dishes.filter(d => !selectedIds.has(d.id))
       setDishes(next)
       syncCategories(next)
       setSelectedIds(new Set())
       setBulkMoveMenuId('')
+      setBulkMoveCatOpen(false)
     } catch { alert('Errore durante lo spostamento nel menu.') }
     finally { setBulkMoving(false) }
   }
@@ -897,6 +915,7 @@ export default function DishList({
           fromMenuId={menuId}
           dishId={moveDish.id}
           dishName={moveDish.name}
+          dishCategory={moveDish.category ?? null}
           menus={allMenus}
           onMoved={handleMoved}
           onClose={() => setMoveDish(null)}
@@ -1027,11 +1046,11 @@ export default function DishList({
               {bulkMoveMenuId && (
                 <button
                   type="button"
-                  onClick={handleBulkMoveToMenu}
-                  disabled={bulkMoving}
+                  onClick={openBulkMoveCatModal}
+                  disabled={bulkMoving || bulkMoveCatLoading}
                   className="bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-sm font-medium px-3 py-1.5 rounded transition-colors whitespace-nowrap flex items-center gap-1"
                 >
-                  {bulkMoving ? <Spinner color="#fff" size={4} /> : 'Sposta'}
+                  {bulkMoveCatLoading ? <Spinner color="#fff" size={4} /> : 'Sposta'}
                 </button>
               )}
             </div>
@@ -1043,6 +1062,47 @@ export default function DishList({
             className="text-sm text-gray-400 hover:text-white whitespace-nowrap">
             Annulla
           </button>
+        </div>
+      )}
+
+      {/* ── Bulk move category modal ─────────────────────────────────────── */}
+      {bulkMoveCatOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setBulkMoveCatOpen(false)} />
+          <div className="relative bg-white border border-gray-200 shadow-xl w-full max-w-sm z-10 p-6">
+            <div className="flex items-center justify-between mb-1">
+              <h2 className="text-sm font-semibold text-gray-900">Sposta piatti — scegli categoria</h2>
+              <button onClick={() => setBulkMoveCatOpen(false)} className="text-gray-400 hover:text-gray-700 text-xl leading-none">&times;</button>
+            </div>
+            <p className="text-xs text-gray-500 mb-4">
+              In quale categoria inserire i {selectedIds.size} piatti selezionati?
+            </p>
+            <div className="space-y-2 mb-5 max-h-60 overflow-y-auto">
+              {bulkMoveCats.map(cat => (
+                <label key={cat} className="flex items-center gap-2 text-sm cursor-pointer">
+                  <input type="radio" name="bulk-target-cat" value={cat}
+                    checked={bulkMoveCat === cat} onChange={() => setBulkMoveCat(cat)}
+                    className="accent-blue-600" />
+                  {cat}
+                </label>
+              ))}
+              <label className={`flex items-center gap-2 text-sm cursor-pointer ${bulkMoveCats.length > 0 ? 'border-t border-gray-100 pt-2 mt-1' : ''}`}>
+                <input type="radio" name="bulk-target-cat" value="__none__"
+                  checked={bulkMoveCat === '__none__'} onChange={() => setBulkMoveCat('__none__')}
+                  className="accent-blue-600" />
+                <span className="text-gray-500">Senza categoria</span>
+              </label>
+            </div>
+            <div className="flex gap-2">
+              <button onClick={() => handleBulkMoveToMenu(bulkMoveCat)} disabled={bulkMoving || !bulkMoveCat}
+                className="flex-1 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 transition-colors flex items-center justify-center">
+                {bulkMoving ? <Spinner color="#fff" /> : 'Sposta'}
+              </button>
+              <button onClick={() => setBulkMoveCatOpen(false)} className="flex-1 py-2 text-sm text-gray-600 border border-gray-300 hover:bg-gray-50 transition-colors">
+                Annulla
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

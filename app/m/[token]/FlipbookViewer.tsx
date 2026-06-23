@@ -733,11 +733,18 @@ export default function FlipbookViewer({
 
         // ── Build FlipbookPage list — PDF pages + injected Ad pages ─────────
         // Con ads=[] è identica a [{type:'pdf', pdfPage:1}, ...] — zero overhead.
+        // Gli ads con categoryTarget vengono risolti usando categoriesRef per posizionarli
+        // dinamicamente prima della categoria indicata.
         const pages: FlipbookPage[] = []
         for (let p = 1; p <= numPages; p++) {
           pages.push({ type: 'pdf', pdfPage: p })
           for (const ad of ads) {
-            if (ad.insertAfterPdfPage === p) pages.push({ type: 'ad', config: ad })
+            let adPage = ad.insertAfterPdfPage
+            if (ad.categoryTarget) {
+              const cat = categoriesRef.current.find(c => c.label === ad.categoryTarget)
+              if (cat) adPage = Math.max(1, cat.targetPage - 1)
+            }
+            if (adPage === p) pages.push({ type: 'ad', config: ad })
           }
         }
 

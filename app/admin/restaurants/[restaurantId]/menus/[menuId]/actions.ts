@@ -570,11 +570,21 @@ export async function duplicateCategory(restaurantId: string, menuId: string, ca
 }
 
 /** Sposta un piatto in un altro menu (in coda al menu di destinazione). */
+export async function getMenuCategoriesForMove(restaurantId: string, menuId: string): Promise<string[]> {
+  const supabase = await createClient()
+  await verifyOwnership(supabase, restaurantId)
+  const { data } = await supabase
+    .from('dishes').select('category').eq('menu_id', menuId).not('category', 'is', null)
+  const cats = Array.from(new Set((data ?? []).map(d => d.category as string))).sort()
+  return cats
+}
+
 export async function moveDishToMenu(
   restaurantId: string,
   fromMenuId: string,
   dishId: string,
-  toMenuId: string
+  toMenuId: string,
+  targetCategory?: string | null,
 ) {
   const supabase = await createClient()
   await verifyOwnership(supabase, restaurantId)
@@ -583,10 +593,10 @@ export async function moveDishToMenu(
     .from('dishes').select('sort_order').eq('menu_id', toMenuId)
     .order('sort_order', { ascending: false }).limit(1).single()
 
-  const { error } = await supabase
-    .from('dishes')
-    .update({ menu_id: toMenuId, sort_order: (last?.sort_order ?? -1) + 1 })
-    .eq('id', dishId)
+  const update: Record<string, unknown> = { menu_id: toMenuId, sort_order: (last?.sort_order ?? -1) + 1 }
+  if (targetCategory != null) update.category = targetCategory
+
+  const { error } = await supabase.from('dishes').update(update).eq('id', dishId)
   if (error) throw new Error(error.message)
 
   revalidate(restaurantId, fromMenuId)
@@ -858,6 +868,7 @@ export async function bulkMoveDishesToMenu(
   fromMenuId: string,
   dishIds: string[],
   toMenuId: string,
+  targetCategory?: string | null,
 ) {
   if (!dishIds.length || fromMenuId === toMenuId) return
   const supabase = await createClient()
@@ -869,11 +880,11 @@ export async function bulkMoveDishesToMenu(
   const base = (last?.sort_order ?? -1) + 1
 
   const results = await Promise.all(
-    dishIds.map((id, i) =>
-      supabase.from('dishes')
-        .update({ menu_id: toMenuId, sort_order: base + i })
-        .eq('id', id).eq('menu_id', fromMenuId)
-    )
+    dishIds.map((id, i) => {
+      const update: Record<string, unknown> = { menu_id: toMenuId, sort_order: base + i }
+      if (targetCategory != null) update.category = targetCategory
+      return supabase.from('dishes').update(update).eq('id', id).eq('menu_id', fromMenuId)
+    })
   )
   const failed = results.find(r => r.error)
   if (failed?.error) throw new Error(failed.error.message)

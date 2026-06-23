@@ -231,6 +231,7 @@ export interface AdConfig {
   price?:             string                      // prezzo originale
   promoPrice?:        string                      // prezzo scontato
   promoPriceMode?:    'strikethrough' | 'solo'   // barrato+promo oppure solo promo
+  categoryTarget?:    string                      // se presente, media prima della categoria (risolto da FlipbookViewer)
 }
 
 export interface RestaurantTheme {

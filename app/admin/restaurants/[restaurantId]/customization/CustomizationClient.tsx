@@ -1028,11 +1028,9 @@ function EditorSidebar({ target, theme, setters, previewMode, activeMenuId, onCl
             <div>
               <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Posizione prezzo</p>
               <PillGroup
-                options={[{ label:'Sinistra', value:'left' },{ label:'Destra', value:'right' },{ label:'Sopra', value:'above' },{ label:'Sotto', value:'below' }]}
+                options={[{ label:'Sopra', value:'above' },{ label:'Destra', value:'right' }]}
                 value={m.prices.position} onChange={v => setters.setMPrices({ position: v as PricePosition })} />
             </div>
-            <AlignRow label="Allineamento" value={m.prices.align}
-              onChange={v => setters.setMPrices({ align: v })} />
           </div>
           )}
         </div>
@@ -1049,8 +1047,10 @@ function EditorSidebar({ target, theme, setters, previewMode, activeMenuId, onCl
             onChange={v => setters.setMCats({ size: v })} />
           <ColorRow label="Colore" value={m.categories.color}
             onChange={v => setters.setMCats({ color: v })} />
-          <AlignRow label="Allineamento proprio" value={m.categories.align}
-            onChange={v => setters.setMCats({ align: v })} />
+          <div className={m.categories.flourish !== 'none' ? 'opacity-30 pointer-events-none' : ''}>
+            <AlignRow label="Allineamento proprio" value={m.categories.align}
+              onChange={v => setters.setMCats({ align: v })} />
+          </div>
           <div className="pt-2 border-t border-gray-100">
             <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Ghirigori (decori laterali)</p>
             <PillGroup
@@ -1449,10 +1449,8 @@ function EditorSidebar({ target, theme, setters, previewMode, activeMenuId, onCl
               options={[{ label:'Nessuno', value:'none' },{ label:'Solido', value:'solid' },{ label:'Tratteg.', value:'dashed' },{ label:'Punteg.', value:'dotted' },{ label:'Doppio', value:'double' },{ label:'Gradiente', value:'gradient' },{ label:'Ornamento', value:'ornament' },{ label:'Ondulato', value:'wavy' }]}
               value={m.layout.divider.type} onChange={v => {
                 const t = v as DividerType
-                // Reset width to each type's own default when switching, so
-                // settings from the previous type never bleed into the new one.
                 const defaultWidth = (t === 'wavy' || t === 'ornament' || t === 'none') ? 0.5 : 1
-                setters.setMDivider({ type: t, width: defaultWidth })
+                setters.setMDivider({ type: t, width: defaultWidth, widthPercent: 100 })
               }} />
             {m.layout.divider.type !== 'none' && (
               <div className="mt-2 space-y-2">
@@ -1901,8 +1899,8 @@ export default function CustomizationClient({
   // Sub-tab attivo dentro "Menu": null = "Generale" (tema condiviso), altrimenti
   // l'id del menu il cui override per-menu si sta modificando.
   const [activeMenuTab, setActiveMenuTab] = useState<string | null>(null)
-  const [editMode,     setEditMode]     = useState(false)
-  const [showDummyData,setShowDummyData]= useState(false)
+  const editMode     = true
+  const showDummyData = false
   const [activeEditor, setActiveEditor] = useState<string | null>(null)
   const [previewZoom,  setPreviewZoom]  = useState(1)
   const [isMobile,     setIsMobile]     = useState(false)
@@ -1920,8 +1918,6 @@ export default function CustomizationClient({
     mq.addEventListener('change', update)
     return () => mq.removeEventListener('change', update)
   }, [])
-
-  useEffect(() => { if (!editMode) { setActiveEditor(null); setShowDummyData(false) } }, [editMode])
 
   usePreviewFonts(theme)
   const { ref: fillRef, height: fillHeight } = useFillHeight()
@@ -2274,14 +2270,14 @@ export default function CustomizationClient({
           </button>
         ))}
 
-        {/* Promozioni — gestione pagine Ad nel flipbook */}
+        {/* Menù Media — gestione pagine Ad nel flipbook */}
         <button type="button" onClick={() => setAdsOpen(o => !o)}
           className={`px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider border transition-colors ${
             adsOpen
               ? 'bg-gray-900 text-white border-gray-900'
               : 'bg-white text-gray-500 border-gray-200 hover:border-gray-400'
           }`}>
-          Promozioni
+          Menù Media
         </button>
 
         {/* Sub-tab per-menu: Generale + un tab per ogni menu del ristorante.
@@ -2309,32 +2305,9 @@ export default function CustomizationClient({
         {!baseMode && (
           <>
             <div className="hidden sm:block w-px h-5 bg-gray-200 mx-1 shrink-0" />
-
-            {/* Pencil toggle */}
-            <label className="flex items-center gap-2 cursor-pointer select-none">
-              <Toggle checked={editMode} onChange={setEditMode} />
-              <span className="flex items-center gap-1.5 text-xs font-medium text-gray-700">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5 shrink-0">
-                  <path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
-                </svg>
-                <span className="hidden sm:inline">Modifica</span>
-              </span>
-            </label>
-
-            {/* Dummy data checkbox — only enabled in edit mode */}
-            <label className={`flex items-center gap-1.5 select-none text-xs ${editMode ? 'cursor-pointer text-gray-600' : 'cursor-not-allowed text-gray-300'}`}>
-              <input type="checkbox" disabled={!editMode} checked={showDummyData}
-                onChange={e => setShowDummyData(e.target.checked)}
-                className="accent-gray-900 w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Dati fittizi</span>
-              <span className="sm:hidden">Fittizi</span>
-            </label>
-
-            {editMode && (
-              <span className="hidden md:inline ml-1 text-[10px] text-gray-400">
-                {activeEditor ? `Modifica: ${EDITOR_TARGETS[activeEditor]?.title ?? activeEditor}` : 'Clicca un elemento per modificarlo'}
-              </span>
-            )}
+            <span className="hidden md:inline ml-1 text-[10px] text-gray-400">
+              {activeEditor ? `Modifica: ${EDITOR_TARGETS[activeEditor]?.title ?? activeEditor}` : 'Clicca un elemento per modificarlo'}
+            </span>
           </>
         )}
 
@@ -2474,12 +2447,14 @@ function AdsPanel({ ads, setAds, restaurantId }: {
   const EMPTY = (): AdConfig => ({
     insertAfterPdfPage: 1, menuId: '', dishId: '', mode: 'auto_generated',
     backupImageUrl: '', dishName: '', dishDescription: '', badgeText: '', price: '', promoPrice: '', promoPriceMode: 'solo',
+    categoryTarget: undefined,
   })
 
   const [adding,        setAdding]        = useState(false)
-  // null = nuova promo; numero = indice della promo esistente in modifica
+  // null = nuovo media; numero = indice del media esistente in modifica
   const [editingIndex,  setEditingIndex]  = useState<number | null>(null)
   const [form,          setForm]          = useState<AdConfig>(EMPTY())
+  const [adMode,        setAdMode]        = useState<'promo' | 'categoria'>('promo')
   // pageStr: stato stringa separato per l'input pagina — evita che il campo si blocchi su "1"
   const [pageStr,       setPageStr]       = useState('1')
   const [menuOptions,   setMenuOptions]   = useState<MenuOption[]>([])
@@ -2559,39 +2534,55 @@ function AdsPanel({ ads, setAds, restaurantId }: {
     }))
   }
 
-  function resetForm() { setForm(EMPTY()); setPageStr('1'); setEditingIndex(null) }
+  function resetForm() { setForm(EMPTY()); setPageStr('1'); setEditingIndex(null); setAdMode('promo') }
 
-  // Apre il form precompilato con una promo esistente per modificarla.
   function startEdit(idx: number) {
     const ad = ads[idx]
     if (!ad) return
+    setAdMode(ad.categoryTarget ? 'categoria' : 'promo')
     setForm({ ...EMPTY(), ...ad, dishName: ad.dishName ?? '' })
     setPageStr(String(Math.max(1, ad.insertAfterPdfPage || 1)))
     setEditingIndex(idx)
     setAdding(true)
   }
 
-  // Una promo è valida con: menu + almeno un contenuto (nome OPPURE video OPPURE
-  // foto). Il nome NON è più obbligatorio: senza piatto collegato resta un video
-  // ads senza prodotto.
-  const canSave =
-    !!form.menuId &&
-    (!!(form.dishName ?? '').trim() || !!form.mediaUrl?.trim() || !!form.backupImageUrl?.trim())
+  const canSave = adMode === 'categoria'
+    ? !!form.menuId && !!form.categoryTarget?.trim()
+    : !!form.menuId && (!!(form.dishName ?? '').trim() || !!form.mediaUrl?.trim() || !!form.backupImageUrl?.trim())
 
   function handleAdd() {
     if (!canSave) return
-    const n = Math.max(1, parseInt(pageStr) || 1)
-    const entry: AdConfig = {
-      ...form,
-      insertAfterPdfPage: n,
-      menuId:          form.menuId    || undefined,
-      dishName:        (form.dishName ?? '').trim(),
-      dishDescription: form.dishDescription?.trim() || undefined,
-      badgeText:       form.badgeText?.trim()   || undefined,
-      price:           form.price?.trim()        || undefined,
-      promoPrice:      form.promoPrice?.trim()   || undefined,
-      promoPriceMode:  form.promoPrice?.trim()   ? (form.promoPriceMode ?? 'solo') : undefined,
-      mediaUrl:        form.mediaUrl?.trim()     || undefined,
+    let entry: AdConfig
+    if (adMode === 'categoria') {
+      entry = {
+        ...form,
+        insertAfterPdfPage: 1,
+        categoryTarget:  form.categoryTarget?.trim(),
+        menuId:          form.menuId || undefined,
+        dishId:          '',
+        dishName:        '',
+        dishDescription: form.dishDescription?.trim() || undefined,
+        badgeText:       undefined,
+        price:           undefined,
+        promoPrice:      undefined,
+        promoPriceMode:  undefined,
+        mediaUrl:        form.mediaUrl?.trim() || undefined,
+      }
+    } else {
+      const n = Math.max(1, parseInt(pageStr) || 1)
+      entry = {
+        ...form,
+        insertAfterPdfPage: n,
+        categoryTarget:  undefined,
+        menuId:          form.menuId    || undefined,
+        dishName:        (form.dishName ?? '').trim(),
+        dishDescription: form.dishDescription?.trim() || undefined,
+        badgeText:       form.badgeText?.trim()   || undefined,
+        price:           form.price?.trim()        || undefined,
+        promoPrice:      form.promoPrice?.trim()   || undefined,
+        promoPriceMode:  form.promoPrice?.trim()   ? (form.promoPriceMode ?? 'solo') : undefined,
+        mediaUrl:        form.mediaUrl?.trim()     || undefined,
+      }
     }
     setAds(editingIndex !== null
       ? ads.map((a, i) => (i === editingIndex ? entry : a))
@@ -2601,6 +2592,7 @@ function AdsPanel({ ads, setAds, restaurantId }: {
   }
 
   const filteredDishes = form.menuId ? dishes.filter(d => d.menu_id === form.menuId) : []
+  const uniqueCategories = Array.from(new Set(filteredDishes.map(d => d.category).filter(Boolean))).sort() as string[]
   const INPUT = 'mt-1 w-full text-xs border border-gray-200 rounded px-2.5 py-1.5 focus:outline-none focus:border-gray-400 bg-white'
 
   return (
@@ -2608,28 +2600,33 @@ function AdsPanel({ ads, setAds, restaurantId }: {
       <div className="max-w-xl mx-auto space-y-6">
 
         <div>
-          <h2 className="text-sm font-semibold text-gray-900">Promozioni nel flipbook</h2>
+          <h2 className="text-sm font-semibold text-gray-900">Menù Media</h2>
           <p className="mt-1 text-xs text-gray-500 leading-relaxed">
-            Pagine con animazione Ken Burns o video iniettate tra le pagine del menu.
-            Clicca sulla promo per aprire la card del piatto. Ricorda di <strong>Salvare</strong>.
+            Pagine con foto/video iniettate nel flipbook: promo di un prodotto (con card
+            al click) oppure presentazione di una categoria (appare prima della categoria).
+            Ricorda di <strong>Salvare</strong>.
           </p>
         </div>
 
         {ads.length === 0 && !adding && (
-          <p className="text-xs text-gray-400 italic">Nessuna promozione configurata.</p>
+          <p className="text-xs text-gray-400 italic">Nessun media configurato.</p>
         )}
 
         <div className="space-y-2">
           {ads.map((ad, idx) => (
             <div key={idx}
               className={`flex items-start justify-between gap-3 px-3 py-2.5 rounded-lg border bg-gray-50 transition-colors ${editingIndex === idx ? 'border-blue-400 ring-1 ring-blue-200' : 'border-gray-200'}`}>
-              {/* Click sul contenuto → modifica la promo */}
               <button type="button" onClick={() => startEdit(idx)} className="flex-1 min-w-0 text-left group">
                 <p className="text-xs font-medium text-gray-900 truncate group-hover:text-blue-600 transition-colors">
-                  {ad.dishName?.trim() || (ad.mediaUrl ? 'Video promo' : 'Promo senza nome')}
+                  {ad.categoryTarget
+                    ? `Categoria: ${ad.categoryTarget}`
+                    : (ad.dishName?.trim() || (ad.mediaUrl ? 'Video promo' : 'Promo senza nome'))}
                 </p>
                 <p className="text-[11px] text-gray-500 mt-0.5">
-                  {menuOptions.find(m => m.id === ad.menuId)?.name ?? 'Tutti i menu'} · pag. {ad.insertAfterPdfPage}
+                  {menuOptions.find(m => m.id === ad.menuId)?.name ?? 'Tutti i menu'}
+                  {ad.categoryTarget
+                    ? <span className="text-violet-600"> · prima di &ldquo;{ad.categoryTarget}&rdquo;</span>
+                    : <span> · pag. {ad.insertAfterPdfPage}</span>}
                   {ad.badgeText  && <span> · <em>{ad.badgeText}</em></span>}
                   {ad.promoPrice ? <span> · <s>{ad.price}</s> {ad.promoPrice}</span> : ad.price ? <span> · {ad.price}</span> : null}
                   {ad.mediaUrl   && <span> · 🎬</span>}
@@ -2645,20 +2642,35 @@ function AdsPanel({ ads, setAds, restaurantId }: {
 
         {adding ? (
           <div className="rounded-lg border border-gray-200 p-4 space-y-4 bg-gray-50">
-            <p className="text-xs font-semibold text-gray-700">{editingIndex !== null ? 'Modifica promozione' : 'Nuova promozione'}</p>
+            <p className="text-xs font-semibold text-gray-700">{editingIndex !== null ? 'Modifica media' : 'Nuovo media'}</p>
+
+            {/* ── 0. Tipo di media ── */}
+            <div>
+              <span className="text-[11px] text-gray-500 block mb-1.5">Tipo</span>
+              <div className="flex gap-2">
+                {(['promo', 'categoria'] as const).map(mode => (
+                  <label key={mode} className={`flex items-center gap-1.5 cursor-pointer text-[11px] font-medium px-3 py-1.5 rounded border transition-colors ${adMode === mode ? 'bg-gray-900 text-white border-gray-900' : 'bg-white text-gray-600 border-gray-300 hover:border-gray-500'}`}>
+                    <input type="radio" name="adMode" value={mode} className="sr-only"
+                      checked={adMode === mode}
+                      onChange={() => { setAdMode(mode); setForm(f => ({ ...EMPTY(), menuId: f.menuId })) }} />
+                    {mode === 'promo' ? 'Promozione prodotto' : 'Media categoria'}
+                  </label>
+                ))}
+              </div>
+            </div>
 
             {/* ── 1. Menu (obbligatorio) ── */}
             <label className="block">
               <span className="text-[11px] text-gray-500">Menu * {loading && '(caricamento…)'}</span>
               <select className={INPUT} value={form.menuId ?? ''} disabled={loading}
-                onChange={e => setForm(f => ({ ...f, menuId: e.target.value, dishId: '', dishName: '', price: '', backupImageUrl: '' }))}>
+                onChange={e => setForm(f => ({ ...f, menuId: e.target.value, dishId: '', dishName: '', price: '', backupImageUrl: '', categoryTarget: undefined }))}>
                 <option value="">— seleziona menu —</option>
                 {menuOptions.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
               </select>
             </label>
 
-            {/* ── 2. Piatto collegato (opzionale, filtrato per menu) ── */}
-            {form.menuId && (
+            {/* ── 2a. PROMO: piatto collegato (opzionale, filtrato per menu) ── */}
+            {adMode === 'promo' && form.menuId && (
               <label className="block">
                 <span className="text-[11px] text-gray-500">Piatto collegato (opzionale — apre la card al click)</span>
                 <select className={INPUT} value={form.dishId}
@@ -2672,77 +2684,96 @@ function AdsPanel({ ads, setAds, restaurantId }: {
               </label>
             )}
 
-            <div className="grid grid-cols-2 gap-3">
-              {/* ── 3. Nome (opzionale: senza nome resta un video ads senza prodotto) ── */}
-              <label className="col-span-2 block">
-                <span className="text-[11px] text-gray-500">Nome nella promo <span className="text-gray-400">(opzionale)</span></span>
-                <input className={INPUT} value={form.dishName ?? ''}
-                  onChange={e => setForm(f => ({ ...f, dishName: e.target.value }))}
-                  placeholder="es. Tagliere Gourmet — lascia vuoto per solo video" />
+            {/* ── 2b. CATEGORIA: selettore categoria ── */}
+            {adMode === 'categoria' && form.menuId && (
+              <label className="block">
+                <span className="text-[11px] text-gray-500">Categoria * (il media apparirà prima di questa categoria)</span>
+                <select className={INPUT} value={form.categoryTarget ?? ''}
+                  onChange={e => setForm(f => ({ ...f, categoryTarget: e.target.value }))}>
+                  <option value="">— seleziona categoria —</option>
+                  {uniqueCategories.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
               </label>
+            )}
+
+            <div className="grid grid-cols-2 gap-3">
+              {/* ── 3. Nome (solo per promo) ── */}
+              {adMode === 'promo' && (
+                <label className="col-span-2 block">
+                  <span className="text-[11px] text-gray-500">Nome nella promo <span className="text-gray-400">(opzionale)</span></span>
+                  <input className={INPUT} value={form.dishName ?? ''}
+                    onChange={e => setForm(f => ({ ...f, dishName: e.target.value }))}
+                    placeholder="es. Tagliere Gourmet — lascia vuoto per solo video" />
+                </label>
+              )}
 
               {/* ── 3b. Descrizione ── */}
               <label className="col-span-2 block">
-                <span className="text-[11px] text-gray-500">Descrizione (opzionale — appare sotto il nome)</span>
+                <span className="text-[11px] text-gray-500">Descrizione (opzionale — appare sotto il titolo)</span>
                 <textarea className={INPUT + ' resize-none'} rows={2}
                   value={form.dishDescription ?? ''}
                   onChange={e => setForm(f => ({ ...f, dishDescription: e.target.value }))}
                   placeholder="es. Selezione di salumi e formaggi artigianali…" />
               </label>
 
-              {/* ── 4. Pagina (fix: stringa locale, valida solo su blur) ── */}
-              <label className="block">
-                <span className="text-[11px] text-gray-500">Dopo pagina PDF n°</span>
-                <input type="number" min={1} className={INPUT}
-                  value={pageStr}
-                  onChange={e => setPageStr(e.target.value)}
-                  onBlur={() => {
-                    const n = Math.max(1, parseInt(pageStr) || 1)
-                    setPageStr(String(n))
-                    setForm(f => ({ ...f, insertAfterPdfPage: n }))
-                  }} />
-              </label>
-
-              {/* ── 5. Badge ── */}
-              <label className="block">
-                <span className="text-[11px] text-gray-500">Badge (opzionale)</span>
-                <input className={INPUT} value={form.badgeText ?? ''}
-                  onChange={e => setForm(f => ({ ...f, badgeText: e.target.value }))}
-                  placeholder="es. Specialità della Casa" />
-              </label>
-
-              {/* ── 6. Prezzi ── */}
-              <label className="block">
-                <span className="text-[11px] text-gray-500">Prezzo originale</span>
-                <input className={INPUT} value={form.price ?? ''}
-                  onChange={e => setForm(f => ({ ...f, price: e.target.value }))}
-                  placeholder="es. € 18,00" />
-              </label>
-
-              <label className="block">
-                <span className="text-[11px] text-gray-500">Prezzo promo</span>
-                <input className={INPUT} value={form.promoPrice ?? ''}
-                  onChange={e => setForm(f => ({ ...f, promoPrice: e.target.value }))}
-                  placeholder="es. € 14,00" />
-              </label>
-
-              {/* ── Modalità prezzo promo (visibile solo se promoPrice è impostato) ── */}
-              {form.promoPrice?.trim() && (
-                <div className="col-span-2">
-                  <span className="text-[11px] text-gray-500 block mb-1.5">Visualizzazione prezzo promo</span>
-                  <div className="flex gap-3">
-                    {([['strikethrough', `${form.price || '€ 18'} → ${form.promoPrice} (barrato)`],
-                       ['solo',          `Solo ${form.promoPrice} in evidenza`]] as const).map(([val, label]) => (
-                      <label key={val} className="flex items-center gap-1.5 cursor-pointer text-[11px] text-gray-700">
-                        <input type="radio" name="promoPriceMode" value={val}
-                          checked={(form.promoPriceMode ?? 'solo') === val}
-                          onChange={() => setForm(f => ({ ...f, promoPriceMode: val }))} />
-                        {label}
-                      </label>
-                    ))}
-                  </div>
-                </div>
+              {/* ── 4. Pagina (solo per promo) ── */}
+              {adMode === 'promo' && (
+                <label className="block">
+                  <span className="text-[11px] text-gray-500">Dopo pagina PDF n°</span>
+                  <input type="number" min={1} className={INPUT}
+                    value={pageStr}
+                    onChange={e => setPageStr(e.target.value)}
+                    onBlur={() => {
+                      const n = Math.max(1, parseInt(pageStr) || 1)
+                      setPageStr(String(n))
+                      setForm(f => ({ ...f, insertAfterPdfPage: n }))
+                    }} />
+                </label>
               )}
+
+              {/* ── 5. Badge (solo per promo) ── */}
+              {adMode === 'promo' && (
+                <label className="block">
+                  <span className="text-[11px] text-gray-500">Badge (opzionale)</span>
+                  <input className={INPUT} value={form.badgeText ?? ''}
+                    onChange={e => setForm(f => ({ ...f, badgeText: e.target.value }))}
+                    placeholder="es. Specialità della Casa" />
+                </label>
+              )}
+
+              {/* ── 6. Prezzi (solo per promo) ── */}
+              {adMode === 'promo' && (<>
+                <label className="block">
+                  <span className="text-[11px] text-gray-500">Prezzo originale</span>
+                  <input className={INPUT} value={form.price ?? ''}
+                    onChange={e => setForm(f => ({ ...f, price: e.target.value }))}
+                    placeholder="es. € 18,00" />
+                </label>
+
+                <label className="block">
+                  <span className="text-[11px] text-gray-500">Prezzo promo</span>
+                  <input className={INPUT} value={form.promoPrice ?? ''}
+                    onChange={e => setForm(f => ({ ...f, promoPrice: e.target.value }))}
+                    placeholder="es. € 14,00" />
+                </label>
+
+                {form.promoPrice?.trim() && (
+                  <div className="col-span-2">
+                    <span className="text-[11px] text-gray-500 block mb-1.5">Visualizzazione prezzo promo</span>
+                    <div className="flex gap-3">
+                      {([['strikethrough', `${form.price || '€ 18'} → ${form.promoPrice} (barrato)`],
+                         ['solo',          `Solo ${form.promoPrice} in evidenza`]] as const).map(([val, label]) => (
+                        <label key={val} className="flex items-center gap-1.5 cursor-pointer text-[11px] text-gray-700">
+                          <input type="radio" name="promoPriceMode" value={val}
+                            checked={(form.promoPriceMode ?? 'solo') === val}
+                            onChange={() => setForm(f => ({ ...f, promoPriceMode: val }))} />
+                          {label}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </>)}
             </div>
 
             {/* ── 7. Foto sfondo (Ken Burns) ── */}
@@ -2804,7 +2835,7 @@ function AdsPanel({ ads, setAds, restaurantId }: {
           <button type="button" onClick={() => { resetForm(); setAdding(true) }}
             className="flex items-center gap-1.5 text-xs text-gray-600 hover:text-gray-900 transition-colors">
             <span className="text-base leading-none font-light">+</span>
-            Aggiungi promozione
+            Aggiungi media
           </button>
         )}
       </div>

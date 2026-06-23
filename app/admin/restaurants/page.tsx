@@ -1,8 +1,8 @@
 import { createClient } from '@/lib/supabase/server'
-import Link from 'next/link'
-import RestaurantDeleteButton from './RestaurantDeleteButton'
 import RestaurantsTableBody from './RestaurantsTableBody'
 import DownloadAllPDFButton from './DownloadAllPDFButton'
+import RestaurantRowActions from './RestaurantRowActions'
+import Link from 'next/link'
 
 export default async function RestaurantsPage() {
   const supabase = await createClient()
@@ -69,18 +69,12 @@ export default async function RestaurantsPage() {
                     </span>
                   </td>
                   <td className="px-4 py-3">
-                    <div className="flex items-center justify-end gap-3 whitespace-nowrap">
+                    <div className="flex items-center justify-end gap-2">
                       <DownloadAllPDFButton
                         restaurantId={r.id}
                         restaurantName={r.name}
                       />
-                      <Link
-                        href={`/admin/restaurants/${r.id}`}
-                        className="text-sm text-blue-600 hover:underline"
-                      >
-                        Gestisci
-                      </Link>
-                      <RestaurantDeleteButton
+                      <RestaurantRowActions
                         restaurantId={r.id}
                         restaurantName={r.name}
                       />
