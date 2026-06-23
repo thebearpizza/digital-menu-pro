@@ -738,16 +738,17 @@ export default function FlipbookViewer({
 
           if (config.mode === 'custom_media' && config.mediaUrl) {
             videoEl = document.createElement('video')
-            videoEl.src = config.mediaUrl
-            // autoplay = false — play/pause gestito manualmente (precaricato prima)
+            // #t=0.01: media-fragment trick — costringe iOS/Android a decodificare
+            // e mostrare il primo frame come immagine statica ancora prima di play().
+            // Elimina il flash bianco/nero senza bisogno di un poster esterno.
+            videoEl.src       = config.mediaUrl + (config.mediaUrl.includes('#') ? '' : '#t=0.01')
             videoEl.autoplay  = false
             videoEl.loop      = true
             videoEl.muted     = true
             videoEl.playsInline = true
             videoEl.preload   = 'auto'
             videoEl.className = 'ad-video'
-            // Mostra la foto di backup come poster mentre il video si carica
-            if (config.backupImageUrl) videoEl.poster = config.backupImageUrl
+            // Nessun poster: il primo frame da #t=0.01 è già il fotogramma reale.
             main.appendChild(videoEl)
           } else if (config.backupImageUrl) {
             const kb = document.createElement('div')
@@ -958,10 +959,9 @@ export default function FlipbookViewer({
               try {
                 const cur = opts?.page as number
                 if (!cur) return
-                // NON mettiamo in pausa il video corrente: `when.turned` non scatta
-                // su un flip annullato (turn.js design), quindi il video resterebbe
-                // bloccato. Lasciandolo girare, su cancel non succede nulla; su
-                // flip completato, when.turned lo mette in pausa normalmente.
+                // Il video corrente NON viene messo in pausa: turned non scatta
+                // su flip annullato, quindi resterebbe bloccato. Lasciandolo girare,
+                // su cancel non succede nulla; su flip completato when.turned pausa.
                 let dest: number
                 if (typeof corner === 'string' &&
                     (corner.charAt(1) === 'l' || corner.charAt(1) === 'r')) {
@@ -971,21 +971,48 @@ export default function FlipbookViewer({
                 } else {
                   return
                 }
+                // Warmup: avvia il video di destinazione MENTRE la piega è in corso.
+                // Così quando turn.js svela la pagina il video gira già — niente delay.
+                const destVid = adVideoMap.get(dest)
+                if (destVid) {
+                  try { destVid.currentTime = 0 } catch (_) {}
+                  destVid.play().catch(() => {})
+                }
                 paintReveal(cur, dest)
               } catch (_) {}
             },
             turned(_evt: Event, page: number) {
               setCurrentPage(page)
               try { clearReveal() } catch (_) {}
-              // Avvia il video dell'ad corrente (già precaricato), pausa tutti gli altri
               adVideoMap.forEach((vid, turnPage) => {
                 if (turnPage === page) {
-                  vid.currentTime = 0
-                  vid.play().catch(() => {})
+                  // Se il video è già in play (riscaldato in start): non resettarlo,
+                  // continua senza salti. Se è in pausa (primo avvio): riparti da 0.
+                  if (vid.paused) {
+                    try { vid.currentTime = 0 } catch (_) {}
+                    vid.play().catch(() => {})
+                  }
                 } else {
                   try { vid.pause() } catch (_) {}
                 }
               })
+            },
+            // `end` scatta SEMPRE: sia a piega completata (turnedOk=true) sia annullata
+            // (turnedOk=false). È l'unico hook affidabile per lo snap-back, perché
+            // `turned` non scatta se la pagina non cambia.
+            end(_evt: Event, opts: any, turnedOk: boolean) {
+              try {
+                if (!turnedOk) {
+                  // Flip annullato: pausa il video di destinazione avviato in start
+                  // e riportalo all'inizio così il prossimo reveal parte da 0.
+                  const dest = typeof opts?.next === 'number' ? opts.next : 0
+                  const destVid = adVideoMap.get(dest)
+                  if (destVid) {
+                    destVid.pause()
+                    try { destVid.currentTime = 0 } catch (_) {}
+                  }
+                }
+              } catch (_) {}
             },
           },
         })
