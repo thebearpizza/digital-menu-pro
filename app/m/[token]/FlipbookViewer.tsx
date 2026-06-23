@@ -293,6 +293,24 @@ export default function FlipbookViewer({
     const BLACK_PIXEL = 'data:image/gif;base64,R0lGODlhAQABAIAAAAUEBAAAACwAAAAAAQABAAACAkQBADs='
     // Fail-safe timers: cleared on unmount to prevent memory leaks / setState after unmount
     const failsafeTimers = new Set<ReturnType<typeof setTimeout>>()
+    // Pagina di destinazione del flip in corso (null = nessun flip attivo).
+    // Impostato in when.start, resettato in when.turned/when.end.
+    // Usato dal listener pointerup per chiamare play() nel gesto "caldo".
+    let pendingFlipDest: number | null = null
+
+    // Cattura il momento in cui il dito si stacca dallo schermo durante un flip
+    // verso una pagina Ad. In quel preciso istante il browser considera il gesto
+    // "caldo" (hot user gesture) e approva play() senza autoplay restriction.
+    // Dichiarato qui (non nell'IIFE) per poterlo rimuovere nel cleanup.
+    const onBookPointerUp = () => {
+      if (pendingFlipDest === null) return
+      const destVid = adVideoMap.get(pendingFlipDest)
+      if (destVid && destVid.paused) {
+        destVid.muted      = true
+        destVid.playsInline = true
+        destVid.play().catch(() => {}) // errore gestito poi in crossfadeToVideo
+      }
+    }
 
     // devicePixelRatio: buffer fisicamente grande → testo nitido su retina.
     // Cappato a 3 per evitare allocazioni eccessive su display ultra-HiDPI.
@@ -990,9 +1008,12 @@ export default function FlipbookViewer({
           }
         }
 
-        // Avvia il video di una pagina Ad e fa il crossfade canvas→video con fail-safe.
-        // Fail-safe: se entro 300ms l'evento 'playing' non scatta (CORS block, play()
-        // rifiutato, GPU lenta), forza comunque la visibilità del video — mai schermo nero.
+        // Fa il crossfade canvas→video per una pagina Ad attiva.
+        // Se il video è già in riproduzione (avviato dal listener pointerup durante il
+        // gesto "caldo") rivela immediatamente senza ripetere play().
+        // Altrimenti: re-asserta muted/playsInline, lancia play(), ascolta 'playing'.
+        // Fail-safe 300ms: se 'playing' non scatta (play() già risolto prima della
+        // registrazione del listener, GPU lenta, promessa appesa), rivela comunque.
         const crossfadeToVideo = (turnPage: number): void => {
           const vid = adVideoMap.get(turnPage)
           const cvs = adCanvasMap.get(turnPage)
@@ -1000,6 +1021,12 @@ export default function FlipbookViewer({
 
           const revealVideo = () => {
             try { vid.style.opacity = '1'; if (cvs) cvs.style.opacity = '0' } catch (_) {}
+          }
+
+          // Video già in riproduzione (avviato dal pointerup nel gesto caldo): rivela subito.
+          if (!vid.paused && !vid.ended && vid.readyState >= 3) {
+            revealVideo()
+            return
           }
 
           let timer: ReturnType<typeof setTimeout>
@@ -1017,16 +1044,21 @@ export default function FlipbookViewer({
           }, 300)
           failsafeTimers.add(timer)
 
+          // Re-asserta gli attributi di sblocco: i browser mobile possono dimenticarli
+          // tra un flip e l'altro (specialmente su iOS con gestione aggressiva della memoria).
+          vid.muted      = true
+          vid.playsInline = true
           try { vid.currentTime = 0 } catch (_) {}
           vid.play().catch(() => {
-            // Play rifiutato dal browser (nessuna interazione utente o autoplay bloccato).
-            // Mostriamo comunque il video (sarà fermo sul frame corrente ma non nero).
+            // Play rifiutato esplicitamente — rivela comunque (mai schermo nero).
             clearTimeout(timer)
             failsafeTimers.delete(timer)
             vid.removeEventListener('playing', onPlaying)
             revealVideo()
           })
         }
+
+        el.addEventListener('pointerup', onBookPointerUp)
 
         window.$(el).turn({
           width:        dims.w,
@@ -1065,16 +1097,21 @@ export default function FlipbookViewer({
                 }
                 // paintReveal mostra il canvas snapshot della pagina di destinazione
                 // come background durante l'animazione di flip.
-                // Nessun warmup video qui: il canvas gestisce il frame visivo.
                 paintReveal(cur, dest)
+                // Registra dest se è una pagina Ad: il listener pointerup userà
+                // questa info per avviare il video nel gesto "caldo".
+                pendingFlipDest = adVideoMap.has(dest) ? dest : null
               } catch (_) {}
             },
             turned(_evt: Event, page: number) {
+              pendingFlipDest = null
               setCurrentPage(page)
               try { clearReveal() } catch (_) {}
               adVideoMap.forEach((vid, turnPage) => {
                 const cvs = adCanvasMap.get(turnPage)
                 if (turnPage === page) {
+                  // crossfadeToVideo rileva se il video è già in play (avviato da
+                  // pointerup) e rivela subito; altrimenti tenta play() + failsafe.
                   crossfadeToVideo(turnPage)
                 } else {
                   // Pagina inattiva: ferma il video e ripristina canvas visibile
@@ -1084,6 +1121,25 @@ export default function FlipbookViewer({
                   if (cvs) cvs.style.opacity = '1'
                 }
               })
+            },
+            // end scatta SEMPRE: sia a flip completato (turnedOk=true) sia annullato
+            // (snap-back, turnedOk=false). Solo nel caso annullato dobbiamo fermare
+            // il video che pointerup aveva avviato speculativamente.
+            end(_evt: Event, opts: any, turnedOk: boolean) {
+              pendingFlipDest = null
+              try {
+                if (!turnedOk) {
+                  const dest = typeof opts?.next === 'number' ? opts.next : 0
+                  const vid  = adVideoMap.get(dest)
+                  const cvs  = adCanvasMap.get(dest)
+                  if (vid) {
+                    vid.pause()
+                    try { vid.currentTime = 0 } catch (_) {}
+                    vid.style.opacity = '0'
+                    if (cvs) cvs.style.opacity = '1'
+                  }
+                }
+              } catch (_) {}
             },
           },
         })
@@ -1111,6 +1167,7 @@ export default function FlipbookViewer({
     return () => {
       cancelled = true
       el.removeEventListener('touchstart', onBookTouchStart)
+      el.removeEventListener('pointerup',  onBookPointerUp)
       renderTasks.forEach(t => { try { t.cancel() } catch (_) {} })
       failsafeTimers.forEach(t => clearTimeout(t))
       adVideoMap.forEach(vid => { try { vid.pause() } catch (_) {} })
