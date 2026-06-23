@@ -286,7 +286,11 @@ export default function FlipbookViewer({
     const pdfPageObjects: any[] = []
     const renderTasks  = new Map<number, { cancel(): void }>()
     const pageDataUrls = new Map<number, string>()
-    const adVideoMap   = new Map<number, HTMLVideoElement>()
+    const adVideoMap      = new Map<number, HTMLVideoElement>()
+    const adCanvasMap     = new Map<number, HTMLCanvasElement>()
+    const adCanvasDataUrls = new Map<number, string>()
+    // 1×1 black GIF — fallback per adCanvasDataUrls prima del loadeddata
+    const BLACK_PIXEL = 'data:image/gif;base64,R0lGODlhAQABAIAAAAUEBAAAACwAAAAAAQABAAACAkQBADs='
 
     // devicePixelRatio: buffer fisicamente grande → testo nitido su retina.
     // Cappato a 3 per evitare allocazioni eccessive su display ultra-HiDPI.
@@ -726,7 +730,7 @@ export default function FlipbookViewer({
         pdfToTurnRef.current = pdfToTurn
 
         // ── Helper: costruisce il DOM di una pagina Ad ───────────────────────
-        const buildAdPageDOM = (config: AdConfig): { el: HTMLElement; video?: HTMLVideoElement } => {
+        const buildAdPageDOM = (config: AdConfig): { el: HTMLElement; video?: HTMLVideoElement; canvas?: HTMLCanvasElement } => {
           const container = document.createElement('div')
           container.style.cssText = 'width:100%;height:100%;display:flex;flex-direction:column;'
 
@@ -735,12 +739,10 @@ export default function FlipbookViewer({
           main.className = 'ad-root'
 
           let videoEl: HTMLVideoElement | undefined
+          let canvasEl: HTMLCanvasElement | undefined
 
           if (config.mode === 'custom_media' && config.mediaUrl) {
             videoEl = document.createElement('video')
-            // #t=0.01: media-fragment trick — costringe iOS/Android a decodificare
-            // e mostrare il primo frame come immagine statica ancora prima di play().
-            // Elimina il flash bianco/nero senza bisogno di un poster esterno.
             videoEl.src       = config.mediaUrl + (config.mediaUrl.includes('#') ? '' : '#t=0.01')
             videoEl.autoplay  = false
             videoEl.loop      = true
@@ -748,8 +750,23 @@ export default function FlipbookViewer({
             videoEl.playsInline = true
             videoEl.preload   = 'auto'
             videoEl.className = 'ad-video'
-            // Nessun poster: il primo frame da #t=0.01 è già il fotogramma reale.
+            // Video parte nascosto: il canvas overlay mostra il primo frame durante l'animazione.
+            // La GPU può renderizzare i pixel del canvas a 60fps durante CSS 3D transforms;
+            // il tag <video> invece si congela sui dispositivi mobile durante le animazioni.
+            videoEl.style.cssText += 'opacity:0;transition:opacity 0.35s ease;'
             main.appendChild(videoEl)
+
+            // Canvas overlay — sopra il video (z-index:10), mostra il primo frame catturato
+            // via drawImage su loadeddata. Prima del loadeddata è riempito di #111 (scuro).
+            canvasEl = document.createElement('canvas')
+            canvasEl.width  = dims!.w
+            canvasEl.height = dims!.h
+            canvasEl.style.cssText =
+              'position:absolute;inset:0;width:100%;height:100%;' +
+              'z-index:10;transition:opacity 0.35s ease;'
+            const ctx0 = canvasEl.getContext('2d')
+            if (ctx0) { ctx0.fillStyle = '#111'; ctx0.fillRect(0, 0, dims!.w, dims!.h) }
+            main.appendChild(canvasEl)
           } else if (config.backupImageUrl) {
             const kb = document.createElement('div')
             kb.className = 'ad-kb-img'
@@ -828,7 +845,7 @@ export default function FlipbookViewer({
 
           container.appendChild(main)
           container.appendChild(safe)
-          return { el: container, video: videoEl }
+          return { el: container, video: videoEl, canvas: canvasEl }
         }
 
         // ── FASE 2: div + canvas nel DOM ─────────────────────────────────────
@@ -844,9 +861,34 @@ export default function FlipbookViewer({
             `backface-visibility:hidden;-webkit-backface-visibility:hidden;`
 
           if (page.type === 'ad') {
-            const { el: adEl, video } = buildAdPageDOM(page.config)
+            const { el: adEl, video, canvas } = buildAdPageDOM(page.config)
             pageDiv.appendChild(adEl)
-            if (video) adVideoMap.set(domIdx + 1, video)  // 1-based turn page
+            const turnPage = domIdx + 1  // 1-based turn page
+            if (video) adVideoMap.set(turnPage, video)
+            if (canvas) {
+              adCanvasMap.set(turnPage, canvas)
+              adCanvasDataUrls.set(turnPage, BLACK_PIXEL)
+              if (video) {
+                // Cattura il primo frame video nel canvas su loadeddata (once).
+                // Questo frame viene usato come background in paintReveal durante
+                // l'animazione di flip — il canvas si renderizza a 60fps senza freeze.
+                video.addEventListener('loadeddata', () => {
+                  try {
+                    const ctx = canvas.getContext('2d')
+                    if (!ctx) return
+                    const vw = video.videoWidth, vh = video.videoHeight
+                    const cw2 = canvas.width, ch2 = canvas.height
+                    if (!vw || !vh) return
+                    // object-fit: cover math
+                    const scale2 = Math.max(cw2 / vw, ch2 / vh)
+                    const dx = (cw2 - vw * scale2) / 2
+                    const dy = (ch2 - vh * scale2) / 2
+                    ctx.drawImage(video, dx, dy, vw * scale2, vh * scale2)
+                    adCanvasDataUrls.set(turnPage, canvas.toDataURL('image/jpeg', 0.9))
+                  } catch (_) {}
+                }, { once: true })
+              }
+            }
             el.appendChild(pageDiv)
             continue
           }
@@ -916,7 +958,13 @@ export default function FlipbookViewer({
           const data = window.$(el!).turn('data') as any
           const wrap = data?.pageWrap?.[cur]
           const pdfPage = turnToPdf.get(dest)
-          const src = pdfPage !== undefined ? pageDataUrls.get(pdfPage) : undefined
+          let src: string | undefined
+          if (pdfPage !== undefined) {
+            src = pageDataUrls.get(pdfPage)
+          } else {
+            // Pagina Ad: usa il canvas snapshot (primo frame o BLACK_PIXEL)
+            src = adCanvasDataUrls.get(dest)
+          }
           if (wrap && src) {
             window.$(wrap).css({
               backgroundImage:    `url("${src}")`,
@@ -971,13 +1019,9 @@ export default function FlipbookViewer({
                 } else {
                   return
                 }
-                // Warmup: avvia il video di destinazione MENTRE la piega è in corso.
-                // Così quando turn.js svela la pagina il video gira già — niente delay.
-                const destVid = adVideoMap.get(dest)
-                if (destVid) {
-                  try { destVid.currentTime = 0 } catch (_) {}
-                  destVid.play().catch(() => {})
-                }
+                // paintReveal mostra il canvas snapshot della pagina di destinazione
+                // come background durante l'animazione di flip.
+                // Nessun warmup video qui: il canvas gestisce il frame visivo.
                 paintReveal(cur, dest)
               } catch (_) {}
             },
@@ -985,34 +1029,26 @@ export default function FlipbookViewer({
               setCurrentPage(page)
               try { clearReveal() } catch (_) {}
               adVideoMap.forEach((vid, turnPage) => {
+                const cvs = adCanvasMap.get(turnPage)
                 if (turnPage === page) {
-                  // Se il video è già in play (riscaldato in start): non resettarlo,
-                  // continua senza salti. Se è in pausa (primo avvio): riparti da 0.
-                  if (vid.paused) {
-                    try { vid.currentTime = 0 } catch (_) {}
-                    vid.play().catch(() => {})
-                  }
+                  // Pagina attiva: avvia il video, poi al primo frame visible
+                  // fade-in del video e fade-out del canvas.
+                  try { vid.currentTime = 0 } catch (_) {}
+                  vid.play().catch(() => {})
+                  vid.addEventListener('playing', () => {
+                    try {
+                      vid.style.opacity = '1'
+                      if (cvs) cvs.style.opacity = '0'
+                    } catch (_) {}
+                  }, { once: true })
                 } else {
-                  try { vid.pause() } catch (_) {}
+                  // Pagina inattiva: ferma il video e ripristina canvas visibile
+                  // così il prossimo paintReveal/reveal ha il frame statico pronto.
+                  try { vid.pause(); vid.currentTime = 0 } catch (_) {}
+                  vid.style.opacity = '0'
+                  if (cvs) cvs.style.opacity = '1'
                 }
               })
-            },
-            // `end` scatta SEMPRE: sia a piega completata (turnedOk=true) sia annullata
-            // (turnedOk=false). È l'unico hook affidabile per lo snap-back, perché
-            // `turned` non scatta se la pagina non cambia.
-            end(_evt: Event, opts: any, turnedOk: boolean) {
-              try {
-                if (!turnedOk) {
-                  // Flip annullato: pausa il video di destinazione avviato in start
-                  // e riportalo all'inizio così il prossimo reveal parte da 0.
-                  const dest = typeof opts?.next === 'number' ? opts.next : 0
-                  const destVid = adVideoMap.get(dest)
-                  if (destVid) {
-                    destVid.pause()
-                    try { destVid.currentTime = 0 } catch (_) {}
-                  }
-                }
-              } catch (_) {}
             },
           },
         })
@@ -1025,8 +1061,18 @@ export default function FlipbookViewer({
         }
 
         setCurrentPage(1)
-        // Se la prima pagina è un video ad, avvialo subito (già precaricato)
-        adVideoMap.get(1)?.play().catch(() => {})
+        // Se la prima pagina è un video ad, avvialo subito con crossfade canvas→video
+        const firstVid = adVideoMap.get(1)
+        if (firstVid) {
+          firstVid.play().catch(() => {})
+          firstVid.addEventListener('playing', () => {
+            try {
+              firstVid.style.opacity = '1'
+              const firstCvs = adCanvasMap.get(1)
+              if (firstCvs) firstCvs.style.opacity = '0'
+            } catch (_) {}
+          }, { once: true })
+        }
         setTotalPages(pages.length)  // include le pagine Ad
         setPagesReady(true)
         setLoadPhase('ready')
