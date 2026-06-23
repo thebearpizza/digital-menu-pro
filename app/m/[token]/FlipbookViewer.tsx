@@ -784,24 +784,22 @@ export default function FlipbookViewer({
             videoEl.playsInline = true
             videoEl.preload   = 'auto'
             videoEl.className = 'ad-video'
-            // Video parte nascosto: il canvas overlay mostra il primo frame durante l'animazione.
-            // La GPU può renderizzare i pixel del canvas a 60fps durante CSS 3D transforms;
-            // il tag <video> invece si congela sui dispositivi mobile durante le animazioni.
-            videoEl.style.cssText += 'opacity:0;transition:opacity 0.35s ease;will-change:opacity;'
+            // Il video è SEMPRE visibile (nessun opacity:0): è il canvas overlay (z-index:10)
+            // che lo copre finché non è il momento di mostrarlo. display:none sul canvas
+            // è più affidabile di opacity su entrambi: non risente di backface-visibility
+            // o layer compositing di turn.js.
             main.appendChild(videoEl)
 
             // Canvas overlay — sopra il video (z-index:10), mostra il primo frame catturato
-            // via drawImage su loadeddata. Prima del loadeddata è riempito di #111 (scuro).
+            // via drawImage su canplay. Prima del canplay è riempito di #111 (scuro).
+            // Inizialmente display:'block' (default canvas) → copre il video.
+            // Viene nascosto con display:'none' in crossfadeToVideo dopo il turned.
             canvasEl = document.createElement('canvas')
             canvasEl.width  = dims!.w
             // Altezza = solo la zona video (esclusa la safe area).
-            // Così il toDataURL cattura esattamente i pixel che saranno visibili
-            // e paintReveal può usare backgroundSize:'100% calc(100% - AD_SAFE_PX px)'
-            // eliminando il layout shift durante l'animazione.
             canvasEl.height = dims!.h - AD_SAFE_PX
             canvasEl.style.cssText =
-              'position:absolute;inset:0;width:100%;height:100%;' +
-              'z-index:10;transition:opacity 0.35s ease;'
+              'position:absolute;inset:0;width:100%;height:100%;z-index:10;'
             const ctx0 = canvasEl.getContext('2d')
             if (ctx0) { ctx0.fillStyle = '#111'; ctx0.fillRect(0, 0, canvasEl.width, canvasEl.height) }
             main.appendChild(canvasEl)
@@ -1027,57 +1025,20 @@ export default function FlipbookViewer({
           }
         }
 
-        // Crossfade canvas→video per una pagina Ad attiva.
-        // Fast path: se onBookPointerUp ha già avviato il video (vid.paused=false),
-        // rivela immediatamente senza attendere eventi/timer.
-        // Slow path: tenta play() + ascolta 'playing' + failsafe 200ms.
-        // 'revealed' guard impedisce doppie reveal da timer e listener in race.
+        // Rivela il video dell'Ad quando la pagina è attiva (dopo turned).
+        // Il canvas (z-index:10) copriva il video: lo nascondiamo con display:none
+        // — più affidabile di opacity su layer GPU con backface-visibility:hidden.
+        // Il video è SEMPRE a opacity:1; è il canvas che fungeva da "schermo".
         const crossfadeToVideo = (turnPage: number): void => {
           const vid = adVideoMap.get(turnPage)
           const cvs = adCanvasMap.get(turnPage)
           if (!vid) return
-
-          let revealed = false
-          const revealVideo = () => {
-            if (revealed) return
-            revealed = true
-            try { vid.style.opacity = '1'; if (cvs) cvs.style.opacity = '0' } catch (_) {}
-          }
-
-          // Fast path: video già in play (avviato da onBookPointerUp nel gesto "caldo").
-          // vid.paused diventa false immediatamente quando play() è chiamato, anche prima
-          // che il primo frame sia decodificato → reveal ora, il video parte in <1 frame.
-          if (!vid.paused) { revealVideo(); return }
-
-          // Slow path: video ancora in pausa (gesto non intercettato o play() fallito).
-          let timer: ReturnType<typeof setTimeout> | undefined
-
-          const onPlaying = () => {
-            if (timer !== undefined) { clearTimeout(timer); failsafeTimers.delete(timer) }
-            revealVideo()
-          }
-
-          vid.addEventListener('playing', onPlaying, { once: true })
-
-          // 200ms è sufficiente: video muted con preload:auto è pronto quasi subito.
-          timer = setTimeout(() => {
-            failsafeTimers.delete(timer!)
-            try { vid.removeEventListener('playing', onPlaying) } catch (_) {}
-            revealVideo()
-          }, 200)
-          failsafeTimers.add(timer)
-
+          // Nascondi canvas → il video sotto diventa visibile istantaneamente
+          if (cvs) cvs.style.display = 'none'
+          // Avvia il video (muted → nessuna restrizione autoplay su iOS/Android)
           vid.muted       = true
           vid.playsInline = true
-          vid.play().catch((e: DOMException) => {
-            // AbortError: play() da onBookPointerUp ancora pendente.
-            // 'playing' o il failsafe gestiranno la reveal.
-            if (e?.name === 'AbortError') return
-            // Qualsiasi altro errore (NotAllowedError, ecc.) → rivela subito.
-            if (timer !== undefined) { clearTimeout(timer); failsafeTimers.delete(timer) }
-            try { vid.removeEventListener('playing', onPlaying) } catch (_) {}
-            revealVideo()
-          })
+          vid.play().catch(() => {})
         }
 
         // Fase di CAPTURE sul window: intercetta touchend/pointerup PRIMA che
@@ -1137,15 +1098,13 @@ export default function FlipbookViewer({
               adVideoMap.forEach((vid, turnPage) => {
                 const cvs = adCanvasMap.get(turnPage)
                 if (turnPage === page) {
-                  // crossfadeToVideo rileva se il video è già in play (avviato da
-                  // pointerup) e rivela subito; altrimenti tenta play() + failsafe.
+                  // Nascondi canvas, avvia video: la pagina è ora attiva.
                   crossfadeToVideo(turnPage)
                 } else {
-                  // Pagina inattiva: ferma il video e ripristina canvas visibile
-                  // così il prossimo paintReveal ha il frame statico pronto.
+                  // Pagina inattiva: ferma il video e ripristina canvas sopra.
+                  // canvas display:'' → torna visibile (z-index:10) → copre il video.
                   try { vid.pause(); vid.currentTime = 0 } catch (_) {}
-                  vid.style.opacity = '0'
-                  if (cvs) cvs.style.opacity = '1'
+                  if (cvs) cvs.style.display = ''
                 }
               })
             },
@@ -1162,8 +1121,7 @@ export default function FlipbookViewer({
                   if (vid) {
                     vid.pause()
                     try { vid.currentTime = 0 } catch (_) {}
-                    vid.style.opacity = '0'
-                    if (cvs) cvs.style.opacity = '1'
+                    if (cvs) cvs.style.display = ''
                   }
                 }
               } catch (_) {}
@@ -1179,7 +1137,7 @@ export default function FlipbookViewer({
         }
 
         setCurrentPage(1)
-        // Se la prima pagina è un video ad, avvialo subito con crossfade + fail-safe
+        // Se la prima pagina è un video ad, nascondi canvas e avvia subito.
         if (adVideoMap.has(1)) crossfadeToVideo(1)
         setTotalPages(pages.length)  // include le pagine Ad
         setPagesReady(true)
