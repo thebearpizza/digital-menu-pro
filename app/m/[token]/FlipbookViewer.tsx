@@ -754,9 +754,15 @@ export default function FlipbookViewer({
           const container = document.createElement('div')
           container.style.cssText = 'width:100%;height:100%;display:flex;flex-direction:column;'
 
-          // Zona cliccabile (92%) — video o Ken Burns
+          // Zona cliccabile — altezza px FISSA con !important.
+          // Pixel fissi (non %) sono immutabili durante il clone di turn.js:
+          // la libreria ricalcola i layout percentuali nel clone causando un
+          // layout shift visibile al termine dell'animazione.
+          // 46px safe area (2px meno dell'equivalente 8% su display tipici)
+          // massimizza lo spazio video lasciando i tasti navigazione visibili.
           const main = document.createElement('div')
           main.className = 'ad-root'
+          main.style.setProperty('height', 'calc(100% - 46px)', 'important')
 
           let videoEl: HTMLVideoElement | undefined
           let canvasEl: HTMLCanvasElement | undefined
@@ -863,9 +869,10 @@ export default function FlipbookViewer({
           // Blocca swipe su turn.js dentro la zona ad
           main.addEventListener('touchend', (e) => { e.stopPropagation() }, { passive: false })
 
-          // Safe area (8%) — trasparente, nessun evento
+          // Safe area — altezza px FISSA, immune al ricalcolo percentuale di turn.js
           const safe = document.createElement('div')
           safe.className = 'ad-safe-area'
+          safe.style.setProperty('height', '46px', 'important')
 
           container.appendChild(main)
           container.appendChild(safe)
@@ -1058,7 +1065,12 @@ export default function FlipbookViewer({
           })
         }
 
-        el.addEventListener('pointerup', onBookPointerUp)
+        // Fase di CAPTURE sul window: intercetta touchend/pointerup PRIMA che
+        // turn.js possa chiamare stopPropagation sulle sue pagine.
+        // { capture: true } garantisce l'esecuzione nell'ordine: window→document→el
+        // indipendentemente da qualsiasi preventDefault/stopPropagation delle librerie.
+        window.addEventListener('touchend', onBookPointerUp, true)
+        window.addEventListener('pointerup', onBookPointerUp, true)
 
         window.$(el).turn({
           width:        dims.w,
@@ -1167,7 +1179,8 @@ export default function FlipbookViewer({
     return () => {
       cancelled = true
       el.removeEventListener('touchstart', onBookTouchStart)
-      el.removeEventListener('pointerup',  onBookPointerUp)
+      window.removeEventListener('touchend', onBookPointerUp, true)
+      window.removeEventListener('pointerup', onBookPointerUp, true)
       renderTasks.forEach(t => { try { t.cancel() } catch (_) {} })
       failsafeTimers.forEach(t => clearTimeout(t))
       adVideoMap.forEach(vid => { try { vid.pause() } catch (_) {} })
