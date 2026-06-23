@@ -286,11 +286,13 @@ export default function FlipbookViewer({
     const pdfPageObjects: any[] = []
     const renderTasks  = new Map<number, { cancel(): void }>()
     const pageDataUrls = new Map<number, string>()
-    const adVideoMap      = new Map<number, HTMLVideoElement>()
-    const adCanvasMap     = new Map<number, HTMLCanvasElement>()
+    const adVideoMap       = new Map<number, HTMLVideoElement>()
+    const adCanvasMap      = new Map<number, HTMLCanvasElement>()
     const adCanvasDataUrls = new Map<number, string>()
-    // 1×1 black GIF — fallback per adCanvasDataUrls prima del loadeddata
+    // 1×1 black GIF — fallback per adCanvasDataUrls prima del canplay
     const BLACK_PIXEL = 'data:image/gif;base64,R0lGODlhAQABAIAAAAUEBAAAACwAAAAAAQABAAACAkQBADs='
+    // Fail-safe timers: cleared on unmount to prevent memory leaks / setState after unmount
+    const failsafeTimers = new Set<ReturnType<typeof setTimeout>>()
 
     // devicePixelRatio: buffer fisicamente grande → testo nitido su retina.
     // Cappato a 3 per evitare allocazioni eccessive su display ultra-HiDPI.
@@ -743,6 +745,10 @@ export default function FlipbookViewer({
 
           if (config.mode === 'custom_media' && config.mediaUrl) {
             videoEl = document.createElement('video')
+            // crossOrigin DEVE essere impostato PRIMA di src: se src viene caricato
+            // prima, il browser usa la risposta cached senza CORS header e drawImage
+            // fallisce silenziosamente (tainted canvas → schermo nero).
+            videoEl.crossOrigin = 'anonymous'
             videoEl.src       = config.mediaUrl + (config.mediaUrl.includes('#') ? '' : '#t=0.01')
             videoEl.autoplay  = false
             videoEl.loop      = true
@@ -869,10 +875,10 @@ export default function FlipbookViewer({
               adCanvasMap.set(turnPage, canvas)
               adCanvasDataUrls.set(turnPage, BLACK_PIXEL)
               if (video) {
-                // Cattura il primo frame video nel canvas su loadeddata (once).
-                // Questo frame viene usato come background in paintReveal durante
-                // l'animazione di flip — il canvas si renderizza a 60fps senza freeze.
-                video.addEventListener('loadeddata', () => {
+                // canplay è più affidabile di loadeddata su browser mobile per
+                // garantire che i pixel siano effettivamente decodificati prima di
+                // drawImage. Su iOS, loadeddata può scattare senza frame reali.
+                video.addEventListener('canplay', () => {
                   try {
                     const ctx = canvas.getContext('2d')
                     if (!ctx) return
@@ -984,6 +990,44 @@ export default function FlipbookViewer({
           }
         }
 
+        // Avvia il video di una pagina Ad e fa il crossfade canvas→video con fail-safe.
+        // Fail-safe: se entro 300ms l'evento 'playing' non scatta (CORS block, play()
+        // rifiutato, GPU lenta), forza comunque la visibilità del video — mai schermo nero.
+        const crossfadeToVideo = (turnPage: number): void => {
+          const vid = adVideoMap.get(turnPage)
+          const cvs = adCanvasMap.get(turnPage)
+          if (!vid) return
+
+          const revealVideo = () => {
+            try { vid.style.opacity = '1'; if (cvs) cvs.style.opacity = '0' } catch (_) {}
+          }
+
+          let timer: ReturnType<typeof setTimeout>
+          const onPlaying = () => {
+            clearTimeout(timer)
+            failsafeTimers.delete(timer)
+            revealVideo()
+          }
+
+          vid.addEventListener('playing', onPlaying, { once: true })
+          timer = setTimeout(() => {
+            failsafeTimers.delete(timer)
+            vid.removeEventListener('playing', onPlaying)
+            revealVideo()
+          }, 300)
+          failsafeTimers.add(timer)
+
+          try { vid.currentTime = 0 } catch (_) {}
+          vid.play().catch(() => {
+            // Play rifiutato dal browser (nessuna interazione utente o autoplay bloccato).
+            // Mostriamo comunque il video (sarà fermo sul frame corrente ma non nero).
+            clearTimeout(timer)
+            failsafeTimers.delete(timer)
+            vid.removeEventListener('playing', onPlaying)
+            revealVideo()
+          })
+        }
+
         window.$(el).turn({
           width:        dims.w,
           height:       dims.h,
@@ -1031,19 +1075,10 @@ export default function FlipbookViewer({
               adVideoMap.forEach((vid, turnPage) => {
                 const cvs = adCanvasMap.get(turnPage)
                 if (turnPage === page) {
-                  // Pagina attiva: avvia il video, poi al primo frame visible
-                  // fade-in del video e fade-out del canvas.
-                  try { vid.currentTime = 0 } catch (_) {}
-                  vid.play().catch(() => {})
-                  vid.addEventListener('playing', () => {
-                    try {
-                      vid.style.opacity = '1'
-                      if (cvs) cvs.style.opacity = '0'
-                    } catch (_) {}
-                  }, { once: true })
+                  crossfadeToVideo(turnPage)
                 } else {
                   // Pagina inattiva: ferma il video e ripristina canvas visibile
-                  // così il prossimo paintReveal/reveal ha il frame statico pronto.
+                  // così il prossimo paintReveal ha il frame statico pronto.
                   try { vid.pause(); vid.currentTime = 0 } catch (_) {}
                   vid.style.opacity = '0'
                   if (cvs) cvs.style.opacity = '1'
@@ -1061,18 +1096,8 @@ export default function FlipbookViewer({
         }
 
         setCurrentPage(1)
-        // Se la prima pagina è un video ad, avvialo subito con crossfade canvas→video
-        const firstVid = adVideoMap.get(1)
-        if (firstVid) {
-          firstVid.play().catch(() => {})
-          firstVid.addEventListener('playing', () => {
-            try {
-              firstVid.style.opacity = '1'
-              const firstCvs = adCanvasMap.get(1)
-              if (firstCvs) firstCvs.style.opacity = '0'
-            } catch (_) {}
-          }, { once: true })
-        }
+        // Se la prima pagina è un video ad, avvialo subito con crossfade + fail-safe
+        if (adVideoMap.has(1)) crossfadeToVideo(1)
         setTotalPages(pages.length)  // include le pagine Ad
         setPagesReady(true)
         setLoadPhase('ready')
@@ -1087,6 +1112,7 @@ export default function FlipbookViewer({
       cancelled = true
       el.removeEventListener('touchstart', onBookTouchStart)
       renderTasks.forEach(t => { try { t.cancel() } catch (_) {} })
+      failsafeTimers.forEach(t => clearTimeout(t))
       adVideoMap.forEach(vid => { try { vid.pause() } catch (_) {} })
       try { if (el && window.$?.fn?.turn) window.$(el).turn('destroy') } catch (_) {}
       if (el) el.innerHTML = ''
