@@ -2477,6 +2477,8 @@ function AdsPanel({ ads, setAds, restaurantId }: {
   })
 
   const [adding,        setAdding]        = useState(false)
+  // null = nuova promo; numero = indice della promo esistente in modifica
+  const [editingIndex,  setEditingIndex]  = useState<number | null>(null)
   const [form,          setForm]          = useState<AdConfig>(EMPTY())
   // pageStr: stato stringa separato per l'input pagina — evita che il campo si blocchi su "1"
   const [pageStr,       setPageStr]       = useState('1')
@@ -2557,22 +2559,43 @@ function AdsPanel({ ads, setAds, restaurantId }: {
     }))
   }
 
-  function resetForm() { setForm(EMPTY()); setPageStr('1') }
+  function resetForm() { setForm(EMPTY()); setPageStr('1'); setEditingIndex(null) }
+
+  // Apre il form precompilato con una promo esistente per modificarla.
+  function startEdit(idx: number) {
+    const ad = ads[idx]
+    if (!ad) return
+    setForm({ ...EMPTY(), ...ad, dishName: ad.dishName ?? '' })
+    setPageStr(String(Math.max(1, ad.insertAfterPdfPage || 1)))
+    setEditingIndex(idx)
+    setAdding(true)
+  }
+
+  // Una promo è valida con: menu + almeno un contenuto (nome OPPURE video OPPURE
+  // foto). Il nome NON è più obbligatorio: senza piatto collegato resta un video
+  // ads senza prodotto.
+  const canSave =
+    !!form.menuId &&
+    (!!(form.dishName ?? '').trim() || !!form.mediaUrl?.trim() || !!form.backupImageUrl?.trim())
 
   function handleAdd() {
-    if (!form.dishName.trim() || !form.menuId) return
+    if (!canSave) return
     const n = Math.max(1, parseInt(pageStr) || 1)
-    setAds([...ads, {
+    const entry: AdConfig = {
       ...form,
       insertAfterPdfPage: n,
       menuId:          form.menuId    || undefined,
+      dishName:        (form.dishName ?? '').trim(),
       dishDescription: form.dishDescription?.trim() || undefined,
       badgeText:       form.badgeText?.trim()   || undefined,
       price:           form.price?.trim()        || undefined,
       promoPrice:      form.promoPrice?.trim()   || undefined,
       promoPriceMode:  form.promoPrice?.trim()   ? (form.promoPriceMode ?? 'solo') : undefined,
       mediaUrl:        form.mediaUrl?.trim()     || undefined,
-    }])
+    }
+    setAds(editingIndex !== null
+      ? ads.map((a, i) => (i === editingIndex ? entry : a))
+      : [...ads, entry])
     resetForm()
     setAdding(false)
   }
@@ -2598,18 +2621,23 @@ function AdsPanel({ ads, setAds, restaurantId }: {
 
         <div className="space-y-2">
           {ads.map((ad, idx) => (
-            <div key={idx} className="flex items-start justify-between gap-3 px-3 py-2.5 rounded-lg border border-gray-200 bg-gray-50">
-              <div className="flex-1 min-w-0">
-                <p className="text-xs font-medium text-gray-900 truncate">{ad.dishName}</p>
+            <div key={idx}
+              className={`flex items-start justify-between gap-3 px-3 py-2.5 rounded-lg border bg-gray-50 transition-colors ${editingIndex === idx ? 'border-blue-400 ring-1 ring-blue-200' : 'border-gray-200'}`}>
+              {/* Click sul contenuto → modifica la promo */}
+              <button type="button" onClick={() => startEdit(idx)} className="flex-1 min-w-0 text-left group">
+                <p className="text-xs font-medium text-gray-900 truncate group-hover:text-blue-600 transition-colors">
+                  {ad.dishName?.trim() || (ad.mediaUrl ? 'Video promo' : 'Promo senza nome')}
+                </p>
                 <p className="text-[11px] text-gray-500 mt-0.5">
                   {menuOptions.find(m => m.id === ad.menuId)?.name ?? 'Tutti i menu'} · pag. {ad.insertAfterPdfPage}
                   {ad.badgeText  && <span> · <em>{ad.badgeText}</em></span>}
                   {ad.promoPrice ? <span> · <s>{ad.price}</s> {ad.promoPrice}</span> : ad.price ? <span> · {ad.price}</span> : null}
                   {ad.mediaUrl   && <span> · 🎬</span>}
                   {ad.dishId     && <span className="text-green-600"> · card ✓</span>}
+                  <span className="text-blue-500"> · modifica</span>
                 </p>
-              </div>
-              <button type="button" onClick={() => setAds(ads.filter((_, i) => i !== idx))}
+              </button>
+              <button type="button" onClick={() => { setAds(ads.filter((_, i) => i !== idx)); if (editingIndex !== null) { resetForm(); setAdding(false) } }}
                 className="shrink-0 text-gray-400 hover:text-red-500 transition-colors text-xl leading-none">×</button>
             </div>
           ))}
@@ -2617,7 +2645,7 @@ function AdsPanel({ ads, setAds, restaurantId }: {
 
         {adding ? (
           <div className="rounded-lg border border-gray-200 p-4 space-y-4 bg-gray-50">
-            <p className="text-xs font-semibold text-gray-700">Nuova promozione</p>
+            <p className="text-xs font-semibold text-gray-700">{editingIndex !== null ? 'Modifica promozione' : 'Nuova promozione'}</p>
 
             {/* ── 1. Menu (obbligatorio) ── */}
             <label className="block">
@@ -2645,12 +2673,12 @@ function AdsPanel({ ads, setAds, restaurantId }: {
             )}
 
             <div className="grid grid-cols-2 gap-3">
-              {/* ── 3. Nome ── */}
+              {/* ── 3. Nome (opzionale: senza nome resta un video ads senza prodotto) ── */}
               <label className="col-span-2 block">
-                <span className="text-[11px] text-gray-500">Nome nella promo *</span>
-                <input className={INPUT} value={form.dishName}
+                <span className="text-[11px] text-gray-500">Nome nella promo <span className="text-gray-400">(opzionale)</span></span>
+                <input className={INPUT} value={form.dishName ?? ''}
                   onChange={e => setForm(f => ({ ...f, dishName: e.target.value }))}
-                  placeholder="es. Tagliere Gourmet" />
+                  placeholder="es. Tagliere Gourmet — lascia vuoto per solo video" />
               </label>
 
               {/* ── 3b. Descrizione ── */}
@@ -2762,9 +2790,9 @@ function AdsPanel({ ads, setAds, restaurantId }: {
 
             <div className="flex items-center gap-2 pt-1 border-t border-gray-200">
               <button type="button" onClick={handleAdd}
-                disabled={!form.dishName.trim() || !form.menuId}
+                disabled={!canSave}
                 className="px-3 py-1.5 text-xs bg-gray-900 text-white rounded disabled:opacity-40 hover:bg-gray-700 transition-colors">
-                Aggiungi
+                {editingIndex !== null ? 'Salva modifiche' : 'Aggiungi'}
               </button>
               <button type="button" onClick={() => { setAdding(false); resetForm() }}
                 className="px-3 py-1.5 text-xs text-gray-500 hover:text-gray-800 transition-colors">
@@ -2773,7 +2801,7 @@ function AdsPanel({ ads, setAds, restaurantId }: {
             </div>
           </div>
         ) : (
-          <button type="button" onClick={() => setAdding(true)}
+          <button type="button" onClick={() => { resetForm(); setAdding(true) }}
             className="flex items-center gap-1.5 text-xs text-gray-600 hover:text-gray-900 transition-colors">
             <span className="text-base leading-none font-light">+</span>
             Aggiungi promozione

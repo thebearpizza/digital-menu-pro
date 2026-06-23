@@ -2,9 +2,8 @@
 
 import { useState, useCallback, useRef, useEffect } from 'react'
 import {
-  DndContext, closestCenter, DragEndEvent,
+  DndContext, closestCorners, DragEndEvent, DragStartEvent, DragOverlay,
   PointerSensor, TouchSensor, useSensor, useSensors,
-  SensorDescriptor, SensorOptions,
 } from '@dnd-kit/core'
 import {
   arrayMove,
@@ -26,6 +25,7 @@ import {
   deleteDish, reorderCategories, reorderDishes,
   duplicateDish, duplicateCategory, deleteCategory, renameCategory, bulkUpdateDishPrices, findDishTwins, DishTwin,
   toggleDishActive, toggleCategoryActive,
+  moveDishesToCategory, bulkDeleteDishes, bulkMoveDishesToMenu,
 } from './actions'
 import { useStaggerEntrance } from '@/lib/animations'
 
@@ -66,7 +66,7 @@ interface SourceDish {
   category: string | null
 }
 
-// ── Helper: rilevamento differenze per il banner di sync (MODULO 5) ──────────────
+// ── Helper: rilevamento differenze per il banner di sync ──────────────────────
 
 function sameAllergens(a: number[] = [], b: number[] = []) {
   const x = [...a].sort((m, n) => m - n)
@@ -74,7 +74,6 @@ function sameAllergens(a: number[] = [], b: number[] = []) {
   return x.length === y.length && x.every((v, i) => v === y[i])
 }
 
-// Solo i campi "contenuto" innescano il banner; la categoria resta opzionale nel modale.
 function anyFieldDiffers(s: SourceDish, twins: DishTwin[]): boolean {
   return twins.some(t => {
     const priceDiff =
@@ -88,7 +87,7 @@ function anyFieldDiffers(s: SourceDish, twins: DishTwin[]): boolean {
   })
 }
 
-// ── Sortable dish row (MODULO 4: DnD piatti) ─────────────────────────────────────
+// ── Sortable dish row ─────────────────────────────────────────────────────────
 
 function SortableDish({
   dish,
@@ -120,7 +119,6 @@ function SortableDish({
     opacity: isDragging ? 0.5 : 1,
   }
 
-  // Kebab locale per le azioni secondarie del piatto
   const [kebabOpen, setKebabOpen] = useState(false)
   const kebabRef = useRef<HTMLDivElement>(null)
 
@@ -149,7 +147,6 @@ function SortableDish({
         ⠿
       </button>
 
-      {/* Selezione multipla — per modifiche di prezzo in blocco */}
       <input
         type="checkbox"
         checked={selected}
@@ -159,7 +156,6 @@ function SortableDish({
         aria-label={`Seleziona ${dish.name}`}
       />
 
-      {/* Contenuto — flex-1, mai sacrificato; clickable per aprire l'editor */}
       <div
         className="flex-1 min-w-0 cursor-pointer hover:opacity-70 transition-opacity"
         onClick={() => onEdit(dish)}
@@ -177,7 +173,6 @@ function SortableDish({
         )}
       </div>
 
-      {/* Destra: prezzo | 👁 | ⋮ */}
       <div className="flex items-center gap-1 shrink-0">
         <span className="text-sm text-gray-600 tabular-nums whitespace-nowrap min-w-[52px] text-right">
           {dish.price != null ? `€ ${Number(dish.price).toFixed(2)}` : '—'}
@@ -185,7 +180,6 @@ function SortableDish({
 
         <VisibilityToggle isVisible={dish.is_active} onToggle={() => onToggle(dish)} />
 
-        {/* Kebab — Modifica / Duplica / Sposta / Elimina */}
         <div className="relative" ref={kebabRef}>
           <button
             onClick={() => setKebabOpen(o => !o)}
@@ -230,20 +224,20 @@ function SortableDish({
   )
 }
 
-// ── Sortable category row ──────────────────────────────────────────────────────
+// ── Sortable category block ───────────────────────────────────────────────────
+// NOTE: no DndContext here — the single top-level DndContext handles both
+// category reorder and dish reorder/cross-category moves.
 
 function SortableCategory({
   cat,
   dishes,
   expanded,
-  sensors,
   onToggle,
   onEdit,
   onDelete,
   onDuplicateDish,
   onMoveDish,
   onToggleDish,
-  onReorderDishes,
   onDuplicateCategory,
   onDeleteCategory,
   onRenameCategory,
@@ -257,14 +251,12 @@ function SortableCategory({
   cat: string
   dishes: Dish[]
   expanded: boolean
-  sensors: SensorDescriptor<SensorOptions>[]
   onToggle: () => void
   onEdit: (dish: Dish) => void
   onDelete: (dish: Dish) => void
   onDuplicateDish: (dish: Dish) => void
   onMoveDish: (dish: Dish) => void
   onToggleDish: (dish: Dish) => void
-  onReorderDishes: (cat: string, dishIds: string[]) => void
   onDuplicateCategory: (cat: string) => void
   onDeleteCategory: (cat: string) => void
   onRenameCategory: (cat: string) => void
@@ -284,7 +276,6 @@ function SortableCategory({
     opacity: isDragging ? 0.5 : 1,
   }
 
-  // Kebab menu state (mobile)
   const [kebabOpen, setKebabOpen] = useState(false)
   const kebabRef = useRef<HTMLDivElement>(null)
 
@@ -299,26 +290,14 @@ function SortableCategory({
     return () => document.removeEventListener('mousedown', onClickOutside)
   }, [kebabOpen])
 
-  function handleDishDragEnd(event: DragEndEvent) {
-    const { active, over } = event
-    if (!over || active.id === over.id) return
-    const ids = dishes.map(d => d.id)
-    const oldIdx = ids.indexOf(active.id as string)
-    const newIdx = ids.indexOf(over.id as string)
-    if (oldIdx < 0 || newIdx < 0) return
-    onReorderDishes(cat, arrayMove(ids, oldIdx, newIdx))
-  }
-
   const allActive   = dishes.length > 0 && dishes.every(d => d.is_active)
   const anyActive   = dishes.some(d => d.is_active)
-  const toggleLabel = (allActive || anyActive) ? 'Disabilita' : 'Abilita'
   const toggleActive = allActive || anyActive
 
   return (
     <div ref={setNodeRef} style={style} className="bg-white border border-gray-200">
       {/* Category header */}
       <div className="px-3 py-2.5 bg-gray-50 border-b border-gray-200 flex items-center gap-2">
-        {/* Drag handle */}
         <button
           {...attributes} {...listeners}
           className="text-gray-300 hover:text-gray-500 cursor-grab active:cursor-grabbing shrink-0 touch-none select-none text-base leading-none min-h-[44px] min-w-[36px] flex items-center justify-center"
@@ -328,7 +307,6 @@ function SortableCategory({
           ⠿
         </button>
 
-        {/* Nome categoria — occupa tutto lo spazio disponibile, non si tronca mai */}
         <button
           onClick={onToggle}
           className="flex-1 flex items-center gap-2 text-left min-w-0 min-h-[44px]"
@@ -337,9 +315,7 @@ function SortableCategory({
           <span className="text-xs text-gray-400 shrink-0">({dishes.length})</span>
         </button>
 
-        {/* Kebab menu — tutte le azioni categoria, su ogni dimensione schermo */}
         <div className="flex items-center shrink-0" ref={kebabRef}>
-          {/* 👁 sempre visibile */}
           {dishes.length > 0 && (
             <VisibilityToggle
               isVisible={toggleActive}
@@ -387,7 +363,6 @@ function SortableCategory({
           </div>
         </div>
 
-        {/* Espandi / Comprimi — sempre visibile */}
         <button
           onClick={onToggle}
           className="text-gray-400 text-[10px] px-1 min-h-[44px] min-w-[28px] flex items-center justify-center shrink-0"
@@ -397,7 +372,7 @@ function SortableCategory({
         </button>
       </div>
 
-      {/* Dish rows — visibili solo quando espanso, con DnD interno per i piatti. */}
+      {/* Dish rows — inside a SortableContext (no nested DndContext needed) */}
       {expanded && (
         <div>
           {dishes.length === 0 ? (
@@ -405,28 +380,25 @@ function SortableCategory({
               Categoria vuota. Aggiungi un piatto con il pulsante qui sotto.
             </p>
           ) : (
-            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDishDragEnd}>
-              <SortableContext items={dishes.map(d => d.id)} strategy={verticalListSortingStrategy}>
-                <ul className="divide-y divide-gray-50">
-                  {dishes.map(dish => (
-                    <SortableDish
-                      key={dish.id}
-                      dish={dish}
-                      selected={selectedIds.has(dish.id)}
-                      onSelect={onSelectDish}
-                      onEdit={onEdit}
-                      onDelete={onDelete}
-                      onDuplicate={onDuplicateDish}
-                      onMove={onMoveDish}
-                      onToggle={onToggleDish}
-                      deletingId={deletingId}
-                    />
-                  ))}
-                </ul>
-              </SortableContext>
-            </DndContext>
+            <SortableContext items={dishes.map(d => d.id)} strategy={verticalListSortingStrategy}>
+              <ul className="divide-y divide-gray-50">
+                {dishes.map(dish => (
+                  <SortableDish
+                    key={dish.id}
+                    dish={dish}
+                    selected={selectedIds.has(dish.id)}
+                    onSelect={onSelectDish}
+                    onEdit={onEdit}
+                    onDelete={onDelete}
+                    onDuplicate={onDuplicateDish}
+                    onMove={onMoveDish}
+                    onToggle={onToggleDish}
+                    deletingId={deletingId}
+                  />
+                ))}
+              </ul>
+            </SortableContext>
           )}
-          {/* MODULO 4 — quick add within category */}
           <div className="px-3 py-2 border-t border-gray-100 bg-gray-50/50">
             <button
               onClick={() => onAddDish(cat)}
@@ -447,24 +419,29 @@ export default function DishList({
   restaurantId, menuId, initialDishes, allDishes, allMenus, initialCategoryOrder,
 }: Props) {
   const [dishes,       setDishes]       = useState(initialDishes)
-  // Lingua attiva dell'editor: 'it' = editor normale, altre = pannello traduzioni
   const [lang,         setLang]         = useState<Lang>('it')
   const [formOpen,     setFormOpen]     = useState(false)
   const [editingDish,  setEditingDish]  = useState<Dish | null>(null)
-  const [formCat,      setFormCat]      = useState<string | null>(null) // pre-fill category (MODULO 4)
+  const [formCat,      setFormCat]      = useState<string | null>(null)
   const [moveDish,     setMoveDish]     = useState<Dish | null>(null)
-  const [moveCatName,  setMoveCatName]  = useState<string | null>(null) // MODULO 3: sposta categoria
+  const [moveCatName,  setMoveCatName]  = useState<string | null>(null)
   const [bannerSync,   setBannerSync]   = useState<{ source: SourceDish; twins: DishTwin[] } | null>(null)
   const [deletingId,   setDeletingId]   = useState<string | null>(null)
 
-  // Aggiunta categoria (MODULO 3)
-  const [addingCat, setAddingCat] = useState(false)
-  const [newCatName, setNewCatName] = useState('')
+  const [addingCat,    setAddingCat]    = useState(false)
+  const [newCatName,   setNewCatName]   = useState('')
 
-  // Selezione multipla piatti → cambio prezzo in blocco
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
-  const [bulkPrice, setBulkPrice] = useState('')
-  const [bulkSaving, setBulkSaving] = useState(false)
+  // Multi-select state
+  const [selectedIds,    setSelectedIds]    = useState<Set<string>>(new Set())
+  const [bulkPrice,      setBulkPrice]      = useState('')
+  const [bulkSaving,     setBulkSaving]     = useState(false)
+  const [bulkDeleting,   setBulkDeleting]   = useState(false)
+  const [bulkMoveMenuId, setBulkMoveMenuId] = useState('')
+  const [bulkMoving,     setBulkMoving]     = useState(false)
+
+  // Active drag id for DragOverlay preview
+  const [activeDragId, setActiveDragId] = useState<string | null>(null)
+
   const categoriesRef = useStaggerEntrance<HTMLDivElement>({ duration: 450, staggerMs: 70, translateY: 8 })
 
   function handleSelectDish(dish: Dish, checked: boolean) {
@@ -491,8 +468,35 @@ export default function DishList({
     finally { setBulkSaving(false) }
   }
 
-  // Categorie nell'ordine corretto: rispetta category_order salvato (incluse le
-  // categorie vuote create a mano), poi append delle categorie nuove dai piatti.
+  async function handleBulkDelete() {
+    const ids = Array.from(selectedIds)
+    if (!confirm(`Eliminare ${ids.length} ${ids.length === 1 ? 'piatto' : 'piatti'}? L'operazione non è reversibile.`)) return
+    setBulkDeleting(true)
+    try {
+      await bulkDeleteDishes(restaurantId, menuId, ids)
+      const next = dishes.filter(d => !selectedIds.has(d.id))
+      setDishes(next)
+      syncCategories(next)
+      setSelectedIds(new Set())
+    } catch { alert("Errore durante l'eliminazione.") }
+    finally { setBulkDeleting(false) }
+  }
+
+  async function handleBulkMoveToMenu() {
+    if (!bulkMoveMenuId) return
+    const ids = Array.from(selectedIds)
+    setBulkMoving(true)
+    try {
+      await bulkMoveDishesToMenu(restaurantId, menuId, ids, bulkMoveMenuId)
+      const next = dishes.filter(d => !selectedIds.has(d.id))
+      setDishes(next)
+      syncCategories(next)
+      setSelectedIds(new Set())
+      setBulkMoveMenuId('')
+    } catch { alert('Errore durante lo spostamento nel menu.') }
+    finally { setBulkMoving(false) }
+  }
+
   const derivedCategories = Array.from(new Set(dishes.map(d => d.category ?? 'Senza categoria')))
   const [categories, setCategories] = useState<string[]>(() => {
     const saved = (initialCategoryOrder ?? []).slice()
@@ -500,22 +504,17 @@ export default function DishList({
     return [...saved, ...extra]
   })
 
-  // Accordion: Set delle categorie espanse — tutte chiuse di default
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
 
   const byCategory = Object.fromEntries(
     categories.map(cat => [cat, dishes.filter(d => (d.category ?? 'Senza categoria') === cat)])
   )
 
-  // TouchSensor con delay: su mobile un tocco breve scrolla la pagina,
-  // tenere premuto 200ms avvia il drag (niente conflitto con lo scroll).
   const sensors = useSensors(
     useSensor(PointerSensor),
     useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 8 } }),
   )
 
-  // Sincronizza l'elenco categorie quando arrivano nuovi piatti: solo aggiunte,
-  // mai rimozioni (così le categorie svuotate restano finché non le elimini).
   function syncCategories(newDishes: Dish[]) {
     const newCats = Array.from(new Set(newDishes.map(d => d.category ?? 'Senza categoria')))
     setCategories(prev => {
@@ -524,40 +523,117 @@ export default function DishList({
     })
   }
 
-  // ── DnD categorie ──────────────────────────────────────────────────────────
+  // ── Unified DnD handler: categories + same-category dish reorder + cross-category move ──
+
+  function handleDragStart(event: DragStartEvent) {
+    setActiveDragId(String(event.active.id))
+  }
 
   async function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event
+    setActiveDragId(null)
     if (!over || active.id === over.id) return
-    const prev = categories
-    const oldIdx = categories.indexOf(active.id as string)
-    const newIdx = categories.indexOf(over.id as string)
-    const reordered = arrayMove(categories, oldIdx, newIdx)
-    setCategories(reordered)                                    // ottimistico
-    try {
-      await reorderCategories(restaurantId, menuId, reordered)  // persiste
-    } catch {
-      setCategories(prev)
-      alert('Errore nel riordino delle categorie.')
+
+    const activeId = String(active.id)
+    const overId   = String(over.id)
+
+    // ── Category reorder ────────────────────────────────────────────────────
+    if (categories.includes(activeId)) {
+      if (!categories.includes(overId)) return
+      const oldIdx = categories.indexOf(activeId)
+      const newIdx = categories.indexOf(overId)
+      const reordered = arrayMove(categories, oldIdx, newIdx)
+      const prev = categories
+      setCategories(reordered)
+      try {
+        await reorderCategories(restaurantId, menuId, reordered)
+      } catch {
+        setCategories(prev)
+        alert('Errore nel riordino delle categorie.')
+      }
+      return
     }
-  }
 
-  // ── DnD piatti dentro la categoria ─────────────────────────────────────────
+    // ── Dish drag ───────────────────────────────────────────────────────────
+    const sourceDish = dishes.find(d => d.id === activeId)
+    if (!sourceDish) return
+    const sourceCat = sourceDish.category ?? 'Senza categoria'
 
-  async function handleReorderDishes(cat: string, newIds: string[]) {
-    const prev = dishes
-    const catDishes = byCategory[cat] ?? []
-    const reordered = newIds
-      .map(id => catDishes.find(d => d.id === id))
-      .filter((d): d is Dish => !!d)
-    const newByCat: Record<string, Dish[]> = { ...byCategory, [cat]: reordered }
-    const flat = categories.flatMap(c => newByCat[c] ?? [])
-    setDishes(flat)                                              // ottimistico
-    try {
-      await reorderDishes(restaurantId, menuId, flat.map(d => d.id))
-    } catch {
-      setDishes(prev)
-      alert('Errore nel riordino dei piatti.')
+    // Determine target category
+    let targetCat: string
+    if (categories.includes(overId)) {
+      // Dropped directly on a category header → move to that category
+      targetCat = overId
+    } else {
+      const targetDish = dishes.find(d => d.id === overId)
+      if (!targetDish) return
+      targetCat = targetDish.category ?? 'Senza categoria'
+    }
+
+    if (sourceCat === targetCat) {
+      // ── Same-category reorder ─────────────────────────────────────────────
+      if (categories.includes(overId)) return  // dropped on own category header = noop
+      const catDishes = byCategory[sourceCat] ?? []
+      const oldIdx = catDishes.findIndex(d => d.id === activeId)
+      const newIdx = catDishes.findIndex(d => d.id === overId)
+      if (oldIdx === -1 || newIdx === -1) return
+      const reordered = arrayMove(catDishes, oldIdx, newIdx)
+      const newByCat  = { ...byCategory, [sourceCat]: reordered }
+      const flat = categories.flatMap(c => newByCat[c] ?? [])
+      const prev = dishes
+      setDishes(flat)
+      try {
+        await reorderDishes(restaurantId, menuId, flat.map(d => d.id))
+      } catch {
+        setDishes(prev)
+        alert('Errore nel riordino dei piatti.')
+      }
+    } else {
+      // ── Cross-category move ───────────────────────────────────────────────
+      // If the dragged dish is one of multiple selected, move all selected dishes.
+      const idsToMove = selectedIds.size > 1 && selectedIds.has(activeId)
+        ? Array.from(selectedIds)
+        : [activeId]
+      const idsSet = new Set(idsToMove)
+
+      // Remove moved dishes from all current categories
+      const newByCat: Record<string, Dish[]> = {}
+      for (const c of categories) {
+        newByCat[c] = (byCategory[c] ?? []).filter(d => !idsSet.has(d.id))
+      }
+
+      // Find insert position inside target category (after removal)
+      const targetWithout = newByCat[targetCat] ?? []
+      let insertIdx = targetWithout.length
+      if (!categories.includes(overId)) {
+        const idx = targetWithout.findIndex(d => d.id === overId)
+        if (idx !== -1) insertIdx = idx
+      }
+
+      const movingDishes = idsToMove
+        .map(id => dishes.find(d => d.id === id))
+        .filter((d): d is Dish => !!d)
+        .map(d => ({ ...d, category: targetCat }))
+
+      newByCat[targetCat] = [
+        ...targetWithout.slice(0, insertIdx),
+        ...movingDishes,
+        ...targetWithout.slice(insertIdx),
+      ]
+
+      const flat = categories.flatMap(c => newByCat[c] ?? [])
+      const prev = dishes
+      setDishes(flat)
+      // Expand the target category so the user can see the moved dish(es).
+      setExpanded(e => new Set(e).add(targetCat))
+      if (idsToMove.length > 1) setSelectedIds(new Set())
+
+      try {
+        await moveDishesToCategory(restaurantId, menuId, idsToMove, targetCat, flat.map(d => d.id))
+      } catch {
+        setDishes(prev)
+        alert('Errore nello spostamento del piatto.')
+      }
     }
   }
 
@@ -571,7 +647,7 @@ export default function DishList({
     })
   }, [])
 
-  // ── Categorie: aggiunta / duplicazione / eliminazione vuota ─────────────────
+  // ── Category CRUD ───────────────────────────────────────────────────────────
 
   async function handleAddCategory() {
     const n = newCatName.trim()
@@ -644,7 +720,7 @@ export default function DishList({
     } catch { alert('Errore durante la rinomina della categoria.') }
   }
 
-  // ── Piatti: CRUD / duplica / sposta ─────────────────────────────────────────
+  // ── Dish CRUD ───────────────────────────────────────────────────────────────
 
   async function handleDelete(dish: Dish) {
     if (!confirm(`Eliminare "${dish.name}"?`)) return
@@ -673,15 +749,12 @@ export default function DishList({
     setMoveDish(null)
   }
 
-  // ── MODULO 3: toggle is_active per piatto / categoria ──────────────────────
-
   async function handleToggleDish(dish: Dish) {
     const next = !dish.is_active
     setDishes(prev => prev.map(d => d.id === dish.id ? { ...d, is_active: next } : d))
     try {
       await toggleDishActive(restaurantId, menuId, dish.id, next)
     } catch {
-      // Ripristina lo stato precedente: l'ottimistico non è andato a buon fine.
       setDishes(prev => prev.map(d => d.id === dish.id ? { ...d, is_active: dish.is_active } : d))
       alert('Errore nel cambio stato piatto.')
     }
@@ -700,16 +773,12 @@ export default function DishList({
     }
   }
 
-  // ── MODULO 3: sposta categoria ──────────────────────────────────────────────
-
   function handleMovedCategory(cat: string) {
     const next = dishes.filter(d => (d.category ?? 'Senza categoria') !== cat)
     setDishes(next)
     setCategories(prev => prev.filter(c => c !== cat))
     setMoveCatName(null)
   }
-
-  // ── MODULO 4: apri form con categoria pre-impostata ─────────────────────────
 
   function handleAddDish(cat: string) {
     setEditingDish(null)
@@ -727,8 +796,6 @@ export default function DishList({
     setEditingDish(null)
     setFormCat(null)
 
-    // Mostra il banner di sync solo se l'utente ha effettivamente modificato
-    // almeno un campo sincronizzabile in questa sessione di modifica.
     const syncFields = ['name', 'description', 'price', 'category', 'image_url', 'allergens', 'pairing_dish_id']
     const hasSyncDirty = !isNew && syncFields.some(f => dirtyFields.has(f))
 
@@ -744,8 +811,6 @@ export default function DishList({
 
   // ── Render ────────────────────────────────────────────────────────────────
 
-  // Bandierina ≠ 🇮🇹 → pannello traduzioni al posto dell'editor piatti.
-  // L'early-return sta dopo tutti gli hook, quindi l'ordine resta stabile.
   if (lang !== 'it') {
     return (
       <div>
@@ -754,6 +819,10 @@ export default function DishList({
       </div>
     )
   }
+
+  const activeDishName = activeDragId && !categories.includes(activeDragId)
+    ? dishes.find(d => d.id === activeDragId)?.name ?? ''
+    : null
 
   return (
     <div>
@@ -860,7 +929,12 @@ export default function DishList({
           <p className="text-sm text-gray-500">Nessun piatto. Clicca &ldquo;Aggiungi piatto&rdquo; per iniziare.</p>
         </div>
       ) : (
-        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCorners}
+          onDragStart={handleDragStart}
+          onDragEnd={handleDragEnd}
+        >
           <SortableContext items={categories} strategy={verticalListSortingStrategy}>
             <div ref={categoriesRef} className="space-y-5">
               {categories.map(cat => (
@@ -869,14 +943,12 @@ export default function DishList({
                   cat={cat}
                   dishes={byCategory[cat] ?? []}
                   expanded={expanded.has(cat)}
-                  sensors={sensors}
                   onToggle={() => toggleCategory(cat)}
                   onEdit={dish => { setEditingDish(dish); setFormCat(null); setFormOpen(false) }}
                   onDelete={handleDelete}
                   onDuplicateDish={handleDuplicateDish}
                   onMoveDish={setMoveDish}
                   onToggleDish={handleToggleDish}
-                  onReorderDishes={handleReorderDishes}
                   onDuplicateCategory={handleDuplicateCategory}
                   onDeleteCategory={handleDeleteCategory}
                   onRenameCategory={handleRenameCategory}
@@ -890,15 +962,26 @@ export default function DishList({
               ))}
             </div>
           </SortableContext>
+
+          {/* Drag preview overlay */}
+          <DragOverlay>
+            {activeDishName !== null && (
+              <div className="bg-white border border-blue-400 shadow-xl px-3 py-2 text-sm font-medium text-gray-900 rounded opacity-95">
+                {activeDishName}
+              </div>
+            )}
+          </DragOverlay>
         </DndContext>
       )}
 
-      {/* Barra azioni selezione multipla — cambio prezzo in blocco */}
+      {/* Floating multi-select action bar */}
       {selectedIds.size > 0 && (
         <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[200] bg-gray-900 text-white shadow-2xl rounded-lg px-4 py-3 flex items-center gap-3 flex-wrap max-w-[calc(100vw-2rem)]">
           <span className="text-sm font-medium whitespace-nowrap">
             {selectedIds.size} {selectedIds.size === 1 ? 'piatto selezionato' : 'piatti selezionati'}
           </span>
+
+          {/* Bulk price change */}
           <form
             onSubmit={e => { e.preventDefault(); handleBulkPrice() }}
             className="flex items-center gap-2"
@@ -917,8 +1000,46 @@ export default function DishList({
               {bulkSaving ? <Spinner color="#fff" size={4} /> : 'Applica prezzo'}
             </button>
           </form>
-          <button type="button"
-            onClick={() => { setSelectedIds(new Set()); setBulkPrice('') }}
+
+          {/* Bulk delete */}
+          <button
+            type="button"
+            onClick={handleBulkDelete}
+            disabled={bulkDeleting}
+            className="bg-red-600 hover:bg-red-700 disabled:opacity-50 text-sm font-medium px-3 py-1.5 rounded transition-colors whitespace-nowrap flex items-center gap-1"
+          >
+            {bulkDeleting ? <Spinner color="#fff" size={4} /> : 'Elimina'}
+          </button>
+
+          {/* Bulk move to another menu */}
+          {allMenus.filter(m => m.id !== menuId).length > 0 && (
+            <div className="flex items-center gap-1.5">
+              <select
+                value={bulkMoveMenuId}
+                onChange={e => setBulkMoveMenuId(e.target.value)}
+                className="text-sm text-gray-900 bg-white rounded px-2 py-1.5 border-0 focus:outline-none"
+              >
+                <option value="">Sposta in menu…</option>
+                {allMenus.filter(m => m.id !== menuId).map(m => (
+                  <option key={m.id} value={m.id}>{m.name}</option>
+                ))}
+              </select>
+              {bulkMoveMenuId && (
+                <button
+                  type="button"
+                  onClick={handleBulkMoveToMenu}
+                  disabled={bulkMoving}
+                  className="bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-sm font-medium px-3 py-1.5 rounded transition-colors whitespace-nowrap flex items-center gap-1"
+                >
+                  {bulkMoving ? <Spinner color="#fff" size={4} /> : 'Sposta'}
+                </button>
+              )}
+            </div>
+          )}
+
+          <button
+            type="button"
+            onClick={() => { setSelectedIds(new Set()); setBulkPrice(''); setBulkMoveMenuId('') }}
             className="text-sm text-gray-400 hover:text-white whitespace-nowrap">
             Annulla
           </button>

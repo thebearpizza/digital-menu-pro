@@ -824,11 +824,15 @@ export default function FlipbookViewer({
           const titleBlock = document.createElement('div')
           titleBlock.className = 'ad-title-block'
 
-          const nameEl = document.createElement('span')
-          nameEl.className = 'ad-dish-name'
-          nameEl.style.fontFamily = theme.fontSerif
-          nameEl.textContent = config.dishName
-          titleBlock.appendChild(nameEl)
+          // Nome opzionale: senza nome (es. video ads senza prodotto) non si crea
+          // lo span, così non resta una barra titolo vuota sopra il video.
+          if (config.dishName && config.dishName.trim()) {
+            const nameEl = document.createElement('span')
+            nameEl.className = 'ad-dish-name'
+            nameEl.style.fontFamily = theme.fontSerif
+            nameEl.textContent = config.dishName
+            titleBlock.appendChild(nameEl)
+          }
 
           if (config.dishDescription) {
             const descEl = document.createElement('span')
@@ -863,7 +867,9 @@ export default function FlipbookViewer({
             titleBlock.appendChild(priceEl)
           }
 
-          main.appendChild(titleBlock)
+          // Appendi il blocco titolo solo se ha contenuto: una promo senza nome,
+          // descrizione e prezzo resta un video/foto a tutto schermo senza overlay.
+          if (titleBlock.childElementCount > 0) main.appendChild(titleBlock)
 
           // Click apre la card del piatto collegato
           main.addEventListener('click', (e) => {

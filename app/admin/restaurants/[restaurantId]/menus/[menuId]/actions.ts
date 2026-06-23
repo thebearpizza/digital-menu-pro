@@ -405,52 +405,60 @@ export async function bulkCreateDishes(
     }
   }
 
-  // Terza passata: pre-genera le traduzioni di piatti e nuove categorie in
-  // blocco. Best effort: un errore qui non deve invalidare l'import riuscito.
-  try {
-    if (translateEnabled() && created?.length) {
-      const newCats = Array.from(new Set(created.map(d => d.category).filter(Boolean))) as string[]
-      const items = [
-        ...created.flatMap(d => [
-          { id: `${d.id}:name`, text: d.name as string },
-          ...(d.description ? [{ id: `${d.id}:desc`, text: d.description as string }] : []),
-        ]),
-        ...newCats.map(c => ({ id: `cat:${c}`, text: c })),
-      ]
-      const res = await translateItems(items)
+  // Terza passata: pre-genera le traduzioni di piatti e nuove categorie in blocco.
+  // TIME-BOX: su import massivi la traduzione (Gemini, a chunk sequenziali con
+  // retry) può richiedere molti secondi e bloccare la risposta del server action
+  // → il pulsante "Importa modulo" sembra non funzionare (spinner all'infinito o
+  // timeout serverless). I piatti sono GIÀ salvati: cappiamo l'attesa e lasciamo
+  // che ensureMenuTranslations (apertura pannello traduzioni) recuperi il resto.
+  if (translateEnabled() && created?.length) {
+    const translateWork = (async () => {
+      try {
+        const newCats = Array.from(new Set(created.map(d => d.category).filter(Boolean))) as string[]
+        const items = [
+          ...created.flatMap(d => [
+            { id: `${d.id}:name`, text: d.name as string },
+            ...(d.description ? [{ id: `${d.id}:desc`, text: d.description as string }] : []),
+          ]),
+          ...newCats.map(c => ({ id: `cat:${c}`, text: c })),
+        ]
+        const res = await translateItems(items)
 
-      await Promise.all(created.map(d => {
-        const tr: DishTranslations = {}
-        for (const lang of TARGET_LANGS) {
-          const entry: NonNullable<DishTranslations[typeof lang]> = {}
-          const n = res[`${d.id}:name`]?.[lang]
-          if (n) entry.name = n
-          const ds = res[`${d.id}:desc`]?.[lang]
-          if (ds) entry.description = ds
-          if (Object.keys(entry).length) tr[lang] = entry
-        }
-        return Object.keys(tr).length
-          ? supabase.from('dishes').update({ translations: tr }).eq('id', d.id)
-          : Promise.resolve(null)
-      }))
-
-      if (newCats.length) {
-        const { data: menu } = await supabase
-          .from('menus').select('translations').eq('id', menuId).single()
-        const menuTr = (menu?.translations ?? {}) as Record<string, any>
-        let changed = false
-        for (const lang of TARGET_LANGS) {
-          const entry = menuTr[lang] ?? (menuTr[lang] = {})
-          const cats = entry.categories ?? (entry.categories = {})
-          for (const c of newCats) {
-            const t = res[`cat:${c}`]?.[lang]
-            if (t && !cats[c] && !entry.manual?.categories?.[c]) { cats[c] = t; changed = true }
+        await Promise.all(created.map(d => {
+          const tr: DishTranslations = {}
+          for (const lang of TARGET_LANGS) {
+            const entry: NonNullable<DishTranslations[typeof lang]> = {}
+            const n = res[`${d.id}:name`]?.[lang]
+            if (n) entry.name = n
+            const ds = res[`${d.id}:desc`]?.[lang]
+            if (ds) entry.description = ds
+            if (Object.keys(entry).length) tr[lang] = entry
           }
+          return Object.keys(tr).length
+            ? supabase.from('dishes').update({ translations: tr }).eq('id', d.id)
+            : Promise.resolve(null)
+        }))
+
+        if (newCats.length) {
+          const { data: menu } = await supabase
+            .from('menus').select('translations').eq('id', menuId).single()
+          const menuTr = (menu?.translations ?? {}) as Record<string, any>
+          let changed = false
+          for (const lang of TARGET_LANGS) {
+            const entry = menuTr[lang] ?? (menuTr[lang] = {})
+            const cats = entry.categories ?? (entry.categories = {})
+            for (const c of newCats) {
+              const t = res[`cat:${c}`]?.[lang]
+              if (t && !cats[c] && !entry.manual?.categories?.[c]) { cats[c] = t; changed = true }
+            }
+          }
+          if (changed) await supabase.from('menus').update({ translations: menuTr }).eq('id', menuId)
         }
-        if (changed) await supabase.from('menus').update({ translations: menuTr }).eq('id', menuId)
-      }
-    }
-  } catch (e: any) { console.error('bulkCreateDishes translate failed', e?.message) }
+      } catch (e: any) { console.error('bulkCreateDishes translate failed', e?.message) }
+    })()
+    // Non bloccare l'import oltre 5s sulle traduzioni (best effort).
+    await Promise.race([translateWork, new Promise<void>(resolve => setTimeout(resolve, 5000))])
+  }
 
   revalidate(restaurantId, menuId)
   return created ?? []
@@ -793,4 +801,83 @@ export async function syncDishToMasters(
     synced_fields: fields,
     performed_by: user.id,
   })
+}
+
+// ── MODULO 6: drag tra categorie + azioni multiple ──────────────────────────────
+
+/**
+ * Sposta uno o più piatti in un'altra categoria dello stesso menu (drag tra
+ * categorie). Aggiorna la categoria dei piatti spostati e riscrive il sort_order
+ * di tutti i piatti secondo `orderedIds` (ordine piatto piatto risultante, flat
+ * su tutte le categorie). `category` null = "Senza categoria".
+ */
+export async function moveDishesToCategory(
+  restaurantId: string,
+  menuId: string,
+  dishIds: string[],
+  category: string | null,
+  orderedIds: string[],
+) {
+  if (!dishIds.length) return
+  const supabase = await createClient()
+  await verifyOwnership(supabase, restaurantId)
+
+  const { error: catErr } = await supabase
+    .from('dishes').update({ category }).in('id', dishIds).eq('menu_id', menuId)
+  if (catErr) throw new Error(catErr.message)
+
+  if (orderedIds.length) {
+    const results = await Promise.all(
+      orderedIds.map((id, i) =>
+        supabase.from('dishes').update({ sort_order: i }).eq('id', id).eq('menu_id', menuId)
+      )
+    )
+    const failed = results.find(r => r.error)
+    if (failed?.error) throw new Error(failed.error.message)
+  }
+  revalidate(restaurantId, menuId)
+}
+
+/** Elimina più piatti in un colpo solo (selezione multipla). */
+export async function bulkDeleteDishes(
+  restaurantId: string,
+  menuId: string,
+  dishIds: string[],
+) {
+  if (!dishIds.length) return
+  const supabase = await createClient()
+  await verifyOwnership(supabase, restaurantId)
+  const { error } = await supabase.from('dishes').delete().in('id', dishIds).eq('menu_id', menuId)
+  if (error) throw new Error(error.message)
+  revalidate(restaurantId, menuId)
+}
+
+/** Sposta più piatti in un altro menu (selezione multipla), in coda. */
+export async function bulkMoveDishesToMenu(
+  restaurantId: string,
+  fromMenuId: string,
+  dishIds: string[],
+  toMenuId: string,
+) {
+  if (!dishIds.length || fromMenuId === toMenuId) return
+  const supabase = await createClient()
+  await verifyOwnership(supabase, restaurantId)
+
+  const { data: last } = await supabase
+    .from('dishes').select('sort_order').eq('menu_id', toMenuId)
+    .order('sort_order', { ascending: false }).limit(1).maybeSingle()
+  const base = (last?.sort_order ?? -1) + 1
+
+  const results = await Promise.all(
+    dishIds.map((id, i) =>
+      supabase.from('dishes')
+        .update({ menu_id: toMenuId, sort_order: base + i })
+        .eq('id', id).eq('menu_id', fromMenuId)
+    )
+  )
+  const failed = results.find(r => r.error)
+  if (failed?.error) throw new Error(failed.error.message)
+
+  revalidate(restaurantId, fromMenuId)
+  revalidate(restaurantId, toMenuId)
 }
