@@ -33,19 +33,20 @@ export async function duplicateRestaurant(restaurantId: string): Promise<{ id: s
   const { data: newR, error: rErr } = await supabase
     .from('restaurants')
     .insert({
-      owner_id:        user.id,
-      name:            `${src.name} (copia)`,
-      slug:            `${(src.slug ?? src.name.toLowerCase().replace(/\s+/g, '-'))}-copia-${Math.random().toString(36).slice(2, 6)}`,
-      description:     src.description,
-      instagram_url:   src.instagram_url,
-      facebook_url:    src.facebook_url,
-      website_url:     src.website_url,
-      tripadvisor_url: src.tripadvisor_url,
-      google_maps_url: src.google_maps_url,
-      logo_url:        src.logo_url,
-      is_active:       false,
-      theme_config:    src.theme_config,
-      visibility:      src.visibility,
+      owner_id:         user.id,
+      name:             `${src.name} (copia)`,
+      slug:             `${(src.slug ?? src.name.toLowerCase().replace(/\s+/g, '-'))}-copia-${Math.random().toString(36).slice(2, 6)}`,
+      qr_public_token:  crypto.randomUUID(),
+      description:      src.description,
+      instagram_url:    src.instagram_url,
+      facebook_url:     src.facebook_url,
+      website_url:      src.website_url,
+      tripadvisor_url:  src.tripadvisor_url,
+      google_maps_url:  src.google_maps_url,
+      logo_url:         src.logo_url,
+      is_active:        true,
+      theme_config:     src.theme_config,
+      visibility:       src.visibility,
     })
     .select('id').single()
   if (rErr || !newR) throw new Error(rErr?.message ?? 'Errore duplicazione ristorante')
