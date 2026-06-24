@@ -1101,7 +1101,46 @@ export default function FlipbookViewer({
           }
         }
 
-        // Rivela il video dell'Ad quando la pagina è attiva (dopo turned).
+        // Prepara lo snapshot del primo frame di un video ad PRIMA che l'utente
+        // ci arrivi. Va chiamata quando la pagina ad è (o sta per diventare) la
+        // pagina visibile successiva: turn.js mette in display:none tutte le pagine
+        // tranne quella corrente e la successiva (vedi _setPageLoc), e i browser
+        // NON decodificano i frame dei <video> in display:none → al load iniziale
+        // il frame non è catturabile. Quando invece l'ad è la pagina successiva
+        // (display:'') il video può decodificare: forziamo un seek a 0.01s e
+        // catturiamo il frame decodificato in canvas + adCanvasDataUrls, così
+        // paintReveal mostra il primo frame durante TUTTA la piega.
+        const prepareAdVideo = (turnPage: number): void => {
+          const vid = adVideoMap.get(turnPage)
+          const cvs = adCanvasMap.get(turnPage)
+          if (!vid || !cvs) return
+          // Già catturato un frame reale → niente da fare.
+          if (adCanvasDataUrls.get(turnPage)?.startsWith('data:image/jpeg')) return
+          const capture = () => {
+            try {
+              if (adCanvasDataUrls.get(turnPage)?.startsWith('data:image/jpeg')) return
+              const ctx = cvs.getContext('2d')
+              if (!ctx) return
+              const vw = vid.videoWidth, vh = vid.videoHeight
+              if (!vw || !vh) return
+              const s = Math.max(cvs.width / vw, cvs.height / vh)
+              ctx.drawImage(vid, (cvs.width - vw * s) / 2, (cvs.height - vh * s) / 2, vw * s, vh * s)
+              adCanvasDataUrls.set(turnPage, cvs.toDataURL('image/jpeg', 0.9))
+            } catch (_) {}
+          }
+          // requestVideoFrameCallback (dove disponibile) garantisce un frame
+          // effettivamente composito/decodificato prima della cattura.
+          const rvfc = (vid as any).requestVideoFrameCallback?.bind(vid)
+          if (rvfc) rvfc(() => capture())
+          // Forza il decode: assicura il load + un seek minimo (→ evento 'seeked',
+          // già collegato a captureFrame, e fa scattare rVFC).
+          try { if (vid.readyState < 1) vid.load() } catch (_) {}
+          try { vid.currentTime = vid.currentTime < 0.01 ? 0.01 : vid.currentTime } catch (_) {}
+          // Se il frame è già disponibile, cattura subito.
+          if (vid.readyState >= 2 && vid.videoWidth) capture()
+        }
+
+
         // Il canvas (z-index:10) copriva il video: lo nascondiamo con display:none
         // — più affidabile di opacity su layer GPU con backface-visibility:hidden.
         // Il video è SEMPRE a opacity:1; è il canvas che fungeva da "schermo".
@@ -1211,6 +1250,12 @@ export default function FlipbookViewer({
                   if (cvs) cvs.style.display = ''
                 }
               })
+              // Pre-cattura il primo frame dei video ad ADIACENTI (pagina ±1):
+              // ora sono in display:'' (pagina successiva visibile), quindi il
+              // browser può decodificarli mentre l'utente guarda la pagina corrente
+              // → quando piegherà verso l'ad, lo snapshot è già pronto.
+              prepareAdVideo(page + 1)
+              prepareAdVideo(page - 1)
             },
             // end scatta SEMPRE: sia a flip completato (turnedOk=true) sia annullato
             // (snap-back, turnedOk=false). Solo nel caso annullato dobbiamo fermare
@@ -1243,6 +1288,9 @@ export default function FlipbookViewer({
         setCurrentPage(1)
         // Se la prima pagina è un video ad, nascondi canvas e avvia subito.
         if (adVideoMap.has(1)) crossfadeToVideo(1)
+        // Pre-cattura il frame del video ad alla pagina 2 (ora visibile come
+        // pagina successiva) così il primo flip in avanti mostra già il frame.
+        prepareAdVideo(2)
         setTotalPages(pages.length)  // include le pagine Ad
         setPagesReady(true)
         setLoadPhase('ready')
