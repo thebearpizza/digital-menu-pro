@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
 import { deleteRestaurant, duplicateRestaurant } from './actions'
 import { Spinner } from '@/components/ui/Spinner'
@@ -11,21 +12,32 @@ interface Props {
 }
 
 export default function RestaurantRowActions({ restaurantId, restaurantName }: Props) {
-  const router             = useRouter()
-  const [open, setOpen]    = useState(false)
-  const [modal, setModal]  = useState<'delete' | 'none'>('none')
-  const [busy, setBusy]    = useState(false)
-  const [error, setError]  = useState<string | null>(null)
-  const menuRef            = useRef<HTMLDivElement>(null)
+  const router              = useRouter()
+  const [open, setOpen]     = useState(false)
+  const [modal, setModal]   = useState<'delete' | 'none'>('none')
+  const [busy, setBusy]     = useState(false)
+  const [error, setError]   = useState<string | null>(null)
+  const btnRef              = useRef<HTMLButtonElement>(null)
+  const dropdownRef         = useRef<HTMLDivElement>(null)
+  const [dropPos, setDropPos] = useState<{ top: number; right: number } | null>(null)
 
   useEffect(() => {
     if (!open) return
     function onOut(e: MouseEvent) {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setOpen(false)
+      const t = e.target as Node
+      if (btnRef.current?.contains(t) || dropdownRef.current?.contains(t)) return
+      setOpen(false)
     }
     document.addEventListener('mousedown', onOut)
     return () => document.removeEventListener('mousedown', onOut)
   }, [open])
+
+  function toggleMenu() {
+    if (open) { setOpen(false); return }
+    const rect = btnRef.current?.getBoundingClientRect()
+    if (rect) setDropPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right })
+    setOpen(true)
+  }
 
   async function handleDuplicate() {
     setOpen(false); setBusy(true); setError(null)
@@ -50,44 +62,50 @@ export default function RestaurantRowActions({ restaurantId, restaurantName }: P
 
   return (
     <>
-      <div className="relative" ref={menuRef}>
+      <div className="relative">
         {busy ? (
           <Spinner size={4} />
         ) : (
           <button
-            onClick={() => setOpen(o => !o)}
+            ref={btnRef}
+            onClick={toggleMenu}
             className="flex items-center justify-center w-9 h-9 text-gray-400 hover:text-gray-700 text-lg leading-none hover:bg-gray-100 rounded transition-colors"
             aria-label="Azioni ristorante"
           >
             ⋮
           </button>
         )}
-
-        {open && (
-          <div className="absolute right-0 top-full mt-1 z-50 bg-white border border-gray-200 shadow-lg min-w-[152px] py-1">
-            <a
-              href={`/admin/restaurants/${restaurantId}`}
-              className="block px-4 py-2.5 text-sm text-blue-600 hover:bg-blue-50"
-              onClick={() => setOpen(false)}
-            >
-              Gestisci
-            </a>
-            <button
-              onClick={handleDuplicate}
-              className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50"
-            >
-              Duplica
-            </button>
-            <div className="h-px bg-gray-100 my-1" />
-            <button
-              onClick={() => { setOpen(false); setModal('delete') }}
-              className="w-full text-left px-4 py-2.5 text-sm text-red-500 hover:bg-red-50"
-            >
-              Elimina
-            </button>
-          </div>
-        )}
       </div>
+
+      {open && dropPos && typeof document !== 'undefined' && createPortal(
+        <div
+          ref={dropdownRef}
+          className="fixed z-[9999] bg-white border border-gray-200 shadow-lg min-w-[152px] py-1"
+          style={{ top: dropPos.top, right: dropPos.right }}
+        >
+          <a
+            href={`/admin/restaurants/${restaurantId}`}
+            className="block px-4 py-2.5 text-sm text-blue-600 hover:bg-blue-50"
+            onClick={() => setOpen(false)}
+          >
+            Gestisci
+          </a>
+          <button
+            onClick={handleDuplicate}
+            className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50"
+          >
+            Duplica
+          </button>
+          <div className="h-px bg-gray-100 my-1" />
+          <button
+            onClick={() => { setOpen(false); setModal('delete') }}
+            className="w-full text-left px-4 py-2.5 text-sm text-red-500 hover:bg-red-50"
+          >
+            Elimina
+          </button>
+        </div>,
+        document.body
+      )}
 
       {error && (
         <span className="text-xs text-red-500 block mt-1 max-w-[160px]">{error}</span>

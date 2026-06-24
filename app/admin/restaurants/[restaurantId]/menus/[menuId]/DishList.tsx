@@ -841,6 +841,7 @@ export default function DishList({
   const activeDishName = activeDragId && !categories.includes(activeDragId)
     ? dishes.find(d => d.id === activeDragId)?.name ?? ''
     : null
+  const isDraggingMultiple = activeDragId !== null && selectedIds.size > 1 && selectedIds.has(activeDragId)
 
   return (
     <div>
@@ -983,11 +984,26 @@ export default function DishList({
           </SortableContext>
 
           {/* Drag preview overlay */}
-          <DragOverlay>
+          <DragOverlay dropAnimation={null}>
             {activeDishName !== null && (
-              <div className="bg-white border border-blue-400 shadow-xl px-3 py-2 text-sm font-medium text-gray-900 rounded opacity-95">
-                {activeDishName}
-              </div>
+              isDraggingMultiple ? (
+                <div className="relative" style={{ width: 224 }}>
+                  <div className="absolute inset-0 bg-blue-50 border border-blue-200 rounded-sm shadow"
+                    style={{ transform: 'rotate(5deg) translate(6px, -3px)' }} />
+                  <div className="absolute inset-0 bg-blue-100 border border-blue-300 rounded-sm shadow-md"
+                    style={{ transform: 'rotate(2.5deg) translate(3px, -1.5px)' }} />
+                  <div className="relative bg-white border-2 border-blue-500 shadow-2xl rounded-sm px-3 py-2.5 flex items-center gap-2">
+                    <span className="text-sm font-medium text-gray-900 truncate flex-1">{activeDishName}</span>
+                    <span className="shrink-0 bg-blue-600 text-white text-[11px] font-bold px-1.5 py-0.5 rounded-full leading-none">
+                      ×{selectedIds.size}
+                    </span>
+                  </div>
+                </div>
+              ) : (
+                <div className="bg-white border border-blue-400 shadow-xl px-3 py-2 text-sm font-medium text-gray-900 rounded-sm opacity-95">
+                  {activeDishName}
+                </div>
+              )
             )}
           </DragOverlay>
         </DndContext>

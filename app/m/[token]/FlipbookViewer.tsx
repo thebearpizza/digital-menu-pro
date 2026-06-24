@@ -761,7 +761,7 @@ export default function FlipbookViewer({
         // Prec/Succ (absolute bottom-3 = 12px + testo 10px + buffer = ~28px).
         // Px fissi (non %) sono immuni al ricalcolo turn.js durante il clone.
         const AD_SAFE_PX = 28
-        const buildAdPageDOM = (config: AdConfig): { el: HTMLElement; video?: HTMLVideoElement; canvas?: HTMLCanvasElement } => {
+        const buildAdPageDOM = (config: AdConfig): { el: HTMLElement; video?: HTMLVideoElement; canvas?: HTMLCanvasElement; kbImageUrl?: string } => {
           const container = document.createElement('div')
           container.style.cssText = 'width:100%;height:100%;display:flex;flex-direction:column;'
 
@@ -777,6 +777,7 @@ export default function FlipbookViewer({
 
           let videoEl: HTMLVideoElement | undefined
           let canvasEl: HTMLCanvasElement | undefined
+          let kbImageUrlResult: string | undefined
 
           if (config.mode === 'custom_media' && config.mediaUrl) {
             videoEl = document.createElement('video')
@@ -815,6 +816,7 @@ export default function FlipbookViewer({
             kb.className = 'ad-kb-img'
             kb.style.backgroundImage = `url("${config.backupImageUrl}")`
             main.appendChild(kb)
+            kbImageUrlResult = config.backupImageUrl
           }
 
           const overlay = document.createElement('div')
@@ -831,13 +833,14 @@ export default function FlipbookViewer({
           const titleBlock = document.createElement('div')
           titleBlock.className = 'ad-title-block'
 
-          // Nome opzionale: senza nome (es. video ads senza prodotto) non si crea
-          // lo span, così non resta una barra titolo vuota sopra il video.
-          if (config.dishName && config.dishName.trim()) {
+          // Nome opzionale: usa dishName, oppure categoryTarget per le categoria-ads.
+          // Senza nome non si crea lo span, così non resta una barra titolo vuota.
+          const nameToShow = config.dishName?.trim() || config.categoryTarget?.trim() || ''
+          if (nameToShow) {
             const nameEl = document.createElement('span')
             nameEl.className = 'ad-dish-name'
             nameEl.style.fontFamily = theme.fontSerif
-            nameEl.textContent = config.dishName
+            nameEl.textContent = nameToShow
             titleBlock.appendChild(nameEl)
           }
 
@@ -895,7 +898,7 @@ export default function FlipbookViewer({
 
           container.appendChild(main)
           container.appendChild(safe)
-          return { el: container, video: videoEl, canvas: canvasEl }
+          return { el: container, video: videoEl, canvas: canvasEl, kbImageUrl: kbImageUrlResult }
         }
 
         // ── FASE 2: div + canvas nel DOM ─────────────────────────────────────
@@ -911,7 +914,7 @@ export default function FlipbookViewer({
             `backface-visibility:hidden;-webkit-backface-visibility:hidden;`
 
           if (page.type === 'ad') {
-            const { el: adEl, video, canvas } = buildAdPageDOM(page.config)
+            const { el: adEl, video, canvas, kbImageUrl } = buildAdPageDOM(page.config)
             pageDiv.appendChild(adEl)
             const turnPage = domIdx + 1  // 1-based turn page
             if (video) adVideoMap.set(turnPage, video)
@@ -939,6 +942,8 @@ export default function FlipbookViewer({
                 }, { once: true })
               }
             }
+            // Image-only ad: usa l'URL come snapshot per paintReveal durante il flip.
+            if (kbImageUrl) adCanvasDataUrls.set(turnPage, kbImageUrl)
             el.appendChild(pageDiv)
             continue
           }
@@ -1016,15 +1021,17 @@ export default function FlipbookViewer({
             src = adCanvasDataUrls.get(dest)
           }
           if (wrap && src) {
-            // Per le pagine Ad il canvas rappresenta solo la zona video (senza safe area).
-            // backgroundSize 'calc(100% - AD_SAFE_PX px)' in altezza fa sì che l'immagine
-            // occupi esattamente la stessa area durante l'animazione e dopo → zero layout shift.
             const isAdSrc = pdfPage === undefined
+            // Data URL (canvas snapshot) → dimensioni video esatte senza safe area.
+            // URL esterno (immagine Ken Burns) → cover + center per look naturale.
+            const isDataUrl = src.startsWith('data:')
             window.$(wrap).css({
               backgroundImage:    `url("${src}")`,
-              backgroundSize:     isAdSrc ? `100% calc(100% - ${AD_SAFE_PX}px)` : '100% 100%',
+              backgroundSize:     !isAdSrc ? '100% 100%'
+                                : isDataUrl ? `100% calc(100% - ${AD_SAFE_PX}px)`
+                                : 'cover',
               backgroundRepeat:   'no-repeat',
-              backgroundPosition: '0 0',
+              backgroundPosition: isAdSrc && !isDataUrl ? 'center' : '0 0',
             })
           }
         }
@@ -1095,6 +1102,24 @@ export default function FlipbookViewer({
                   dest = opts.next
                 } else {
                   return
+                }
+                // Se la destinazione è un video ad con snapshot ancora nero
+                // ma il video è già pronto, cattura il frame adesso.
+                if (adVideoMap.has(dest) && adCanvasDataUrls.get(dest) === BLACK_PIXEL) {
+                  const vid = adVideoMap.get(dest)
+                  const cvs = adCanvasMap.get(dest)
+                  if (vid && cvs && vid.readyState >= 2 && vid.videoWidth && vid.videoHeight) {
+                    try {
+                      const ctx = cvs.getContext('2d')
+                      if (ctx) {
+                        const vw = vid.videoWidth, vh = vid.videoHeight
+                        const cw2 = cvs.width, ch2 = cvs.height
+                        const s = Math.max(cw2/vw, ch2/vh)
+                        ctx.drawImage(vid, (cw2-vw*s)/2, (ch2-vh*s)/2, vw*s, vh*s)
+                        adCanvasDataUrls.set(dest, cvs.toDataURL('image/jpeg', 0.9))
+                      }
+                    } catch (_) {}
+                  }
                 }
                 // paintReveal mostra il canvas snapshot della pagina di destinazione
                 // come background durante l'animazione di flip.
