@@ -55,12 +55,15 @@ export async function duplicateRestaurant(restaurantId: string): Promise<{ id: s
     .from('menus').select('*').eq('restaurant_id', restaurantId).order('sort_order')
 
   for (const menu of menus ?? []) {
-    const { data: newMenu } = await supabase
+    const { data: newMenu, error: mErr } = await supabase
       .from('menus')
       .insert({
         restaurant_id:    newR.id,
         name:             menu.name,
+        description:      menu.description,
         is_active:        menu.is_active,
+        is_public:        menu.is_public,
+        menu_type:        menu.menu_type,
         sort_order:       menu.sort_order,
         schedule_enabled: menu.schedule_enabled,
         schedule_from:    menu.schedule_from,
@@ -68,27 +71,36 @@ export async function duplicateRestaurant(restaurantId: string): Promise<{ id: s
         text_content:     menu.text_content,
         translations:     menu.translations,
         category_order:   menu.category_order,
+        viewer_settings:  menu.viewer_settings,
+        theme_config:     menu.theme_config,
       })
       .select('id').single()
-    if (!newMenu) continue
+    if (mErr || !newMenu) throw new Error(`Errore copia menu: ${mErr?.message ?? 'menu non creato'}`)
 
     const { data: dishes } = await supabase
       .from('dishes').select('*').eq('menu_id', menu.id).order('sort_order')
     if (dishes?.length) {
-      await supabase.from('dishes').insert(
+      // dishes.restaurant_id è NOT NULL: va impostato sul nuovo ristorante,
+      // altrimenti l'insert fallisce e i piatti non vengono copiati (menu vuoto
+      // → spinner infinito sul menu pubblico).
+      const { error: dErr } = await supabase.from('dishes').insert(
         dishes.map((d: any) => ({
-          menu_id:      newMenu.id,
-          name:         d.name,
-          description:  d.description,
-          price:        d.price,
-          category:     d.category,
-          is_active:    d.is_active,
-          image_url:    d.image_url,
-          allergens:    d.allergens,
-          sort_order:   d.sort_order,
-          translations: d.translations,
+          restaurant_id: newR.id,
+          menu_id:       newMenu.id,
+          name:          d.name,
+          description:   d.description,
+          price:         d.price,
+          category:      d.category,
+          is_active:     d.is_active,
+          is_available:  d.is_available,
+          image_url:     d.image_url,
+          allergens:     d.allergens,
+          pairing_label: d.pairing_label,
+          sort_order:    d.sort_order,
+          translations:  d.translations,
         }))
       )
+      if (dErr) throw new Error(`Errore copia piatti: ${dErr.message}`)
     }
   }
 
