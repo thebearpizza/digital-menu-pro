@@ -276,7 +276,7 @@ export function useMenuPDF(
     // category flourishes
     theme?.menu.allergens.size, theme?.menu.allergens.align,
     theme?.menu.allergens.color,
-    theme?.menu.layout.divider.width, theme?.menu.layout.dishesPerPage,
+    theme?.menu.layout.divider.width, theme?.menu.layout.divider.widthPercent, theme?.menu.layout.dishesPerPage,
     theme?.menu.compactMode,
     theme?.menu.categories.flourish, theme?.menu.categories.flourishColor,
     theme?.menu.categories.flourishWidth, theme?.menu.categories.flourishThickness,

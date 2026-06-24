@@ -194,7 +194,7 @@ export interface MenuTheme {
     font:      string
     fontSize:  number
   }
-  navigation: { style: PaginationStyle; color: string }
+  navigation: { style: PaginationStyle; color: string; size: number; font: string; fontWeight: 400 | 500 | 600 | 700 }
   banners:    { position: 'inline' | 'dedicated-page' }
   // Pop-up istruzioni mostrato al centro (sfondo sfocato) all'apertura del menu:
   // spiega che i piatti sono cliccabili e come girare pagina. showOnce: appare
@@ -292,7 +292,7 @@ export const DEFAULT_THEME: RestaurantTheme = {
     stickyCategories: {
       style: 'solid', bgColor: 'rgba(7,7,7,0.96)', textColor: '#4f4f4f', activeColor: '#c9a96e', font: 'DM Sans', fontSize: 0.625,
     },
-    navigation: { style: 'prec_succ', color: '#4f4f4f' },
+    navigation: { style: 'prec_succ', color: '#4f4f4f', size: 0.625, font: 'DM Sans', fontWeight: 400 },
     banners:    { position: 'inline' },
     hintPopup: {
       enabled:  true,
@@ -407,8 +407,12 @@ export function parseMenuTheme(raw: unknown, fb: MenuTheme): MenuTheme {
       fontSize:    num(ms.fontSize, fb.stickyCategories.fontSize),
     },
     navigation: {
-      style: one(mn.style, Object.keys(PAGINATION_OPTIONS) as PaginationStyle[], fb.navigation.style),
-      color: str(mn.color, fb.navigation.color),
+      style:      one(mn.style, Object.keys(PAGINATION_OPTIONS) as PaginationStyle[], fb.navigation.style),
+      color:      str(mn.color, fb.navigation.color),
+      size:       num(mn.size, fb.navigation.size),
+      font:       str(mn.font, fb.navigation.font),
+      fontWeight: (([400,500,600,700] as const).includes(Number(mn.fontWeight) as any)
+        ? Number(mn.fontWeight) : fb.navigation.fontWeight) as 400|500|600|700,
     },
     banners: { position: one(mbn.position, ['inline','dedicated-page'] as const, fb.banners.position) },
     hintPopup: {
@@ -653,7 +657,7 @@ export function migrateFlat(r: Record<string, unknown>): RestaurantTheme {
       prices:       { font: fontSans, size: num(fs.price, d.menu.prices.size), color: accent, format: priceFormat, currency: '€', position: 'right', align: 'inherit' },
       categories:   { font: fontSerif, color: '#1a1a1a', size: 1.3, align: 'inherit', flourish: 'none', flourishColor: accent, flourishWidth: 40, flourishThickness: 1 },
       stickyCategories: { style: stickyCatStyle, bgColor: navBg, textColor: textMuted, activeColor: accent, font: fontSans, fontSize: 0.625 },
-      navigation:   { style: paginationStyle, color: textMuted },
+      navigation:   { style: paginationStyle, color: textMuted, size: 0.625, font: fontSans, fontWeight: 400 },
       banners:      { position: 'inline' },
       hintPopup:    structuredClone(d.menu.hintPopup),
     },

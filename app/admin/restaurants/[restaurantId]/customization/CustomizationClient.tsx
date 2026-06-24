@@ -1531,6 +1531,29 @@ function EditorSidebar({ target, theme, setters, previewMode, activeMenuId, onCl
               ))}
             </select>
           </div>
+          {m.navigation.style !== 'hidden' && (<>
+            <ColorRow label="Colore tasti nav" value={m.navigation.color}
+              onChange={v => setters.setMNav({ color: v })} />
+            <FontSelector label="Font tasti nav" value={m.navigation.font} curated={SANS_FONTS} category="sans"
+              onChange={v => setters.setMNav({ font: v })}
+              customFonts={theme.customFonts} onUploadFont={setters.handleFontUpload} uploading={setters.fontUploading} />
+            <div>
+              <div className="flex justify-between items-center mb-1">
+                <label className="text-xs text-gray-600">Dimensione tasti nav</label>
+                <span className="text-[10px] font-mono text-gray-400">{m.navigation.size}rem</span>
+              </div>
+              <input type="range" min={0.5} max={1.5} step={0.0625} value={m.navigation.size}
+                onChange={e => setters.setMNav({ size: Number(e.target.value) })}
+                className="w-full accent-gray-900" />
+            </div>
+            <div>
+              <label className="text-xs text-gray-600 mb-1 block">Spessore tasti nav</label>
+              <PillGroup
+                options={[{ label:'Thin', value:'400' },{ label:'Medium', value:'500' },{ label:'Semi', value:'600' },{ label:'Bold', value:'700' }]}
+                value={String(m.navigation.fontWeight)}
+                onChange={v => setters.setMNav({ fontWeight: Number(v) as 400|500|600|700 })} />
+            </div>
+          </>)}
           <div>
             <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Layout PDF</p>
             <PillGroup

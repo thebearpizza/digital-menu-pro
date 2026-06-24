@@ -177,6 +177,10 @@ export default function FlipbookViewer({
   }
   // Sticky category tab font size (rem) — own control, falls back to a sane default.
   const navFontSize = `${mn?.stickyCategories.fontSize ?? 0.625}rem`
+  // Prev/next pagination label style — size/font/weight are independently controllable.
+  const pagNavFont   = fontStack(mn?.navigation.font ?? 'DM Sans', 'sans')
+  const pagNavSize   = `${mn?.navigation.size ?? 0.625}rem`
+  const pagNavWeight = mn?.navigation.fontWeight ?? 400
   const bookRef = useRef<HTMLDivElement>(null)
 
   const [dims,          setDims]         = useState<{ w: number; h: number } | null>(null)
@@ -1394,12 +1398,14 @@ export default function FlipbookViewer({
                  pointer-events-none: i click devono raggiungere gli angoli turn.js. */}
             {pagesReady && pagOpt.prev && (
               <span
-                className="pointer-events-none absolute bottom-3 left-2 z-50 text-[10px] uppercase tracking-[0.2em] select-none"
+                className="pointer-events-none absolute bottom-3 left-2 z-50 uppercase tracking-[0.2em] select-none"
                 style={{
                   color:      theme.navColor,
                   opacity:    atFirst ? 0 : 0.6,
                   transition: 'opacity 0.25s ease',
-                  fontFamily: theme.fontSans,
+                  fontFamily: pagNavFont,
+                  fontSize:   pagNavSize,
+                  fontWeight: pagNavWeight,
                 }}
               >
                 {pagOpt.prev}
@@ -1407,12 +1413,14 @@ export default function FlipbookViewer({
             )}
             {pagesReady && pagOpt.next && (
               <span
-                className="pointer-events-none absolute bottom-3 right-2 z-50 text-[10px] uppercase tracking-[0.2em] select-none"
+                className="pointer-events-none absolute bottom-3 right-2 z-50 uppercase tracking-[0.2em] select-none"
                 style={{
                   color:      theme.navColor,
                   opacity:    atLast ? 0 : 0.6,
                   transition: 'opacity 0.25s ease',
-                  fontFamily: theme.fontSans,
+                  fontFamily: pagNavFont,
+                  fontSize:   pagNavSize,
+                  fontWeight: pagNavWeight,
                 }}
               >
                 {pagOpt.next}
@@ -1426,11 +1434,13 @@ export default function FlipbookViewer({
             {pagesReady && totalPages > 0 && (
               <span
                 aria-hidden="true"
-                className="pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 z-50 text-[10px] tabular-nums select-none"
+                className="pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 z-50 tabular-nums select-none"
                 style={{
                   color:      theme.navColor,
                   opacity:    0.6,
-                  fontFamily: theme.fontSans,
+                  fontFamily: pagNavFont,
+                  fontSize:   pagNavSize,
+                  fontWeight: pagNavWeight,
                 }}
               >
                 {currentPage}/{totalPages}
