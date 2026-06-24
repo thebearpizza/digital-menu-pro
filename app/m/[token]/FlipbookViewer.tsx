@@ -1177,6 +1177,16 @@ export default function FlipbookViewer({
                     } catch (_) {}
                   }
                 }
+                // Il canvas z-index:10 copriva il video di destinazione con il fill
+                // scuro, rendendolo nero durante tutta l'animazione. Nascondendolo
+                // subito in `start`, il video (con il suo poster o il frame a 0.01s)
+                // è visibile mentre la pagina si piega. Il video sarà avviato da
+                // onBookPointerUp (touchend hot gesture) o da crossfadeToVideo in
+                // when.turned. when.end ripristina display:'' se il flip è annullato.
+                if (adVideoMap.has(dest)) {
+                  const cvs = adCanvasMap.get(dest)
+                  if (cvs) cvs.style.display = 'none'
+                }
                 // paintReveal mostra il canvas snapshot della pagina di destinazione
                 // come background durante l'animazione di flip.
                 paintReveal(cur, dest)
