@@ -289,6 +289,9 @@ export default function FlipbookViewer({
     const adVideoMap       = new Map<number, HTMLVideoElement>()
     const adCanvasMap      = new Map<number, HTMLCanvasElement>()
     const adCanvasDataUrls = new Map<number, string>()
+    // Video temporanei off-screen usati SOLO per catturare il primo frame
+    // (decodificano fuori da turn.js, immuni al display:none delle pagine).
+    const tempSnapVideos   = new Set<HTMLVideoElement>()
     // 1×1 black GIF — fallback per adCanvasDataUrls prima del canplay
     const BLACK_PIXEL = 'data:image/gif;base64,R0lGODlhAQABAIAAAAUEBAAAACwAAAAAAQABAAACAkQBADs='
     // Fail-safe timers: cleared on unmount to prevent memory leaks / setState after unmount
@@ -927,37 +930,71 @@ export default function FlipbookViewer({
               // paintReveal usa questa URL come background durante il flip, mostrando
               // la thumbnail del video invece dello schermo nero prima che canplay scatti.
               adCanvasDataUrls.set(turnPage, page.config.backupImageUrl || BLACK_PIXEL)
-              if (video) {
-                // Cattura il primo frame del video nel canvas + nello snapshot
-                // (data URL) usato da paintReveal durante il flip. Eseguita su PIÙ
-                // eventi (loadeddata = readyState 2, seeked, canplay) perché nessuno
-                // è affidabile da solo cross-browser: il primo che produce un frame
-                // valido vince; gli altri lo riconfermano (idempotente).
-                const captureFrame = () => {
-                  try {
-                    // Già catturato un frame reale → non ridisegnare.
-                    if (adCanvasDataUrls.get(turnPage)?.startsWith('data:image/jpeg')) return
-                    const ctx = canvas.getContext('2d')
-                    if (!ctx) return
-                    const vw = video.videoWidth, vh = video.videoHeight
-                    const cw2 = canvas.width, ch2 = canvas.height
-                    if (!vw || !vh) return
-                    const scale2 = Math.max(cw2 / vw, ch2 / vh)
-                    const dx = (cw2 - vw * scale2) / 2
-                    const dy = (ch2 - vh * scale2) / 2
-                    ctx.drawImage(video, dx, dy, vw * scale2, vh * scale2)
-                    adCanvasDataUrls.set(turnPage, canvas.toDataURL('image/jpeg', 0.9))
-                  } catch (_) {}
+              if (video && page.config.mediaUrl) {
+                // ── Cattura del primo frame con video OFF-SCREEN dedicato ──────
+                // Il <video> dentro turn.js è in display:none su tutte le pagine
+                // tranne corrente/successiva (vedi _setPageLoc), e i browser NON
+                // decodificano i frame dei video display:none → impossibile
+                // catturare il frame dal video on-page. Soluzione (come per le
+                // immagini, che funzionano): un video temporaneo posizionato
+                // off-screen ma RENDERIZZATO (opacity:0, non display:none) che
+                // decodifica liberamente, da cui catturiamo il frame.
+                const snapUrl = page.config.mediaUrl
+                const snapName = page.config.dishName?.trim() || page.config.categoryTarget?.trim() || ''
+                const tmp = document.createElement('video')
+                tmp.crossOrigin = 'anonymous'
+                tmp.muted = true; tmp.playsInline = true; tmp.preload = 'auto'
+                tmp.src = snapUrl + (snapUrl.includes('#') ? '' : '#t=0.01')
+                // Off-screen ma renderizzato → il browser decodifica i frame.
+                tmp.style.cssText = 'position:fixed;left:0;top:0;width:2px;height:2px;opacity:0;pointer-events:none;z-index:-1;'
+                tempSnapVideos.add(tmp)
+                let done = false
+                const cleanup = () => {
+                  if (done) return; done = true
+                  try { tmp.removeAttribute('src'); tmp.load() } catch (_) {}
+                  try { tmp.remove() } catch (_) {}
+                  tempSnapVideos.delete(tmp)
                 }
-                video.addEventListener('loadeddata', captureFrame)
-                video.addEventListener('seeked', captureFrame)
-                video.addEventListener('canplay', captureFrame)
-                // Forza il decode del primo frame: su molti browser preload='auto'
-                // non decodifica finché non si fa play o seek. Un seek esplicito a
-                // 0.01s costringe a decodificare → 'seeked' scatta → captureFrame.
-                video.addEventListener('loadedmetadata', () => {
-                  try { if (video.currentTime < 0.01) video.currentTime = 0.01 } catch (_) {}
+                const grab = () => {
+                  if (done || cancelled) return
+                  try {
+                    const vw = tmp.videoWidth, vh = tmp.videoHeight
+                    if (!vw || !vh) return
+                    const w = dims!.w, h = dims!.h - AD_SAFE_PX
+                    const sc = document.createElement('canvas'); sc.width = w; sc.height = h
+                    const ctx = sc.getContext('2d'); if (!ctx) return
+                    const s = Math.max(w / vw, h / vh)
+                    ctx.drawImage(tmp, (w - vw * s) / 2, (h - vh * s) / 2, vw * s, vh * s)
+                    // Overlay gradient + titolo (coerente con .ad-overlay / .ad-title-block)
+                    const g = ctx.createLinearGradient(0, h, 0, 0)
+                    g.addColorStop(0, 'rgba(0,0,0,0.88)')
+                    g.addColorStop(0.45, 'rgba(0,0,0,0.30)')
+                    g.addColorStop(1, 'rgba(0,0,0,0.10)')
+                    ctx.fillStyle = g; ctx.fillRect(0, 0, w, h)
+                    if (snapName) {
+                      const size = Math.round(Math.min(32, w * 0.062))
+                      ctx.font = `300 ${size}px ${theme.fontSerif}`
+                      ctx.fillStyle = '#fff'
+                      ctx.fillText(snapName, 20, h - 28)
+                    }
+                    adCanvasDataUrls.set(turnPage, sc.toDataURL('image/jpeg', 0.9))
+                    // Dipingi anche il canvas on-page (stesse dimensioni di sc) così,
+                    // a piega conclusa e prima del play del video, mostra il primo
+                    // frame invece del fill #111 (niente flash nero).
+                    const onCtx = canvas.getContext('2d')
+                    if (onCtx) onCtx.drawImage(tmp, (w - vw * s) / 2, (h - vh * s) / 2, vw * s, vh * s)
+                  } catch (_) { /* CORS/tainted: resta il fallback backup/black */ }
+                  cleanup()
+                }
+                tmp.addEventListener('loadeddata', grab)
+                tmp.addEventListener('seeked', grab)
+                tmp.addEventListener('loadedmetadata', () => {
+                  try { if (tmp.currentTime < 0.01) tmp.currentTime = 0.01 } catch (_) {}
                 }, { once: true })
+                // Failsafe: rimuovi il video temporaneo anche se non scatta nessun evento.
+                const t = setTimeout(cleanup, 12000); failsafeTimers.add(t)
+                document.body.appendChild(tmp)
+                try { tmp.load() } catch (_) {}
               }
             }
             if (kbImageUrl) {
@@ -1101,46 +1138,6 @@ export default function FlipbookViewer({
           }
         }
 
-        // Prepara lo snapshot del primo frame di un video ad PRIMA che l'utente
-        // ci arrivi. Va chiamata quando la pagina ad è (o sta per diventare) la
-        // pagina visibile successiva: turn.js mette in display:none tutte le pagine
-        // tranne quella corrente e la successiva (vedi _setPageLoc), e i browser
-        // NON decodificano i frame dei <video> in display:none → al load iniziale
-        // il frame non è catturabile. Quando invece l'ad è la pagina successiva
-        // (display:'') il video può decodificare: forziamo un seek a 0.01s e
-        // catturiamo il frame decodificato in canvas + adCanvasDataUrls, così
-        // paintReveal mostra il primo frame durante TUTTA la piega.
-        const prepareAdVideo = (turnPage: number): void => {
-          const vid = adVideoMap.get(turnPage)
-          const cvs = adCanvasMap.get(turnPage)
-          if (!vid || !cvs) return
-          // Già catturato un frame reale → niente da fare.
-          if (adCanvasDataUrls.get(turnPage)?.startsWith('data:image/jpeg')) return
-          const capture = () => {
-            try {
-              if (adCanvasDataUrls.get(turnPage)?.startsWith('data:image/jpeg')) return
-              const ctx = cvs.getContext('2d')
-              if (!ctx) return
-              const vw = vid.videoWidth, vh = vid.videoHeight
-              if (!vw || !vh) return
-              const s = Math.max(cvs.width / vw, cvs.height / vh)
-              ctx.drawImage(vid, (cvs.width - vw * s) / 2, (cvs.height - vh * s) / 2, vw * s, vh * s)
-              adCanvasDataUrls.set(turnPage, cvs.toDataURL('image/jpeg', 0.9))
-            } catch (_) {}
-          }
-          // requestVideoFrameCallback (dove disponibile) garantisce un frame
-          // effettivamente composito/decodificato prima della cattura.
-          const rvfc = (vid as any).requestVideoFrameCallback?.bind(vid)
-          if (rvfc) rvfc(() => capture())
-          // Forza il decode: assicura il load + un seek minimo (→ evento 'seeked',
-          // già collegato a captureFrame, e fa scattare rVFC).
-          try { if (vid.readyState < 1) vid.load() } catch (_) {}
-          try { vid.currentTime = vid.currentTime < 0.01 ? 0.01 : vid.currentTime } catch (_) {}
-          // Se il frame è già disponibile, cattura subito.
-          if (vid.readyState >= 2 && vid.videoWidth) capture()
-        }
-
-
         // Il canvas (z-index:10) copriva il video: lo nascondiamo con display:none
         // — più affidabile di opacity su layer GPU con backface-visibility:hidden.
         // Il video è SEMPRE a opacity:1; è il canvas che fungeva da "schermo".
@@ -1198,35 +1195,8 @@ export default function FlipbookViewer({
                 } else {
                   return
                 }
-                // Se la destinazione è un video ad senza ancora un frame reale catturato
-                // (snapshot è BLACK_PIXEL o backupImageUrl), tenta drawImage adesso.
-                if (adVideoMap.has(dest) && !adCanvasDataUrls.get(dest)?.startsWith('data:image/jpeg')) {
-                  const vid = adVideoMap.get(dest)
-                  const cvs = adCanvasMap.get(dest)
-                  if (vid && cvs && vid.readyState >= 2 && vid.videoWidth && vid.videoHeight) {
-                    try {
-                      const ctx = cvs.getContext('2d')
-                      if (ctx) {
-                        const vw = vid.videoWidth, vh = vid.videoHeight
-                        const cw2 = cvs.width, ch2 = cvs.height
-                        const s = Math.max(cw2/vw, ch2/vh)
-                        ctx.drawImage(vid, (cw2-vw*s)/2, (ch2-vh*s)/2, vw*s, vh*s)
-                        adCanvasDataUrls.set(dest, cvs.toDataURL('image/jpeg', 0.9))
-                      }
-                    } catch (_) {}
-                  }
-                }
-                // Il canvas z-index:10 copriva il video di destinazione con il fill
-                // scuro, rendendolo nero durante tutta l'animazione. Nascondendolo
-                // subito in `start`, il video (con il suo poster o il frame a 0.01s)
-                // è visibile mentre la pagina si piega. Il video sarà avviato da
-                // onBookPointerUp (touchend hot gesture) o da crossfadeToVideo in
-                // when.turned. when.end ripristina display:'' se il flip è annullato.
-                if (adVideoMap.has(dest)) {
-                  const cvs = adCanvasMap.get(dest)
-                  if (cvs) cvs.style.display = 'none'
-                }
                 // paintReveal mostra il canvas snapshot della pagina di destinazione
+                // (per i video ad: il primo frame catturato dal video off-screen)
                 // come background durante l'animazione di flip.
                 paintReveal(cur, dest)
                 // Registra dest se è una pagina Ad: il listener pointerup userà
@@ -1250,12 +1220,6 @@ export default function FlipbookViewer({
                   if (cvs) cvs.style.display = ''
                 }
               })
-              // Pre-cattura il primo frame dei video ad ADIACENTI (pagina ±1):
-              // ora sono in display:'' (pagina successiva visibile), quindi il
-              // browser può decodificarli mentre l'utente guarda la pagina corrente
-              // → quando piegherà verso l'ad, lo snapshot è già pronto.
-              prepareAdVideo(page + 1)
-              prepareAdVideo(page - 1)
             },
             // end scatta SEMPRE: sia a flip completato (turnedOk=true) sia annullato
             // (snap-back, turnedOk=false). Solo nel caso annullato dobbiamo fermare
@@ -1288,9 +1252,6 @@ export default function FlipbookViewer({
         setCurrentPage(1)
         // Se la prima pagina è un video ad, nascondi canvas e avvia subito.
         if (adVideoMap.has(1)) crossfadeToVideo(1)
-        // Pre-cattura il frame del video ad alla pagina 2 (ora visibile come
-        // pagina successiva) così il primo flip in avanti mostra già il frame.
-        prepareAdVideo(2)
         setTotalPages(pages.length)  // include le pagine Ad
         setPagesReady(true)
         setLoadPhase('ready')
@@ -1309,6 +1270,8 @@ export default function FlipbookViewer({
       renderTasks.forEach(t => { try { t.cancel() } catch (_) {} })
       failsafeTimers.forEach(t => clearTimeout(t))
       adVideoMap.forEach(vid => { try { vid.pause() } catch (_) {} })
+      tempSnapVideos.forEach(v => { try { v.removeAttribute('src'); v.load(); v.remove() } catch (_) {} })
+      tempSnapVideos.clear()
       try { if (el && window.$?.fn?.turn) window.$(el).turn('destroy') } catch (_) {}
       if (el) el.innerHTML = ''
     }
