@@ -187,14 +187,9 @@ export default function ExcelImportExport({ restaurantId, menuId, dishes, onImpo
           ref={btnRef}
           type="button"
           onClick={() => setDropOpen(o => !o)}
-          className="w-full bg-blue-600 text-white text-sm font-medium px-4 py-2 hover:bg-blue-700 transition-colors flex items-center justify-between gap-2"
+          className="w-full bg-blue-600 text-white text-sm font-medium px-4 py-2 hover:bg-blue-700 transition-colors"
         >
-          <span>Scarica modulo</span>
-          <svg
-            className={`w-3.5 h-3.5 shrink-0 transition-transform duration-150 ${dropOpen ? 'rotate-180' : ''}`}
-            viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round">
-            <path d="M2 4l4 4 4-4" />
-          </svg>
+          Scarica modulo
         </button>
 
         {dropOpen && (
