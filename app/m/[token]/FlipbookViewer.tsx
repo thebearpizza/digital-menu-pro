@@ -928,23 +928,35 @@ export default function FlipbookViewer({
               // la thumbnail del video invece dello schermo nero prima che canplay scatti.
               adCanvasDataUrls.set(turnPage, page.config.backupImageUrl || BLACK_PIXEL)
               if (video) {
-                // canplay è più affidabile di loadeddata su browser mobile per
-                // garantire che i pixel siano effettivamente decodificati prima di
-                // drawImage. Su iOS, loadeddata può scattare senza frame reali.
-                video.addEventListener('canplay', () => {
+                // Cattura il primo frame del video nel canvas + nello snapshot
+                // (data URL) usato da paintReveal durante il flip. Eseguita su PIÙ
+                // eventi (loadeddata = readyState 2, seeked, canplay) perché nessuno
+                // è affidabile da solo cross-browser: il primo che produce un frame
+                // valido vince; gli altri lo riconfermano (idempotente).
+                const captureFrame = () => {
                   try {
+                    // Già catturato un frame reale → non ridisegnare.
+                    if (adCanvasDataUrls.get(turnPage)?.startsWith('data:image/jpeg')) return
                     const ctx = canvas.getContext('2d')
                     if (!ctx) return
                     const vw = video.videoWidth, vh = video.videoHeight
                     const cw2 = canvas.width, ch2 = canvas.height
                     if (!vw || !vh) return
-                    // object-fit: cover math
                     const scale2 = Math.max(cw2 / vw, ch2 / vh)
                     const dx = (cw2 - vw * scale2) / 2
                     const dy = (ch2 - vh * scale2) / 2
                     ctx.drawImage(video, dx, dy, vw * scale2, vh * scale2)
                     adCanvasDataUrls.set(turnPage, canvas.toDataURL('image/jpeg', 0.9))
                   } catch (_) {}
+                }
+                video.addEventListener('loadeddata', captureFrame)
+                video.addEventListener('seeked', captureFrame)
+                video.addEventListener('canplay', captureFrame)
+                // Forza il decode del primo frame: su molti browser preload='auto'
+                // non decodifica finché non si fa play o seek. Un seek esplicito a
+                // 0.01s costringe a decodificare → 'seeked' scatta → captureFrame.
+                video.addEventListener('loadedmetadata', () => {
+                  try { if (video.currentTime < 0.01) video.currentTime = 0.01 } catch (_) {}
                 }, { once: true })
               }
             }
