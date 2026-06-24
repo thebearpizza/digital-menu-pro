@@ -792,6 +792,9 @@ export default function FlipbookViewer({
             videoEl.playsInline = true
             videoEl.preload   = 'auto'
             videoEl.className = 'ad-video'
+            // poster = immagine di backup: visibile tra quando il canvas viene nascosto
+            // (crossfadeToVideo) e il primo frame reale del video — nessun flash nero.
+            if (config.backupImageUrl) videoEl.poster = config.backupImageUrl
             // Il video è SEMPRE visibile (nessun opacity:0): è il canvas overlay (z-index:10)
             // che lo copre finché non è il momento di mostrarlo. display:none sul canvas
             // è più affidabile di opacity su entrambi: non risente di backface-visibility
@@ -920,7 +923,10 @@ export default function FlipbookViewer({
             if (video) adVideoMap.set(turnPage, video)
             if (canvas) {
               adCanvasMap.set(turnPage, canvas)
-              adCanvasDataUrls.set(turnPage, BLACK_PIXEL)
+              // Inizializza con backupImageUrl (se disponibile) invece di BLACK_PIXEL:
+              // paintReveal usa questa URL come background durante il flip, mostrando
+              // la thumbnail del video invece dello schermo nero prima che canplay scatti.
+              adCanvasDataUrls.set(turnPage, page.config.backupImageUrl || BLACK_PIXEL)
               if (video) {
                 // canplay è più affidabile di loadeddata su browser mobile per
                 // garantire che i pixel siano effettivamente decodificati prima di
@@ -942,8 +948,46 @@ export default function FlipbookViewer({
                 }, { once: true })
               }
             }
-            // Image-only ad: usa l'URL come snapshot per paintReveal durante il flip.
-            if (kbImageUrl) adCanvasDataUrls.set(turnPage, kbImageUrl)
+            if (kbImageUrl) {
+              // Fallback immediato: usa l'URL grezzo (cover+center in paintReveal).
+              adCanvasDataUrls.set(turnPage, kbImageUrl)
+              // Snapshot completo asincrono: immagine + overlay gradient + testo titolo.
+              // Quando pronto, paintReveal mostrerà l'ad completa durante il flip →
+              // nessun "titolo appare dal basso" al termine dell'animazione.
+              ;(async () => {
+                try {
+                  const img = await new Promise<HTMLImageElement>((res, rej) => {
+                    const el = new Image(); el.crossOrigin = 'anonymous'
+                    el.onload = () => res(el); el.onerror = rej; el.src = kbImageUrl
+                  })
+                  const w = dims!.w, h = dims!.h - AD_SAFE_PX
+                  const sc = document.createElement('canvas'); sc.width = w; sc.height = h
+                  const ctx = sc.getContext('2d')
+                  if (!ctx || cancelled) return
+                  // Cover scaling + 10% overflow (matching ad-kb-img inset:-5% a scale(1))
+                  const ks = Math.max(w / img.naturalWidth, h / img.naturalHeight) * 1.1
+                  ctx.drawImage(img,
+                    (w - img.naturalWidth  * ks) / 2,
+                    (h - img.naturalHeight * ks) / 2,
+                    img.naturalWidth * ks, img.naturalHeight * ks)
+                  // Overlay gradient (matching .ad-overlay CSS)
+                  const g = ctx.createLinearGradient(0, h, 0, 0)
+                  g.addColorStop(0, 'rgba(0,0,0,0.88)')
+                  g.addColorStop(0.45, 'rgba(0,0,0,0.30)')
+                  g.addColorStop(1, 'rgba(0,0,0,0.10)')
+                  ctx.fillStyle = g; ctx.fillRect(0, 0, w, h)
+                  // Testo titolo (matching .ad-title-block + .ad-dish-name)
+                  const name = page.config.dishName?.trim() || page.config.categoryTarget?.trim() || ''
+                  if (name) {
+                    const size = Math.round(Math.min(32, w * 0.062))
+                    ctx.font = `300 ${size}px ${theme.fontSerif}`
+                    ctx.fillStyle = '#fff'
+                    ctx.fillText(name, 20, h - 28)
+                  }
+                  if (!cancelled) adCanvasDataUrls.set(turnPage, sc.toDataURL('image/jpeg', 0.9))
+                } catch (_) { /* CORS failure: keep kbImageUrl fallback */ }
+              })()
+            }
             el.appendChild(pageDiv)
             continue
           }
@@ -1103,9 +1147,9 @@ export default function FlipbookViewer({
                 } else {
                   return
                 }
-                // Se la destinazione è un video ad con snapshot ancora nero
-                // ma il video è già pronto, cattura il frame adesso.
-                if (adVideoMap.has(dest) && adCanvasDataUrls.get(dest) === BLACK_PIXEL) {
+                // Se la destinazione è un video ad senza ancora un frame reale catturato
+                // (snapshot è BLACK_PIXEL o backupImageUrl), tenta drawImage adesso.
+                if (adVideoMap.has(dest) && !adCanvasDataUrls.get(dest)?.startsWith('data:image/jpeg')) {
                   const vid = adVideoMap.get(dest)
                   const cvs = adCanvasMap.get(dest)
                   if (vid && cvs && vid.readyState >= 2 && vid.videoWidth && vid.videoHeight) {
