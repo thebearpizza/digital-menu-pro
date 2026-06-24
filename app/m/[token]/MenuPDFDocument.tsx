@@ -228,13 +228,13 @@ function makeStyles(theme: RestaurantTheme, registered: Set<string>, flipped = f
       letterSpacing: compact ? 1.5 : 2,
       textAlign:     catAlign,
     },
-    catTitleWrap: { marginBottom: compact ? 5 : 8 },
+    catTitleWrap: { marginBottom: m.categories.gapAfter ?? (compact ? 5 : 8) },
     // Flourish row: [line] TITLE [line] centred.
     catFlourishRow: {
       flexDirection: 'row',
       alignItems:    'center',
       justifyContent:'center',
-      marginBottom:  compact ? 5 : 8,
+      marginBottom:  m.categories.gapAfter ?? (compact ? 5 : 8),
     },
     flourishLine: {
       width:           m.categories.flourishWidth || 40,

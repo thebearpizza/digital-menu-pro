@@ -183,7 +183,7 @@ export interface MenuTheme {
   descriptions: { font: string; size: number; color: string; align: AlignOpt }
   allergens:    { style: 'text' | 'badge'; color: string; bgColor: string; display: AllergenDisplay; separator: string; size: number; align: AlignOpt }
   prices:       { font: string; size: number; color: string; format: PriceFormat; currency: string; position: PricePosition; align: AlignOpt }
-  categories:   { font: string; color: string; size: number; align: AlignOpt; flourish: CategoryFlourish; flourishColor: string; flourishWidth: number; flourishThickness: number }
+  categories:   { font: string; color: string; size: number; align: AlignOpt; flourish: CategoryFlourish; flourishColor: string; flourishWidth: number; flourishThickness: number; gapAfter: number }
   stickyCategories: {
     // Lo stile 'transparent-blur' (vetro) è stato rimosso: resa inaffidabile
     // (backdrop-filter + sticky). I temi salvati con quel valore ricadono su 'solid'.
@@ -288,7 +288,7 @@ export const DEFAULT_THEME: RestaurantTheme = {
     descriptions: { font: 'DM Sans', size: 0.875, color: '#a09080', align: 'inherit' },
     allergens:    { style: 'text', color: '#c9a96e', bgColor: '#181208', display: 'full', separator: ', ', size: 0.85, align: 'inherit' },
     prices:       { font: 'DM Sans', size: 1.1, color: '#c9a96e', format: 'symbol-left', currency: '€', position: 'right', align: 'inherit' },
-    categories:   { font: 'Cormorant Garamond', color: '#1a1a1a', size: 1.3, align: 'inherit', flourish: 'none', flourishColor: '#c9a96e', flourishWidth: 40, flourishThickness: 1 },
+    categories:   { font: 'Cormorant Garamond', color: '#1a1a1a', size: 1.3, align: 'inherit', flourish: 'none', flourishColor: '#c9a96e', flourishWidth: 40, flourishThickness: 1, gapAfter: 8 },
     stickyCategories: {
       style: 'solid', bgColor: 'rgba(7,7,7,0.96)', textColor: '#4f4f4f', activeColor: '#c9a96e', font: 'DM Sans', fontSize: 0.625,
     },
@@ -397,7 +397,7 @@ export function parseMenuTheme(raw: unknown, fb: MenuTheme): MenuTheme {
     descriptions: { font: str(me.font, fb.descriptions.font), size: num(me.size, fb.descriptions.size), color: str(me.color, fb.descriptions.color), align: one(me.align, ['inherit','left','center','right'] as const, fb.descriptions.align) },
     allergens:    { style: one(ma.style, ['text','badge'] as const, fb.allergens.style), color: str(ma.color, fb.allergens.color), bgColor: str(ma.bgColor, fb.allergens.bgColor), display: one(ma.display, ['full','short','number'] as const, fb.allergens.display), separator: str(ma.separator, fb.allergens.separator), size: num(ma.size, fb.allergens.size), align: one(ma.align, ['inherit','left','center','right'] as const, fb.allergens.align) },
     prices:       { font: str(mp.font, fb.prices.font), size: num(mp.size, fb.prices.size), color: str(mp.color, fb.prices.color), format: one(mp.format, ['symbol-left','symbol-right','no-symbol'] as const, fb.prices.format), currency: str(mp.currency, fb.prices.currency), position: one(mp.position, ['left','right','above','below'] as const, fb.prices.position), align: one(mp.align, ['inherit','left','center','right'] as const, fb.prices.align) },
-    categories:   { font: str(mc.font, fb.categories.font), color: str(mc.color, fb.categories.color), size: num(mc.size, fb.categories.size), align: one(mc.align, ['inherit','left','center','right'] as const, fb.categories.align), flourish: one(mc.flourish, ['none','lines','dots','diamond'] as const, fb.categories.flourish), flourishColor: str(mc.flourishColor, fb.categories.flourishColor), flourishWidth: num(mc.flourishWidth, fb.categories.flourishWidth), flourishThickness: num(mc.flourishThickness, fb.categories.flourishThickness) },
+    categories:   { font: str(mc.font, fb.categories.font), color: str(mc.color, fb.categories.color), size: num(mc.size, fb.categories.size), align: one(mc.align, ['inherit','left','center','right'] as const, fb.categories.align), flourish: one(mc.flourish, ['none','lines','dots','diamond'] as const, fb.categories.flourish), flourishColor: str(mc.flourishColor, fb.categories.flourishColor), flourishWidth: num(mc.flourishWidth, fb.categories.flourishWidth), flourishThickness: num(mc.flourishThickness, fb.categories.flourishThickness), gapAfter: num(mc.gapAfter, fb.categories.gapAfter) },
     stickyCategories: {
       style:       one(ms.style, ['solid','none'] as const, fb.stickyCategories.style),
       bgColor:     str(ms.bgColor, fb.stickyCategories.bgColor),
@@ -655,7 +655,7 @@ export function migrateFlat(r: Record<string, unknown>): RestaurantTheme {
       descriptions: { font: fontSans, size: num(fs.base, d.menu.descriptions.size), color: '#a09080', align: 'inherit' },
       allergens:    { style: 'text', color: accent, bgColor: '#181208', display: 'full', separator: ', ', size: 0.85, align: 'inherit' },
       prices:       { font: fontSans, size: num(fs.price, d.menu.prices.size), color: accent, format: priceFormat, currency: '€', position: 'right', align: 'inherit' },
-      categories:   { font: fontSerif, color: '#1a1a1a', size: 1.3, align: 'inherit', flourish: 'none', flourishColor: accent, flourishWidth: 40, flourishThickness: 1 },
+      categories:   { font: fontSerif, color: '#1a1a1a', size: 1.3, align: 'inherit', flourish: 'none', flourishColor: accent, flourishWidth: 40, flourishThickness: 1, gapAfter: 8 },
       stickyCategories: { style: stickyCatStyle, bgColor: navBg, textColor: textMuted, activeColor: accent, font: fontSans, fontSize: 0.625 },
       navigation:   { style: paginationStyle, color: textMuted, size: 0.625, font: fontSans, fontWeight: 400 },
       banners:      { position: 'inline' },

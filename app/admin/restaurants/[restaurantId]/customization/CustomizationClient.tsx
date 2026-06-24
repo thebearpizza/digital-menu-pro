@@ -1051,6 +1051,16 @@ function EditorSidebar({ target, theme, setters, previewMode, activeMenuId, onCl
             <AlignRow label="Allineamento proprio" value={m.categories.align}
               onChange={v => setters.setMCats({ align: v })} />
           </div>
+          <div>
+            <div className="flex justify-between items-center mb-1">
+              <label className="text-xs text-gray-600">Spazio dopo categoria</label>
+              <span className="text-[10px] font-mono text-gray-400">{m.categories.gapAfter}pt</span>
+            </div>
+            <input type="range" min={0} max={40} step={1} value={m.categories.gapAfter}
+              onChange={e => setters.setMCats({ gapAfter: Number(e.target.value) })}
+              className="w-full accent-gray-900" />
+            <p className="text-[10px] text-gray-400 mt-1">Distanza tra il nome categoria e il primo piatto.</p>
+          </div>
           <div className="pt-2 border-t border-gray-100">
             <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Ghirigori (decori laterali)</p>
             <PillGroup

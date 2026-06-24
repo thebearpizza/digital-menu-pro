@@ -261,7 +261,7 @@ export function useMenuPDF(
     theme?.menu.layout.divider.type, theme?.menu.layout.divider.color,
     theme?.menu.layout.dishSpacing,
     theme?.menu.dishes.titleSize, theme?.menu.descriptions.size, theme?.menu.prices.size,
-    theme?.menu.categories.color, theme?.menu.dishes.titleColor,
+    theme?.menu.categories.color, theme?.menu.categories.gapAfter, theme?.menu.dishes.titleColor,
     theme?.menu.descriptions.color, theme?.menu.prices.color,
     theme?.menu.dishes.titleFont, theme?.menu.descriptions.font,
     theme?.menu.prices.font, theme?.menu.categories.font,
