@@ -888,6 +888,7 @@ export default function DishList({
         <ExcelImportExport
           restaurantId={restaurantId}
           menuId={menuId}
+          dishes={dishes}
           onImported={created => {
             const next = [...dishes, ...(created as Dish[])]
             setDishes(next)
