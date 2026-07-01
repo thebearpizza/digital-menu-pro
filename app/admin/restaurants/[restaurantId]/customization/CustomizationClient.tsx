@@ -592,7 +592,13 @@ function ButtonsPanel({ l, setLBu, customFonts, onUploadFont, fontUploading }: {
         <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Disposizione</p>
         <PillGroup
           options={[{ label:'Colonna', value:'column' },{ label:'Riga', value:'row' }]}
-          value={l.buttons.layout} onChange={v => setLBu({ layout: v })} />
+          value={l.buttons.layout}
+          onChange={v => setLBu(
+            // Passando a "riga" con la larghezza piena i bottoni andrebbero a
+            // capo uno per riga: se è ancora larga, la porto a ~metà così stanno
+            // affiancati subito (l'utente può poi regolarla).
+            v === 'row' && l.buttons.width > 60 ? { layout: v, width: 48 } : { layout: v }
+          )} />
       </div>
       <div>
         <div className="flex justify-between items-center mb-1">

@@ -276,7 +276,7 @@ export const DEFAULT_THEME: RestaurantTheme = {
     buttons: {
       shape: 'flat', borderStyle: 'solid', borderWidth: 1, borderColor: '#c9a96e',
       font: 'DM Sans', fontSize: 0.625, textColor: '#ede8e0', bgColor: 'transparent', gapTop: 2.5,
-      layout: 'column', width: 100, verticalPosition: 50, showBrowsePrefix: true,
+      layout: 'column', width: 100, verticalPosition: 85, showBrowsePrefix: true,
     },
     socials: { color: '#c9a96e', size: 1.25, style: 'minimal' },
   },
@@ -652,7 +652,7 @@ export function migrateFlat(r: Record<string, unknown>): RestaurantTheme {
       buttons: {
         shape: buttonShape, borderStyle: 'solid', borderWidth: 1, borderColor: accent,
         font: fontSans, fontSize: 0.625, textColor: textPrimary, bgColor: 'transparent', gapTop: 2.5,
-        layout: 'column', width: 100, verticalPosition: 50, showBrowsePrefix: true,
+        layout: 'column', width: 100, verticalPosition: 85, showBrowsePrefix: true,
       },
       socials: { color: accent, size: 1.25, style: 'minimal' },
     },
