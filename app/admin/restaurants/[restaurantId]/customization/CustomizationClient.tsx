@@ -513,7 +513,7 @@ const EDITOR_TARGETS: Record<string, { title: string; hint: string }> = {
   'landing-logo':      { title: 'Logo',               hint: 'Immagine, dimensione, blend mode, spaziatura' },
   'landing-title':     { title: 'Nome Ristorante',    hint: 'Testo, font, colore, dimensione, peso' },
   'landing-desc':      { title: 'Slogan',             hint: 'Testo, font, colore, dimensione' },
-  'landing-buttons':   { title: 'Bottoni Menu',       hint: 'Colori, bordo, font, forma' },
+  'landing-buttons':   { title: 'Bottoni Menu',       hint: 'Disposizione, larghezza, posizione, colori, font' },
   'landing-socials':   { title: 'Social & Accento',   hint: 'Colore accento, icone social, dimensione' },
   'dish-title':        { title: 'Titolo Piatto',      hint: 'Font, colore, dimensione, allineamento' },
   'dish-description':  { title: 'Descrizione Piatto', hint: 'Font, colore, dimensione, allineamento' },
@@ -589,6 +589,33 @@ function ButtonsPanel({ l, setLBu, customFonts, onUploadFont, fontUploading }: {
   return (
     <div className="space-y-4">
       <div>
+        <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Disposizione</p>
+        <PillGroup
+          options={[{ label:'Colonna', value:'column' },{ label:'Riga', value:'row' }]}
+          value={l.buttons.layout} onChange={v => setLBu({ layout: v })} />
+      </div>
+      <div>
+        <div className="flex justify-between items-center mb-1">
+          <label className="text-xs text-gray-600">Larghezza bottone</label>
+          <span className="text-[10px] font-mono text-gray-400">{l.buttons.width}%</span>
+        </div>
+        <input type="range" min={20} max={100} step={1} value={l.buttons.width}
+          onChange={e => setLBu({ width: Number(e.target.value) })}
+          className="w-full accent-gray-900" />
+      </div>
+      {l.buttons.layout === 'row' && (
+        <div>
+          <div className="flex justify-between items-center mb-1">
+            <label className="text-xs text-gray-600">Posizione verticale</label>
+            <span className="text-[10px] font-mono text-gray-400">{l.buttons.verticalPosition}%</span>
+          </div>
+          <input type="range" min={0} max={100} step={1} value={l.buttons.verticalPosition}
+            onChange={e => setLBu({ verticalPosition: Number(e.target.value) })}
+            className="w-full accent-gray-900" />
+          <p className="text-[10px] text-gray-400 mt-1">0% = alto · 50% = centro · 100% = basso.</p>
+        </div>
+      )}
+      <div>
         <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Forma</p>
         <PillGroup
           options={[{ label:'Flat', value:'flat' },{ label:'Arrotondato', value:'rounded' },{ label:'Pill', value:'pill' }]}
@@ -613,6 +640,12 @@ function ButtonsPanel({ l, setLBu, customFonts, onUploadFont, fontUploading }: {
         <ColorRow label="Colore bordo" value={l.buttons.borderColor} onChange={v => setLBu({ borderColor: v })} />
       </>)}
       <ColorRow label="Colore testo" value={l.buttons.textColor} onChange={v => setLBu({ textColor: v })} />
+      <label className="flex items-center gap-2 cursor-pointer select-none">
+        <input type="checkbox" checked={l.buttons.showBrowsePrefix}
+          onChange={e => setLBu({ showBrowsePrefix: e.target.checked })}
+          className="accent-gray-900 w-3.5 h-3.5" />
+        <span className="text-xs text-gray-600">Mostra &ldquo;Sfoglia il menu&rdquo; prima del nome</span>
+      </label>
       <div>
         <label className="flex items-center gap-2 mb-2 cursor-pointer select-none">
           <input type="checkbox" checked={bgTransparent}

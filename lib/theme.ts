@@ -151,6 +151,15 @@ export interface LandingTheme {
     bgColor:     string
     // Vertical gap (rem) between description (or title) and the menu buttons
     gapTop:      number
+    // Disposizione dei bottoni menu: impilati in colonna (default) o affiancati in riga.
+    layout:      'column' | 'row'
+    // Larghezza di ogni bottone in percentuale del contenitore (20–100).
+    width:       number
+    // Posizione verticale del gruppo bottoni sulla pagina (0–100%), usata solo
+    // in layout 'row' dove i bottoni diventano una barra fluttuante posizionabile.
+    verticalPosition: number
+    // Se true il testo è "Sfoglia il menu <nome>"; se false solo "<nome>".
+    showBrowsePrefix: boolean
   }
   socials: { color: string; size: number; style: 'minimal' | 'circle' | 'box' | 'outline' }
 }
@@ -267,6 +276,7 @@ export const DEFAULT_THEME: RestaurantTheme = {
     buttons: {
       shape: 'flat', borderStyle: 'solid', borderWidth: 1, borderColor: '#c9a96e',
       font: 'DM Sans', fontSize: 0.625, textColor: '#ede8e0', bgColor: 'transparent', gapTop: 2.5,
+      layout: 'column', width: 100, verticalPosition: 50, showBrowsePrefix: true,
     },
     socials: { color: '#c9a96e', size: 1.25, style: 'minimal' },
   },
@@ -512,6 +522,10 @@ function parseNested(r: Record<string, unknown>): RestaurantTheme {
         textColor:   str(bu.textColor, d.landing.buttons.textColor),
         bgColor:     str(bu.bgColor, d.landing.buttons.bgColor),
         gapTop:      num(bu.gapTop, d.landing.buttons.gapTop),
+        layout:      one(bu.layout, ['column','row'] as const, d.landing.buttons.layout),
+        width:       num(bu.width, d.landing.buttons.width),
+        verticalPosition: num(bu.verticalPosition, d.landing.buttons.verticalPosition),
+        showBrowsePrefix: bu.showBrowsePrefix !== undefined ? bu.showBrowsePrefix !== false : d.landing.buttons.showBrowsePrefix,
       },
       socials: {
         color: str(ls.color, d.landing.socials.color),
@@ -638,6 +652,7 @@ export function migrateFlat(r: Record<string, unknown>): RestaurantTheme {
       buttons: {
         shape: buttonShape, borderStyle: 'solid', borderWidth: 1, borderColor: accent,
         font: fontSans, fontSize: 0.625, textColor: textPrimary, bgColor: 'transparent', gapTop: 2.5,
+        layout: 'column', width: 100, verticalPosition: 50, showBrowsePrefix: true,
       },
       socials: { color: accent, size: 1.25, style: 'minimal' },
     },

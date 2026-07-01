@@ -541,6 +541,43 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
   const textureBg = landingTextureCss(l.background.texture)
   const hasPoster = !!l.background.poster && !posterBroken
 
+  // ── Menu buttons layout ────────────────────────────────────────────────────
+  // 'column' (default): impilati nel flusso centrato della landing.
+  // 'row': affiancati in una barra fluttuante posizionabile verticalmente.
+  const isRowButtons = l.buttons.layout === 'row'
+  const buttonsBlock = (
+    <div
+      className={`flex ${isRowButtons ? 'flex-row flex-wrap justify-center' : 'flex-col items-center'} gap-3 w-full`}
+      style={isRowButtons ? undefined : { marginTop: `${l.buttons.gapTop}rem` }}
+    >
+      {displayMenus.length === 0 ? (
+        <p className="text-[10px] uppercase tracking-[0.25em]" style={{ color: l.title.color }}>Menu in aggiornamento.</p>
+      ) : (
+        displayMenus.map(menu => (
+          <button key={menu.id} onClick={() => openMenu(menu.id)}
+            className="group relative px-10 py-3 overflow-hidden transition-colors duration-300"
+            style={{
+              width:        `${l.buttons.width}%`,
+              color:        l.buttons.textColor,
+              background:   l.buttons.bgColor,
+              border:       l.buttons.borderStyle === 'none' ? 'none' : `${l.buttons.borderWidth ?? 1}px ${l.buttons.borderStyle} ${l.buttons.borderColor}50`,
+              borderRadius: BUTTON_RADIUS,
+              fontFamily:   BUTTON_FONT,
+              fontSize:     `${l.buttons.fontSize}rem`,
+              letterSpacing:'0.28em',
+              textTransform:'uppercase',
+            }}>
+            <span className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
+              style={{ background: `${l.buttons.borderColor}14` }} />
+            <span className="relative">
+              {l.buttons.showBrowsePrefix ? `${uiText('browseMenu', lang)} ${menu.name}` : menu.name}
+            </span>
+          </button>
+        ))
+      )}
+    </div>
+  )
+
   return (
     <div className="fixed inset-0 h-[100dvh]">
       <ThemeInjector theme={effectiveTheme} />
@@ -647,39 +684,40 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
             <div className="w-10 h-px mt-7" style={{ background: l.accent }} />
           )}
 
-          {/* Menu buttons */}
-          <EditHandle target="landing-buttons" editMode={editMode} className="w-full">
-            <div className="flex flex-col gap-3 w-full" style={{ marginTop: `${l.buttons.gapTop}rem` }}>
-              {displayMenus.length === 0 ? (
-                <p className="text-[10px] uppercase tracking-[0.25em]" style={{ color: l.title.color }}>Menu in aggiornamento.</p>
-              ) : (
-                displayMenus.map(menu => (
-                  <button key={menu.id} onClick={() => openMenu(menu.id)}
-                    className="group relative px-10 py-3 overflow-hidden transition-colors duration-300"
-                    style={{
-                      color:       l.buttons.textColor,
-                      background:  l.buttons.bgColor,
-                      border:      l.buttons.borderStyle === 'none' ? 'none' : `${l.buttons.borderWidth ?? 1}px ${l.buttons.borderStyle} ${l.buttons.borderColor}50`,
-                      borderRadius:BUTTON_RADIUS,
-                      fontFamily:  BUTTON_FONT,
-                      fontSize:    `${l.buttons.fontSize}rem`,
-                      letterSpacing:'0.28em',
-                      textTransform:'uppercase',
-                    }}>
-                    <span className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
-                      style={{ background: `${l.buttons.borderColor}14` }} />
-                    <span className="relative">{`${uiText('browseMenu', lang)} ${menu.name}`}</span>
-                  </button>
-                ))
-              )}
-            </div>
-          </EditHandle>
+          {/* Menu buttons — in colonna restano nel flusso centrato della landing */}
+          {!isRowButtons && (
+            <EditHandle target="landing-buttons" editMode={editMode} className="w-full">
+              {buttonsBlock}
+            </EditHandle>
+          )}
 
           {/* Social links */}
           <EditHandle target="landing-socials" editMode={editMode}>
             <SocialBar restaurant={displayRestaurant} editMode={editMode} liveLanding={l} />
           </EditHandle>
         </div>
+
+        {/* Menu buttons — in riga diventano una barra fluttuante posizionabile
+             verticalmente (top = buttons.verticalPosition%). Fuori dal blocco
+             contenuto centrato così può stare in qualsiasi punto della pagina. */}
+        {isRowButtons && (
+          <div
+            className="absolute left-0 right-0 z-[60] px-8 flex justify-center"
+            style={{
+              top:           `${l.buttons.verticalPosition}%`,
+              transform:     'translateY(-50%)',
+              opacity:       transitioning ? 0 : 1,
+              transition:    'opacity 0.6s ease',
+              pointerEvents: transitioning ? 'none' : 'auto',
+            }}
+          >
+            <div className="w-full max-w-md">
+              <EditHandle target="landing-buttons" editMode={editMode} className="w-full">
+                {buttonsBlock}
+              </EditHandle>
+            </div>
+          </div>
+        )}
 
         {/* Footer label */}
         <p className="absolute bottom-6 text-[8px] uppercase tracking-[0.35em]" style={{ color: l.title.color + '44' }}>
