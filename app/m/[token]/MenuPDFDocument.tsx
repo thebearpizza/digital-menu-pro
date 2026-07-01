@@ -228,13 +228,13 @@ function makeStyles(theme: RestaurantTheme, registered: Set<string>, flipped = f
       letterSpacing: compact ? 1.5 : 2,
       textAlign:     catAlign,
     },
-    catTitleWrap: { marginBottom: m.categories.gapAfter ?? (compact ? 5 : 8) },
+    catTitleWrap: { marginBottom: compact ? 5 : 8 },
     // Flourish row: [line] TITLE [line] centred.
     catFlourishRow: {
       flexDirection: 'row',
       alignItems:    'center',
       justifyContent:'center',
-      marginBottom:  m.categories.gapAfter ?? (compact ? 5 : 8),
+      marginBottom:  compact ? 5 : 8,
     },
     flourishLine: {
       width:           m.categories.flourishWidth || 40,
@@ -259,7 +259,11 @@ function makeStyles(theme: RestaurantTheme, registered: Set<string>, flipped = f
     catLine: {
       height:          0.5,
       backgroundColor: catLineColor,
-      marginBottom:    compact ? 12 : 18,
+      // Spazio tra la categoria (nome + linea) e il primo piatto — controllabile
+      // dall'utente via "Spazio dopo categoria". È QUESTO il gap dominante che
+      // separa la categoria dal primo piatto (il catTitleWrap sopra è solo la
+      // piccola distanza nome↔linea). Default = look storico (classic 18 / compact 12).
+      marginBottom:    m.categories.gapAfter ?? (compact ? 12 : 18),
     },
     // Continuation reference header — shown at the top of 2nd+ pages of the
     // same category: category name in smaller/muted text + a short accent line.

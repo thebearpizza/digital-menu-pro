@@ -298,7 +298,7 @@ export const DEFAULT_THEME: RestaurantTheme = {
     descriptions: { font: 'DM Sans', size: 0.875, color: '#a09080', align: 'inherit' },
     allergens:    { style: 'text', color: '#c9a96e', bgColor: '#181208', display: 'full', separator: ', ', size: 0.85, align: 'inherit' },
     prices:       { font: 'DM Sans', size: 1.1, color: '#c9a96e', format: 'symbol-left', currency: '€', position: 'right', align: 'inherit' },
-    categories:   { font: 'Cormorant Garamond', color: '#1a1a1a', size: 1.3, align: 'inherit', flourish: 'none', flourishColor: '#c9a96e', flourishWidth: 40, flourishThickness: 1, gapAfter: 8 },
+    categories:   { font: 'Cormorant Garamond', color: '#1a1a1a', size: 1.3, align: 'inherit', flourish: 'none', flourishColor: '#c9a96e', flourishWidth: 40, flourishThickness: 1, gapAfter: 18 },
     stickyCategories: {
       style: 'solid', bgColor: 'rgba(7,7,7,0.96)', textColor: '#4f4f4f', activeColor: '#c9a96e', font: 'DM Sans', fontSize: 0.625,
     },
@@ -670,7 +670,7 @@ export function migrateFlat(r: Record<string, unknown>): RestaurantTheme {
       descriptions: { font: fontSans, size: num(fs.base, d.menu.descriptions.size), color: '#a09080', align: 'inherit' },
       allergens:    { style: 'text', color: accent, bgColor: '#181208', display: 'full', separator: ', ', size: 0.85, align: 'inherit' },
       prices:       { font: fontSans, size: num(fs.price, d.menu.prices.size), color: accent, format: priceFormat, currency: '€', position: 'right', align: 'inherit' },
-      categories:   { font: fontSerif, color: '#1a1a1a', size: 1.3, align: 'inherit', flourish: 'none', flourishColor: accent, flourishWidth: 40, flourishThickness: 1, gapAfter: 8 },
+      categories:   { font: fontSerif, color: '#1a1a1a', size: 1.3, align: 'inherit', flourish: 'none', flourishColor: accent, flourishWidth: 40, flourishThickness: 1, gapAfter: 18 },
       stickyCategories: { style: stickyCatStyle, bgColor: navBg, textColor: textMuted, activeColor: accent, font: fontSans, fontSize: 0.625 },
       navigation:   { style: paginationStyle, color: textMuted, size: 0.625, font: fontSans, fontWeight: 400 },
       banners:      { position: 'inline' },
