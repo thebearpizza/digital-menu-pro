@@ -155,13 +155,21 @@ export interface LandingTheme {
     layout:      'column' | 'row'
     // Larghezza di ogni bottone in percentuale del contenitore (20–100).
     width:       number
-    // Posizione verticale del gruppo bottoni sulla pagina (0–100%), usata solo
-    // in layout 'row' dove i bottoni diventano una barra fluttuante posizionabile.
-    verticalPosition: number
     // Se true il testo è "Sfoglia il menu <nome>"; se false solo "<nome>".
     showBrowsePrefix: boolean
   }
   socials: { color: string; size: number; style: 'minimal' | 'circle' | 'box' | 'outline' }
+  // Offset di posizionamento libero (rem) per ogni elemento della landing.
+  // Applicati via transform:translate — permettono di spostare un elemento in
+  // orizzontale/verticale rispetto al flusso di default (logo→nome→slogan→
+  // bottoni→social). A 0,0 il flusso base resta intatto e si ricalibra da solo.
+  positions: {
+    logo:        { x: number; y: number }
+    title:       { x: number; y: number }
+    description: { x: number; y: number }
+    buttons:     { x: number; y: number }
+    socials:     { x: number; y: number }
+  }
 }
 
 // ── Menu sub-theme ────────────────────────────────────────────────────────────
@@ -276,9 +284,13 @@ export const DEFAULT_THEME: RestaurantTheme = {
     buttons: {
       shape: 'flat', borderStyle: 'solid', borderWidth: 1, borderColor: '#c9a96e',
       font: 'DM Sans', fontSize: 0.625, textColor: '#ede8e0', bgColor: 'transparent', gapTop: 2.5,
-      layout: 'column', width: 100, verticalPosition: 85, showBrowsePrefix: true,
+      layout: 'column', width: 100, showBrowsePrefix: true,
     },
     socials: { color: '#c9a96e', size: 1.25, style: 'minimal' },
+    positions: {
+      logo: { x: 0, y: 0 }, title: { x: 0, y: 0 }, description: { x: 0, y: 0 },
+      buttons: { x: 0, y: 0 }, socials: { x: 0, y: 0 },
+    },
   },
   menu: {
     accent:         '#c9a96e',
@@ -357,6 +369,22 @@ function one<T extends string>(v: unknown, opts: readonly T[], fb: T): T {
 }
 function sub(v: unknown): Record<string, unknown> {
   return (v && typeof v === 'object' ? v : {}) as Record<string, unknown>
+}
+// Offset di posizione per-elemento della landing: legge {x,y} per ogni chiave,
+// con fallback ai default (0,0). Robusto a chiavi mancanti / valori non numerici.
+function parseLandingPositions(
+  raw: unknown,
+  fb: LandingTheme['positions'],
+): LandingTheme['positions'] {
+  const p = sub(raw)
+  const one = (k: keyof LandingTheme['positions']) => {
+    const el = sub(p[k as string])
+    return { x: num(el.x, fb[k].x), y: num(el.y, fb[k].y) }
+  }
+  return {
+    logo: one('logo'), title: one('title'), description: one('description'),
+    buttons: one('buttons'), socials: one('socials'),
+  }
 }
 function parseMenuBg(raw: unknown, fb: MenuBgConfig): MenuBgConfig {
   // Older saves stored pageBackground as a plain hex string.
@@ -524,7 +552,6 @@ function parseNested(r: Record<string, unknown>): RestaurantTheme {
         gapTop:      num(bu.gapTop, d.landing.buttons.gapTop),
         layout:      one(bu.layout, ['column','row'] as const, d.landing.buttons.layout),
         width:       num(bu.width, d.landing.buttons.width),
-        verticalPosition: num(bu.verticalPosition, d.landing.buttons.verticalPosition),
         showBrowsePrefix: bu.showBrowsePrefix !== undefined ? bu.showBrowsePrefix !== false : d.landing.buttons.showBrowsePrefix,
       },
       socials: {
@@ -532,6 +559,7 @@ function parseNested(r: Record<string, unknown>): RestaurantTheme {
         size:  num(ls.size, d.landing.socials.size),
         style: one(ls.style, ['minimal','circle','box','outline'] as const, d.landing.socials.style),
       },
+      positions: parseLandingPositions(l.positions, d.landing.positions),
     },
     menu:       parsedMenu,
     menuThemes: parseMenuThemeOverrides(r.menuThemes, parsedMenu),
@@ -652,9 +680,13 @@ export function migrateFlat(r: Record<string, unknown>): RestaurantTheme {
       buttons: {
         shape: buttonShape, borderStyle: 'solid', borderWidth: 1, borderColor: accent,
         font: fontSans, fontSize: 0.625, textColor: textPrimary, bgColor: 'transparent', gapTop: 2.5,
-        layout: 'column', width: 100, verticalPosition: 85, showBrowsePrefix: true,
+        layout: 'column', width: 100, showBrowsePrefix: true,
       },
       socials: { color: accent, size: 1.25, style: 'minimal' },
+      positions: {
+        logo: { x: 0, y: 0 }, title: { x: 0, y: 0 }, description: { x: 0, y: 0 },
+        buttons: { x: 0, y: 0 }, socials: { x: 0, y: 0 },
+      },
     },
     menu: {
       accent,

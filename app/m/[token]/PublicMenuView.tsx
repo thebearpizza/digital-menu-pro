@@ -5,7 +5,7 @@
 // toggled via opacity so the background video never needs to re-initialize.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
+import { useState, useEffect, useRef, useMemo, useCallback, type CSSProperties } from 'react'
 import FlipbookViewer  from './FlipbookViewer'
 import DishModal       from './DishModal'
 import type { DishData } from './DishModal'
@@ -542,34 +542,46 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
   const hasPoster = !!l.background.poster && !posterBroken
 
   // ── Menu buttons layout ────────────────────────────────────────────────────
-  // 'column' (default): impilati nel flusso centrato della landing.
-  // 'row': affiancati in una barra fluttuante posizionabile verticalmente.
+  // 'column' (default): impilati verticalmente. 'row': affiancati e a capo.
+  // In entrambi i casi restano NEL FLUSSO della landing (logo→nome→slogan→
+  // bottoni→social): non collidono mai da soli. Lo spostamento libero avviene
+  // solo tramite gli offset per-elemento (l.positions), scelti dall'utente.
   const isRowButtons = l.buttons.layout === 'row'
   const buttonsBlock = (
     <div
       className={`flex ${isRowButtons ? 'flex-row flex-wrap justify-center' : 'flex-col items-center'} gap-3 w-full`}
-      style={isRowButtons ? undefined : { marginTop: `${l.buttons.gapTop}rem` }}
+      style={{ marginTop: `${l.buttons.gapTop}rem` }}
     >
       {displayMenus.length === 0 ? (
         <p className="text-[10px] uppercase tracking-[0.25em]" style={{ color: l.title.color }}>Menu in aggiornamento.</p>
       ) : (
         displayMenus.map(menu => (
           <button key={menu.id} onClick={() => openMenu(menu.id)}
-            className="group relative px-10 py-3 overflow-hidden transition-colors duration-300"
+            className="group relative overflow-hidden transition-colors duration-300 flex items-center justify-center text-center"
             style={{
-              width:        `${l.buttons.width}%`,
-              color:        l.buttons.textColor,
-              background:   l.buttons.bgColor,
-              border:       l.buttons.borderStyle === 'none' ? 'none' : `${l.buttons.borderWidth ?? 1}px ${l.buttons.borderStyle} ${l.buttons.borderColor}50`,
-              borderRadius: BUTTON_RADIUS,
-              fontFamily:   BUTTON_FONT,
-              fontSize:     `${l.buttons.fontSize}rem`,
-              letterSpacing:'0.28em',
-              textTransform:'uppercase',
+              width:          `${l.buttons.width}%`,
+              paddingTop:     '0.75rem',
+              paddingBottom:  '0.75rem',
+              // Padding orizzontale adattivo: generoso in colonna (full-width),
+              // ridotto in riga così testi lunghi restano centrati e non traboccano
+              // dai bottoni stretti.
+              paddingLeft:    isRowButtons ? '0.6rem' : '2.5rem',
+              paddingRight:   isRowButtons ? '0.6rem' : '2.5rem',
+              color:          l.buttons.textColor,
+              background:     l.buttons.bgColor,
+              border:         l.buttons.borderStyle === 'none' ? 'none' : `${l.buttons.borderWidth ?? 1}px ${l.buttons.borderStyle} ${l.buttons.borderColor}50`,
+              borderRadius:   BUTTON_RADIUS,
+              fontFamily:     BUTTON_FONT,
+              fontSize:       `${l.buttons.fontSize}rem`,
+              letterSpacing:  '0.28em',
+              textTransform:  'uppercase',
+              minWidth:       0,
             }}>
             <span className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
               style={{ background: `${l.buttons.borderColor}14` }} />
-            <span className="relative">
+            {/* marginRight negativo = compensa lo spazio finale della letter-spacing
+                così il testo resta otticamente centrato a qualsiasi larghezza. */}
+            <span className="relative" style={{ marginRight: '-0.28em' }}>
               {l.buttons.showBrowsePrefix ? `${uiText('browseMenu', lang)} ${menu.name}` : menu.name}
             </span>
           </button>
@@ -577,6 +589,11 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
       )}
     </div>
   )
+
+  // Offset di posizione libero per un elemento della landing (transform:translate).
+  // A (0,0) non introduce alcuna trasformazione: il flusso base resta intatto.
+  const posStyle = (p: { x: number; y: number }): CSSProperties | undefined =>
+    (p.x || p.y) ? { transform: `translate(${p.x}rem, ${p.y}rem)` } : undefined
 
   return (
     <div className="fixed inset-0 h-[100dvh]">
@@ -638,86 +655,76 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
 
           <BannerCarousel banners={banners} accent={l.accent} />
 
-          <EditHandle target="landing-logo" editMode={editMode}>
-            {logoSrc && isVis(vis, 'logo') && (
-              <img src={logoSrc} alt={displayName}
-                className="object-contain"
-                style={{
-                  height: `${l.logo.size * 0.75}rem`,
-                  mixBlendMode: l.logo.mixBlend as any,
-                  opacity: 0.88,
-                  marginBottom: isVis(vis,'name') ? `${l.logo.gapBottom}rem` : '2.5rem',
-                }} />
-            )}
-          </EditHandle>
+          {/* Ogni elemento è avvolto da un wrapper con offset di posizione libero
+              (l.positions.*). A (0,0) il transform è assente e il layout resta il
+              flusso base logo→nome→slogan→bottoni→social, che si ricalibra da solo.
+              Con offset ≠ 0 l'utente sposta liberamente l'elemento (può sovrapporsi). */}
+          <div style={posStyle(l.positions.logo)}>
+            <EditHandle target="landing-logo" editMode={editMode}>
+              {logoSrc && isVis(vis, 'logo') && (
+                <img src={logoSrc} alt={displayName}
+                  className="object-contain"
+                  style={{
+                    height: `${l.logo.size * 0.75}rem`,
+                    mixBlendMode: l.logo.mixBlend as any,
+                    opacity: 0.88,
+                    marginBottom: isVis(vis,'name') ? `${l.logo.gapBottom}rem` : '2.5rem',
+                  }} />
+              )}
+            </EditHandle>
+          </div>
 
           {!logoSrc && isVis(vis,'name') && (
             <div className="w-10 h-px mb-7" style={{ background: l.accent }} />
           )}
 
-          <EditHandle target="landing-title" editMode={editMode}>
-            {isVis(vis,'name') && (
-              <h1 className="uppercase leading-none"
-                style={{
-                  color: l.title.color, fontFamily: TITLE_FONT,
-                  letterSpacing: '0.22em',
-                  fontWeight: l.title.weight === 'bold' ? 700 : l.title.weight === 'normal' ? 400 : 300,
-                }}>
-                {lineSizesFor(displayName, l.title.size, l.title.lineSizes).map((ln, i) => (
-                  <span key={i} style={{ display: 'block', fontSize: `${ln.size}rem` }}>{ln.text}</span>
-                ))}
-              </h1>
-            )}
-          </EditHandle>
+          <div style={posStyle(l.positions.title)}>
+            <EditHandle target="landing-title" editMode={editMode}>
+              {isVis(vis,'name') && (
+                <h1 className="uppercase leading-none"
+                  style={{
+                    color: l.title.color, fontFamily: TITLE_FONT,
+                    letterSpacing: '0.22em',
+                    fontWeight: l.title.weight === 'bold' ? 700 : l.title.weight === 'normal' ? 400 : 300,
+                  }}>
+                  {lineSizesFor(displayName, l.title.size, l.title.lineSizes).map((ln, i) => (
+                    <span key={i} style={{ display: 'block', fontSize: `${ln.size}rem` }}>{ln.text}</span>
+                  ))}
+                </h1>
+              )}
+            </EditHandle>
+          </div>
 
-          <EditHandle target="landing-desc" editMode={editMode}>
-            {displayDesc && isVis(vis,'description') && (
-              <p style={{ color: l.description.color, fontFamily: DESC_FONT, letterSpacing: '0.2em', textTransform: 'uppercase', marginTop: `${l.title.gapBottom}rem` }}>
-                {lineSizesFor(displayDesc, l.description.size, l.description.lineSizes).map((ln, i) => (
-                  <span key={i} style={{ display: 'block', fontSize: `${ln.size}rem` }}>{ln.text}</span>
-                ))}
-              </p>
-            )}
-          </EditHandle>
+          <div style={posStyle(l.positions.description)}>
+            <EditHandle target="landing-desc" editMode={editMode}>
+              {displayDesc && isVis(vis,'description') && (
+                <p style={{ color: l.description.color, fontFamily: DESC_FONT, letterSpacing: '0.2em', textTransform: 'uppercase', marginTop: `${l.title.gapBottom}rem` }}>
+                  {lineSizesFor(displayDesc, l.description.size, l.description.lineSizes).map((ln, i) => (
+                    <span key={i} style={{ display: 'block', fontSize: `${ln.size}rem` }}>{ln.text}</span>
+                  ))}
+                </p>
+              )}
+            </EditHandle>
+          </div>
 
           {!logoSrc && (isVis(vis,'name') || isVis(vis,'description')) && (
             <div className="w-10 h-px mt-7" style={{ background: l.accent }} />
           )}
 
-          {/* Menu buttons — in colonna restano nel flusso centrato della landing */}
-          {!isRowButtons && (
+          {/* Menu buttons — sempre nel flusso; row/column cambia solo la direzione */}
+          <div className="w-full" style={posStyle(l.positions.buttons)}>
             <EditHandle target="landing-buttons" editMode={editMode} className="w-full">
               {buttonsBlock}
             </EditHandle>
-          )}
+          </div>
 
           {/* Social links */}
-          <EditHandle target="landing-socials" editMode={editMode}>
-            <SocialBar restaurant={displayRestaurant} editMode={editMode} liveLanding={l} />
-          </EditHandle>
-        </div>
-
-        {/* Menu buttons — in riga diventano una barra fluttuante posizionabile
-             verticalmente (top = buttons.verticalPosition%). Fuori dal blocco
-             contenuto centrato così può stare in qualsiasi punto della pagina. */}
-        {isRowButtons && (
-          <div
-            className="absolute left-0 right-0 z-[60] px-8 flex justify-center"
-            style={{
-              top:           `${l.buttons.verticalPosition}%`,
-              transform:     'translateY(-50%)',
-              opacity:       transitioning ? 0 : 1,
-              transition:    'opacity 0.6s ease',
-              pointerEvents: transitioning ? 'none' : 'auto',
-            }}
-          >
-            <div className="w-full max-w-md">
-              <EditHandle target="landing-buttons" editMode={editMode} className="w-full">
-                {buttonsBlock}
-              </EditHandle>
-            </div>
+          <div style={posStyle(l.positions.socials)}>
+            <EditHandle target="landing-socials" editMode={editMode}>
+              <SocialBar restaurant={displayRestaurant} editMode={editMode} liveLanding={l} />
+            </EditHandle>
           </div>
-        )}
+        </div>
 
         {/* Footer label */}
         <p className="absolute bottom-6 text-[8px] uppercase tracking-[0.35em]" style={{ color: l.title.color + '44' }}>

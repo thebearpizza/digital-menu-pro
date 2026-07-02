@@ -276,6 +276,43 @@ function PillGroup<T extends string>({
   )
 }
 
+// Posizione libera di un elemento landing: offset orizzontale + verticale (rem).
+// A (0,0) l'elemento resta nel flusso base; spostandolo può sovrapporsi agli altri.
+function PositionRow({ pos, onChange }: {
+  pos: { x: number; y: number }
+  onChange: (p: Partial<{ x: number; y: number }>) => void
+}) {
+  const moved = pos.x !== 0 || pos.y !== 0
+  return (
+    <div className="pt-3 border-t border-gray-100">
+      <div className="flex items-center justify-between mb-1.5">
+        <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Posizione</p>
+        {moved && (
+          <button type="button" onClick={() => onChange({ x: 0, y: 0 })}
+            className="text-[11px] text-gray-400 hover:text-gray-600 underline">
+            Reimposta
+          </button>
+        )}
+      </div>
+      <div className="flex justify-between items-center mb-1">
+        <label className="text-xs text-gray-600">Orizzontale</label>
+        <span className="text-[10px] font-mono text-gray-400">{pos.x}rem</span>
+      </div>
+      <input type="range" min={-12} max={12} step={0.25} value={pos.x}
+        onChange={e => onChange({ x: Number(e.target.value) })}
+        className="w-full accent-gray-900" />
+      <div className="flex justify-between items-center mb-1 mt-2">
+        <label className="text-xs text-gray-600">Verticale</label>
+        <span className="text-[10px] font-mono text-gray-400">{pos.y}rem</span>
+      </div>
+      <input type="range" min={-12} max={12} step={0.25} value={pos.y}
+        onChange={e => onChange({ y: Number(e.target.value) })}
+        className="w-full accent-gray-900" />
+      <p className="text-[10px] text-gray-400 mt-1">Sposta l&apos;elemento; a 0 torna nel layout di base.</p>
+    </div>
+  )
+}
+
 // Alignment control with an "inherit from general" option.
 function AlignRow({ label, value, onChange, withInherit = true }: {
   label: string; value: AlignOpt; onChange: (v: AlignOpt) => void; withInherit?: boolean
@@ -536,6 +573,7 @@ interface SidebarSetters {
   setLTitle:         (p: Partial<LandingTheme['title']>) => void
   setLDesc:          (p: Partial<LandingTheme['description']>) => void
   setLBu:            (p: Partial<LandingTheme['buttons']>) => void
+  setLPos:           (key: keyof LandingTheme['positions'], p: Partial<{ x: number; y: number }>) => void
   setL:              (p: Partial<LandingTheme>) => void
   setMDishes:        (p: Partial<MenuTheme['dishes']>) => void
   setMDescs:         (p: Partial<MenuTheme['descriptions']>) => void
@@ -576,8 +614,10 @@ interface SidebarSetters {
 
 // ── Buttons panel — own state for transparent-bg toggle ───────────────────────
 
-function ButtonsPanel({ l, setLBu, customFonts, onUploadFont, fontUploading }: {
+function ButtonsPanel({ l, setLBu, pos, onPos, customFonts, onUploadFont, fontUploading }: {
   l: LandingTheme; setLBu: (p: Partial<LandingTheme['buttons']>) => void
+  pos: { x: number; y: number }
+  onPos: (p: Partial<{ x: number; y: number }>) => void
   customFonts: Record<string, string>
   onUploadFont: (f: File) => Promise<string | null>
   fontUploading: boolean
@@ -609,18 +649,6 @@ function ButtonsPanel({ l, setLBu, customFonts, onUploadFont, fontUploading }: {
           onChange={e => setLBu({ width: Number(e.target.value) })}
           className="w-full accent-gray-900" />
       </div>
-      {l.buttons.layout === 'row' && (
-        <div>
-          <div className="flex justify-between items-center mb-1">
-            <label className="text-xs text-gray-600">Posizione verticale</label>
-            <span className="text-[10px] font-mono text-gray-400">{l.buttons.verticalPosition}%</span>
-          </div>
-          <input type="range" min={0} max={100} step={1} value={l.buttons.verticalPosition}
-            onChange={e => setLBu({ verticalPosition: Number(e.target.value) })}
-            className="w-full accent-gray-900" />
-          <p className="text-[10px] text-gray-400 mt-1">0% = alto · 50% = centro · 100% = basso.</p>
-        </div>
-      )}
       <div>
         <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Forma</p>
         <PillGroup
@@ -670,6 +698,7 @@ function ButtonsPanel({ l, setLBu, customFonts, onUploadFont, fontUploading }: {
       <FontSizeSlider label="Dimensione testo" value={l.buttons.fontSize}
         min={0.5} max={1.2} step={0.025} previewFont={fontStack(l.buttons.font, 'sans')}
         onChange={v => setLBu({ fontSize: v })} />
+      <PositionRow pos={pos} onChange={onPos} />
     </div>
   )
 }
@@ -839,6 +868,7 @@ function EditorSidebar({ target, theme, setters, previewMode, activeMenuId, onCl
           <FontSizeSlider label="Spazio sotto logo" value={l.logo.gapBottom}
             min={0} max={6} step={0.25} previewFont="inherit"
             onChange={v => setters.setLLogo({ gapBottom: v })} />
+          <PositionRow pos={l.positions.logo} onChange={p => setters.setLPos('logo', p)} />
         </div>
       )
 
@@ -879,6 +909,7 @@ function EditorSidebar({ target, theme, setters, previewMode, activeMenuId, onCl
           <FontSizeSlider label="Spazio sotto il nome" value={l.title.gapBottom}
             min={0} max={6} step={0.25} previewFont="inherit"
             onChange={v => setters.setLTitle({ gapBottom: v })} />
+          <PositionRow pos={l.positions.title} onChange={p => setters.setLPos('title', p)} />
         </div>
       )
 
@@ -914,11 +945,13 @@ function EditorSidebar({ target, theme, setters, previewMode, activeMenuId, onCl
           <FontSizeSlider label="Spazio sopra i bottoni menu" value={l.buttons.gapTop}
             min={0} max={6} step={0.25} previewFont="inherit"
             onChange={v => setters.setLBu({ gapTop: v })} />
+          <PositionRow pos={l.positions.description} onChange={p => setters.setLPos('description', p)} />
         </div>
       )
 
       case 'landing-buttons': return (
         <ButtonsPanel l={l} setLBu={setters.setLBu}
+          pos={l.positions.buttons} onPos={p => setters.setLPos('buttons', p)}
           customFonts={theme.customFonts} onUploadFont={setters.handleFontUpload} fontUploading={setters.fontUploading} />
       )
 
@@ -938,6 +971,7 @@ function EditorSidebar({ target, theme, setters, previewMode, activeMenuId, onCl
               value={l.socials.style}
               onChange={v => setters.setL({ socials: { ...l.socials, style: v } })} />
           </div>
+          <PositionRow pos={l.positions.socials} onChange={p => setters.setLPos('socials', p)} />
         </div>
       )
 
@@ -2054,6 +2088,13 @@ export default function CustomizationClient({
   function setLBu(patch: Partial<LandingTheme['buttons']>) {
     setSaved(false); setTheme(t => ({ ...t, landing: { ...t.landing, buttons: { ...t.landing.buttons, ...patch } } }))
   }
+  function setLPos(key: keyof LandingTheme['positions'], patch: Partial<{ x: number; y: number }>) {
+    setSaved(false)
+    setTheme(t => ({
+      ...t,
+      landing: { ...t.landing, positions: { ...t.landing.positions, [key]: { ...t.landing.positions[key], ...patch } } },
+    }))
+  }
   function setMLayout(patch: Partial<MenuTheme['layout']>) {
     setSaved(false); setTheme(t => updateMenuTheme(t, m => ({ ...m, layout: { ...m.layout, ...patch } })))
   }
@@ -2292,7 +2333,7 @@ export default function CustomizationClient({
   const baseMode = editorLevel === 'base'
 
   const setters: SidebarSetters = {
-    setLBg, setLLogo, setLTitle, setLDesc, setLBu, setL,
+    setLBg, setLLogo, setLTitle, setLDesc, setLBu, setLPos, setL,
     setMDishes, setMDescs, setMPrices, setMCats, setMLayout, setMDivider, setMBg, setMPageBg, setMNav, setMSticky, setMHint, setMAllergens, setM,
     setC, setCardTitle, setCardDesc, setCardPrice, setCardAllergens, setCardClose, setCardCategory, setCardPairing,
     handleBgUpload, handleVideoUpload, handleMenuBgUpload, handleMenuPageBgUpload, handlePosterUpload, handleLogoUpload, handleFontUpload,
