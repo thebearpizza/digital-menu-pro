@@ -581,7 +581,7 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
               style={{ background: `${l.buttons.borderColor}14` }} />
             {/* marginRight negativo = compensa lo spazio finale della letter-spacing
                 così il testo resta otticamente centrato a qualsiasi larghezza. */}
-            <span className="relative" style={{ marginRight: '-0.28em' }}>
+            <span className="relative" style={{ marginRight: '-0.28em', overflowWrap: 'anywhere', minWidth: 0 }}>
               {l.buttons.showBrowsePrefix ? `${uiText('browseMenu', lang)} ${menu.name}` : menu.name}
             </span>
           </button>

@@ -12,18 +12,32 @@ import { animate, stagger, utils, type JSAnimation } from 'animejs'
 
 // Staggered fade/slide-up entrance for the landing page content. Animates the
 // direct children of `container` (logo, title, description, menu buttons,
-// socials) once on mount. Returns the animations so callers can revert them
-// if the component unmounts mid-play.
+// socials) once on mount. Saves and restores the original inline transform so
+// per-element positioning (transform: translate(x,y)) is preserved after the
+// entrance animation completes. Returns the animations so callers can revert
+// them if the component unmounts mid-play.
 export function animateLandingIn(container: HTMLElement | null): JSAnimation[] {
   if (!container) return []
   const items = container.querySelectorAll(':scope > *')
   if (!items.length) return []
+
+  // Save original transforms (may include per-element positioning like translate(4rem, 0))
+  const originalTransforms = Array.from(items).map(item =>
+    (item as HTMLElement).style.transform
+  )
+
   return [animate(items, {
     opacity: [0, 1],
     translateY: [18, 0],
     duration: 700,
     delay: stagger(110, { start: 150 }),
     ease: 'outQuad',
+    onComplete: () => {
+      // Restore the original transforms so per-element positioning survives
+      Array.from(items).forEach((item, idx) => {
+        (item as HTMLElement).style.transform = originalTransforms[idx] || ''
+      })
+    },
   })]
 }
 
