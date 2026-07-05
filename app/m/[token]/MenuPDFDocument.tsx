@@ -647,6 +647,24 @@ export function MenuPDFDocument({ restaurant, menu, theme: themeProp, registered
   const divWidth = m.layout.divider.width || 0.5
   const perPage  = m.layout.dishesPerPage || 0
 
+  // ── Marker invisibili per il text layer del flipbook ────────────────────────
+  // Helvetica (font built-in WinAnsi) viene SEMPRE estratta in modo pulito da
+  // PDF.js, anche quando il font scelto dall'utente (es. OTF decorativo caricato
+  // a mano) produce testo illeggibile nell'estrazione. FlipbookViewer li usa
+  // come ancore prioritarie (Pass 0) per i click sui piatti; useMenuPDF li usa
+  // per individuare la pagina di ogni categoria. fontSize 1 + opacity 0 +
+  // position absolute = nessun impatto visivo né di layout.
+  const markerStyle = {
+    position: 'absolute' as const, left: 0, top: 0,
+    fontSize: 1, opacity: 0, fontFamily: 'Helvetica',
+  }
+  const dishMarker = (dish: PDFDish) => (
+    <Text style={markerStyle}>{`[[D:${dish.id}]]`}</Text>
+  )
+  const catMarker = (catIdx: number) => (
+    <Text style={markerStyle}>{`[[C:${catIdx}]]`}</Text>
+  )
+
   // Name + price arranged per the price position setting.
   function namePriceBlock(dish: PDFDish, priceStr: string | null, st: typeof s) {
     const nameEl  = <Text style={st.dishName}>{dish.name}</Text>
@@ -701,6 +719,7 @@ export function MenuPDFDocument({ restaurant, menu, theme: themeProp, registered
     if (isBoxed) {
       return (
         <View key={dish.id} style={st.boxedItem} wrap={false}>
+          {dishMarker(dish)}
           {namePriceBlock(dish, priceStr, st)}
           {dish.description ? <Text style={st.dishDesc}>{dish.description}</Text> : null}
           {allergenStr ? <Text style={st.dishAllergens}>{allergenStr}</Text> : null}
@@ -711,6 +730,7 @@ export function MenuPDFDocument({ restaurant, menu, theme: themeProp, registered
     if (isElegant) {
       return (
         <View key={dish.id} style={st.elegantItem} wrap={false}>
+          {dishMarker(dish)}
           <Text style={[st.dishName, { textAlign: 'center', marginRight: 0 }]}>{dish.name}</Text>
           {priceStr ? <Text style={[st.dishPrice, { textAlign: 'center', marginTop: 2 }]}>{priceStr}</Text> : null}
           {dish.description ? <Text style={[st.dishDesc, { textAlign: 'center' }]}>{dish.description}</Text> : null}
@@ -721,6 +741,7 @@ export function MenuPDFDocument({ restaurant, menu, theme: themeProp, registered
 
     return (
       <View key={dish.id} wrap={false}>
+        {dishMarker(dish)}
         {namePriceBlock(dish, priceStr, st)}
         {!isMinimal && dish.description ? <Text style={st.dishDesc}>{dish.description}</Text> : null}
         {!isMinimal && allergenStr ? <Text style={st.dishAllergens}>{allergenStr}</Text> : null}
@@ -732,7 +753,7 @@ export function MenuPDFDocument({ restaurant, menu, theme: themeProp, registered
 
   // Category header: title, optionally wrapped with decorative flourishes.
   // Alignment (incl. the alternating flip) is baked into the style set.
-  function categoryHeader(cat: { name: string }, st: typeof s) {
+  function categoryHeader(cat: { name: string }, st: typeof s, catIdx: number) {
     const fl = m.categories.flourish
     if (fl !== 'none') {
       const deco = fl === 'lines' ? <View style={st.flourishLine} />
@@ -740,6 +761,7 @@ export function MenuPDFDocument({ restaurant, menu, theme: themeProp, registered
                  :                   <View style={st.flourishDiamond} />
       return (
         <View style={st.catFlourishRow}>
+          {catMarker(catIdx)}
           {deco}
           <Text style={[st.catTitle, { textAlign: 'center' }]}>{cat.name}</Text>
           {fl === 'lines' ? <View style={st.flourishLine} />
@@ -750,6 +772,7 @@ export function MenuPDFDocument({ restaurant, menu, theme: themeProp, registered
     }
     return (
       <View style={st.catTitleWrap}>
+        {catMarker(catIdx)}
         <Text style={st.catTitle}>{cat.name}</Text>
       </View>
     )
@@ -868,7 +891,7 @@ export function MenuPDFDocument({ restaurant, menu, theme: themeProp, registered
 
             {/* Full category header on the first block of each category. */}
             {b.showHeader && compact && b.catIdx > 0 && <View style={s.catSpacer} />}
-            {b.showHeader && categoryHeader(b.cat, b.st)}
+            {b.showHeader && categoryHeader(b.cat, b.st, b.catIdx)}
             {b.showHeader && <View style={s.catLine} />}
 
             {/* Compact continuation reference on 2nd+ pages of the same category:
@@ -888,6 +911,7 @@ export function MenuPDFDocument({ restaurant, menu, theme: themeProp, registered
                   const allergenStr = allergenText(dish)
                   return (
                     <View key={dish.id} style={isGrid3 ? b.st.gridCell3 : b.st.gridCell2} wrap={false}>
+                      {dishMarker(dish)}
                       <View style={b.st.dishRow}>
                         <Text style={b.st.dishName}>{dish.name}</Text>
                         {priceStr && <Text style={b.st.dishPrice}>{priceStr}</Text>}

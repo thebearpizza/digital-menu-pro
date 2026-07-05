@@ -305,6 +305,55 @@ export default function FlipbookViewer({
     // Usato dal listener pointerup per chiamare play() nel gesto "caldo".
     let pendingFlipDest: number | null = null
 
+    // ── Timing del "cambio pagina effettivo" (contatore + categoria attiva) ──
+    // Prima: currentPage veniva aggiornato SOLO in when.turned (fine animazione).
+    // Ora:  TAP su prec/succ  → aggiornato subito, al tap;
+    //       DRAG (trascinamento) → aggiornato a metà dell'animazione di
+    //       completamento (duration/2 dopo il rilascio).
+    // L'animazione di flip NON viene toccata: cambia solo QUANDO lo stato
+    // currentPage si aggiorna. when.turned resta la ground truth finale e
+    // when.end (flip annullato) riallinea lo stato alla pagina reale.
+    let pendingPageDest: number | null = null
+    let halfwayTimer: ReturnType<typeof setTimeout> | null = null
+    let pointerIsDown  = false
+    let gestureMoved   = false
+    let gestureStartX  = 0
+    let gestureStartY  = 0
+    let lastTapAt      = 0
+
+    const clearHalfwayTimer = () => {
+      if (halfwayTimer) { clearTimeout(halfwayTimer); failsafeTimers.delete(halfwayTimer); halfwayTimer = null }
+    }
+    const onTimingPointerDown = (e: PointerEvent) => {
+      pointerIsDown = true
+      gestureMoved  = false
+      gestureStartX = e.clientX
+      gestureStartY = e.clientY
+    }
+    const onTimingPointerMove = (e: PointerEvent) => {
+      if (!pointerIsDown || gestureMoved) return
+      if (Math.abs(e.clientX - gestureStartX) > 12 || Math.abs(e.clientY - gestureStartY) > 12) {
+        gestureMoved = true
+      }
+    }
+    const onTimingPointerUp = () => {
+      if (!pointerIsDown) return
+      pointerIsDown = false
+      const isTap = !gestureMoved
+      if (isTap) lastTapAt = Date.now()
+      if (pendingPageDest === null) return
+      const dest = pendingPageDest
+      if (isTap) {
+        // Tap su prec/succ (angolo): cambio pagina calcolato al tap.
+        setCurrentPage(dest)
+      } else {
+        // Drag rilasciato: cambio pagina a metà dell'animazione di completamento.
+        clearHalfwayTimer()
+        halfwayTimer = setTimeout(() => { setCurrentPage(dest); halfwayTimer = null }, flipbook.duration / 2)
+        failsafeTimers.add(halfwayTimer)
+      }
+    }
+
     // Cattura il momento in cui il dito si stacca dallo schermo durante un flip
     // verso una pagina Ad. In quel preciso istante il browser considera il gesto
     // "caldo" (hot user gesture) e approva play() senza autoplay restriction.
@@ -461,6 +510,10 @@ export default function FlipbookViewer({
       function isDishText(text: string): boolean {
         const t = text.trim()
         if (!t) return false
+        // Marker invisibili [[D:..]]/[[C:..]] del PDF — @react-pdf può spezzarli
+        // in frammenti tipo "[[" e "D:id]]": vanno esclusi entrambi dal matching.
+        if (t.startsWith('[[')) return false
+        if (/^[DC]:[0-9a-zA-Z-]*\]\]$/.test(t)) return false
         if (/\(allergeni\)/i.test(t)) return false
         if (/^\s*€/.test(t)) return false
         // Pure numbers or number-dash-number sequences: "4", "2 - 4 14", "14"
@@ -503,8 +556,49 @@ export default function FlipbookViewer({
           ?? (noSp.length > 2 ? pickDish(noSp, true) : undefined)
       }
 
+      // ── Pass 0: marker invisibili [[D:dishId]] incorporati nel PDF ──────────
+      // MenuPDFDocument stampa in ogni riga piatto un marker Helvetica 1pt
+      // trasparente. Helvetica è un font built-in WinAnsi: PDF.js lo estrae
+      // SEMPRE in modo pulito, anche quando il font scelto dall'utente (es.
+      // OTF decorativo caricato a mano) produce testo illeggibile. Gli anchor
+      // trovati qui sono font-independent e hanno priorità sui Pass testuali.
+      // Un gruppo con 2+ marker è una riga grid (celle affiancate): va gestito
+      // per-colonna, raccolto in markerGridRows e wired dopo il grid pass.
+      // NB: @react-pdf spezza il marker in più item ("[[" + "D:id]]"), quindi
+      // la regex va applicata al testo CONCATENATO del gruppo (span già in
+      // ordine sinistra→destra), non al singolo span.
+      type MarkerGridRow = { topPx: number; cols: { dish: DishData; leftPct: number }[] }
+      const markerGridRows: MarkerGridRow[] = []
+      for (let i = 0; i < sortedGroups.length; i++) {
+        const joined = sortedGroups[i].spans.map(s => s.textContent ?? '').join('')
+        if (!joined.includes('[[D:')) continue
+        const markerRe = /\[\[D:([0-9a-zA-Z-]{10,})\]\]/g
+        const hits: { dish: DishData; leftPct: number }[] = []
+        let mm: RegExpExecArray | null
+        while ((mm = markerRe.exec(joined)) !== null) {
+          const dish = dishesRef.current.find(d => d.id === mm![1])
+          if (!dish) continue
+          // Posizione colonna: lo span che contiene l'inizio dell'id.
+          const idFrag  = mm[1].slice(0, 8)
+          const refSpan = sortedGroups[i].spans.find(s => (s.textContent ?? '').includes(idFrag))
+          hits.push({ dish, leftPct: refSpan ? (parseFloat(refSpan.style.left) || 0) : 0 })
+        }
+        if (!hits.length) continue
+        if (hits.length === 1) {
+          for (const span of sortedGroups[i].spans) { span.dataset.dishId = hits[0].dish.id }
+          anchors.push({ dish: hits[0].dish, topPx: sortedGroups[i].topPx })
+        } else {
+          markerGridRows.push({
+            topPx: sortedGroups[i].topPx,
+            cols:  hits.sort((a, b) => a.leftPct - b.leftPct),
+          })
+        }
+        matchedIdx.add(i)
+      }
+
       // Pass 1a: single-group matching (standard and custom fonts)
       for (let i = 0; i < sortedGroups.length; i++) {
+        if (matchedIdx.has(i)) continue  // già ancorato dal Pass 0 (marker)
         const { topPx, spans } = sortedGroups[i]
         const dish = tryMatch(spans.filter(s => isDishText(s.textContent ?? '')))
         if (dish) {
@@ -567,6 +661,41 @@ export default function FlipbookViewer({
       // gap), so cols.length is always 1 and the inner body never executes.
       const COL_GAP = topIsPct ? 22 : viewport.width * 0.22  // ≥22% page width
 
+      // Wiring diretto in stile grid: nessuna estensione width:100% (le celle
+      // affiancate si sovrapporrebbero), handler agganciati span per span.
+      function wireGridSpan(span: HTMLElement, captured: DishData): void {
+        span.dataset.dishId   = captured.id
+        span.dataset.dishGrid = '1'
+        span.style.transform  = 'none'
+        span.style.pointerEvents = 'auto'
+        span.style.cursor     = 'pointer'
+
+        let moved = false; let startX = 0; let startY = 0
+        span.addEventListener('touchstart', (evt) => {
+          moved = false
+          const t = evt.touches[0]
+          if (t) { startX = t.clientX; startY = t.clientY }
+        }, { passive: true })
+        span.addEventListener('touchmove', (evt) => {
+          const t = evt.touches[0]
+          if (t && (Math.abs(t.clientX - startX) > 10 || Math.abs(t.clientY - startY) > 10)) moved = true
+        }, { passive: true })
+        span.addEventListener('touchend', (evt) => {
+          if (moved) return
+          evt.preventDefault()
+          evt.stopPropagation()
+          onDishOpenRef.current?.(captured.id)
+          setModalStack([captured])
+        }, { passive: false })
+        span.addEventListener('mousedown', (evt) => { evt.stopPropagation() })
+        span.addEventListener('click', (evt) => {
+          evt.stopPropagation()
+          evt.preventDefault()
+          onDishOpenRef.current?.(captured.id)
+          setModalStack([captured])
+        })
+      }
+
       for (let i = 0; i < sortedGroups.length; i++) {
         if (matchedIdx.has(i)) continue
         const { topPx: gTopPx, spans: gSpans } = sortedGroups[i]
@@ -588,42 +717,51 @@ export default function FlipbookViewer({
         for (const colSpans of cols) {
           const dish = tryMatch(colSpans)
           if (!dish) continue
-          const captured = dish
           anyColMatched = true
-          for (const span of colSpans) {
-            span.dataset.dishId   = captured.id
-            span.dataset.dishGrid = '1'
-            span.style.transform  = 'none'
-            span.style.pointerEvents = 'auto'
-            span.style.cursor     = 'pointer'
-
-            let moved = false; let startX = 0; let startY = 0
-            span.addEventListener('touchstart', (evt) => {
-              moved = false
-              const t = evt.touches[0]
-              if (t) { startX = t.clientX; startY = t.clientY }
-            }, { passive: true })
-            span.addEventListener('touchmove', (evt) => {
-              const t = evt.touches[0]
-              if (t && (Math.abs(t.clientX - startX) > 10 || Math.abs(t.clientY - startY) > 10)) moved = true
-            }, { passive: true })
-            span.addEventListener('touchend', (evt) => {
-              if (moved) return
-              evt.preventDefault()
-              evt.stopPropagation()
-              onDishOpenRef.current?.(captured.id)
-              setModalStack([captured])
-            }, { passive: false })
-            span.addEventListener('mousedown', (evt) => { evt.stopPropagation() })
-            span.addEventListener('click', (evt) => {
-              evt.stopPropagation()
-              evt.preventDefault()
-              onDishOpenRef.current?.(captured.id)
-              setModalStack([captured])
-            })
-          }
+          for (const span of colSpans) { wireGridSpan(span, dish) }
         }
         if (anyColMatched) matchedIdx.add(i)
+      }
+
+      // ── Marker-grid pass — righe grid ancorate dai marker [[D:..]] ──────────
+      // Quando una riga contiene 2+ marker (celle grid affiancate), ogni span
+      // sottostante viene assegnato alla cella giusta con una lookup 2D:
+      // riga = ultimo markerGridRow con topPx ≤ span.top, colonna = ultimo
+      // marker con leftPct ≤ span.left (+2 di tolleranza sul padding cella).
+      // Copre le griglie anche quando il font custom rende il testo dei nomi
+      // inestraibile e il grid pass testuale qui sopra non trova nulla.
+      if (markerGridRows.length > 0) {
+        // Confini di riga = righe grid multi-marker + anchor singoli (una riga
+        // grid può chiudersi con una cella singola: quella è un anchor normale
+        // e i suoi span vanno lasciati al Pass 2, non alla riga grid sopra).
+        type RowBoundary = { topPx: number; grid: MarkerGridRow | null }
+        const boundaries: RowBoundary[] = [
+          ...markerGridRows.map(r => ({ topPx: r.topPx, grid: r as MarkerGridRow | null })),
+          ...anchors.map(a => ({ topPx: a.topPx, grid: null })),
+        ].sort((a, b) => a.topPx - b.topPx)
+        const footerCut = topIsPct ? 90 : viewport.height * 0.90
+        for (const span of textDivs) {
+          if (span.dataset.dishGrid || span.dataset.dishId) continue
+          const raw = span.textContent ?? ''
+          if (!raw.trim() || raw.trim().startsWith('[[')) continue
+          const sTop  = spanTopVal(span)
+          const sLeft = parseFloat(span.style.left) || 0
+          if (sTop >= footerCut) continue
+          // Confine di appartenenza: l'ultimo che inizia sopra lo span.
+          let row: RowBoundary | null = null
+          for (const r of boundaries) {
+            if (r.topPx <= sTop + LINE_TOL) row = r
+            else break
+          }
+          if (!row?.grid) continue  // sopra ogni riga, o sotto un anchor singolo → Pass 2
+          // Colonna: l'ultimo marker alla sinistra dello span.
+          let col = row.grid.cols[0]
+          for (const c of row.grid.cols) {
+            if (c.leftPct <= sLeft + 2) col = c
+            else break
+          }
+          wireGridSpan(span, col.dish)
+        }
       }
 
       if (anchors.length > 0) {
@@ -1163,6 +1301,11 @@ export default function FlipbookViewer({
         // indipendentemente da qualsiasi preventDefault/stopPropagation delle librerie.
         window.addEventListener('touchend', onBookPointerUp, true)
         window.addEventListener('pointerup', onBookPointerUp, true)
+        // Timing cambio pagina: distingue tap da drag a livello finestra
+        // (capture) — indipendente da stopPropagation di turn.js o degli span.
+        window.addEventListener('pointerdown', onTimingPointerDown, true)
+        window.addEventListener('pointermove', onTimingPointerMove, true)
+        window.addEventListener('pointerup',   onTimingPointerUp,   true)
 
         window.$(el).turn({
           width:        dims.w,
@@ -1206,10 +1349,22 @@ export default function FlipbookViewer({
                 // Registra dest se è una pagina Ad: il listener pointerup userà
                 // questa info per avviare il video nel gesto "caldo".
                 pendingFlipDest = adVideoMap.has(dest) ? dest : null
+                // Timing cambio pagina: registra la destinazione per il
+                // listener pointerup (tap → subito, drag → metà animazione).
+                pendingPageDest = dest
+                // Ordine eventi touch per un tap veloce: touchend → turn.js
+                // avvia il flip → start. Il pointerup è già passato: se era un
+                // tap recente, aggiorna subito. Copre anche i salti da tab
+                // categoria (turn('page', N) parte dal click, dito già alzato).
+                // L'hover-peel desktop (mouse sopra l'angolo, nessun tap) non
+                // entra qui: nessun tap recente registrato.
+                if (!pointerIsDown && Date.now() - lastTapAt < 350) setCurrentPage(dest)
               } catch (_) {}
             },
             turned(_evt: Event, page: number) {
               pendingFlipDest = null
+              pendingPageDest = null
+              clearHalfwayTimer()
               setCurrentPage(page)
               try { clearReveal() } catch (_) {}
               adVideoMap.forEach((vid, turnPage) => {
@@ -1230,8 +1385,15 @@ export default function FlipbookViewer({
             // il video che pointerup aveva avviato speculativamente.
             end(_evt: Event, opts: any, turnedOk: boolean) {
               pendingFlipDest = null
+              pendingPageDest = null
               try {
                 if (!turnedOk) {
+                  // Flip annullato (snap-back): niente cambio pagina — annulla
+                  // l'eventuale timer di metà animazione e riallinea currentPage
+                  // alla pagina reale di turn.js (no-op se mai aggiornato prima).
+                  clearHalfwayTimer()
+                  const curPage = window.$(el!).turn('page')
+                  if (typeof curPage === 'number' && curPage > 0) setCurrentPage(curPage)
                   const dest = typeof opts?.next === 'number' ? opts.next : 0
                   const vid  = adVideoMap.get(dest)
                   const cvs  = adCanvasMap.get(dest)
@@ -1271,6 +1433,9 @@ export default function FlipbookViewer({
       el.removeEventListener('touchstart', onBookTouchStart)
       window.removeEventListener('touchend', onBookPointerUp, true)
       window.removeEventListener('pointerup', onBookPointerUp, true)
+      window.removeEventListener('pointerdown', onTimingPointerDown, true)
+      window.removeEventListener('pointermove', onTimingPointerMove, true)
+      window.removeEventListener('pointerup',   onTimingPointerUp,   true)
       renderTasks.forEach(t => { try { t.cancel() } catch (_) {} })
       failsafeTimers.forEach(t => clearTimeout(t))
       adVideoMap.forEach(vid => { try { vid.pause() } catch (_) {} })

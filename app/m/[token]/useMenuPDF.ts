@@ -73,7 +73,7 @@ async function detectCategoryPages(
     const numPages = pdfDoc.numPages as number
 
     const pageMap  = new Map<string, number>()
-    const pending  = new Set(categoryNames)
+    const pending  = new Set(categoryNames.map((_, i) => i))
 
     // Start scanning from startPage (skip embedded pages before dishes) to
     // avoid false positives where category names appear in the info/allergen text.
@@ -81,11 +81,19 @@ async function detectCategoryPages(
       const page   = await pdfDoc.getPage(p)
       const tc     = await page.getTextContent()
       const text   = (tc.items as any[]).map(i => i.str).join(' ').toLowerCase()
+      // Versione senza spazi per il match dei marker: @react-pdf spezza il
+      // marker in più item ("[[" + "c:0]]") e il join(' ') inserirebbe uno
+      // spazio nel mezzo.
+      const compact = text.replace(/\s+/g, '')
 
-      Array.from(pending).forEach(name => {
-        if (text.includes(name.toLowerCase())) {
+      Array.from(pending).forEach(idx => {
+        // Il marker invisibile [[C:idx]] (Helvetica, vedi MenuPDFDocument) è
+        // sempre estraibile anche quando il font custom del titolo categoria
+        // produce testo illeggibile. Il match sul nome resta come fallback.
+        const name = categoryNames[idx]
+        if (compact.includes(`[[c:${idx}]]`) || text.includes(name.toLowerCase())) {
           pageMap.set(name, p)
-          pending.delete(name)
+          pending.delete(idx)
         }
       })
     }
