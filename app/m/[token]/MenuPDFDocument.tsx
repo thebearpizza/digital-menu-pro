@@ -8,9 +8,19 @@ import { uiText, isLang } from '@/lib/translations'
 import type { RestaurantTheme, MenuBgConfig } from '@/lib/theme'
 import { DEFAULT_THEME, lightenHex, formatPrice, resolveAlign } from '@/lib/theme'
 
-// Niente sillabazione: una parola che non entra nella riga va a capo INTERA
-// ("Margherita di\nbufala"), mai spezzata con il trattino ("bufa-\nla").
-Font.registerHyphenationCallback((word) => [word])
+// Niente sillabazione per le parole normali: una parola che non entra nella
+// riga va a capo INTERA ("Margherita di\nbufala"), mai spezzata col trattino
+// ("bufa-\nla"). ATTENZIONE: restituire sempre [word] fa TRABOCCARE dalla
+// riga le parole più larghe del box (textkit non tronca né spezza: il testo
+// invade ciò che c'è accanto — es. il prezzo, di cui resta visibile solo la
+// coda). Le parole oltre i 16 caratteri vengono quindi spezzate in blocchi
+// da 8: mai overflow, e i nomi reali dei piatti restano interi.
+Font.registerHyphenationCallback((word) => {
+  if (word.length <= 16) return [word]
+  const parts: string[] = []
+  for (let i = 0; i < word.length; i += 8) parts.push(word.slice(i, i + 8))
+  return parts
+})
 
 // Effects rendered as a radial gradient (glow from a point); everything else
 // falls back to a diagonal linear gradient. A pragmatic v1 approximation of
@@ -328,6 +338,10 @@ function makeStyles(theme: RestaurantTheme, registered: Set<string>, flipped = f
       fontSize:   (compact ? 9 : 10) * priceScale,
       color:      readableOn(m.prices.color, bg),
       textAlign:  priceAlign,
+      // Il prezzo non si comprime MAI: senza questo, un nome lungo (o un font
+      // custom largo) schiaccia il box del prezzo e "€ 12.00" va a capo
+      // mostrando solo la coda ("00").
+      flexShrink: 0,
     },
     dishDesc: {
       fontFamily:   descFamily,
