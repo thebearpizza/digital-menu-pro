@@ -109,6 +109,38 @@ export default async function PublicMenuPage({
     })
   )
 
+  // ── Pool abbinamenti cross-menu ────────────────────────────────────────────
+  // Un piatto può consigliare un prodotto di un ALTRO menu (o di un menu
+  // momentaneamente fuori fascia oraria): quel piatto non è tra i dishes
+  // caricati sopra e l'abbinamento non si vedrebbe nella card. Qui si
+  // recuperano i piatti abbinati mancanti e si passano come pool aggiuntivo
+  // di risoluzione (solo piatti attivi).
+  const loadedDishIds = new Set(menus.flatMap(m => m.dishes.map(d => d.id)))
+  const missingPairingIds = Array.from(new Set(
+    menus.flatMap(m => m.dishes.map(d => d.pairing_dish_id))
+      .filter((id): id is string => !!id && !loadedDishIds.has(id))
+  ))
+  let extraPairingDishes: typeof menus[number]['dishes'] = []
+  if (missingPairingIds.length > 0) {
+    const { data: extra } = await supabase
+      .from('dishes')
+      .select('id, name, description, price, category, image_url, allergens, pairing_dish_id, pairing_label, translations')
+      .in('id', missingPairingIds)
+      .eq('is_active', true)
+    extraPairingDishes = (extra ?? []).map(d => ({
+      id:              d.id as string,
+      name:            d.name as string,
+      description:     d.description as string | null,
+      price:           d.price as number | null,
+      category:        (d.category as string | null) ?? 'Menu',
+      image_url:       d.image_url as string | null,
+      allergens:       (d.allergens as number[] | null) ?? [],
+      pairing_dish_id: d.pairing_dish_id as string | null,
+      pairing_label:   d.pairing_label as string | null,
+      translations:    ((d as any).translations ?? {}) as Record<string, any>,
+    }))
+  }
+
   // If only one menu, auto-select it (skips welcome screen)
   const defaultMenuId = menus.length === 1 ? menus[0].id : null
 
@@ -146,6 +178,7 @@ export default async function PublicMenuPage({
         info={info ?? null}
         defaultMenuId={defaultMenuId}
         restaurantId={restaurant.id as string}
+        extraPairingDishes={extraPairingDishes}
       />
     </>
   )

@@ -34,11 +34,15 @@ interface Props {
   // I dati del piatto arrivano già tradotti; lang serve per le etichette fisse
   // (allergeni, abbinamento).
   lang?:       Lang
+  // Pool esteso per risolvere pairing_dish_id: include i piatti di TUTTI i
+  // menu (l'abbinamento può puntare a un menu diverso da quello aperto).
+  // Fallback su allDishes quando assente (es. card preview dell'admin).
+  pairingPool?: DishData[]
 }
 
 // ── Component ──────────────────────────────────────────────────────────────────
 
-export default function DishModal({ activeDish, allDishes, isNested, onClose, onBack, onOpenDish, editMode = false, theme, lang = 'it' }: Props) {
+export default function DishModal({ activeDish, allDishes, isNested, onClose, onBack, onOpenDish, editMode = false, theme, lang = 'it', pairingPool }: Props) {
   const mn   = theme?.menu
   const card = theme?.card
   // Card-specific: use card theme if available, fall back to menu theme
@@ -179,7 +183,9 @@ export default function DishModal({ activeDish, allDishes, isNested, onClose, on
   // ── Pairing ────────────────────────────────────────────────────────────────
 
   const pairing = dish.pairing_dish_id
-    ? allDishes.find(d => d.id === dish.pairing_dish_id)
+    ? (pairingPool?.find(d => d.id === dish.pairing_dish_id)
+       ?? allDishes.find(d => d.id === dish.pairing_dish_id)
+       ?? null)
     : null
 
   // ── Close button style ────────────────────────────────────────────────────

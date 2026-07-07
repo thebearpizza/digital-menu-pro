@@ -27,7 +27,7 @@ export default async function MenuDishesPage({
       .order('sort_order', { ascending: true }),
     supabase
       .from('dishes')
-      .select('id, name, category')
+      .select('id, name, category, menu_id')
       .eq('restaurant_id', params.restaurantId)
       .eq('is_active', true)
       .order('category').order('sort_order'),

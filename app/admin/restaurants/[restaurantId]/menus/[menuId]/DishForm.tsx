@@ -19,7 +19,7 @@ interface Dish {
   master_dish_id: string | null
 }
 
-interface SimpleDish { id: string; name: string; category: string }
+interface SimpleDish { id: string; name: string; category: string; menu_id: string }
 interface SimpleMenu  { id: string; name: string }
 
 interface Props {
@@ -163,7 +163,14 @@ export default function DishForm({
   const [price, setPrice]             = useState(dish?.price?.toString() ?? '')
   const [category, setCategory]       = useState(dish?.category ?? defaultCategory ?? '')
   const [imageUrl, setImageUrl]       = useState(dish?.image_url ?? '')
-  const [pairingId, setPairingId]     = useState(dish?.pairing_dish_id ?? '')
+  // ── Abbinamento consigliato: 3 tendine a cascata (menu → categoria → prodotto).
+  // In modifica, menu e categoria vengono derivati dal piatto abbinato salvato.
+  const savedPairing = dish?.pairing_dish_id
+    ? allDishes.find(d => d.id === dish.pairing_dish_id) ?? null
+    : null
+  const [pairMenuId, setPairMenuId]     = useState(savedPairing?.menu_id ?? '')
+  const [pairCategory, setPairCategory] = useState(savedPairing?.category ?? '')
+  const [pairingId, setPairingId]       = useState(dish?.pairing_dish_id ?? '')
   const [uploading, setUploading]     = useState(false)
   const [saving, setSaving]           = useState(false)
   const [error, setError]             = useState<string | null>(null)
@@ -263,7 +270,21 @@ export default function DishForm({
     }
   }
 
+  // Cascata abbinamento: piatti candidati (tutti i piatti attivi del ristorante
+  // tranne quello in modifica), menu che ne contengono almeno uno, categorie
+  // del menu scelto, prodotti della categoria scelta.
   const pairingOptions = allDishes.filter(d => d.id !== dish?.id)
+  const pairingMenus = allMenus.filter(m =>
+    pairingOptions.some(d => d.menu_id === m.id)
+  )
+  const pairingCategories = pairMenuId
+    ? Array.from(new Set(
+        pairingOptions.filter(d => d.menu_id === pairMenuId).map(d => d.category).filter(Boolean)
+      )).sort()
+    : []
+  const pairingProducts = pairMenuId && pairCategory
+    ? pairingOptions.filter(d => d.menu_id === pairMenuId && d.category === pairCategory)
+    : []
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -381,22 +402,55 @@ export default function DishForm({
             />
           </div>
 
-          {/* Pairing */}
+          {/* Pairing — 3 tendine a cascata: menu → categoria → prodotto */}
           {pairingOptions.length > 0 && (
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">
                 Abbinamento consigliato
               </label>
-              <select
-                value={pairingId}
-                onChange={e => { setPairingId(e.target.value); dirtyRef.current.add('pairing_dish_id') }}
-                className="w-full px-3 py-2 border border-gray-300 text-base focus:outline-none focus:border-blue-500 bg-white"
-              >
-                <option value="">— Nessuno —</option>
-                {pairingOptions.map(d => (
-                  <option key={d.id} value={d.id}>{d.name} ({d.category})</option>
-                ))}
-              </select>
+              <div className="space-y-2">
+                <select
+                  value={pairMenuId}
+                  onChange={e => {
+                    setPairMenuId(e.target.value)
+                    setPairCategory('')
+                    setPairingId('')
+                    dirtyRef.current.add('pairing_dish_id')
+                  }}
+                  className="w-full px-3 py-2 border border-gray-300 text-base focus:outline-none focus:border-blue-500 bg-white"
+                >
+                  <option value="">— Nessuno —</option>
+                  {pairingMenus.map(m => (
+                    <option key={m.id} value={m.id}>{m.name}</option>
+                  ))}
+                </select>
+                <select
+                  value={pairCategory}
+                  disabled={!pairMenuId}
+                  onChange={e => {
+                    setPairCategory(e.target.value)
+                    setPairingId('')
+                    dirtyRef.current.add('pairing_dish_id')
+                  }}
+                  className="w-full px-3 py-2 border border-gray-300 text-base focus:outline-none focus:border-blue-500 bg-white disabled:bg-gray-50 disabled:text-gray-400"
+                >
+                  <option value="">— Categoria —</option>
+                  {pairingCategories.map(c => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+                </select>
+                <select
+                  value={pairingId}
+                  disabled={!pairCategory}
+                  onChange={e => { setPairingId(e.target.value); dirtyRef.current.add('pairing_dish_id') }}
+                  className="w-full px-3 py-2 border border-gray-300 text-base focus:outline-none focus:border-blue-500 bg-white disabled:bg-gray-50 disabled:text-gray-400"
+                >
+                  <option value="">— Prodotto —</option>
+                  {pairingProducts.map(d => (
+                    <option key={d.id} value={d.id}>{d.name}</option>
+                  ))}
+                </select>
+              </div>
             </div>
           )}
 

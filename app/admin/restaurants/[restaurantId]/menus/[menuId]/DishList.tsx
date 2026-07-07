@@ -44,7 +44,7 @@ interface Dish {
   master_dish_id: string | null
 }
 
-interface SimpleDish { id: string; name: string; category: string }
+interface SimpleDish { id: string; name: string; category: string; menu_id: string }
 interface SimpleMenu  { id: string; name: string }
 
 interface Props {

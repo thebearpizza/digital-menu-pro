@@ -127,6 +127,9 @@ interface Props {
   onLangChange?: (l: Lang) => void
   // Pagine pubblicitarie dal pannello admin (sovrascrivono menuConfig.ads).
   ads?: AdConfig[]
+  // Pool di risoluzione degli abbinamenti (tutti i menu + piatti esterni):
+  // la card può consigliare un prodotto di un menu diverso da quello aperto.
+  pairingPool?: DishData[]
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -146,6 +149,7 @@ export default function FlipbookViewer({
   lang: langProp,
   onLangChange,
   ads: adsProp,
+  pairingPool,
 }: Props) {
   const lang = langProp ?? 'it'
   const [langMenuOpen, setLangMenuOpen] = useState(false)
@@ -1758,6 +1762,7 @@ export default function FlipbookViewer({
           onOpenDish={(dish) => setModalStack(s => [...s, dish])}
           theme={themeProp}
           lang={lang}
+          pairingPool={pairingPool}
         />
       )}
 

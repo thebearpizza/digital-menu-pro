@@ -56,6 +56,10 @@ interface Props {
   restaurant: Restaurant; menus: Menu[]; banners: Banner[]
   info: Info | null; defaultMenuId?: string | null
   restaurantId: string
+  // Piatti abbinati che non appartengono ai menu caricati (abbinamento
+  // cross-menu o menu fuori fascia oraria): servono solo a risolvere
+  // pairing_dish_id nella card. Vedi page.tsx.
+  extraPairingDishes?: Dish[]
 }
 
 type VisKey = 'name'|'description'|'logo'|'instagram'|'facebook'|'website'|'tripadvisor'|'google_maps'
@@ -161,7 +165,7 @@ function BannerCarousel({ banners, accent }: { banners: Banner[]; accent: string
 
 // ── Main ──────────────────────────────────────────────────────────────────────
 
-export default function PublicMenuView({ restaurant, menus, banners, defaultMenuId, restaurantId }: Props) {
+export default function PublicMenuView({ restaurant, menus, banners, defaultMenuId, restaurantId, extraPairingDishes }: Props) {
   // selectedMenuId: what the user has chosen to view (null = landing)
   const [selectedMenuId, setSelectedMenuId] = useState<string | null>(defaultMenuId ?? null)
   // pendingMenuId: set during immersive video transition (PDF generation starts early)
@@ -525,6 +529,18 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
     pairing_dish_id: null, pairing_label: null,
   }
   const allDishesFlat = localizedMenus.flatMap(m => m.dishes)
+  // Pool di risoluzione abbinamenti: tutti i piatti di TUTTI i menu caricati
+  // + i piatti abbinati esterni (cross-menu / menu fuori fascia). Senza questo
+  // pool la card risolveva pairing_dish_id solo nel menu corrente e
+  // l'abbinamento verso un altro menu non si vedeva.
+  const pairingPool: DishData[] = [
+    ...allDishesFlat,
+    ...(extraPairingDishes ?? []).map(d => lang === 'it' ? d : {
+      ...d,
+      name:        dishName(d.name, d.translations, lang),
+      description: dishDescription(d.description, d.translations, lang),
+    }),
+  ].map(d => ({ ...d, allergens: d.allergens ?? [] }))
   const cardPreviewDish: DishData = allDishesFlat[0]
     ? { ...allDishesFlat[0], allergens: allDishesFlat[0].allergens ?? [] }
     : DUMMY_DISH
@@ -833,6 +849,7 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
             lang={lang}
             onLangChange={setLang}
             ads={t.ads.filter(a => !a.menuId || a.menuId === activeMenuId)}
+            pairingPool={pairingPool}
           />
         </div>
       )}
@@ -891,6 +908,7 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
             editMode={editMode}
             theme={effectiveTheme}
             lang={lang}
+            pairingPool={allDishesFlat.length ? pairingPool : undefined}
           />
         </div>
       )}
