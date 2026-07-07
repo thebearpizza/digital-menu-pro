@@ -92,9 +92,13 @@ export default function DishModal({ activeDish, allDishes, isNested, onClose, on
 
   const isMobilePreview = useIsMobilePreview()
 
+  // idx = -1 quando activeDish NON è tra allDishes (es. abbinamento verso un
+  // piatto di un ALTRO menu, aperto nel modal annidato): in quel caso si mostra
+  // direttamente activeDish. NON clampare a 0 — mostrerebbe sempre il primo
+  // piatto del menu al posto del prodotto abbinato.
   const startIdx = allDishes.findIndex(d => d.id === activeDish.id)
 
-  const [idx,        setIdx]        = useState(startIdx >= 0 ? startIdx : 0)
+  const [idx,        setIdx]        = useState(startIdx)
   const [contentKey, setContentKey] = useState(0)
   const [animDir,    setAnimDir]    = useState<'right' | 'left' | 'fade'>('fade')
 
@@ -110,12 +114,11 @@ export default function DishModal({ activeDish, allDishes, isNested, onClose, on
   }, [])
 
   const total = allDishes.length
-  const dish  = allDishes[idx] ?? activeDish
+  const dish  = idx >= 0 ? (allDishes[idx] ?? activeDish) : activeDish
 
   // When activeDish changes (new modal pushed onto stack), reset to that dish
   useEffect(() => {
-    const newIdx = allDishes.findIndex(d => d.id === activeDish.id)
-    setIdx(newIdx >= 0 ? newIdx : 0)
+    setIdx(allDishes.findIndex(d => d.id === activeDish.id))
     setAnimDir('fade')
     setContentKey(k => k + 1)
   }, [activeDish.id]) // eslint-disable-line react-hooks/exhaustive-deps
