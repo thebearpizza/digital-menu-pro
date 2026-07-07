@@ -149,6 +149,12 @@ export interface LandingTheme {
     fontSize:    number
     textColor:   string
     bgColor:     string
+    // Opacità dello sfondo (0–100). Ignorata quando bgColor = 'transparent'.
+    bgOpacity:   number
+    // Effetto dello sfondo: pieno o gradiente (verticale/orizzontale/diagonale)
+    // tra bgColor e bgColor2.
+    bgEffect:    'solid' | 'gradient-v' | 'gradient-h' | 'gradient-diag'
+    bgColor2:    string
     // Vertical gap (rem) between description (or title) and the menu buttons
     gapTop:      number
     // Disposizione dei bottoni menu: impilati in colonna (default) o affiancati in riga.
@@ -159,6 +165,9 @@ export interface LandingTheme {
     showBrowsePrefix: boolean
   }
   socials: { color: string; size: number; style: 'minimal' | 'circle' | 'box' | 'outline' }
+  // Linee decorative orizzontali sopra il nome e sotto lo slogan (visibili solo
+  // quando non c'è un logo). show=false le nasconde; color vuoto = usa accent.
+  dividers: { show: boolean; color: string }
   // Offset di posizionamento libero (rem) per ogni elemento della landing.
   // Applicati via transform:translate — permettono di spostare un elemento in
   // orizzontale/verticale rispetto al flusso di default (logo→nome→slogan→
@@ -284,9 +293,11 @@ export const DEFAULT_THEME: RestaurantTheme = {
     buttons: {
       shape: 'flat', borderStyle: 'solid', borderWidth: 1, borderColor: '#c9a96e',
       font: 'DM Sans', fontSize: 0.625, textColor: '#ede8e0', bgColor: 'transparent', gapTop: 2.5,
+      bgOpacity: 100, bgEffect: 'solid', bgColor2: '',
       layout: 'column', width: 100, showBrowsePrefix: true,
     },
     socials: { color: '#c9a96e', size: 1.25, style: 'minimal' },
+    dividers: { show: true, color: '' },
     positions: {
       logo: { x: 0, y: 0 }, title: { x: 0, y: 0 }, description: { x: 0, y: 0 },
       buttons: { x: 0, y: 0 }, socials: { x: 0, y: 0 },
@@ -549,6 +560,9 @@ function parseNested(r: Record<string, unknown>): RestaurantTheme {
         fontSize:    num(bu.fontSize, d.landing.buttons.fontSize),
         textColor:   str(bu.textColor, d.landing.buttons.textColor),
         bgColor:     str(bu.bgColor, d.landing.buttons.bgColor),
+        bgOpacity:   num(bu.bgOpacity, d.landing.buttons.bgOpacity),
+        bgEffect:    one(bu.bgEffect, ['solid','gradient-v','gradient-h','gradient-diag'] as const, d.landing.buttons.bgEffect),
+        bgColor2:    str(bu.bgColor2, d.landing.buttons.bgColor2),
         gapTop:      num(bu.gapTop, d.landing.buttons.gapTop),
         layout:      one(bu.layout, ['column','row'] as const, d.landing.buttons.layout),
         width:       num(bu.width, d.landing.buttons.width),
@@ -558,6 +572,11 @@ function parseNested(r: Record<string, unknown>): RestaurantTheme {
         color: str(ls.color, d.landing.socials.color),
         size:  num(ls.size, d.landing.socials.size),
         style: one(ls.style, ['minimal','circle','box','outline'] as const, d.landing.socials.style),
+      },
+      dividers: {
+        // Assente nei temi salvati prima dell'introduzione → default visibile.
+        show:  sub(l.dividers).show !== false,
+        color: str(sub(l.dividers).color, d.landing.dividers.color),
       },
       positions: parseLandingPositions(l.positions, d.landing.positions),
     },
@@ -680,9 +699,11 @@ export function migrateFlat(r: Record<string, unknown>): RestaurantTheme {
       buttons: {
         shape: buttonShape, borderStyle: 'solid', borderWidth: 1, borderColor: accent,
         font: fontSans, fontSize: 0.625, textColor: textPrimary, bgColor: 'transparent', gapTop: 2.5,
+        bgOpacity: 100, bgEffect: 'solid', bgColor2: '',
         layout: 'column', width: 100, showBrowsePrefix: true,
       },
       socials: { color: accent, size: 1.25, style: 'minimal' },
+      dividers: { show: true, color: '' },
       positions: {
         logo: { x: 0, y: 0 }, title: { x: 0, y: 0 }, description: { x: 0, y: 0 },
         buttons: { x: 0, y: 0 }, socials: { x: 0, y: 0 },

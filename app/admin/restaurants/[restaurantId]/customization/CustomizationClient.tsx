@@ -687,10 +687,41 @@ function ButtonsPanel({ l, setLBu, pos, onPos, customFonts, onUploadFont, fontUp
             className="accent-gray-900 w-3.5 h-3.5" />
           <span className="text-xs text-gray-600">Sfondo trasparente</span>
         </label>
-        {!bgTransparent && (
+        {!bgTransparent && (<div className="space-y-3">
           <ColorRow label="Colore sfondo" value={l.buttons.bgColor}
             onChange={v => { setBgHex(v); setLBu({ bgColor: v }) }} />
-        )}
+          <div>
+            <div className="flex justify-between items-center mb-1">
+              <label className="text-xs text-gray-600">Opacità sfondo</label>
+              <span className="text-[10px] font-mono text-gray-400">{l.buttons.bgOpacity}%</span>
+            </div>
+            <input type="range" min={0} max={100} step={1} value={l.buttons.bgOpacity}
+              onChange={e => setLBu({ bgOpacity: Number(e.target.value) })}
+              className="w-full accent-gray-900" />
+          </div>
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Effetto</p>
+            <PillGroup
+              options={[
+                { label:'Pieno',   value:'solid' },
+                { label:'Grad. ↓', value:'gradient-v' },
+                { label:'Grad. →', value:'gradient-h' },
+                { label:'Grad. ⤡', value:'gradient-diag' },
+              ]}
+              value={l.buttons.bgEffect}
+              onChange={v => setLBu(
+                // Primo passaggio a gradiente senza secondo colore: parte dal
+                // colore base così l'effetto è subito visibile e regolabile.
+                v !== 'solid' && !l.buttons.bgColor2
+                  ? { bgEffect: v, bgColor2: l.buttons.bgColor }
+                  : { bgEffect: v }
+              )} />
+          </div>
+          {l.buttons.bgEffect !== 'solid' && (
+            <ColorRow label="Secondo colore gradiente" value={l.buttons.bgColor2 || l.buttons.bgColor}
+              onChange={v => setLBu({ bgColor2: v })} />
+          )}
+        </div>)}
       </div>
       <FontSelector label="Font bottoni" value={l.buttons.font} curated={SANS_FONTS} category="sans"
         onChange={v => setLBu({ font: v })}
@@ -909,6 +940,20 @@ function EditorSidebar({ target, theme, setters, previewMode, activeMenuId, onCl
           <FontSizeSlider label="Spazio sotto il nome" value={l.title.gapBottom}
             min={0} max={6} step={0.25} previewFont="inherit"
             onChange={v => setters.setLTitle({ gapBottom: v })} />
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Linee decorative</p>
+            <label className="flex items-center gap-2 mb-2 cursor-pointer select-none">
+              <input type="checkbox" checked={l.dividers.show}
+                onChange={e => setters.setL({ dividers: { ...l.dividers, show: e.target.checked } })}
+                className="accent-gray-900 w-3.5 h-3.5" />
+              <span className="text-xs text-gray-600">Mostra le linee sopra il nome e sotto lo slogan</span>
+            </label>
+            {l.dividers.show && (
+              <ColorRow label="Colore linee" value={l.dividers.color || l.accent}
+                onChange={v => setters.setL({ dividers: { ...l.dividers, color: v } })} />
+            )}
+            <p className="text-[11px] text-gray-400 mt-1">Visibili solo quando non c&rsquo;è un logo.</p>
+          </div>
           <PositionRow pos={l.positions.title} onChange={p => setters.setLPos('title', p)} />
         </div>
       )

@@ -563,6 +563,18 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
   // bottoni→social): non collidono mai da soli. Lo spostamento libero avviene
   // solo tramite gli offset per-elemento (l.positions), scelti dall'utente.
   const isRowButtons = l.buttons.layout === 'row'
+  // Sfondo bottone: trasparente, colore pieno con opacità, o gradiente tra
+  // bgColor e bgColor2 (verticale/orizzontale/diagonale), sempre con opacità.
+  const buttonBg = (() => {
+    const b = l.buttons
+    if (!b.bgColor || b.bgColor === 'transparent') return 'transparent'
+    const a  = Math.min(100, Math.max(0, b.bgOpacity ?? 100)) / 100
+    const c1 = `rgba(${hexToRgb(b.bgColor)},${a})`
+    if (b.bgEffect === 'solid' || !b.bgColor2) return c1
+    const c2  = `rgba(${hexToRgb(b.bgColor2)},${a})`
+    const dir = b.bgEffect === 'gradient-v' ? '180deg' : b.bgEffect === 'gradient-h' ? '90deg' : '135deg'
+    return `linear-gradient(${dir}, ${c1}, ${c2})`
+  })()
   const buttonsBlock = (
     <div
       className={`flex ${isRowButtons ? 'flex-row flex-wrap justify-center' : 'flex-col items-center'} gap-3 w-full`}
@@ -584,7 +596,7 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
               paddingLeft:    isRowButtons ? '0.6rem' : '2.5rem',
               paddingRight:   isRowButtons ? '0.6rem' : '2.5rem',
               color:          l.buttons.textColor,
-              background:     l.buttons.bgColor,
+              background:     buttonBg,
               border:         l.buttons.borderStyle === 'none' ? 'none' : `${l.buttons.borderWidth ?? 1}px ${l.buttons.borderStyle} ${l.buttons.borderColor}50`,
               borderRadius:   BUTTON_RADIUS,
               fontFamily:     BUTTON_FONT,
@@ -695,8 +707,8 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
           </div>
           </div>
 
-          {!logoSrc && isVis(vis,'name') && (
-            <div className="w-10 h-px mb-7" style={{ background: l.accent }} />
+          {!logoSrc && isVis(vis,'name') && l.dividers.show && (
+            <div className="w-10 h-px mb-7" style={{ background: l.dividers.color || l.accent }} />
           )}
 
           <div>
@@ -732,8 +744,8 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
           </div>
           </div>
 
-          {!logoSrc && (isVis(vis,'name') || isVis(vis,'description')) && (
-            <div className="w-10 h-px mt-7" style={{ background: l.accent }} />
+          {!logoSrc && (isVis(vis,'name') || isVis(vis,'description')) && l.dividers.show && (
+            <div className="w-10 h-px mt-7" style={{ background: l.dividers.color || l.accent }} />
           )}
 
           {/* Menu buttons — sempre nel flusso; row/column cambia solo la direzione */}
