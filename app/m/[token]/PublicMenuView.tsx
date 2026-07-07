@@ -671,10 +671,14 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
 
           <BannerCarousel banners={banners} accent={l.accent} />
 
-          {/* Ogni elemento è avvolto da un wrapper con offset di posizione libero
-              (l.positions.*). A (0,0) il transform è assente e il layout resta il
-              flusso base logo→nome→slogan→bottoni→social, che si ricalibra da solo.
-              Con offset ≠ 0 l'utente sposta liberamente l'elemento (può sovrapporsi). */}
+          {/* Ogni elemento usa DUE wrapper: quello ESTERNO è il bersaglio
+              dell'animazione di ingresso (animateLandingIn anima i figli diretti
+              del container e ne sovrascrive il transform inline); quello INTERNO
+              porta l'offset di posizione libero (l.positions.*), che così non
+              viene mai toccato dall'animazione — niente scatto a fine entrata.
+              A (0,0) il transform è assente e il layout resta il flusso base
+              logo→nome→slogan→bottoni→social, che si ricalibra da solo. */}
+          <div>
           <div style={posStyle(l.positions.logo)}>
             <EditHandle target="landing-logo" editMode={editMode}>
               {logoSrc && isVis(vis, 'logo') && (
@@ -689,11 +693,13 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
               )}
             </EditHandle>
           </div>
+          </div>
 
           {!logoSrc && isVis(vis,'name') && (
             <div className="w-10 h-px mb-7" style={{ background: l.accent }} />
           )}
 
+          <div>
           <div style={posStyle(l.positions.title)}>
             <EditHandle target="landing-title" editMode={editMode}>
               {isVis(vis,'name') && (
@@ -710,7 +716,9 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
               )}
             </EditHandle>
           </div>
+          </div>
 
+          <div>
           <div style={posStyle(l.positions.description)}>
             <EditHandle target="landing-desc" editMode={editMode}>
               {displayDesc && isVis(vis,'description') && (
@@ -722,23 +730,28 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
               )}
             </EditHandle>
           </div>
+          </div>
 
           {!logoSrc && (isVis(vis,'name') || isVis(vis,'description')) && (
             <div className="w-10 h-px mt-7" style={{ background: l.accent }} />
           )}
 
           {/* Menu buttons — sempre nel flusso; row/column cambia solo la direzione */}
+          <div className="w-full">
           <div className="w-full" style={posStyle(l.positions.buttons)}>
             <EditHandle target="landing-buttons" editMode={editMode} className="w-full">
               {buttonsBlock}
             </EditHandle>
           </div>
+          </div>
 
           {/* Social links */}
+          <div>
           <div style={posStyle(l.positions.socials)}>
             <EditHandle target="landing-socials" editMode={editMode}>
               <SocialBar restaurant={displayRestaurant} editMode={editMode} liveLanding={l} />
             </EditHandle>
+          </div>
           </div>
         </div>
 
