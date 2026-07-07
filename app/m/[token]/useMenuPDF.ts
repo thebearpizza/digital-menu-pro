@@ -240,11 +240,48 @@ export function useMenuPDF(
         if (infoLast      && infoPageNum     !== null) categories.push({ label: 'Info',      targetPage: infoPageNum })
         if (allergenLast  && allergenPageNum !== null) categories.push({ label: 'Allergeni', targetPage: allergenPageNum })
 
+        // ── Secondo render: etichetta categoria su OGNI pagina di continuazione ──
+        // Il primo render serve da rilevamento (pagine reali di inizio categoria
+        // via marker [[C:idx]]). Con quelle note si costruisce la mappa
+        // pagina → categoria attiva per le pagine di continuazione e si
+        // ri-renderizza il documento con l'etichetta fissa nel margine.
+        // Gli elementi `fixed` non occupano spazio nel flusso: la paginazione
+        // del secondo render è identica al primo, quindi la mappa resta valida.
+        let finalUrl = newUrl
+        if (totalPages > 0 && dishCats.length > 0) {
+          const alternating =
+            theme?.menu.pdfLayout === 'compact' && theme?.menu.compactMode === 'alternating'
+          const lastDishPage = totalPages - (infoLast ? 1 : 0) - (allergenLast ? 1 : 0)
+          const contMap: Record<number, { label: string; flip: boolean }> = {}
+          for (let p = catStartPage; p <= lastDishPage; p++) {
+            // Pagina con l'header grande di una categoria → niente etichetta.
+            if (dishCats.some(c => c.targetPage === p)) continue
+            let active = -1
+            dishCats.forEach((c, i) => { if (c.targetPage <= p) active = i })
+            if (active < 0) continue
+            contMap[p] = {
+              label: dishCats[active].label,
+              flip:  !!alternating && active % 2 === 1,
+            }
+          }
+          if (Object.keys(contMap).length > 0) {
+            try {
+              const blob2 = await (pdf as any)(
+                createElement(MenuPDFDocument, { restaurant, menu, theme, registeredFonts, contLabelMap: contMap })
+              ).toBlob()
+              if (cancelled) { URL.revokeObjectURL(newUrl); return }
+              finalUrl = URL.createObjectURL(blob2)
+              URL.revokeObjectURL(newUrl)
+            } catch { /* fallback: si usa il blob del primo render, senza etichette */ }
+          }
+        }
+        if (cancelled) { URL.revokeObjectURL(finalUrl); return }
+
         // Revoke the previous URL only after the new one is ready (no gap).
         if (activeUrlRef.current) URL.revokeObjectURL(activeUrlRef.current)
-        activeUrlRef.current = newUrl
+        activeUrlRef.current = finalUrl
 
-        setResult({ pdfUrl: newUrl, categories, isGenerating: false, error: null })
+        setResult({ pdfUrl: finalUrl, categories, isGenerating: false, error: null })
       } catch (err: any) {
         if (!cancelled) {
           setResult({

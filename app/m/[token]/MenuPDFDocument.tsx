@@ -2,11 +2,15 @@
 // MenuPDFDocument — @react-pdf/renderer document for a single restaurant menu.
 // Dynamically imported by useMenuPDF (never SSR-ed).
 // ─────────────────────────────────────────────────────────────────────────────
-import { Document, Page, Text, View, Image, StyleSheet, Svg, Path, Defs, LinearGradient, RadialGradient, Stop, Rect } from '@react-pdf/renderer'
+import { Document, Page, Text, View, Image, StyleSheet, Svg, Path, Defs, LinearGradient, RadialGradient, Stop, Rect, Font } from '@react-pdf/renderer'
 import { formatAllergens } from '@/lib/allergens'
 import { uiText, isLang } from '@/lib/translations'
 import type { RestaurantTheme, MenuBgConfig } from '@/lib/theme'
 import { DEFAULT_THEME, lightenHex, formatPrice, resolveAlign } from '@/lib/theme'
+
+// Niente sillabazione: una parola che non entra nella riga va a capo INTERA
+// ("Margherita di\nbufala"), mai spezzata con il trattino ("bufa-\nla").
+Font.registerHyphenationCallback((word) => [word])
 
 // Effects rendered as a radial gradient (glow from a point); everything else
 // falls back to a diagonal linear gradient. A pragmatic v1 approximation of
@@ -443,6 +447,14 @@ interface Props {
   menu:            PDFMenu
   theme?:          RestaurantTheme
   registeredFonts?: Set<string>
+  // Mappa pagina PDF → categoria "attiva" per le pagine di CONTINUAZIONE
+  // (pagine successive alla prima di una categoria). Costruita da useMenuPDF
+  // dopo un primo render di rilevamento: con questa mappa il documento mostra
+  // l'etichetta categoria attenuata nel margine superiore di OGNI pagina di
+  // continuazione — anche quelle generate dal wrap naturale dei blocchi, che
+  // il vecchio meccanismo per-blocco non copriva. Gli elementi `fixed` non
+  // influenzano il layout: la paginazione resta identica al primo render.
+  contLabelMap?:   Record<number, { label: string; flip: boolean }>
 }
 
 // Split an array into chunks of n (n<=0 → single chunk).
@@ -608,7 +620,7 @@ function EmbeddedTextBlock({
 
 // ── Dish menu ─────────────────────────────────────────────────────────────────
 
-export function MenuPDFDocument({ restaurant, menu, theme: themeProp, registeredFonts }: Props) {
+export function MenuPDFDocument({ restaurant, menu, theme: themeProp, registeredFonts, contLabelMap }: Props) {
   const theme      = themeProp ?? DEFAULT_THEME
   const m          = theme.menu
   const reg        = registeredFonts ?? new Set<string>()
@@ -879,6 +891,34 @@ export function MenuPDFDocument({ restaurant, menu, theme: themeProp, registered
       <Page size="A4" style={s.page} wrap>
         <PageBackgroundLayer bg={m.pageBackground} compact={compact} />
 
+        {/* Etichetta categoria attenuata su OGNI pagina di continuazione.
+            `fixed` + `render`: valutata per ogni pagina fisica del documento,
+            quindi copre anche le pagine create dal wrap naturale dei blocchi
+            (il vecchio label per-blocco le saltava). Posizionata nel margine
+            superiore: non occupa spazio nel flusso → nessun reflow. */}
+        {contLabelMap && (
+          <View
+            fixed
+            style={{
+              position: 'absolute',
+              top:   compact ? 14 : 22,
+              left:  compact ? 44 : 54,
+              right: compact ? 44 : 54,
+            }}
+            render={({ pageNumber }) => {
+              const entry = contLabelMap[pageNumber]
+              if (!entry) return null
+              const st = entry.flip ? sFlip : s
+              return (
+                <View>
+                  <Text style={st.catContinuationLabel}>{entry.label}</Text>
+                  <View style={st.catContinuationLine} />
+                </View>
+              )
+            }}
+          />
+        )}
+
         {/* Embedded pages that appear before all dish categories */}
         {firstEmbedded.map((page, i) => (
           <View key={`first-${i}`} break={i > 0}>
@@ -893,16 +933,6 @@ export function MenuPDFDocument({ restaurant, menu, theme: themeProp, registered
             {b.showHeader && compact && b.catIdx > 0 && <View style={s.catSpacer} />}
             {b.showHeader && categoryHeader(b.cat, b.st, b.catIdx)}
             {b.showHeader && <View style={s.catLine} />}
-
-            {/* Compact continuation reference on 2nd+ pages of the same category:
-                category name in smaller/muted text so the reader always knows
-                which section they're in, without cluttering the page. */}
-            {!b.showHeader && (
-              <View style={b.st.catContinuationWrap}>
-                <Text style={b.st.catContinuationLabel}>{b.cat.name}</Text>
-                <View style={b.st.catContinuationLine} />
-              </View>
-            )}
 
             {b.isGrid ? (
               <View style={s.gridRow}>
