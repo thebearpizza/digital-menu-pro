@@ -656,6 +656,13 @@ function ButtonsPanel({ l, setLBu, pos, onPos, customFonts, onUploadFont, fontUp
           value={l.buttons.shape} onChange={v => setLBu({ shape: v })} />
       </div>
       <div>
+        <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Stile</p>
+        <PillGroup
+          options={[{ label:'2D', value:'flat2d' },{ label:'3D', value:'threed' }]}
+          value={l.buttons.threeD ? 'threed' : 'flat2d'}
+          onChange={v => setLBu({ threeD: v === 'threed' })} />
+      </div>
+      <div>
         <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Bordo</p>
         <PillGroup
           options={[{ label:'Nessuno', value:'none' },{ label:'Solido', value:'solid' },{ label:'Tratteggiato', value:'dashed' }]}

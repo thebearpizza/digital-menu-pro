@@ -163,6 +163,8 @@ export interface LandingTheme {
     width:       number
     // Se true il testo è "Sfoglia il menu <nome>"; se false solo "<nome>".
     showBrowsePrefix: boolean
+    // Effetto tridimensionale (rilievo + ombra + riflesso). false = look 2D attuale.
+    threeD:      boolean
   }
   socials: { color: string; size: number; style: 'minimal' | 'circle' | 'box' | 'outline' }
   // Linee decorative orizzontali sopra il nome e sotto lo slogan (visibili solo
@@ -294,7 +296,7 @@ export const DEFAULT_THEME: RestaurantTheme = {
       shape: 'flat', borderStyle: 'solid', borderWidth: 1, borderColor: '#c9a96e',
       font: 'DM Sans', fontSize: 0.625, textColor: '#ede8e0', bgColor: 'transparent', gapTop: 2.5,
       bgOpacity: 100, bgEffect: 'solid', bgColor2: '',
-      layout: 'column', width: 100, showBrowsePrefix: true,
+      layout: 'column', width: 100, showBrowsePrefix: true, threeD: false,
     },
     socials: { color: '#c9a96e', size: 1.25, style: 'minimal' },
     dividers: { show: true, color: '' },
@@ -567,6 +569,7 @@ function parseNested(r: Record<string, unknown>): RestaurantTheme {
         layout:      one(bu.layout, ['column','row'] as const, d.landing.buttons.layout),
         width:       num(bu.width, d.landing.buttons.width),
         showBrowsePrefix: bu.showBrowsePrefix !== undefined ? bu.showBrowsePrefix !== false : d.landing.buttons.showBrowsePrefix,
+        threeD:      bu.threeD === true,
       },
       socials: {
         color: str(ls.color, d.landing.socials.color),
@@ -700,7 +703,7 @@ export function migrateFlat(r: Record<string, unknown>): RestaurantTheme {
         shape: buttonShape, borderStyle: 'solid', borderWidth: 1, borderColor: accent,
         font: fontSans, fontSize: 0.625, textColor: textPrimary, bgColor: 'transparent', gapTop: 2.5,
         bgOpacity: 100, bgEffect: 'solid', bgColor2: '',
-        layout: 'column', width: 100, showBrowsePrefix: true,
+        layout: 'column', width: 100, showBrowsePrefix: true, threeD: false,
       },
       socials: { color: accent, size: 1.25, style: 'minimal' },
       dividers: { show: true, color: '' },
