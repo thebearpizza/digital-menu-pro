@@ -310,19 +310,27 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
       img.onerror = finish
       img.src = bg.value
     } else if (bg.type === 'video') {
-      // Si aspetta SEMPRE il video vero (canplay = primo frame decodificabile),
-      // non solo il poster: lo "sfondo effettivo" deve esserci quando entra il
-      // contenuto, anche a costo di un caricamento un po' più lungo.
+      // Il contenuto entra appena c'è UNO sfondo reale a schermo: il poster
+      // caricato OPPURE il primo frame del video decodificato (loadeddata,
+      // molto più veloce del canplay) — quello che arriva prima. Il video poi
+      // parte da solo quando è bufferizzato: intanto si vede il primo frame,
+      // mai lo schermo nero con i bottoni sopra.
+      if (bg.poster) {
+        const img = new Image()
+        img.onload = finish
+        img.onerror = finish
+        img.src = bg.poster
+      }
       video = videoRef.current
-      if (video && video.readyState >= 3) finish()
-      else if (video) video.addEventListener('canplay', finish, { once: true })
-      else finish()
+      if (video && video.readyState >= 2) finish()
+      else if (video) video.addEventListener('loadeddata', finish, { once: true })
+      else if (!bg.poster) finish()
     } else {
       finish() // sfondo a colore: pronto subito
     }
     return () => {
       clearTimeout(failSafe)
-      video?.removeEventListener('canplay', finish)
+      video?.removeEventListener('loadeddata', finish)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
