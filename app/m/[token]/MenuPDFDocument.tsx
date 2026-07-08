@@ -838,21 +838,39 @@ export function MenuPDFDocument({ restaurant, menu, theme: themeProp, registered
 
     if (perPage <= 0) {
       if (!compact) {
-        // Non-compact auto mode: always split into layout-tuned chunks so that
-        // continuation pages are explicit blocks and always get a reference header.
-        // The chunk size is a conservative per-page estimate for each layout; single-
-        // chunk categories (n ≤ autoSize) produce one block — no forced page break.
-        const autoSize = isElegant ? 6 : isBoxed ? 5 : isGrid2 ? 8 : isGrid3 ? 12 : isMinimal ? 14 : 8
-        chunk(cat.dishes, autoSize).forEach((dishes, ci) => {
-          blocks.push({
-            key: `${cat.name}-${ci}`,
-            breakBefore: ci > 0 || catIdx > 0,
-            catIdx, cat, st,
-            showHeader: ci === 0,
-            isGrid,
-            dishes,
-            lastFlags: isGrid ? dishes.map(() => false) : lastFlags(dishes, ci * autoSize),
+        if (isGrid) {
+          // Le griglie restano spezzate in chunk per pagina: una gridRow unica
+          // che avvolge più pagine non impagina in modo affidabile con yoga.
+          const autoSize = isGrid2 ? 8 : 12
+          chunk(cat.dishes, autoSize).forEach((dishes, ci) => {
+            blocks.push({
+              key: `${cat.name}-${ci}`,
+              breakBefore: ci > 0 || catIdx > 0,
+              catIdx, cat, st,
+              showHeader: ci === 0,
+              isGrid: true,
+              dishes,
+              lastFlags: dishes.map(() => false),
+            })
           })
+          return
+        }
+        // Layout non-grid in modalità auto: UN blocco per categoria che fluisce
+        // naturalmente su più pagine (ogni piatto è wrap={false}, quindi le
+        // righe si spostano intere) — OGNI pagina si riempie fino alla capienza
+        // reale del tema, senza pagine mezze vuote. Il vecchio chunking a
+        // dimensione fissa (es. 8 piatti/blocco) esisteva solo per dare ai
+        // blocchi l'etichetta di continuazione, oggi sostituita dall'etichetta
+        // fissa PER-PAGINA (contLabelMap): con font grandi produceva pagine
+        // alternate piene/quasi vuote (6+2, 6+2, …).
+        blocks.push({
+          key: cat.name,
+          breakBefore: catIdx > 0,
+          catIdx, cat, st,
+          showHeader: true,
+          isGrid: false,
+          dishes: cat.dishes,
+          lastFlags: lastFlags(cat.dishes, 0),
         })
         return
       }
