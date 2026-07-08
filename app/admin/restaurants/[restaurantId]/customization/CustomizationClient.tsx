@@ -55,8 +55,16 @@ async function extractVideoPoster(file: File): Promise<Blob | null> {
       } catch { cleanup(); resolve(null) }
     }
 
-    video.addEventListener('loadeddata', draw,                            { once: true })
-    video.addEventListener('error',      () => { cleanup(); resolve(null) }, { once: true })
+    // Il frame 0 è spesso NERO (video con fade-in dal nero): il poster viene
+    // catturato ~1s dentro il video (o a 1/4 della durata se più corto), così
+    // la landing non rivela mai "sfondo nero + bottoni" in attesa del play.
+    video.addEventListener('loadeddata', () => {
+      const t = Math.min(1, (isFinite(video.duration) ? video.duration : 4) * 0.25)
+      if (t <= 0.05) { draw(); return }
+      video.addEventListener('seeked', draw, { once: true })
+      try { video.currentTime = t } catch { draw() }
+    }, { once: true })
+    video.addEventListener('error', () => { cleanup(); resolve(null) }, { once: true })
     video.load()
   })
 }

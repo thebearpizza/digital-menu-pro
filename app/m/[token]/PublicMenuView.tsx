@@ -318,7 +318,8 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
       if (bg.poster) {
         const img = new Image()
         img.onload = finish
-        img.onerror = finish
+        // Poster rotto: NON sbloccare (mostrerebbe nero + bottoni) — si aspetta
+        // il primo frame del video qui sotto; il fail-safe copre il resto.
         img.src = bg.poster
       }
       video = videoRef.current
