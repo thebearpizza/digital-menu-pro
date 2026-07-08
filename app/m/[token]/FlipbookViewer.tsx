@@ -1000,20 +1000,27 @@ export default function FlipbookViewer({
             const nameEl = document.createElement('span')
             nameEl.className = 'ad-dish-name'
             nameEl.style.fontFamily = theme.fontSerif
+            // Dimensione in PIXEL ASSOLUTI calcolata una volta alla creazione
+            // (stessa formula dello snapshot usato nel reveal durante il flip:
+            // min(32, larghezza*0.062)). Il clamp(…, 6vw, …) del CSS è relativo
+            // al viewport e viene ri-risolto quando turn.js riavvolge/clona le
+            // pagine all'init (~1s dopo il primo paint) → era lo "scattino".
+            // Un valore fisso in px non può essere ricalcolato da nulla.
+            nameEl.style.fontSize = `${Math.round(Math.min(32, Math.max(22, dims.w * 0.062)))}px`
             nameEl.textContent = nameToShow
             // Anti-FOUT: se il font serif del tema non è ancora caricato, il
-            // testo dipingerebbe col fallback e "scatterebbe" alla metrica del
-            // font vero ~1s dopo. Lo teniamo invisibile finché il font non è
-            // pronto (failsafe 1.5s): appare direttamente alla dimensione
-            // definitiva. Solo visibility del testo: layout, foto e flip
-            // restano identici.
+            // testo dipingerebbe col fallback e scatterebbe alla metrica del
+            // font vero. Invisibile finché il font non è pronto (failsafe
+            // 1.5s): appare direttamente alla dimensione definitiva.
+            // fonts.ready copre anche il caso stylesheet non ancora parsato
+            // (load() da solo risolverebbe subito a vuoto).
             try {
               const fam = (theme.fontSerif || '').split(',')[0].trim().replace(/["']/g, '')
               if (fam && document.fonts && !document.fonts.check(`300 28px "${fam}"`)) {
                 nameEl.style.visibility = 'hidden'
                 let shown = false
                 const show = () => { if (!shown) { shown = true; nameEl.style.visibility = '' } }
-                document.fonts.load(`300 28px "${fam}"`).then(show, show)
+                Promise.all([document.fonts.ready, document.fonts.load(`300 28px "${fam}"`)]).then(show, show)
                 const t = setTimeout(show, 1500)
                 failsafeTimers.add(t)
               }
