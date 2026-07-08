@@ -1001,6 +1001,23 @@ export default function FlipbookViewer({
             nameEl.className = 'ad-dish-name'
             nameEl.style.fontFamily = theme.fontSerif
             nameEl.textContent = nameToShow
+            // Anti-FOUT: se il font serif del tema non è ancora caricato, il
+            // testo dipingerebbe col fallback e "scatterebbe" alla metrica del
+            // font vero ~1s dopo. Lo teniamo invisibile finché il font non è
+            // pronto (failsafe 1.5s): appare direttamente alla dimensione
+            // definitiva. Solo visibility del testo: layout, foto e flip
+            // restano identici.
+            try {
+              const fam = (theme.fontSerif || '').split(',')[0].trim().replace(/["']/g, '')
+              if (fam && document.fonts && !document.fonts.check(`300 28px "${fam}"`)) {
+                nameEl.style.visibility = 'hidden'
+                let shown = false
+                const show = () => { if (!shown) { shown = true; nameEl.style.visibility = '' } }
+                document.fonts.load(`300 28px "${fam}"`).then(show, show)
+                const t = setTimeout(show, 1500)
+                failsafeTimers.add(t)
+              }
+            } catch (_) { /* Font Loading API assente: comportamento precedente */ }
             titleBlock.appendChild(nameEl)
           }
 
