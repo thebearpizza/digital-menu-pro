@@ -69,6 +69,7 @@ async function detectCategoryPages(
   categoryNames: string[],
   fallback:      CategoryNav[],
   startPage:     number,   // skip pages before this (embedded info/allergen pages)
+  dishCatIdx:    Map<string, number>,  // dishId → indice categoria (ridondanza via marker piatto)
 ): Promise<{ categories: CategoryNav[], totalPages: number, confirmedIdx: Set<number>, error?: string }> {
   try {
     await requireScript(PDFJS_CDN)
@@ -79,7 +80,8 @@ async function detectCategoryPages(
     const pdfDoc   = await lib.getDocument(blobUrl).promise
     const numPages = pdfDoc.numPages as number
 
-    const pageMap = new Map<number, number>()  // idx categoria → prima pagina
+    const pageMap = new Map<number, number>()  // idx categoria → prima pagina (marker [[c:]])
+    const dishMinPage = new Map<number, number>()  // idx categoria → pagina minima dei suoi piatti
     let pageErrors = 0
 
     // ── Passo 1: SOLO marker [[c:idx]] (Helvetica, vedi MenuPDFDocument) ──
@@ -108,6 +110,21 @@ async function detectCategoryPages(
           const idx = Number(mm[1])
           if (idx >= 0 && idx < categoryNames.length && !pageMap.has(idx)) pageMap.set(idx, p)
         }
+        // RIDONDANZA — marker dei PIATTI [[d:id]]: la pagina dell'header di una
+        // categoria è per costruzione la pagina del suo primo piatto (l'header
+        // e il primo piatto stanno sempre nello stesso blocco con break).
+        // Su alcuni dispositivi singoli marker categoria possono non essere
+        // estratti: la pagina MINIMA tra i piatti della categoria è una fonte
+        // indipendente e statisticamente robusta (decine di marker per categoria).
+        const dishRe = /\[\[d:([0-9a-fA-F-]{36})\]\]/g
+        while ((mm = dishRe.exec(compact)) !== null) {
+          anyMarker = true
+          const cIdx = dishCatIdx.get(mm[1])
+          if (cIdx !== undefined) {
+            const prev = dishMinPage.get(cIdx)
+            if (prev === undefined || p < prev) dishMinPage.set(cIdx, p)
+          }
+        }
       } catch { pageErrors++ }
     }
 
@@ -127,6 +144,16 @@ async function detectCategoryPages(
           }
         })
       }
+    }
+
+    // Fusione: dove il marker categoria manca, usa la pagina minima dei piatti
+    // della categoria. Se entrambi presenti e discordi, vince la MINIMA (l'header
+    // non può stare dopo il suo primo piatto).
+    for (let i = 0; i < categoryNames.length; i++) {
+      const fromDishes = dishMinPage.get(i)
+      if (fromDishes === undefined) continue
+      const fromMarker = pageMap.get(i)
+      if (fromMarker === undefined || fromDishes < fromMarker) pageMap.set(i, fromDishes)
     }
 
     // Produci sempre una lista completa: pagina reale se trovata, stima se
@@ -250,7 +277,11 @@ export function useMenuPDF(
         // (converge, perché due render con le stesse prop sono deterministici).
         // Se anche il retry non converge: nessuna etichetta — mai etichette
         // sbagliate. Tab e navigazione usano SEMPRE la scansione del blob finale.
-        const categoryNames = groupByCategory(menu.dishes).map(c => c.name)
+        const catGroups = groupByCategory(menu.dishes)
+        const categoryNames = catGroups.map(c => c.name)
+        // dishId → indice categoria: alimenta la ridondanza via marker piatto.
+        const dishCatIdx = new Map<string, number>()
+        catGroups.forEach((g, i) => { for (const d of g.dishes) dishCatIdx.set(d.id, i) })
         // Count embedded pages that appear BEFORE the dish categories (position:'first').
         // These pages occupy the first N pages of the PDF, so categories start at N+1.
         // The filter mirrors the logic in MenuPDFDocument's firstEmbedded array.
@@ -272,7 +303,7 @@ export function useMenuPDF(
 
         type Det = { categories: CategoryNav[]; totalPages: number; confirmedIdx: Set<number>; error?: string }
         const detectOn = (url: string): Promise<Det> =>
-          detectCategoryPages(url, categoryNames, fallback, catStartPage)
+          detectCategoryPages(url, categoryNames, fallback, catStartPage, dishCatIdx)
         // Impronta della paginazione: pagine totali + pagina di OGNI header
         // confermato. Due blob con la stessa impronta hanno gli header negli
         // stessi punti → la mappa costruita sull'uno vale per l'altro.
