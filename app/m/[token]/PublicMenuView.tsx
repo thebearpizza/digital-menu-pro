@@ -300,25 +300,23 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
     let done = false
     let video: HTMLVideoElement | null = null
     const finish = () => { if (!done) { done = true; setBgReady(true) } }
-    const failSafe = setTimeout(finish, 3500)
     const bg = restaurant.theme.landing.background
+    // Fail-safe: mai bloccare la landing oltre questo tempo. Più generoso per
+    // i video (l'utente preferisce un caricamento più lungo ma coordinato).
+    const failSafe = setTimeout(finish, bg.type === 'video' ? 7000 : 3500)
     if ((bg.type === 'image' || bg.type === 'gif') && bg.value) {
       const img = new Image()
       img.onload = finish
       img.onerror = finish
       img.src = bg.value
     } else if (bg.type === 'video') {
-      if (bg.poster) {
-        const img = new Image()
-        img.onload = finish
-        img.onerror = finish
-        img.src = bg.poster
-      } else {
-        video = videoRef.current
-        if (video && video.readyState >= 3) finish()
-        else if (video) video.addEventListener('canplay', finish, { once: true })
-        else finish()
-      }
+      // Si aspetta SEMPRE il video vero (canplay = primo frame decodificabile),
+      // non solo il poster: lo "sfondo effettivo" deve esserci quando entra il
+      // contenuto, anche a costo di un caricamento un po' più lungo.
+      video = videoRef.current
+      if (video && video.readyState >= 3) finish()
+      else if (video) video.addEventListener('canplay', finish, { once: true })
+      else finish()
     } else {
       finish() // sfondo a colore: pronto subito
     }
