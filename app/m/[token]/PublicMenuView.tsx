@@ -289,11 +289,54 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
     try { window.parent?.postMessage({ type: 'dmp-view-changed', view: currentView }, window.location.origin) } catch {}
   }, [currentView])
 
-  // ── Landing entrance animation — staggered fade/slide-up, plays once ──────
+  // ── Attesa sfondo landing ──────────────────────────────────────────────────
+  // Senza gating, il contenuto (bottoni ecc.) appare PRIMA che lo sfondo
+  // immagine/video sia scaricato: brutto pop in due tempi. Il contenuto resta
+  // nascosto finché lo sfondo non è pronto (onload immagine / poster / canplay
+  // video), poi tutto entra insieme con l'animazione. Fail-safe a 3.5s: la
+  // landing non resta mai bloccata da uno sfondo lento o rotto.
+  const [bgReady, setBgReady] = useState(false)
   useEffect(() => {
+    let done = false
+    let video: HTMLVideoElement | null = null
+    const finish = () => { if (!done) { done = true; setBgReady(true) } }
+    const failSafe = setTimeout(finish, 3500)
+    const bg = restaurant.theme.landing.background
+    if ((bg.type === 'image' || bg.type === 'gif') && bg.value) {
+      const img = new Image()
+      img.onload = finish
+      img.onerror = finish
+      img.src = bg.value
+    } else if (bg.type === 'video') {
+      if (bg.poster) {
+        const img = new Image()
+        img.onload = finish
+        img.onerror = finish
+        img.src = bg.poster
+      } else {
+        video = videoRef.current
+        if (video && video.readyState >= 3) finish()
+        else if (video) video.addEventListener('canplay', finish, { once: true })
+        else finish()
+      }
+    } else {
+      finish() // sfondo a colore: pronto subito
+    }
+    return () => {
+      clearTimeout(failSafe)
+      video?.removeEventListener('canplay', finish)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // ── Landing entrance animation — staggered fade/slide-up, plays once ──────
+  // Parte solo quando lo sfondo è pronto, così sfondo e contenuto appaiono
+  // in contemporanea.
+  useEffect(() => {
+    if (!bgReady) return
     const anims = animateLandingIn(landingContentRef.current)
     return () => { anims.forEach(a => a.revert()) }
-  }, [])
+  }, [bgReady])
 
   // ── PDF generation — driven by selected or pending menu ───────────────────
   const activeMenuId = selectedMenuId ?? pendingMenuId
@@ -677,9 +720,10 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
           style={{ background: `linear-gradient(90deg,transparent,${l.accent}55,transparent)` }} />
 
 
-        {/* Content — fades during immersive transition */}
+        {/* Content — fades during immersive transition; nascosto finché lo
+            sfondo non è pronto (bgReady) così tutto appare insieme. */}
         <div ref={landingContentRef} className="relative flex flex-col items-center text-center px-10 w-full max-w-xs py-12"
-          style={{ opacity: transitioning ? 0 : 1, transition: 'opacity 0.6s ease', pointerEvents: transitioning ? 'none' : 'auto' }}>
+          style={{ opacity: (transitioning || !bgReady) ? 0 : 1, transition: 'opacity 0.6s ease', pointerEvents: transitioning ? 'none' : 'auto' }}>
 
           <BannerCarousel banners={banners} accent={l.accent} />
 

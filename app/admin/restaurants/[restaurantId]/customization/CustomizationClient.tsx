@@ -1736,6 +1736,26 @@ function LivePreview({ qrToken, theme, previewMode, activeMenuId = null, editMod
   const containerRef = useRef<HTMLDivElement>(null)
   const readyRef     = useRef(false)
 
+  // L'anteprima è un documento separato: se il tab admin resta aperto mentre
+  // esce un nuovo deploy, l'iframe continua a servire il bundle VECCHIO e
+  // "non rispecchia" il frontend reale. Quando si torna sul tab dopo più di
+  // 15 minuti di assenza, l'iframe viene rimontato → ricarica il bundle
+  // corrente dal server (la pagina pubblica è force-dynamic, mai cachata).
+  const [iframeEpoch, setIframeEpoch] = useState(0)
+  useEffect(() => {
+    let hiddenAt: number | null = null
+    const onVis = () => {
+      if (document.hidden) { hiddenAt = Date.now(); return }
+      if (hiddenAt !== null && Date.now() - hiddenAt > 15 * 60_000) {
+        readyRef.current = false
+        setIframeEpoch(e => e + 1)
+      }
+      hiddenAt = null
+    }
+    document.addEventListener('visibilitychange', onVis)
+    return () => document.removeEventListener('visibilitychange', onVis)
+  }, [])
+
   function post(msg: object) {
     iframeRef.current?.contentWindow?.postMessage(msg, window.location.origin)
   }
@@ -1806,9 +1826,10 @@ function LivePreview({ qrToken, theme, previewMode, activeMenuId = null, editMod
       style={{ aspectRatio: '9/19.5', maxWidth: '100%', transform: zoom !== 1 ? `scale(${zoom})` : undefined, transformOrigin: 'top center' }}>
       <div className="absolute inset-0 rounded-[2rem] overflow-hidden border border-gray-300 shadow-xl bg-black">
         <iframe
+          key={iframeEpoch}
           ref={iframeRef}
           title="Anteprima menu"
-          src={`/m/${qrToken}?preview=1`}
+          src={`/m/${qrToken}?preview=1${iframeEpoch > 0 ? `&r=${iframeEpoch}` : ''}`}
           className="w-full h-full border-0"
         />
       </div>
