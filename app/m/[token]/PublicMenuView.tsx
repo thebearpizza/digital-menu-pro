@@ -10,7 +10,7 @@ import FlipbookViewer  from './FlipbookViewer'
 import DishModal       from './DishModal'
 import type { DishData } from './DishModal'
 import { EditHandle, sendEdit, useIsMobilePreview } from './EditHandle'
-import { useMenuPDF }  from './useMenuPDF'
+import { useMenuPDF, getMenuPDFDiag }  from './useMenuPDF'
 import { animateLandingIn } from '@/lib/animations'
 import { RingSpinner } from '@/components/ui/Spinner'
 import {
@@ -236,6 +236,12 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
   const transitioningRef = useRef(false)
   const [posterVisible, setPosterVisible] = useState(true)
   const [posterBroken,  setPosterBroken]  = useState(false)
+
+  // ── Diagnostica ?diag=1 ─────────────────────────────────────────────────────
+  const [diagMode, setDiagMode] = useState(false)
+  useEffect(() => {
+    try { setDiagMode(new URLSearchParams(window.location.search).has('diag')) } catch {}
+  }, [])
 
   // ── Admin preview bridge ───────────────────────────────────────────────────
   const isPreviewRef = useRef(false)
@@ -983,6 +989,8 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
         </div>
       )}
 
+      {diagMode && <DiagOverlay />}
+
       {/* ── CARD PREVIEW — DishModal aperta dall'admin in tab Card ───────── */}
       {cardPreviewOpen && (
         <div className="absolute inset-0" style={{ zIndex: 500 }}>
@@ -1005,6 +1013,28 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
 // ── Menu edit palette ───────────────────────────────────────────────────────
 // The flipbook menu is a rendered PDF, so individual dish/category texts aren't
 // real DOM nodes we can wrap. Instead we surface a labelled chip for each menu
+// ── Overlay diagnostico (?diag=1) ─────────────────────────────────────────────
+// Mostra l'esito dell'ultima generazione PDF (rilevamento categorie, percorso
+// dell'anello chiuso, errori) direttamente sul telefono: serve a diagnosticare
+// i comportamenti che si manifestano solo su certi dispositivi.
+function DiagOverlay() {
+  const [diag, setDiag] = useState<Record<string, unknown> | null>(null)
+  useEffect(() => {
+    const id = setInterval(() => setDiag(getMenuPDFDiag()), 1000)
+    return () => clearInterval(id)
+  }, [])
+  return (
+    <div style={{
+      position: 'fixed', top: 4, left: 4, right: 4, zIndex: 2147483647,
+      background: 'rgba(0,0,0,0.85)', color: '#7CFC00', fontFamily: 'monospace',
+      fontSize: 10, lineHeight: 1.5, padding: 8, borderRadius: 6,
+      whiteSpace: 'pre-wrap', wordBreak: 'break-all', pointerEvents: 'none',
+    }}>
+      {diag ? JSON.stringify(diag, null, 1) : 'diag: in attesa della generazione PDF…'}
+    </div>
+  )
+}
+
 // ── SocialBar ─────────────────────────────────────────────────────────────────
 
 function SocialBar({ restaurant, editMode = false, liveLanding }: {

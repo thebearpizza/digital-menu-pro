@@ -47,6 +47,13 @@ export interface UseMenuPDFResult {
   error:       string | null
 }
 
+// ── Diagnostica (overlay ?diag=1 sulla pagina pubblica) ──────────────────────
+// Registra l'esito dell'ultima generazione: cosa ha trovato il rilevamento,
+// quale percorso ha preso l'anello chiuso, eventuali errori catturati.
+// Serve a diagnosticare i casi che si manifestano SOLO su certi dispositivi.
+let lastDiag: Record<string, unknown> | null = null
+export function getMenuPDFDiag(): Record<string, unknown> | null { return lastDiag }
+
 // ── Category page detection ───────────────────────────────────────────────────
 
 /**
@@ -62,17 +69,18 @@ async function detectCategoryPages(
   categoryNames: string[],
   fallback:      CategoryNav[],
   startPage:     number,   // skip pages before this (embedded info/allergen pages)
-): Promise<{ categories: CategoryNav[], totalPages: number, confirmedIdx: Set<number> }> {
+): Promise<{ categories: CategoryNav[], totalPages: number, confirmedIdx: Set<number>, error?: string }> {
   try {
     await requireScript(PDFJS_CDN)
     const lib = (window as any).pdfjsLib
-    if (!lib) return { categories: fallback, totalPages: 0, confirmedIdx: new Set() }
+    if (!lib) return { categories: fallback, totalPages: 0, confirmedIdx: new Set(), error: 'pdfjs assente' }
     lib.GlobalWorkerOptions.workerSrc = PDFJS_WORKER
 
     const pdfDoc   = await lib.getDocument(blobUrl).promise
     const numPages = pdfDoc.numPages as number
 
     const pageMap = new Map<number, number>()  // idx categoria → prima pagina
+    let pageErrors = 0
 
     // ── Passo 1: SOLO marker [[c:idx]] (Helvetica, vedi MenuPDFDocument) ──
     // I marker sono deterministici: estraibili anche quando il font custom del
@@ -83,20 +91,24 @@ async function detectCategoryPages(
     const pageTexts: string[] = []   // testi (lowercased) per l'eventuale fallback nomi
     let anyMarker = false
     for (let p = startPage; p <= numPages && pageMap.size < categoryNames.length; p++) {
-      const page = await pdfDoc.getPage(p)
-      const tc   = await page.getTextContent()
-      const text = (tc.items as any[]).map(i => i.str).join(' ').toLowerCase()
-      pageTexts[p] = text
-      // Versione senza spazi: @react-pdf spezza il marker in più item
-      // ("[[" + "c:0]]") e il join(' ') inserirebbe uno spazio nel mezzo.
-      const compact = text.replace(/\s+/g, '')
-      const markerRe = /\[\[c:(\d+)\]\]/g
-      let mm: RegExpExecArray | null
-      while ((mm = markerRe.exec(compact)) !== null) {
-        anyMarker = true
-        const idx = Number(mm[1])
-        if (idx >= 0 && idx < categoryNames.length && !pageMap.has(idx)) pageMap.set(idx, p)
-      }
+      // Una pagina illeggibile non deve far collassare TUTTO il rilevamento
+      // sulle stime: si salta e si continua con le successive.
+      try {
+        const page = await pdfDoc.getPage(p)
+        const tc   = await page.getTextContent()
+        const text = (tc.items as any[]).map(i => i.str).join(' ').toLowerCase()
+        pageTexts[p] = text
+        // Versione senza spazi: @react-pdf spezza il marker in più item
+        // ("[[" + "c:0]]") e il join(' ') inserirebbe uno spazio nel mezzo.
+        const compact = text.replace(/\s+/g, '')
+        const markerRe = /\[\[c:(\d+)\]\]/g
+        let mm: RegExpExecArray | null
+        while ((mm = markerRe.exec(compact)) !== null) {
+          anyMarker = true
+          const idx = Number(mm[1])
+          if (idx >= 0 && idx < categoryNames.length && !pageMap.has(idx)) pageMap.set(idx, p)
+        }
+      } catch { pageErrors++ }
     }
 
     // ── Passo 2: fallback per NOME — solo per documenti SENZA alcun marker ──
@@ -129,9 +141,12 @@ async function detectCategoryPages(
       lastPage = pg
       return { label: name, targetPage: pg }
     })
-    return { categories, totalPages: numPages, confirmedIdx: new Set(pageMap.keys()) }
-  } catch {
-    return { categories: fallback, totalPages: 0, confirmedIdx: new Set() }
+    return {
+      categories, totalPages: numPages, confirmedIdx: new Set(pageMap.keys()),
+      error: pageErrors > 0 ? `${pageErrors} pagine illeggibili` : undefined,
+    }
+  } catch (e: any) {
+    return { categories: fallback, totalPages: 0, confirmedIdx: new Set(), error: e?.message ?? 'detect fallita' }
   }
 }
 
@@ -255,7 +270,7 @@ export function useMenuPDF(
         const alternating   =
           theme?.menu.pdfLayout === 'compact' && theme?.menu.compactMode === 'alternating'
 
-        type Det = { categories: CategoryNav[]; totalPages: number; confirmedIdx: Set<number> }
+        type Det = { categories: CategoryNav[]; totalPages: number; confirmedIdx: Set<number>; error?: string }
         const detectOn = (url: string): Promise<Det> =>
           detectCategoryPages(url, categoryNames, fallback, catStartPage)
         // Impronta della paginazione: pagine totali + pagina di OGNI header
@@ -290,7 +305,14 @@ export function useMenuPDF(
 
         let finalUrl = newUrl
         let det = await detectOn(newUrl)
+        // Un fallimento TOTALE (totalPages=0 = eccezione catturata) produce
+        // stime pure: tab sfasate e niente etichette. Vale un secondo tentativo
+        // (su iOS il primo getDocument può fallire per pressione di memoria).
+        if (det.totalPages === 0 && !cancelled) {
+          det = await detectOn(newUrl)
+        }
         if (cancelled) { URL.revokeObjectURL(newUrl); return }
+        let diagPath = 'pass1'
 
         const map1 = buildContMap(det)
         if (map1) {
@@ -305,6 +327,7 @@ export function useMenuPDF(
               // con la mappa applicata.
               finalUrl = url2
               det = det2
+              diagPath = 'pass2-verificato'
               URL.revokeObjectURL(newUrl)
             } else {
               // Deriva di paginazione: ricostruisci la mappa dalla paginazione
@@ -319,6 +342,7 @@ export function useMenuPDF(
                 if (headerKey(det3) === headerKey(det2)) {
                   finalUrl = url3
                   det = det3
+                  diagPath = 'pass3-retry-convergente'
                   URL.revokeObjectURL(url2)
                   URL.revokeObjectURL(newUrl)
                   converged = true
@@ -329,10 +353,11 @@ export function useMenuPDF(
               if (!converged) {
                 // Nessuna convergenza: meglio nessuna etichetta che etichette
                 // sbagliate. Si usa il blob del primo render (det già = det1).
+                diagPath = 'pass1-non-convergente'
                 URL.revokeObjectURL(url2)
               }
             }
-          } catch { /* errore nel render etichettato: si usa il blob del primo render */ }
+          } catch (e: any) { diagPath = 'pass1-errore-render2: ' + (e?.message ?? '?') }
         }
 
         // ── Tab categorie e pagine Info/Allergeni — dal blob FINALE ───────────
@@ -355,6 +380,23 @@ export function useMenuPDF(
         if (allergenLast  && allergenPageNum !== null) categories.push({ label: 'Allergeni', targetPage: allergenPageNum })
 
         if (cancelled) { URL.revokeObjectURL(finalUrl); return }
+
+        // Diagnostica per l'overlay ?diag=1 (vedi PublicMenuView).
+        lastDiag = {
+          menu: menu.name,
+          percorso: diagPath,
+          pagine: det.totalPages,
+          headerConfermati: Array.from(det.confirmedIdx).sort((a, b) => a - b)
+            .map(i => `${det.categories[i].label}→p${det.categories[i].targetPage}`),
+          stime: det.categories.filter((_, i) => !det.confirmedIdx.has(i))
+            .map(c => `${c.label}→p${c.targetPage}`),
+          erroreDetect: det.error ?? null,
+          fontFallback: fontsUsed !== registeredFonts,
+          ts: new Date().toISOString(),
+        }
+        if (det.error || det.confirmedIdx.size < categoryNames.length) {
+          try { console.warn('[DMP-diag]', JSON.stringify(lastDiag)) } catch {}
+        }
 
         // Revoke the previous URL only after the new one is ready (no gap).
         if (activeUrlRef.current) URL.revokeObjectURL(activeUrlRef.current)
