@@ -62,55 +62,76 @@ async function detectCategoryPages(
   categoryNames: string[],
   fallback:      CategoryNav[],
   startPage:     number,   // skip pages before this (embedded info/allergen pages)
-): Promise<{ categories: CategoryNav[], totalPages: number }> {
+): Promise<{ categories: CategoryNav[], totalPages: number, confirmedIdx: Set<number> }> {
   try {
     await requireScript(PDFJS_CDN)
     const lib = (window as any).pdfjsLib
-    if (!lib) return { categories: fallback, totalPages: 0 }
+    if (!lib) return { categories: fallback, totalPages: 0, confirmedIdx: new Set() }
     lib.GlobalWorkerOptions.workerSrc = PDFJS_WORKER
 
     const pdfDoc   = await lib.getDocument(blobUrl).promise
     const numPages = pdfDoc.numPages as number
 
-    const pageMap  = new Map<string, number>()
-    const pending  = new Set(categoryNames.map((_, i) => i))
+    const pageMap = new Map<number, number>()  // idx categoria → prima pagina
 
-    // Start scanning from startPage (skip embedded pages before dishes) to
-    // avoid false positives where category names appear in the info/allergen text.
-    for (let p = startPage; p <= numPages && pending.size > 0; p++) {
-      const page   = await pdfDoc.getPage(p)
-      const tc     = await page.getTextContent()
-      const text   = (tc.items as any[]).map(i => i.str).join(' ').toLowerCase()
-      // Versione senza spazi per il match dei marker: @react-pdf spezza il
-      // marker in più item ("[[" + "c:0]]") e il join(' ') inserirebbe uno
-      // spazio nel mezzo.
+    // ── Passo 1: SOLO marker [[c:idx]] (Helvetica, vedi MenuPDFDocument) ──
+    // I marker sono deterministici: estraibili anche quando il font custom del
+    // titolo produce testo illeggibile, e presenti ESATTAMENTE sulla pagina
+    // dell'header. Il match per nome NON va mai mescolato ai marker: un nome
+    // di categoria può comparire nelle descrizioni dei piatti (o in estrazioni
+    // sporche) di pagine precedenti e sposterebbe tutta la mappa etichette.
+    const pageTexts: string[] = []   // testi (lowercased) per l'eventuale fallback nomi
+    let anyMarker = false
+    for (let p = startPage; p <= numPages && pageMap.size < categoryNames.length; p++) {
+      const page = await pdfDoc.getPage(p)
+      const tc   = await page.getTextContent()
+      const text = (tc.items as any[]).map(i => i.str).join(' ').toLowerCase()
+      pageTexts[p] = text
+      // Versione senza spazi: @react-pdf spezza il marker in più item
+      // ("[[" + "c:0]]") e il join(' ') inserirebbe uno spazio nel mezzo.
       const compact = text.replace(/\s+/g, '')
+      const markerRe = /\[\[c:(\d+)\]\]/g
+      let mm: RegExpExecArray | null
+      while ((mm = markerRe.exec(compact)) !== null) {
+        anyMarker = true
+        const idx = Number(mm[1])
+        if (idx >= 0 && idx < categoryNames.length && !pageMap.has(idx)) pageMap.set(idx, p)
+      }
+    }
 
-      Array.from(pending).forEach(idx => {
-        // Il marker invisibile [[C:idx]] (Helvetica, vedi MenuPDFDocument) è
-        // sempre estraibile anche quando il font custom del titolo categoria
-        // produce testo illeggibile. Il match sul nome resta come fallback.
-        const name = categoryNames[idx]
-        if (compact.includes(`[[c:${idx}]]`) || text.includes(name.toLowerCase())) {
-          pageMap.set(name, p)
-          pending.delete(idx)
-        }
-      })
+    // ── Passo 2: fallback per NOME — solo per documenti SENZA alcun marker ──
+    // (PDF generati da versioni precedenti). In un documento con marker, una
+    // categoria senza marker non esiste: meglio nessun match che un match falso.
+    if (!anyMarker) {
+      const pending = new Set(categoryNames.map((_, i) => i))
+      for (let p = startPage; p <= numPages && pending.size > 0; p++) {
+        const text = pageTexts[p] ?? (
+          (await (await pdfDoc.getPage(p)).getTextContent()).items as any[]
+        ).map((i: any) => i.str).join(' ').toLowerCase()
+        Array.from(pending).forEach(idx => {
+          if (text.includes(categoryNames[idx].toLowerCase())) {
+            pageMap.set(idx, p)
+            pending.delete(idx)
+          }
+        })
+      }
     }
 
     // Produci sempre una lista completa: pagina reale se trovata, stima se
     // mancante. Restituire result parziale (es. 1 su N categorie) nasconde le
     // tab rimanenti. Le stime sono clampate alla pagina della categoria
     // precedente: una tab non deve mai puntare prima della sezione che la precede.
+    // confirmedIdx distingue le pagine REALI dalle stime: solo le prime possono
+    // fare da confine per le etichette di continuazione.
     let lastPage = startPage
     const categories = categoryNames.map((name, i) => {
-      const pg = pageMap.get(name) ?? Math.max(lastPage, fallback[i].targetPage)
+      const pg = pageMap.get(i) ?? Math.max(lastPage, fallback[i].targetPage)
       lastPage = pg
       return { label: name, targetPage: pg }
     })
-    return { categories, totalPages: numPages }
+    return { categories, totalPages: numPages, confirmedIdx: new Set(pageMap.keys()) }
   } catch {
-    return { categories: fallback, totalPages: 0 }
+    return { categories: fallback, totalPages: 0, confirmedIdx: new Set() }
   }
 }
 
@@ -184,13 +205,18 @@ export function useMenuPDF(
         // Try with the embedded Google fonts first; if a font fails to load
         // (network/CORS), fall back to built-in fonts so the menu always renders.
         let blob: Blob
+        let fontsUsed = registeredFonts
         try {
           blob = await (pdf as any)(
-            createElement(MenuPDFDocument, { restaurant, menu, theme, registeredFonts })
+            createElement(MenuPDFDocument, { restaurant, menu, theme, registeredFonts: fontsUsed })
           ).toBlob()
         } catch {
+          // Fallback ai font built-in. fontsUsed viene aggiornato COSÌ che anche
+          // il secondo render (etichette) usi gli stessi font: font diversi tra
+          // i due render = paginazione diversa = etichette sulle pagine sbagliate.
+          fontsUsed = new Set<string>()
           blob = await (pdf as any)(
-            createElement(MenuPDFDocument, { restaurant, menu, theme, registeredFonts: new Set<string>() })
+            createElement(MenuPDFDocument, { restaurant, menu, theme, registeredFonts: fontsUsed })
           ).toBlob()
         }
         if (cancelled) return
@@ -212,7 +238,7 @@ export function useMenuPDF(
         const fallback: CategoryNav[] = categoryNames.map((name, i) => ({
           label: name, targetPage: catStartPage + i,
         }))
-        const { categories: dishCats, totalPages } =
+        const { categories: dishCats, totalPages, confirmedIdx } =
           await detectCategoryPages(newUrl, categoryNames, fallback, catStartPage)
         if (cancelled) { URL.revokeObjectURL(newUrl); return }
 
@@ -252,12 +278,18 @@ export function useMenuPDF(
           const alternating =
             theme?.menu.pdfLayout === 'compact' && theme?.menu.compactMode === 'alternating'
           const lastDishPage = totalPages - (infoLast ? 1 : 0) - (allergenLast ? 1 : 0)
+          // Solo le pagine di inizio CONFERMATE (marker trovato) fanno da
+          // confine: una stima sbagliata inietterebbe etichette della categoria
+          // successiva su pagine che appartengono ancora alla precedente.
+          const confirmedStarts = dishCats.filter((_, i) => confirmedIdx.has(i))
           const contMap: Record<number, { label: string; flip: boolean }> = {}
           for (let p = catStartPage; p <= lastDishPage; p++) {
             // Pagina con l'header grande di una categoria → niente etichetta.
-            if (dishCats.some(c => c.targetPage === p)) continue
+            if (confirmedStarts.some(c => c.targetPage === p)) continue
             let active = -1
-            dishCats.forEach((c, i) => { if (c.targetPage <= p) active = i })
+            dishCats.forEach((c, i) => {
+              if (confirmedIdx.has(i) && c.targetPage <= p) active = i
+            })
             if (active < 0) continue
             contMap[p] = {
               label: dishCats[active].label,
@@ -267,7 +299,7 @@ export function useMenuPDF(
           if (Object.keys(contMap).length > 0) {
             try {
               const blob2 = await (pdf as any)(
-                createElement(MenuPDFDocument, { restaurant, menu, theme, registeredFonts, contLabelMap: contMap })
+                createElement(MenuPDFDocument, { restaurant, menu, theme, registeredFonts: fontsUsed, contLabelMap: contMap })
               ).toBlob()
               if (cancelled) { URL.revokeObjectURL(newUrl); return }
               finalUrl = URL.createObjectURL(blob2)
