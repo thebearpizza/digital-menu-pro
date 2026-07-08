@@ -656,13 +656,13 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
               // Effetto 3D: ombra portata (stacco dal fondo) + bisello interno
               // (luce sopra, scuro sotto) — funziona con qualsiasi colore/forma.
               ...(l.buttons.threeD ? {
-                boxShadow: '0 6px 16px rgba(0,0,0,0.35), 0 2px 4px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.28), inset 0 -2px 0 rgba(0,0,0,0.32)',
+                boxShadow: '0 10px 24px rgba(0,0,0,0.5), 0 4px 8px rgba(0,0,0,0.38), inset 0 2px 0 rgba(255,255,255,0.4), inset 0 -3px 1px rgba(0,0,0,0.45)',
               } : {}),
             }}>
             {/* Riflesso 3D: gradiente di luce sulla metà superiore del bottone */}
             {l.buttons.threeD && (
               <span className="absolute inset-0 pointer-events-none"
-                style={{ background: 'linear-gradient(180deg, rgba(255,255,255,0.16), rgba(255,255,255,0.04) 42%, transparent 55%, rgba(0,0,0,0.10))' }} />
+                style={{ background: 'linear-gradient(180deg, rgba(255,255,255,0.28), rgba(255,255,255,0.08) 42%, transparent 55%, rgba(0,0,0,0.18))' }} />
             )}
             <span className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
               style={{ background: `${l.buttons.borderColor}14` }} />
