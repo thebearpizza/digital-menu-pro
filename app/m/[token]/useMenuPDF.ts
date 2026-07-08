@@ -224,7 +224,17 @@ export function useMenuPDF(
         const newUrl = URL.createObjectURL(blob)
         if (cancelled) { URL.revokeObjectURL(newUrl); return }
 
-        // ── Detect exact category page numbers ─────────────────────────────────
+        // ── Rilevamento pagine categoria + etichette, ad ANELLO CHIUSO ────────
+        // La mappa pagina→categoria viene costruita dalla scansione di un blob e
+        // applicata a un ALTRO blob (il secondo render): qualsiasi deriva di
+        // paginazione tra i due (font, ambiente, versioni) sposterebbe le
+        // etichette sulle pagine sbagliate. Perciò NON si assume mai che i due
+        // layout coincidano: dopo ogni render con etichette il blob prodotto
+        // viene RI-SCANSIONATO e gli header verificati. Se non coincidono, la
+        // mappa viene ricostruita dalla paginazione reale e si ri-renderizza
+        // (converge, perché due render con le stesse prop sono deterministici).
+        // Se anche il retry non converge: nessuna etichetta — mai etichette
+        // sbagliate. Tab e navigazione usano SEMPRE la scansione del blob finale.
         const categoryNames = groupByCategory(menu.dishes).map(c => c.name)
         // Count embedded pages that appear BEFORE the dish categories (position:'first').
         // These pages occupy the first N pages of the PDF, so categories start at N+1.
@@ -238,17 +248,95 @@ export function useMenuPDF(
         const fallback: CategoryNav[] = categoryNames.map((name, i) => ({
           label: name, targetPage: catStartPage + i,
         }))
-        const { categories: dishCats, totalPages, confirmedIdx } =
-          await detectCategoryPages(newUrl, categoryNames, fallback, catStartPage)
-        if (cancelled) { URL.revokeObjectURL(newUrl); return }
-
-        // ── Add Info / Allergeni nav entries at their correct pages ───────────
-        // Each extra_page is exactly one PDF page. Order within each group:
-        // info before allergen (mirrors MenuPDFDocument's firstEmbedded/lastEmbedded).
         const infoFirst     = !!(ep?.info?.enabled     && ep.info.position     === 'first' && ep.info.body?.trim())
         const allergenFirst = !!(ep?.allergen?.enabled && ep.allergen.position === 'first' && ep.allergen.body?.trim())
         const infoLast      = !!(ep?.info?.enabled     && ep.info.position     === 'last'  && ep.info.body?.trim())
         const allergenLast  = !!(ep?.allergen?.enabled && ep.allergen.position === 'last'  && ep.allergen.body?.trim())
+        const alternating   =
+          theme?.menu.pdfLayout === 'compact' && theme?.menu.compactMode === 'alternating'
+
+        type Det = { categories: CategoryNav[]; totalPages: number; confirmedIdx: Set<number> }
+        const detectOn = (url: string): Promise<Det> =>
+          detectCategoryPages(url, categoryNames, fallback, catStartPage)
+        // Impronta della paginazione: pagine totali + pagina di OGNI header
+        // confermato. Due blob con la stessa impronta hanno gli header negli
+        // stessi punti → la mappa costruita sull'uno vale per l'altro.
+        const headerKey = (d: Det): string =>
+          d.totalPages + '|' + Array.from(d.confirmedIdx).sort((a, b) => a - b)
+            .map(i => `${i}:${d.categories[i].targetPage}`).join(',')
+
+        const buildContMap = (d: Det): Record<number, { label: string; flip: boolean }> | null => {
+          if (d.totalPages <= 0 || d.categories.length === 0) return null
+          const lastDishPage = d.totalPages - (infoLast ? 1 : 0) - (allergenLast ? 1 : 0)
+          // Solo pagine di inizio CONFERMATE (marker) come confini: una stima
+          // inietterebbe etichette della categoria sbagliata.
+          const confirmedStarts = d.categories.filter((_, i) => d.confirmedIdx.has(i))
+          const map: Record<number, { label: string; flip: boolean }> = {}
+          for (let p = catStartPage; p <= lastDishPage; p++) {
+            if (confirmedStarts.some(c => c.targetPage === p)) continue
+            let active = -1
+            d.categories.forEach((c, i) => {
+              if (d.confirmedIdx.has(i) && c.targetPage <= p) active = i
+            })
+            if (active < 0) continue
+            map[p] = { label: d.categories[active].label, flip: !!alternating && active % 2 === 1 }
+          }
+          return Object.keys(map).length > 0 ? map : null
+        }
+        const renderWithMap = async (map: Record<number, { label: string; flip: boolean }>): Promise<Blob> =>
+          await (pdf as any)(
+            createElement(MenuPDFDocument, { restaurant, menu, theme, registeredFonts: fontsUsed, contLabelMap: map })
+          ).toBlob()
+
+        let finalUrl = newUrl
+        let det = await detectOn(newUrl)
+        if (cancelled) { URL.revokeObjectURL(newUrl); return }
+
+        const map1 = buildContMap(det)
+        if (map1) {
+          try {
+            const url2 = URL.createObjectURL(await renderWithMap(map1))
+            if (cancelled) { URL.revokeObjectURL(url2); URL.revokeObjectURL(newUrl); return }
+            const det2 = await detectOn(url2)
+            if (cancelled) { URL.revokeObjectURL(url2); URL.revokeObjectURL(newUrl); return }
+
+            if (headerKey(det2) === headerKey(det)) {
+              // Verifica superata: gli header del blob etichettato coincidono
+              // con la mappa applicata.
+              finalUrl = url2
+              det = det2
+              URL.revokeObjectURL(newUrl)
+            } else {
+              // Deriva di paginazione: ricostruisci la mappa dalla paginazione
+              // REALE del blob etichettato e ri-renderizza.
+              const map2 = buildContMap(det2)
+              let converged = false
+              if (map2) {
+                const url3 = URL.createObjectURL(await renderWithMap(map2))
+                if (cancelled) { URL.revokeObjectURL(url3); URL.revokeObjectURL(url2); URL.revokeObjectURL(newUrl); return }
+                const det3 = await detectOn(url3)
+                if (cancelled) { URL.revokeObjectURL(url3); URL.revokeObjectURL(url2); URL.revokeObjectURL(newUrl); return }
+                if (headerKey(det3) === headerKey(det2)) {
+                  finalUrl = url3
+                  det = det3
+                  URL.revokeObjectURL(url2)
+                  URL.revokeObjectURL(newUrl)
+                  converged = true
+                } else {
+                  URL.revokeObjectURL(url3)
+                }
+              }
+              if (!converged) {
+                // Nessuna convergenza: meglio nessuna etichetta che etichette
+                // sbagliate. Si usa il blob del primo render (det già = det1).
+                URL.revokeObjectURL(url2)
+              }
+            }
+          } catch { /* errore nel render etichettato: si usa il blob del primo render */ }
+        }
+
+        // ── Tab categorie e pagine Info/Allergeni — dal blob FINALE ───────────
+        const { categories: dishCats, totalPages } = det
 
         let infoPageNum:     number | null = null
         let allergenPageNum: number | null = null
@@ -266,47 +354,6 @@ export function useMenuPDF(
         if (infoLast      && infoPageNum     !== null) categories.push({ label: 'Info',      targetPage: infoPageNum })
         if (allergenLast  && allergenPageNum !== null) categories.push({ label: 'Allergeni', targetPage: allergenPageNum })
 
-        // ── Secondo render: etichetta categoria su OGNI pagina di continuazione ──
-        // Il primo render serve da rilevamento (pagine reali di inizio categoria
-        // via marker [[C:idx]]). Con quelle note si costruisce la mappa
-        // pagina → categoria attiva per le pagine di continuazione e si
-        // ri-renderizza il documento con l'etichetta fissa nel margine.
-        // Gli elementi `fixed` non occupano spazio nel flusso: la paginazione
-        // del secondo render è identica al primo, quindi la mappa resta valida.
-        let finalUrl = newUrl
-        if (totalPages > 0 && dishCats.length > 0) {
-          const alternating =
-            theme?.menu.pdfLayout === 'compact' && theme?.menu.compactMode === 'alternating'
-          const lastDishPage = totalPages - (infoLast ? 1 : 0) - (allergenLast ? 1 : 0)
-          // Solo le pagine di inizio CONFERMATE (marker trovato) fanno da
-          // confine: una stima sbagliata inietterebbe etichette della categoria
-          // successiva su pagine che appartengono ancora alla precedente.
-          const confirmedStarts = dishCats.filter((_, i) => confirmedIdx.has(i))
-          const contMap: Record<number, { label: string; flip: boolean }> = {}
-          for (let p = catStartPage; p <= lastDishPage; p++) {
-            // Pagina con l'header grande di una categoria → niente etichetta.
-            if (confirmedStarts.some(c => c.targetPage === p)) continue
-            let active = -1
-            dishCats.forEach((c, i) => {
-              if (confirmedIdx.has(i) && c.targetPage <= p) active = i
-            })
-            if (active < 0) continue
-            contMap[p] = {
-              label: dishCats[active].label,
-              flip:  !!alternating && active % 2 === 1,
-            }
-          }
-          if (Object.keys(contMap).length > 0) {
-            try {
-              const blob2 = await (pdf as any)(
-                createElement(MenuPDFDocument, { restaurant, menu, theme, registeredFonts: fontsUsed, contLabelMap: contMap })
-              ).toBlob()
-              if (cancelled) { URL.revokeObjectURL(newUrl); return }
-              finalUrl = URL.createObjectURL(blob2)
-              URL.revokeObjectURL(newUrl)
-            } catch { /* fallback: si usa il blob del primo render, senza etichette */ }
-          }
-        }
         if (cancelled) { URL.revokeObjectURL(finalUrl); return }
 
         // Revoke the previous URL only after the new one is ready (no gap).
