@@ -13,11 +13,16 @@ interface Dish {
   price: number | null
   category: string | null
   image_url: string | null
+  image_original_url: string | null
+  image_crop: CropRect | null
   allergens: number[]
   pairing_dish_id: string | null
   pairing_label: string | null
   master_dish_id: string | null
 }
+
+// Rettangolo di ritaglio in coordinate normalizzate 0..1 sull'immagine originale.
+interface CropRect { x: number; y: number; w: number; h: number }
 
 interface SimpleDish { id: string; name: string; category: string; menu_id: string }
 interface SimpleMenu  { id: string; name: string }
@@ -153,6 +158,238 @@ function CategoryCombobox({
   )
 }
 
+// ── Ritaglio foto ─────────────────────────────────────────────────────────────────
+// La card prodotto del frontend mostra la foto in 16:9 (aspect-video, object-cover):
+// il riquadro di selezione ha lo stesso aspect ratio, quindi ciò che si inquadra
+// qui è esattamente ciò che si vedrà nella card. Il ritaglio viene applicato al
+// file (image_url = versione ritagliata), l'originale resta in image_original_url
+// per poter riposizionare il riquadro in seguito.
+
+const CROP_ASPECT = 16 / 9
+
+/** Riquadro 16:9 massimo centrato nell'immagine (coordinate normalizzate). */
+function defaultCropRect(imgAspect: number): CropRect {
+  if (imgAspect >= CROP_ASPECT) {
+    const w = CROP_ASPECT / imgAspect
+    return { x: (1 - w) / 2, y: 0, w, h: 1 }
+  }
+  const h = imgAspect / CROP_ASPECT
+  return { x: 0, y: (1 - h) / 2, w: 1, h }
+}
+
+/** Ritaglia l'immagine su canvas e restituisce un JPEG (max 1600px di larghezza). */
+async function cropImageToBlob(src: string, rect: CropRect): Promise<Blob> {
+  const img = new window.Image()
+  img.crossOrigin = 'anonymous'
+  // Cache-buster sugli URL remoti: se l'immagine è già in cache senza header
+  // CORS (perché mostrata come <img> normale), la richiesta crossOrigin
+  // riuserebbe quella risposta e il canvas risulterebbe "tainted".
+  const loadSrc = src.startsWith('http')
+    ? src + (src.includes('?') ? '&' : '?') + 'cb=' + Date.now()
+    : src
+  await new Promise<void>((resolve, reject) => {
+    img.onload = () => resolve()
+    img.onerror = () => reject(new Error('Immagine non caricabile'))
+    img.src = loadSrc
+  })
+  const sx = Math.round(rect.x * img.naturalWidth)
+  const sy = Math.round(rect.y * img.naturalHeight)
+  const sw = Math.max(1, Math.round(rect.w * img.naturalWidth))
+  const sh = Math.max(1, Math.round(rect.h * img.naturalHeight))
+  const scale  = Math.min(1, 1600 / sw)
+  const canvas = document.createElement('canvas')
+  canvas.width  = Math.max(1, Math.round(sw * scale))
+  canvas.height = Math.max(1, Math.round(sh * scale))
+  const ctx = canvas.getContext('2d')
+  if (!ctx) throw new Error('Canvas non disponibile')
+  ctx.drawImage(img, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height)
+  const blob = await new Promise<Blob | null>(res => canvas.toBlob(res, 'image/jpeg', 0.9))
+  if (!blob) throw new Error('Ritaglio fallito')
+  return blob
+}
+
+function CropModal({
+  src,
+  initial,
+  busy,
+  onConfirm,
+  onCancel,
+}: {
+  src: string
+  initial: CropRect | null
+  busy: boolean
+  onConfirm: (rect: CropRect) => void
+  onCancel: () => void
+}) {
+  const [dims, setDims] = useState<{ w: number; h: number } | null>(null)
+  const [rect, setRect] = useState<CropRect | null>(initial)
+  const [loadError, setLoadError] = useState(false)
+  const imgRef  = useRef<HTMLImageElement>(null)
+  // Stato del gesto in corso (drag o resize da un angolo).
+  const gestureRef = useRef<{
+    mode: 'move' | 'resize'
+    sx: number; sy: number   // segni dell'angolo trascinato (resize)
+    startX: number; startY: number
+    startRect: CropRect
+  } | null>(null)
+
+  function measure() {
+    const el = imgRef.current
+    if (!el || !el.naturalWidth) return
+    setDims({ w: el.clientWidth, h: el.clientHeight })
+    setRect(prev => prev ?? initial ?? defaultCropRect(el.naturalWidth / el.naturalHeight))
+  }
+
+  useEffect(() => {
+    const onResize = () => measure()
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  function startGesture(e: React.PointerEvent, mode: 'move' | 'resize', sx = 0, sy = 0) {
+    if (!rect || busy) return
+    e.preventDefault()
+    e.stopPropagation()
+    ;(e.target as HTMLElement).setPointerCapture(e.pointerId)
+    gestureRef.current = { mode, sx, sy, startX: e.clientX, startY: e.clientY, startRect: rect }
+  }
+
+  function onPointerMove(e: React.PointerEvent) {
+    const g = gestureRef.current
+    if (!g || !dims || !rect) return
+    e.preventDefault()
+    const W = dims.w, H = dims.h
+    const s = g.startRect
+    if (g.mode === 'move') {
+      const dx = (e.clientX - g.startX) / W
+      const dy = (e.clientY - g.startY) / H
+      setRect({
+        ...s,
+        x: Math.min(Math.max(s.x + dx, 0), 1 - s.w),
+        y: Math.min(Math.max(s.y + dy, 0), 1 - s.h),
+      })
+      return
+    }
+    // Resize: l'angolo opposto resta fermo, il riquadro mantiene il 16:9.
+    // Lavoriamo in pixel visualizzati (l'aspect è preservato dalla scala uniforme).
+    const A = CROP_ASPECT
+    const ax = (g.sx > 0 ? s.x : s.x + s.w) * W
+    const ay = (g.sy > 0 ? s.y : s.y + s.h) * H
+    const px = e.clientX - (imgRef.current?.getBoundingClientRect().left ?? 0)
+    const py = e.clientY - (imgRef.current?.getBoundingClientRect().top ?? 0)
+    const wCand = g.sx > 0 ? px - ax : ax - px
+    const hCand = g.sy > 0 ? py - ay : ay - py
+    let w = Math.min(Math.max(wCand, 0), Math.max(hCand, 0) * A)
+    const maxW = g.sx > 0 ? W - ax : ax
+    const maxH = g.sy > 0 ? H - ay : ay
+    w = Math.min(w, maxW, maxH * A)
+    w = Math.max(w, 48) // dimensione minima
+    w = Math.min(w, maxW, maxH * A) // ri-clamp dopo il minimo
+    const h = w / A
+    const nx = g.sx > 0 ? ax : ax - w
+    const ny = g.sy > 0 ? ay : ay - h
+    setRect({ x: nx / W, y: ny / H, w: w / W, h: h / H })
+  }
+
+  function endGesture() { gestureRef.current = null }
+
+  const disp = dims && rect
+    ? { x: rect.x * dims.w, y: rect.y * dims.h, w: rect.w * dims.w, h: rect.h * dims.h }
+    : null
+
+  const corners: Array<{ sx: number; sy: number; style: React.CSSProperties; cursor: string }> = disp ? [
+    { sx: -1, sy: -1, style: { left: disp.x - 7,          top: disp.y - 7 },           cursor: 'nwse-resize' },
+    { sx:  1, sy: -1, style: { left: disp.x + disp.w - 7, top: disp.y - 7 },           cursor: 'nesw-resize' },
+    { sx: -1, sy:  1, style: { left: disp.x - 7,          top: disp.y + disp.h - 7 },  cursor: 'nesw-resize' },
+    { sx:  1, sy:  1, style: { left: disp.x + disp.w - 7, top: disp.y + disp.h - 7 },  cursor: 'nwse-resize' },
+  ] : []
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/60" onClick={busy ? undefined : onCancel} />
+      <div className="relative bg-white border border-gray-200 shadow-xl w-full max-w-2xl z-10 max-h-[92vh] overflow-y-auto">
+        <div className="px-5 py-4 border-b border-gray-200">
+          <h2 className="text-sm font-semibold text-gray-900">Inquadra la foto</h2>
+          <p className="text-xs text-gray-500 mt-0.5">
+            Il riquadro è esattamente ciò che si vedrà nella card del prodotto.
+            Trascinalo per spostarlo, usa gli angoli per ridimensionarlo.
+          </p>
+        </div>
+
+        <div className="p-5 flex justify-center bg-gray-900/95">
+          {loadError ? (
+            <p className="text-xs text-red-300 py-10">
+              Impossibile caricare l&apos;immagine. Riprova a caricarla di nuovo.
+            </p>
+          ) : (
+            <div
+              className="relative inline-block select-none"
+              style={{ touchAction: 'none' }}
+              onPointerMove={onPointerMove}
+              onPointerUp={endGesture}
+              onPointerCancel={endGesture}
+            >
+              <img
+                ref={imgRef}
+                src={src}
+                alt=""
+                draggable={false}
+                onLoad={measure}
+                onError={() => setLoadError(true)}
+                className="block max-w-full"
+                style={{ maxHeight: '58vh' }}
+              />
+              {disp && (
+                <>
+                  {/* Zone oscurate fuori dal riquadro */}
+                  <div className="absolute bg-black/55 pointer-events-none" style={{ left: 0, top: 0, right: 0, height: disp.y }} />
+                  <div className="absolute bg-black/55 pointer-events-none" style={{ left: 0, top: disp.y + disp.h, right: 0, bottom: 0 }} />
+                  <div className="absolute bg-black/55 pointer-events-none" style={{ left: 0, top: disp.y, width: disp.x, height: disp.h }} />
+                  <div className="absolute bg-black/55 pointer-events-none" style={{ left: disp.x + disp.w, top: disp.y, right: 0, height: disp.h }} />
+                  {/* Riquadro trascinabile */}
+                  <div
+                    className="absolute border-2 border-white shadow-[0_0_0_1px_rgba(0,0,0,0.5)] cursor-move"
+                    style={{ left: disp.x, top: disp.y, width: disp.w, height: disp.h }}
+                    onPointerDown={e => startGesture(e, 'move')}
+                  />
+                  {corners.map(c => (
+                    <div
+                      key={`${c.sx}${c.sy}`}
+                      className="absolute w-3.5 h-3.5 bg-white border border-gray-400 rounded-sm"
+                      style={{ ...c.style, cursor: c.cursor }}
+                      onPointerDown={e => startGesture(e, 'resize', c.sx, c.sy)}
+                    />
+                  ))}
+                </>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className="flex gap-3 px-5 py-4 border-t border-gray-200">
+          <button
+            type="button"
+            disabled={busy || !rect || loadError}
+            onClick={() => rect && onConfirm(rect)}
+            className="bg-blue-600 text-white text-sm font-medium px-4 py-2 hover:bg-blue-700 disabled:opacity-50 transition-colors min-w-[90px] flex items-center justify-center"
+          >
+            {busy ? <Spinner color="#fff" /> : 'Conferma'}
+          </button>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={onCancel}
+            className="text-sm text-gray-600 px-4 py-2 border border-gray-300 hover:bg-gray-50 transition-colors"
+          >
+            Annulla
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Main form ─────────────────────────────────────────────────────────────────────
 
 export default function DishForm({
@@ -163,6 +400,14 @@ export default function DishForm({
   const [price, setPrice]             = useState(dish?.price?.toString() ?? '')
   const [category, setCategory]       = useState(dish?.category ?? defaultCategory ?? '')
   const [imageUrl, setImageUrl]       = useState(dish?.image_url ?? '')
+  // Ritaglio foto: originale intero + rettangolo scelto. imageUrl è sempre la
+  // versione ritagliata (ciò che la card mostra) — il frontend non cambia.
+  const [origUrl, setOrigUrl]         = useState(dish?.image_original_url ?? '')
+  const [imageCrop, setImageCrop]     = useState<CropRect | null>(dish?.image_crop ?? null)
+  const [cropState, setCropState]     = useState<{ src: string; initial: CropRect | null } | null>(null)
+  const [cropSaving, setCropSaving]   = useState(false)
+  // Object URL del file appena caricato (sorgente locale per il ritaglio, niente CORS)
+  const localSrcRef = useRef<string | null>(null)
   // ── Abbinamento consigliato: 3 tendine a cascata (menu → categoria → prodotto).
   // In modifica, menu e categoria vengono derivati dal piatto abbinato salvato.
   const savedPairing = dish?.pairing_dish_id
@@ -227,12 +472,62 @@ export default function DishForm({
       .from('dish-images').upload(path, file, { upsert: true })
     if (!err && data) {
       const { data: pub } = supabase.storage.from('dish-images').getPublicUrl(data.path)
+      // L'originale intero è salvato; se l'utente annulla il ritaglio la card
+      // mostra la foto intera (comportamento precedente).
       setImageUrl(pub.publicUrl)
+      setOrigUrl(pub.publicUrl)
+      setImageCrop(null)
       dirtyRef.current.add('image_url')
+      // Apri subito il selettore di ritaglio sul file locale (nessun round-trip).
+      if (localSrcRef.current) URL.revokeObjectURL(localSrcRef.current)
+      const local = URL.createObjectURL(file)
+      localSrcRef.current = local
+      setCropState({ src: local, initial: null })
     } else if (err) {
       setError('Upload fallito: ' + err.message)
     }
     setUploading(false)
+  }
+
+  function closeCropModal() {
+    setCropState(null)
+    if (localSrcRef.current) {
+      URL.revokeObjectURL(localSrcRef.current)
+      localSrcRef.current = null
+    }
+  }
+
+  // "Riposiziona": riapre il selettore sull'originale (le foto caricate prima
+  // di questa funzione non hanno originale separato → si usa image_url).
+  function handleReposition() {
+    const src = origUrl || imageUrl
+    if (!src) return
+    setCropState({ src, initial: imageCrop })
+  }
+
+  async function handleCropConfirm(rect: CropRect) {
+    if (!cropState) return
+    setCropSaving(true)
+    try {
+      const blob = await cropImageToBlob(cropState.src, rect)
+      const supabase = createClient()
+      const path = `${restaurantId}/${Date.now()}_crop.jpg`
+      const { data, error: err } = await supabase.storage
+        .from('dish-images').upload(path, blob, { upsert: true, contentType: 'image/jpeg' })
+      if (err || !data) throw new Error(err?.message ?? 'Upload fallito')
+      const { data: pub } = supabase.storage.from('dish-images').getPublicUrl(data.path)
+      // Per le foto caricate in passato l'originale è l'attuale image_url.
+      setOrigUrl(prev => prev || imageUrl)
+      setImageUrl(pub.publicUrl)
+      setImageCrop(rect)
+      dirtyRef.current.add('image_url')
+      closeCropModal()
+    } catch (err: any) {
+      setError('Ritaglio fallito: ' + (err?.message ?? 'riprova.'))
+      closeCropModal()
+    } finally {
+      setCropSaving(false)
+    }
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -247,6 +542,8 @@ export default function DishForm({
       price,
       category:        category.trim(),
       image_url:       imageUrl,
+      image_original_url: origUrl || null,
+      image_crop:      imageCrop,
       allergens:       allergensRef.current,
       pairing_dish_id: pairingId || null,
     }
@@ -358,14 +655,27 @@ export default function DishForm({
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">Foto</label>
             {imageUrl && (
-              <div className="relative inline-block mb-2">
-                <img src={imageUrl} alt="" className="w-20 h-20 object-cover border border-gray-200" />
+              <div className="mb-2">
+                {/* Anteprima 16:9 — stesso taglio della card prodotto nel frontend */}
+                <div className="relative inline-block">
+                  <img src={imageUrl} alt="" className="w-36 aspect-video object-cover border border-gray-200" />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setImageUrl(''); setOrigUrl(''); setImageCrop(null)
+                      dirtyRef.current.add('image_url')
+                    }}
+                    className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 text-white text-xs rounded-full flex items-center justify-center"
+                  >
+                    &times;
+                  </button>
+                </div>
                 <button
                   type="button"
-                  onClick={() => { setImageUrl(''); dirtyRef.current.add('image_url') }}
-                  className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 text-white text-xs rounded-full flex items-center justify-center"
+                  onClick={handleReposition}
+                  className="block mt-1.5 text-xs text-blue-600 hover:underline"
                 >
-                  &times;
+                  Riposiziona inquadratura
                 </button>
               </div>
             )}
@@ -504,6 +814,16 @@ export default function DishForm({
           </div>
         </form>
       </div>
+
+      {cropState && (
+        <CropModal
+          src={cropState.src}
+          initial={cropState.initial}
+          busy={cropSaving}
+          onConfirm={handleCropConfirm}
+          onCancel={closeCropModal}
+        />
+      )}
     </div>
   )
 }

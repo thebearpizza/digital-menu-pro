@@ -38,6 +38,8 @@ interface Dish {
   price: number | null
   category: string | null
   image_url: string | null
+  image_original_url: string | null
+  image_crop: { x: number; y: number; w: number; h: number } | null
   allergens: number[]
   sort_order: number
   is_active: boolean

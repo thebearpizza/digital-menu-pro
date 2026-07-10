@@ -21,7 +21,7 @@ export default async function MenuDishesPage({
       .eq('id', params.menuId).eq('restaurant_id', params.restaurantId).single(),
     supabase
       .from('dishes')
-      .select('id, name, description, price, category, image_url, allergens, sort_order, is_active, pairing_dish_id, pairing_label, master_dish_id, schedule_enabled, schedule_from, schedule_until')
+      .select('id, name, description, price, category, image_url, image_original_url, image_crop, allergens, sort_order, is_active, pairing_dish_id, pairing_label, master_dish_id, schedule_enabled, schedule_from, schedule_until')
       .eq('menu_id', params.menuId)
       .order('category', { ascending: true })
       .order('sort_order', { ascending: true }),

@@ -131,6 +131,10 @@ export async function createDish(
     price: string
     category: string
     image_url: string
+    // Ritaglio foto: l'originale intero resta salvato per poter riposizionare
+    // il riquadro in seguito; image_url punta sempre alla versione ritagliata.
+    image_original_url?: string | null
+    image_crop?: { x: number; y: number; w: number; h: number } | null
     allergens: number[]
     pairing_dish_id: string | null
   }
@@ -153,12 +157,14 @@ export async function createDish(
       price:         price !== null && !isNaN(price) ? price : null,
       category:      data.category || null,
       image_url:     data.image_url || null,
+      image_original_url: data.image_original_url || null,
+      image_crop:    data.image_crop ?? null,
       allergens:     data.allergens,
       pairing_dish_id: data.pairing_dish_id || null,
       is_active:     true,
       sort_order:    (last?.sort_order ?? -1) + 1,
     })
-    .select('id, name, description, price, category, image_url, allergens, sort_order, is_active, pairing_dish_id, pairing_label')
+    .select('id, name, description, price, category, image_url, image_original_url, image_crop, allergens, sort_order, is_active, pairing_dish_id, pairing_label')
     .single()
 
   if (error) throw new Error(error.message)
@@ -184,6 +190,8 @@ export async function updateDish(
     price: string
     category: string
     image_url: string
+    image_original_url?: string | null
+    image_crop?: { x: number; y: number; w: number; h: number } | null
     allergens: number[]
     pairing_dish_id: string | null
   }
@@ -204,12 +212,14 @@ export async function updateDish(
       price:         price !== null && !isNaN(price) ? price : null,
       category:      data.category || null,
       image_url:     data.image_url || null,
+      image_original_url: data.image_original_url || null,
+      image_crop:    data.image_crop ?? null,
       allergens:     data.allergens,
       pairing_dish_id: data.pairing_dish_id || null,
       updated_at:    new Date().toISOString(),
     })
     .eq('id', dishId)
-    .select('id, name, description, price, category, image_url, allergens, sort_order, is_active, pairing_dish_id, pairing_label')
+    .select('id, name, description, price, category, image_url, image_original_url, image_crop, allergens, sort_order, is_active, pairing_dish_id, pairing_label')
     .single()
 
   if (error) throw new Error(error.message)
@@ -542,7 +552,7 @@ export async function bulkCreateDishes(
 // ── MODULO 4: riordino piatti, duplicazione, spostamento ────────────────────────
 
 const DISH_COLUMNS =
-  'id, name, description, price, category, image_url, allergens, sort_order, is_active, pairing_dish_id, pairing_label, master_dish_id, schedule_enabled, schedule_from, schedule_until'
+  'id, name, description, price, category, image_url, image_original_url, image_crop, allergens, sort_order, is_active, pairing_dish_id, pairing_label, master_dish_id, schedule_enabled, schedule_from, schedule_until'
 
 /** Riscrive sort_order = indice per ogni piatto, nell'ordine ricevuto. */
 export async function reorderDishes(
@@ -569,7 +579,7 @@ export async function duplicateDish(restaurantId: string, menuId: string, dishId
 
   const { data: src } = await supabase
     .from('dishes')
-    .select('name, description, price, category, image_url, allergens, pairing_dish_id, translations')
+    .select('name, description, price, category, image_url, image_original_url, image_crop, allergens, pairing_dish_id, translations')
     .eq('id', dishId).single()
   if (!src) throw new Error('Piatto non trovato')
 
@@ -587,6 +597,8 @@ export async function duplicateDish(restaurantId: string, menuId: string, dishId
       price:         src.price,
       category:      src.category,
       image_url:     src.image_url,
+      image_original_url: src.image_original_url,
+      image_crop:    src.image_crop,
       allergens:     src.allergens,
       pairing_dish_id: src.pairing_dish_id,
       translations:  src.translations ?? {},
@@ -609,7 +621,7 @@ export async function duplicateCategory(restaurantId: string, menuId: string, ca
   const isUncategorized = category === 'Senza categoria'
   let q = supabase
     .from('dishes')
-    .select('name, description, price, category, image_url, allergens, pairing_dish_id, sort_order, translations')
+    .select('name, description, price, category, image_url, image_original_url, image_crop, allergens, pairing_dish_id, sort_order, translations')
     .eq('menu_id', menuId)
     .order('sort_order', { ascending: true })
   q = isUncategorized ? q.is('category', null) : q.eq('category', category)
@@ -631,6 +643,8 @@ export async function duplicateCategory(restaurantId: string, menuId: string, ca
     price:         d.price,
     category:      newCat,
     image_url:     d.image_url,
+    image_original_url: d.image_original_url,
+    image_crop:    d.image_crop,
     allergens:     d.allergens,
     pairing_dish_id: d.pairing_dish_id,
     translations:  d.translations ?? {},
@@ -737,14 +751,19 @@ export async function applyDishSync(
 
   const { data: source } = await supabase
     .from('dishes')
-    .select('description, price, image_url, allergens, category, translations')
+    .select('description, price, image_url, image_original_url, image_crop, allergens, category, translations')
     .eq('id', sourceDishId).single()
   if (!source) throw new Error('Piatto non trovato')
 
   const patch: Record<string, any> = {}
   if (fields.includes('description')) patch.description = source.description
   if (fields.includes('price'))       patch.price       = source.price
-  if (fields.includes('image_url'))   patch.image_url   = source.image_url
+  if (fields.includes('image_url')) {
+    patch.image_url = source.image_url
+    // La foto sincronizzata resta riposizionabile anche sui gemelli.
+    patch.image_original_url = source.image_original_url
+    patch.image_crop = source.image_crop
+  }
   if (fields.includes('allergens'))   patch.allergens   = source.allergens
   if (fields.includes('category'))    patch.category    = source.category
   if (Object.keys(patch).length === 0) return
@@ -851,7 +870,7 @@ export async function syncDishToMasters(
   const user = await verifyOwnership(supabase, restaurantId)
 
   const { data: source } = await supabase
-    .from('dishes').select('name, description, price, image_url, allergens, translations').eq('id', dishId).single()
+    .from('dishes').select('name, description, price, image_url, image_original_url, image_crop, allergens, translations').eq('id', dishId).single()
   if (!source) throw new Error('Piatto non trovato')
 
   const { data: targets } = await supabase
@@ -862,7 +881,11 @@ export async function syncDishToMasters(
   if (fields.includes('name'))        patch.name        = source.name
   if (fields.includes('description')) patch.description = source.description
   if (fields.includes('price'))       patch.price       = source.price
-  if (fields.includes('image_url'))   patch.image_url   = source.image_url
+  if (fields.includes('image_url')) {
+    patch.image_url = source.image_url
+    patch.image_original_url = source.image_original_url
+    patch.image_crop = source.image_crop
+  }
   if (fields.includes('allergens'))   patch.allergens   = source.allergens
 
   if (Object.keys(patch).length === 0) return
@@ -950,7 +973,7 @@ export async function bulkDuplicateDishes(
 
   const { data: srcs, error: readErr } = await supabase
     .from('dishes')
-    .select('id, name, description, price, category, image_url, allergens, pairing_dish_id, translations, schedule_enabled, schedule_from, schedule_until, sort_order')
+    .select('id, name, description, price, category, image_url, image_original_url, image_crop, allergens, pairing_dish_id, translations, schedule_enabled, schedule_from, schedule_until, sort_order')
     .in('id', dishIds)
     .eq('menu_id', menuId)
   if (readErr) throw new Error(readErr.message)
@@ -972,6 +995,8 @@ export async function bulkDuplicateDishes(
       price:            src.price,
       category:         src.category,
       image_url:        src.image_url,
+      image_original_url: src.image_original_url,
+      image_crop:       src.image_crop,
       allergens:        src.allergens,
       pairing_dish_id:  src.pairing_dish_id,
       translations:     src.translations ?? {},
