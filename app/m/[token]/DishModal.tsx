@@ -107,6 +107,16 @@ export default function DishModal({ activeDish, allDishes, isNested, onClose, on
   const cardRef     = useRef<HTMLDivElement>(null)
   const backdropRef = useRef<HTMLDivElement>(null)
 
+  // Preload delle foto dei piatti ADIACENTI: quando l'utente sfoglia, la foto
+  // del piatto successivo/precedente è già in cache → appare all'istante,
+  // senza attese né immagini del piatto precedente.
+  useEffect(() => {
+    ;[allDishes[idx - 1], allDishes[idx + 1]].forEach(d => {
+      if (d?.image_url) { const im = new Image(); im.src = d.image_url }
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [idx])
+
   // Pop-in entrance for the card + backdrop, played once when the modal mounts.
   useEffect(() => {
     const anims = animateCardIn(cardRef.current, backdropRef.current)
@@ -271,10 +281,15 @@ export default function DishModal({ activeDish, allDishes, isNested, onClose, on
         </div>
 
 
-        {/* Hero image — 16:9 aspect ratio (photo-top layout only) */}
+        {/* Hero image — 16:9 aspect ratio (photo-top layout only).
+            key={dish.id}: senza, React riusa lo stesso <img> cambiando solo
+            src e il browser mostra la foto del piatto PRECEDENTE finché la
+            nuova non è scaricata. Con la key l'elemento è nuovo a ogni piatto:
+            mai immagini vecchie (le adiacenti sono precaricate → istantanee). */}
         {CARD_LAYOUT === 'photo-top' && dish.image_url && (
           <div className="shrink-0 w-full aspect-video overflow-hidden" style={{ background: '#1a1a1a' }}>
             <img
+              key={dish.id}
               src={dish.image_url}
               alt={dish.name}
               className="w-full h-full object-cover object-center"
@@ -337,7 +352,7 @@ export default function DishModal({ activeDish, allDishes, isNested, onClose, on
               </div>
               {dish.image_url && (
                 <div className="shrink-0 w-20 h-20 rounded overflow-hidden" style={{ background: '#1a1a1a' }}>
-                  <img src={dish.image_url} alt={dish.name} className="w-full h-full object-cover" draggable={false} />
+                  <img key={dish.id} src={dish.image_url} alt={dish.name} className="w-full h-full object-cover" draggable={false} />
                 </div>
               )}
             </div>

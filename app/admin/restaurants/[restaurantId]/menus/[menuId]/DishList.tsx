@@ -156,6 +156,18 @@ function SortableDish({
         aria-label={`Seleziona ${dish.name}`}
       />
 
+      {/* Mini-anteprima foto: mostra a colpo d'occhio quali piatti hanno
+          un'immagine caricata. loading=lazy: nessun impatto su liste lunghe. */}
+      {dish.image_url && (
+        <img
+          src={dish.image_url}
+          alt=""
+          loading="lazy"
+          className="w-9 h-9 rounded object-cover shrink-0 border border-gray-200 bg-gray-100"
+          draggable={false}
+        />
+      )}
+
       <div
         className="flex-1 min-w-0 cursor-pointer hover:opacity-70 transition-opacity"
         onClick={() => onEdit(dish)}
