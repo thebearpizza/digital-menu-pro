@@ -693,6 +693,47 @@ export default function FlipbookViewer({
         }
       }
 
+      // ── Pass 1c — ripescaggio del PRIMO piatto della pagina (per ORDINE) ────
+      // Su alcuni dispositivi l'estrazione può perdere il marker di un piatto
+      // (stessa classe del bug dei marker categoria) e, con font custom, anche
+      // il nome è illeggibile: il primo piatto della categoria resta senza
+      // anchor e non è cliccabile mentre tutti gli altri funzionano. Recupero
+      // conservativo: se il piatto che nel MENU precede il primo ancorato non
+      // ha anchor, e sopra il primo anchor c'è un gruppo dish-text non
+      // matchato con un prezzo (cifre, al netto dei detriti dei marker), quel
+      // gruppo è la sua riga nome. Guardie: header categoria (marker [[c: o
+      // testo = nome categoria) e gruppi senza cifre sono sempre scartati →
+      // sulle pagine sane e su quelle di continuazione questo pass è un no-op.
+      if (anchors.length > 0) {
+        const order = dishesRef.current
+        const firstAnchor = [...anchors].sort((a, b) => a.topPx - b.topPx)[0]
+        const i0 = order.findIndex(d => d.id === firstAnchor.dish.id)
+        const prevDish = i0 > 0 ? order[i0 - 1] : null
+        const prevAnchored = !!prevDish && anchors.some(a => a.dish.id === prevDish.id)
+        if (prevDish && !prevAnchored) {
+          const catNamesCompact = new Set(
+            (categoriesRef.current ?? []).map(c => c.label.toLowerCase().replace(/\s+/g, ''))
+          )
+          for (let i = 0; i < sortedGroups.length; i++) {
+            if (matchedIdx.has(i)) continue
+            const g = sortedGroups[i]
+            if (g.topPx >= firstAnchor.topPx) break
+            const joined = g.spans.map(sp => sp.textContent ?? '').join('')
+            const compactJ = joined.toLowerCase().replace(/\s+/g, '')
+            // Detriti dei marker rimossi (anche interleaved) prima delle verifiche
+            const cleaned = compactJ.replace(/\[\[|\]\]|c:\d+|d:[0-9a-f-]{10,}/g, '')
+            if (compactJ.includes('[[c:') || /c:\d+\]\]/.test(compactJ)) continue
+            if (catNamesCompact.has(cleaned)) continue
+            if (!g.spans.some(sp => isDishText(sp.textContent ?? ''))) continue
+            if (!/\d/.test(cleaned)) continue
+            for (const span of g.spans) { span.dataset.dishId = prevDish.id }
+            anchors.push({ dish: prevDish, topPx: g.topPx })
+            matchedIdx.add(i)
+            break
+          }
+        }
+      }
+
       // ── Grid column pass — grid-2 / grid-3 dish layouts ──────────────────────
       // In multi-column grid layouts multiple dish names share the same lineGroup
       // (identical topPx). Pass 1a/1b fail because tryMatch concatenates them
