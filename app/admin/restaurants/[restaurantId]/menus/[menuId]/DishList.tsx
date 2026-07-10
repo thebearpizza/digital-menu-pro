@@ -26,7 +26,7 @@ import {
   duplicateDish, duplicateCategory, deleteCategory, renameCategory, bulkUpdateDishPrices, findDishTwins, DishTwin,
   toggleDishActive, toggleCategoryActive,
   moveDishesToCategory, bulkDeleteDishes, bulkMoveDishesToMenu, getMenuCategoriesForMove,
-  updateDishSchedule, updateCategorySchedule,
+  updateDishSchedule, updateCategorySchedule, bulkDuplicateDishes, bulkUpdateDishSchedules,
 } from './actions'
 import { useStaggerEntrance } from '@/lib/animations'
 import { windowLabel, type CategorySchedules } from '@/lib/menuSchedule'
@@ -548,7 +548,8 @@ export default function DishList({
   const [dishes,       setDishes]       = useState(initialDishes)
   // Programmazione oraria: bersaglio della modale (piatto o categoria) e
   // mappa locale delle fasce per categoria (specchia menus.category_schedules).
-  const [schedTarget,  setSchedTarget]  = useState<{ type: 'dish'; dish: Dish } | { type: 'category'; cat: string } | null>(null)
+  const [schedTarget,  setSchedTarget]  = useState<{ type: 'dish'; dish: Dish } | { type: 'category'; cat: string } | { type: 'bulk'; ids: string[] } | null>(null)
+  const [bulkDuplicating, setBulkDuplicating] = useState(false)
   const [catSchedules, setCatSchedules] = useState<CategorySchedules>(initialCategorySchedules ?? {})
   const [lang,         setLang]         = useState<Lang>('it')
   const [formOpen,     setFormOpen]     = useState(false)
@@ -601,6 +602,20 @@ export default function DishList({
       setBulkPrice('')
     } catch { alert('Errore durante il cambio prezzo.') }
     finally { setBulkSaving(false) }
+  }
+
+  async function handleBulkDuplicate() {
+    if (!selectedIds.size || bulkDuplicating) return
+    setBulkDuplicating(true)
+    try {
+      const created = await bulkDuplicateDishes(restaurantId, menuId, Array.from(selectedIds))
+      setDishes(prev => [...prev, ...(created as unknown as Dish[])])
+      setSelectedIds(new Set())
+    } catch (e: any) {
+      alert(e?.message ?? 'Errore nella duplicazione.')
+    } finally {
+      setBulkDuplicating(false)
+    }
   }
 
   async function handleBulkDelete() {
@@ -1044,17 +1059,25 @@ export default function DishList({
 
       {schedTarget && (
         <ItemScheduleModal
-          subject={schedTarget.type === 'dish' ? schedTarget.dish.name : schedTarget.cat}
-          initial={schedTarget.type === 'dish'
-            ? { enabled: schedTarget.dish.schedule_enabled, from: schedTarget.dish.schedule_from, until: schedTarget.dish.schedule_until }
-            : (catSchedules[schedTarget.cat] ?? {})}
+          subject={
+            schedTarget.type === 'dish' ? schedTarget.dish.name
+            : schedTarget.type === 'category' ? schedTarget.cat
+            : `${schedTarget.ids.length} piatti selezionati`
+          }
+          initial={
+            schedTarget.type === 'dish'
+              ? { enabled: schedTarget.dish.schedule_enabled, from: schedTarget.dish.schedule_from, until: schedTarget.dish.schedule_until }
+              : schedTarget.type === 'category'
+                ? (catSchedules[schedTarget.cat] ?? {})
+                : {}
+          }
           onSave={async (enabled, from, until) => {
             if (schedTarget.type === 'dish') {
               await updateDishSchedule(restaurantId, menuId, schedTarget.dish.id, { enabled, from, until })
               setDishes(prev => prev.map(d => d.id === schedTarget.dish.id
                 ? { ...d, schedule_enabled: enabled, schedule_from: from, schedule_until: until }
                 : d))
-            } else {
+            } else if (schedTarget.type === 'category') {
               await updateCategorySchedule(restaurantId, menuId, schedTarget.cat, { enabled, from, until })
               setCatSchedules(prev => {
                 const next = { ...prev }
@@ -1062,6 +1085,13 @@ export default function DishList({
                 else delete next[schedTarget.cat]
                 return next
               })
+            } else {
+              const ids = new Set(schedTarget.ids)
+              await bulkUpdateDishSchedules(restaurantId, menuId, schedTarget.ids, { enabled, from, until })
+              setDishes(prev => prev.map(d => ids.has(d.id)
+                ? { ...d, schedule_enabled: enabled, schedule_from: from, schedule_until: until }
+                : d))
+              setSelectedIds(new Set())
             }
           }}
           onClose={() => setSchedTarget(null)}
@@ -1196,6 +1226,25 @@ export default function DishList({
               {bulkSaving ? <Spinner color="#fff" size={4} /> : 'Applica prezzo'}
             </button>
           </form>
+
+          {/* Bulk duplicate */}
+          <button
+            type="button"
+            onClick={handleBulkDuplicate}
+            disabled={bulkDuplicating}
+            className="bg-gray-600 hover:bg-gray-700 disabled:opacity-50 text-sm font-medium px-3 py-1.5 rounded transition-colors whitespace-nowrap flex items-center gap-1"
+          >
+            {bulkDuplicating ? <Spinner color="#fff" size={4} /> : 'Duplica'}
+          </button>
+
+          {/* Bulk schedule */}
+          <button
+            type="button"
+            onClick={() => setSchedTarget({ type: 'bulk', ids: Array.from(selectedIds) })}
+            className="bg-gray-600 hover:bg-gray-700 text-sm font-medium px-3 py-1.5 rounded transition-colors whitespace-nowrap"
+          >
+            Programma orario
+          </button>
 
           {/* Bulk delete */}
           <button

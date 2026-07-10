@@ -542,7 +542,7 @@ export async function bulkCreateDishes(
 // ── MODULO 4: riordino piatti, duplicazione, spostamento ────────────────────────
 
 const DISH_COLUMNS =
-  'id, name, description, price, category, image_url, allergens, sort_order, is_active, pairing_dish_id, pairing_label, master_dish_id'
+  'id, name, description, price, category, image_url, allergens, sort_order, is_active, pairing_dish_id, pairing_label, master_dish_id, schedule_enabled, schedule_from, schedule_until'
 
 /** Riscrive sort_order = indice per ogni piatto, nell'ordine ricevuto. */
 export async function reorderDishes(
@@ -933,6 +933,82 @@ export async function bulkDeleteDishes(
   const supabase = await createClient()
   await verifyOwnership(supabase, restaurantId)
   const { error } = await supabase.from('dishes').delete().in('id', dishIds).eq('menu_id', menuId)
+  if (error) throw new Error(error.message)
+  revalidate(restaurantId, menuId)
+}
+
+/** Duplica più piatti in un colpo solo (selezione multipla): copie "(copia)"
+ *  accodate al menu, ognuna nella categoria del rispettivo originale. */
+export async function bulkDuplicateDishes(
+  restaurantId: string,
+  menuId: string,
+  dishIds: string[],
+) {
+  if (!dishIds.length) return []
+  const supabase = await createClient()
+  await verifyOwnership(supabase, restaurantId)
+
+  const { data: srcs, error: readErr } = await supabase
+    .from('dishes')
+    .select('id, name, description, price, category, image_url, allergens, pairing_dish_id, translations, schedule_enabled, schedule_from, schedule_until, sort_order')
+    .in('id', dishIds)
+    .eq('menu_id', menuId)
+  if (readErr) throw new Error(readErr.message)
+  if (!srcs?.length) return []
+
+  const { data: last } = await supabase
+    .from('dishes').select('sort_order').eq('menu_id', menuId)
+    .order('sort_order', { ascending: false }).limit(1).maybeSingle()
+  let nextOrder = (last?.sort_order ?? -1) + 1
+
+  // Copie nell'ordine originale dei piatti, accodate al menu.
+  const rows = [...srcs]
+    .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+    .map(src => ({
+      restaurant_id:    restaurantId,
+      menu_id:          menuId,
+      name:             `${src.name} (copia)`,
+      description:      src.description,
+      price:            src.price,
+      category:         src.category,
+      image_url:        src.image_url,
+      allergens:        src.allergens,
+      pairing_dish_id:  src.pairing_dish_id,
+      translations:     src.translations ?? {},
+      schedule_enabled: src.schedule_enabled ?? false,
+      schedule_from:    src.schedule_from,
+      schedule_until:   src.schedule_until,
+      is_active:        true,
+      sort_order:       nextOrder++,
+    }))
+
+  const { data: created, error } = await supabase.from('dishes').insert(rows).select(DISH_COLUMNS)
+  if (error) throw new Error(error.message)
+  revalidate(restaurantId, menuId)
+  return created ?? []
+}
+
+/** Programmazione oraria su più piatti in un colpo solo (selezione multipla). */
+export async function bulkUpdateDishSchedules(
+  restaurantId: string,
+  menuId: string,
+  dishIds: string[],
+  schedule: { enabled: boolean; from: string | null; until: string | null },
+) {
+  if (!dishIds.length) return
+  validateSchedule(schedule)
+  const supabase = await createClient()
+  await verifyOwnership(supabase, restaurantId)
+  const { error } = await supabase
+    .from('dishes')
+    .update({
+      schedule_enabled: schedule.enabled,
+      schedule_from:    schedule.enabled ? schedule.from : null,
+      schedule_until:   schedule.enabled ? schedule.until : null,
+      updated_at:       new Date().toISOString(),
+    })
+    .in('id', dishIds)
+    .eq('menu_id', menuId)
   if (error) throw new Error(error.message)
   revalidate(restaurantId, menuId)
 }
