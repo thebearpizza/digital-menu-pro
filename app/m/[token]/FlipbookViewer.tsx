@@ -328,6 +328,50 @@ export default function FlipbookViewer({
     const clearHalfwayTimer = () => {
       if (halfwayTimer) { clearTimeout(halfwayTimer); failsafeTimers.delete(halfwayTimer); halfwayTimer = null }
     }
+
+    // ── Watchdog anti-incastro ────────────────────────────────────────────
+    // A dito sollevato, un fold in corso DEVE raggiungere uno stato terminale
+    // (when.turned o when.end) entro durata+margine. Se il rilascio non arriva
+    // a turn.js (touchcancel di iOS, gesture di sistema, evento perso) la
+    // piega resta congelata a metà: 1° tentativo, rilascio SINTETICO così è
+    // turn.js stesso a completare il fold con le sue regole; 2° tentativo,
+    // navigazione programmatica alla destinazione registrata. Additivo puro:
+    // nel flusso sano il timer viene sempre annullato da turned/end.
+    let stuckTimer: ReturnType<typeof setTimeout> | null = null
+    const clearStuckTimer = () => {
+      if (stuckTimer) { clearTimeout(stuckTimer); failsafeTimers.delete(stuckTimer); stuckTimer = null }
+    }
+    const armStuckWatchdog = () => {
+      if (pendingPageDest === null) return
+      clearStuckTimer()
+      const dest = pendingPageDest
+      stuckTimer = setTimeout(() => {
+        stuckTimer = null
+        if (pendingPageDest === null) return // fold concluso normalmente
+        try {
+          window.$(document).trigger('mouseup')
+          window.$(document).trigger('touchend')
+        } catch (_) {}
+        const t2 = setTimeout(() => {
+          if (pendingPageDest === null) return
+          pendingPageDest = null
+          try { window.$(el!).turn('page', dest) } catch (_) {}
+          try {
+            const cur = window.$(el!).turn('page')
+            if (typeof cur === 'number' && cur > 0) setCurrentPage(cur)
+          } catch (_) {}
+        }, 800)
+        failsafeTimers.add(t2)
+      }, flipbook.duration + 800)
+      failsafeTimers.add(stuckTimer)
+    }
+    // touchcancel (iOS): turn.js non lo gestisce — il dito è "sollevato" per
+    // il sistema ma il fold resta appeso. Trattalo come rilascio per il
+    // watchdog (il resto della logica di timing resta invariato).
+    const onTimingTouchCancel = () => {
+      pointerIsDown = false
+      armStuckWatchdog()
+    }
     const onTimingPointerDown = (e: PointerEvent) => {
       pointerIsDown = true
       gestureMoved  = false
@@ -356,6 +400,7 @@ export default function FlipbookViewer({
         halfwayTimer = setTimeout(() => { setCurrentPage(dest); halfwayTimer = null }, flipbook.duration / 2)
         failsafeTimers.add(halfwayTimer)
       }
+      armStuckWatchdog()
     }
 
     // Cattura il momento in cui il dito si stacca dallo schermo durante un flip
@@ -1342,6 +1387,7 @@ export default function FlipbookViewer({
         window.addEventListener('pointerdown', onTimingPointerDown, true)
         window.addEventListener('pointermove', onTimingPointerMove, true)
         window.addEventListener('pointerup',   onTimingPointerUp,   true)
+        window.addEventListener('touchcancel', onTimingTouchCancel, true)
 
         window.$(el).turn({
           width:        dims.w,
@@ -1394,13 +1440,19 @@ export default function FlipbookViewer({
                 // categoria (turn('page', N) parte dal click, dito già alzato).
                 // L'hover-peel desktop (mouse sopra l'angolo, nessun tap) non
                 // entra qui: nessun tap recente registrato.
-                if (!pointerIsDown && Date.now() - lastTapAt < 350) setCurrentPage(dest)
+                if (!pointerIsDown && Date.now() - lastTapAt < 350) {
+                  setCurrentPage(dest)
+                  // Fold avviato da tap (dito già sollevato): il watchdog non
+                  // verrà armato da nessun pointerup successivo — armalo qui.
+                  armStuckWatchdog()
+                }
               } catch (_) {}
             },
             turned(_evt: Event, page: number) {
               pendingFlipDest = null
               pendingPageDest = null
               clearHalfwayTimer()
+              clearStuckTimer()
               setCurrentPage(page)
               try { clearReveal() } catch (_) {}
               adVideoMap.forEach((vid, turnPage) => {
@@ -1422,6 +1474,7 @@ export default function FlipbookViewer({
             end(_evt: Event, opts: any, turnedOk: boolean) {
               pendingFlipDest = null
               pendingPageDest = null
+              clearStuckTimer()
               try {
                 if (!turnedOk) {
                   // Flip annullato (snap-back): niente cambio pagina — annulla
@@ -1472,6 +1525,7 @@ export default function FlipbookViewer({
       window.removeEventListener('pointerdown', onTimingPointerDown, true)
       window.removeEventListener('pointermove', onTimingPointerMove, true)
       window.removeEventListener('pointerup',   onTimingPointerUp,   true)
+      window.removeEventListener('touchcancel', onTimingTouchCancel, true)
       renderTasks.forEach(t => { try { t.cancel() } catch (_) {} })
       failsafeTimers.forEach(t => clearTimeout(t))
       adVideoMap.forEach(vid => { try { vid.pause() } catch (_) {} })
