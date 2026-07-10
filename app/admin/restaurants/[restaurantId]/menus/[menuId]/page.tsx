@@ -17,11 +17,11 @@ export default async function MenuDishesPage({
 
   const [{ data: menu }, { data: dishes }, { data: allDishes }, { data: allMenus }, { data: restaurant }] = await Promise.all([
     supabase
-      .from('menus').select('id, name, restaurant_id, category_order, text_content')
+      .from('menus').select('id, name, restaurant_id, category_order, text_content, category_schedules')
       .eq('id', params.menuId).eq('restaurant_id', params.restaurantId).single(),
     supabase
       .from('dishes')
-      .select('id, name, description, price, category, image_url, allergens, sort_order, is_active, pairing_dish_id, pairing_label, master_dish_id')
+      .select('id, name, description, price, category, image_url, allergens, sort_order, is_active, pairing_dish_id, pairing_label, master_dish_id, schedule_enabled, schedule_from, schedule_until')
       .eq('menu_id', params.menuId)
       .order('category', { ascending: true })
       .order('sort_order', { ascending: true }),
@@ -94,6 +94,7 @@ export default async function MenuDishesPage({
         allDishes={(allDishes ?? []) as any[]}
         allMenus={(allMenus ?? []) as any[]}
         initialCategoryOrder={(menu.category_order as string[] | null) ?? null}
+        initialCategorySchedules={((menu as any).category_schedules ?? {}) as Record<string, { enabled?: boolean; from?: string | null; until?: string | null }>}
       />
 
       <TextPagesPanel

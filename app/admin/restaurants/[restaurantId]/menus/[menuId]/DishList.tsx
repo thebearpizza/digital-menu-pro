@@ -26,8 +26,10 @@ import {
   duplicateDish, duplicateCategory, deleteCategory, renameCategory, bulkUpdateDishPrices, findDishTwins, DishTwin,
   toggleDishActive, toggleCategoryActive,
   moveDishesToCategory, bulkDeleteDishes, bulkMoveDishesToMenu, getMenuCategoriesForMove,
+  updateDishSchedule, updateCategorySchedule,
 } from './actions'
 import { useStaggerEntrance } from '@/lib/animations'
+import { windowLabel, type CategorySchedules } from '@/lib/menuSchedule'
 
 interface Dish {
   id: string
@@ -42,6 +44,9 @@ interface Dish {
   pairing_dish_id: string | null
   pairing_label: string | null
   master_dish_id: string | null
+  schedule_enabled: boolean | null
+  schedule_from: string | null
+  schedule_until: string | null
 }
 
 interface SimpleDish { id: string; name: string; category: string; menu_id: string }
@@ -54,6 +59,7 @@ interface Props {
   allDishes: SimpleDish[]
   allMenus: SimpleMenu[]
   initialCategoryOrder: string[] | null
+  initialCategorySchedules: CategorySchedules
 }
 
 interface SourceDish {
@@ -98,6 +104,7 @@ function SortableDish({
   onDuplicate,
   onMove,
   onToggle,
+  onSchedule,
   deletingId,
 }: {
   dish: Dish
@@ -108,6 +115,7 @@ function SortableDish({
   onDuplicate: (dish: Dish) => void
   onMove: (dish: Dish) => void
   onToggle: (dish: Dish) => void
+  onSchedule: (dish: Dish) => void
   deletingId: string | null
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
@@ -176,7 +184,14 @@ function SortableDish({
         onKeyDown={(e) => e.key === 'Enter' && onEdit(dish)}
         aria-label={`Modifica ${dish.name}`}
       >
-        <div className="text-sm font-medium text-gray-900 truncate">{dish.name}</div>
+        <div className="text-sm font-medium text-gray-900 truncate">
+          {dish.name}
+          {windowLabel(dish.schedule_enabled, dish.schedule_from, dish.schedule_until) && (
+            <span className="ml-2 text-[10px] font-normal text-blue-500 whitespace-nowrap">
+              🕐 {windowLabel(dish.schedule_enabled, dish.schedule_from, dish.schedule_until)}
+            </span>
+          )}
+        </div>
         {dish.description && (
           <div className="text-xs text-gray-400 mt-0.5 line-clamp-1">{dish.description}</div>
         )}
@@ -220,6 +235,12 @@ function SortableDish({
               >
                 Sposta in
               </button>
+              <button
+                onClick={() => { onSchedule(dish); setKebabOpen(false) }}
+                className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50"
+              >
+                Programmazione oraria
+              </button>
               <div className="h-px bg-gray-100 my-1" />
               <button
                 onClick={() => { onDelete(dish); setKebabOpen(false) }}
@@ -233,6 +254,83 @@ function SortableDish({
         </div>
       </div>
     </li>
+  )
+}
+
+// ── Modale programmazione oraria (piatto o categoria) ─────────────────────────
+// Stessa semantica dei menu: fuori fascia (ora italiana, fasce a cavallo di
+// mezzanotte supportate) l'elemento sparisce dal menu pubblico.
+
+function ItemScheduleModal({ subject, initial, onSave, onClose }: {
+  subject: string
+  initial: { enabled?: boolean | null; from?: string | null; until?: string | null }
+  onSave: (enabled: boolean, from: string | null, until: string | null) => Promise<void>
+  onClose: () => void
+}) {
+  const [enabled, setEnabled] = useState(initial.enabled ?? false)
+  const [from,    setFrom]    = useState(initial.from?.slice(0, 5) ?? '08:00')
+  const [until,   setUntil]   = useState(initial.until?.slice(0, 5) ?? '12:00')
+  const [saving,  setSaving]  = useState(false)
+  const [err,     setErr]     = useState<string | null>(null)
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault()
+    if (enabled && (!from || !until)) { setErr('Indica orario di inizio e di fine.'); return }
+    if (enabled && from === until) { setErr('Orario di inizio e di fine coincidono: scegli una fascia valida.'); return }
+    setSaving(true); setErr(null)
+    try {
+      await onSave(enabled, enabled ? from : null, enabled ? until : null)
+      onClose()
+    } catch (e: any) { setErr(e?.message ?? 'Errore nel salvataggio.') }
+    finally { setSaving(false) }
+  }
+
+  return (
+    <div className="fixed inset-0 z-[300] bg-black/40 flex items-center justify-center p-4" onClick={onClose}>
+      <form onSubmit={submit} onClick={e => e.stopPropagation()}
+        className="bg-white w-full max-w-sm p-5 shadow-2xl space-y-4">
+        <div>
+          <h3 className="text-sm font-semibold text-gray-900">Programmazione oraria</h3>
+          <p className="text-xs text-gray-500 mt-0.5">
+            &ldquo;{subject}&rdquo; sarà visibile ai clienti solo nella fascia scelta
+            (ora italiana). Fuori fascia sparisce in automatico dal menu pubblico.
+          </p>
+        </div>
+        <label className="flex items-center gap-2 cursor-pointer select-none">
+          <input type="checkbox" checked={enabled} onChange={e => setEnabled(e.target.checked)}
+            className="accent-blue-600 w-4 h-4" />
+          <span className="text-sm text-gray-700">Attiva programmazione</span>
+        </label>
+        {enabled && (
+          <div className="flex items-center gap-3">
+            <label className="flex-1 text-xs text-gray-600">
+              Dalle
+              <input type="time" value={from} onChange={e => setFrom(e.target.value)} required
+                className="mt-1 w-full px-2 py-1.5 border border-gray-300 text-sm focus:outline-none focus:border-blue-500" />
+            </label>
+            <label className="flex-1 text-xs text-gray-600">
+              Alle
+              <input type="time" value={until} onChange={e => setUntil(e.target.value)} required
+                className="mt-1 w-full px-2 py-1.5 border border-gray-300 text-sm focus:outline-none focus:border-blue-500" />
+            </label>
+          </div>
+        )}
+        {enabled && from > until && (
+          <p className="text-[11px] text-amber-600">
+            Fascia a cavallo della mezzanotte: visibile dalle {from} alle {until} del giorno dopo.
+          </p>
+        )}
+        {err && <p className="text-xs text-red-500">{err}</p>}
+        <div className="flex justify-end gap-2 pt-1">
+          <button type="button" onClick={onClose}
+            className="text-sm text-gray-500 hover:text-gray-700 px-3 py-2">Annulla</button>
+          <button type="submit" disabled={saving}
+            className="bg-blue-600 text-white text-sm font-medium px-4 py-2 hover:bg-blue-700 disabled:opacity-50 transition-colors min-w-[64px] flex items-center justify-center">
+            {saving ? <Spinner color="#fff" /> : 'Salva'}
+          </button>
+        </div>
+      </form>
+    </div>
   )
 }
 
@@ -256,6 +354,9 @@ function SortableCategory({
   onAddDish,
   onMoveCategory,
   onToggleCategory,
+  onScheduleCategory,
+  onScheduleDish,
+  catScheduleLabel,
   deletingId,
   selectedIds,
   onSelectDish,
@@ -275,6 +376,9 @@ function SortableCategory({
   onAddDish: (cat: string) => void
   onMoveCategory: (cat: string) => void
   onToggleCategory: (cat: string, active: boolean) => void
+  onScheduleCategory: (cat: string) => void
+  onScheduleDish: (dish: Dish) => void
+  catScheduleLabel: string | null
   deletingId: string | null
   selectedIds: Set<string>
   onSelectDish: (dish: Dish, checked: boolean) => void
@@ -325,6 +429,9 @@ function SortableCategory({
         >
           <span className="text-xs font-semibold uppercase tracking-wide text-gray-600 truncate">{cat}</span>
           <span className="text-xs text-gray-400 shrink-0">({dishes.length})</span>
+          {catScheduleLabel && (
+            <span className="text-[10px] text-blue-500 shrink-0 whitespace-nowrap">🕐 {catScheduleLabel}</span>
+          )}
         </button>
 
         <div className="flex items-center shrink-0" ref={kebabRef}>
@@ -363,6 +470,12 @@ function SortableCategory({
                   className="w-full text-left px-4 py-3 text-sm text-gray-700 hover:bg-gray-50"
                 >
                   Rinomina
+                </button>
+                <button
+                  onClick={() => { onScheduleCategory(cat); setKebabOpen(false) }}
+                  className="w-full text-left px-4 py-3 text-sm text-gray-700 hover:bg-gray-50"
+                >
+                  Programmazione oraria
                 </button>
                 <button
                   onClick={() => { onDeleteCategory(cat); setKebabOpen(false) }}
@@ -405,6 +518,7 @@ function SortableCategory({
                     onDuplicate={onDuplicateDish}
                     onMove={onMoveDish}
                     onToggle={onToggleDish}
+                    onSchedule={onScheduleDish}
                     deletingId={deletingId}
                   />
                 ))}
@@ -429,8 +543,13 @@ function SortableCategory({
 
 export default function DishList({
   restaurantId, menuId, initialDishes, allDishes, allMenus, initialCategoryOrder,
+  initialCategorySchedules,
 }: Props) {
   const [dishes,       setDishes]       = useState(initialDishes)
+  // Programmazione oraria: bersaglio della modale (piatto o categoria) e
+  // mappa locale delle fasce per categoria (specchia menus.category_schedules).
+  const [schedTarget,  setSchedTarget]  = useState<{ type: 'dish'; dish: Dish } | { type: 'category'; cat: string } | null>(null)
+  const [catSchedules, setCatSchedules] = useState<CategorySchedules>(initialCategorySchedules ?? {})
   const [lang,         setLang]         = useState<Lang>('it')
   const [formOpen,     setFormOpen]     = useState(false)
   const [editingDish,  setEditingDish]  = useState<Dish | null>(null)
@@ -923,6 +1042,32 @@ export default function DishList({
         />
       )}
 
+      {schedTarget && (
+        <ItemScheduleModal
+          subject={schedTarget.type === 'dish' ? schedTarget.dish.name : schedTarget.cat}
+          initial={schedTarget.type === 'dish'
+            ? { enabled: schedTarget.dish.schedule_enabled, from: schedTarget.dish.schedule_from, until: schedTarget.dish.schedule_until }
+            : (catSchedules[schedTarget.cat] ?? {})}
+          onSave={async (enabled, from, until) => {
+            if (schedTarget.type === 'dish') {
+              await updateDishSchedule(restaurantId, menuId, schedTarget.dish.id, { enabled, from, until })
+              setDishes(prev => prev.map(d => d.id === schedTarget.dish.id
+                ? { ...d, schedule_enabled: enabled, schedule_from: from, schedule_until: until }
+                : d))
+            } else {
+              await updateCategorySchedule(restaurantId, menuId, schedTarget.cat, { enabled, from, until })
+              setCatSchedules(prev => {
+                const next = { ...prev }
+                if (enabled) next[schedTarget.cat] = { enabled, from, until }
+                else delete next[schedTarget.cat]
+                return next
+              })
+            }
+          }}
+          onClose={() => setSchedTarget(null)}
+        />
+      )}
+
       {moveDish && (
         <MoveDishModal
           restaurantId={restaurantId}
@@ -988,6 +1133,9 @@ export default function DishList({
                   onAddDish={handleAddDish}
                   onMoveCategory={setMoveCatName}
                   onToggleCategory={handleToggleCategory}
+                  onScheduleCategory={c => setSchedTarget({ type: 'category', cat: c })}
+                  onScheduleDish={d => setSchedTarget({ type: 'dish', dish: d })}
+                  catScheduleLabel={windowLabel(catSchedules[cat]?.enabled, catSchedules[cat]?.from, catSchedules[cat]?.until)}
                   deletingId={deletingId}
                   selectedIds={selectedIds}
                   onSelectDish={handleSelectDish}

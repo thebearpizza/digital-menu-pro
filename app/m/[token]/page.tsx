@@ -3,7 +3,7 @@ import { notFound } from 'next/navigation'
 import type { Metadata } from 'next'
 import PublicMenuView from './PublicMenuView'
 import { parseTheme, googleFontsUrl, allThemeFonts, customFontFaceCss, themeRootCssVars } from '@/lib/theme'
-import { isMenuOpenNow } from '@/lib/menuSchedule'
+import { isMenuOpenNow, isWindowOpenNow, isCategoryOpenNow, type CategorySchedules } from '@/lib/menuSchedule'
 
 // The /m/[token] URL pattern is the printed QR contract — this path must never change.
 // See CLAUDE.md → "URL del QR code stabile per sempre"
@@ -39,7 +39,7 @@ export default async function PublicMenuPage({
   const [{ data: rawMenus }, { data: banners }, { data: info }] = await Promise.all([
     supabase
       .from('menus')
-      .select('id, name, sort_order, category_order, schedule_enabled, schedule_from, schedule_until, translations, text_content')
+      .select('id, name, sort_order, category_order, schedule_enabled, schedule_from, schedule_until, category_schedules, translations, text_content')
       .eq('restaurant_id', restaurant.id)
       .eq('is_active', true)
       .order('sort_order', { ascending: true }),
@@ -67,14 +67,26 @@ export default async function PublicMenuPage({
 
       const { data: dishes } = await supabase
         .from('dishes')
-        .select('id, name, description, price, category, image_url, allergens, sort_order, pairing_dish_id, pairing_label, translations')
+        .select('id, name, description, price, category, image_url, allergens, sort_order, pairing_dish_id, pairing_label, translations, schedule_enabled, schedule_from, schedule_until')
         .eq('menu_id', menu.id)
         .eq('is_active', true)
         .order('sort_order', { ascending: true })
 
+      // Programmazione oraria di piatti e categorie: fuori fascia spariscono
+      // dal menu pubblico (la pagina è force-dynamic → valutato a ogni request).
+      const catSchedules = (((menu as any).category_schedules ?? {}) as CategorySchedules)
+      const inSchedule = (dishes ?? []).filter(d => {
+        const cat = d.category as string | null
+        // I piatti senza categoria compaiono come "Senza categoria" nel
+        // gestionale: la loro programmazione è salvata sotto quella chiave.
+        const cs = cat ? catSchedules[cat] : catSchedules['Senza categoria']
+        return isWindowOpenNow(d.schedule_enabled as boolean | null, d.schedule_from as string | null, d.schedule_until as string | null) &&
+          isCategoryOpenNow(cs)
+      })
+
       // Sort dishes respecting admin-defined category order; unknown categories
       // go alphabetically at the end.
-      const sorted = (dishes ?? []).slice().sort((a, b) => {
+      const sorted = inSchedule.slice().sort((a, b) => {
         const catA = (a.category as string | null) ?? 'Menu'
         const catB = (b.category as string | null) ?? 'Menu'
         if (catA === catB) return (a.sort_order as number) - (b.sort_order as number)
@@ -124,10 +136,12 @@ export default async function PublicMenuPage({
   if (missingPairingIds.length > 0) {
     const { data: extra } = await supabase
       .from('dishes')
-      .select('id, name, description, price, category, image_url, allergens, pairing_dish_id, pairing_label, translations')
+      .select('id, name, description, price, category, image_url, allergens, pairing_dish_id, pairing_label, translations, schedule_enabled, schedule_from, schedule_until')
       .in('id', missingPairingIds)
       .eq('is_active', true)
-    extraPairingDishes = (extra ?? []).map(d => ({
+    extraPairingDishes = (extra ?? []).filter(d =>
+      isWindowOpenNow(d.schedule_enabled as boolean | null, d.schedule_from as string | null, d.schedule_until as string | null)
+    ).map(d => ({
       id:              d.id as string,
       name:            d.name as string,
       description:     d.description as string | null,

@@ -265,12 +265,18 @@ export async function deleteCategory(restaurantId: string, menuId: string, categ
   if (error) throw new Error(error.message)
 
   const { data: menu } = await supabase
-    .from('menus').select('category_order').eq('id', menuId).single()
+    .from('menus').select('category_order, category_schedules').eq('id', menuId).single()
   const order = (menu?.category_order as string[] | null) ?? []
-  if (order.includes(category)) {
+  const catSched = ((menu?.category_schedules ?? {}) as Record<string, unknown>)
+  const hadSched = category in catSched
+  if (hadSched) delete catSched[category]
+  if (order.includes(category) || hadSched) {
     const { error: err2 } = await supabase
       .from('menus')
-      .update({ category_order: order.filter(c => c !== category) })
+      .update({
+        category_order: order.filter(c => c !== category),
+        ...(hadSched ? { category_schedules: catSched } : {}),
+      })
       .eq('id', menuId)
     if (err2) throw new Error(err2.message)
   }
@@ -294,8 +300,16 @@ export async function renameCategory(
   if (error) throw new Error(error.message)
 
   const { data: menu } = await supabase
-    .from('menus').select('category_order, translations').eq('id', menuId).single()
+    .from('menus').select('category_order, translations, category_schedules').eq('id', menuId).single()
   const order = (menu?.category_order as string[] | null) ?? []
+
+  // La programmazione oraria della categoria è indicizzata per nome: il
+  // rename deve spostare la chiave, altrimenti la fascia va persa.
+  const catSched = ((menu?.category_schedules ?? {}) as Record<string, unknown>)
+  let schedChanged = false
+  if (oldName in catSched) {
+    catSched[newName] = catSched[oldName]; delete catSched[oldName]; schedChanged = true
+  }
 
   // Le traduzioni delle categorie sono indicizzate per nome italiano: il
   // rename deve spostare la chiave, altrimenti la traduzione va persa.
@@ -312,16 +326,77 @@ export async function renameCategory(
     }
   }
 
-  if (order.includes(oldName) || trChanged) {
+  if (order.includes(oldName) || trChanged || schedChanged) {
     const { error: err2 } = await supabase
       .from('menus')
       .update({
         category_order: order.map(c => (c === oldName ? newName : c)),
         ...(trChanged ? { translations: menuTr } : {}),
+        ...(schedChanged ? { category_schedules: catSched } : {}),
       })
       .eq('id', menuId)
     if (err2) throw new Error(err2.message)
   }
+  revalidate(restaurantId, menuId)
+}
+
+// ── Programmazione oraria: piatti e categorie ─────────────────────────────────
+// Stessa semantica dei menu: fuori dalla fascia (ora italiana, fasce a cavallo
+// di mezzanotte supportate) l'elemento sparisce dal menu pubblico.
+
+function validateSchedule(schedule: { enabled: boolean; from: string | null; until: string | null }) {
+  if (schedule.enabled && (!schedule.from || !schedule.until)) {
+    throw new Error('Indica orario di inizio e di fine.')
+  }
+  if (schedule.enabled && schedule.from === schedule.until) {
+    throw new Error('Orario di inizio e di fine coincidono: scegli una fascia valida.')
+  }
+}
+
+export async function updateDishSchedule(
+  restaurantId: string,
+  menuId: string,
+  dishId: string,
+  schedule: { enabled: boolean; from: string | null; until: string | null },
+) {
+  validateSchedule(schedule)
+  const supabase = await createClient()
+  await verifyOwnership(supabase, restaurantId)
+  const { error } = await supabase
+    .from('dishes')
+    .update({
+      schedule_enabled: schedule.enabled,
+      schedule_from:    schedule.enabled ? schedule.from : null,
+      schedule_until:   schedule.enabled ? schedule.until : null,
+      updated_at:       new Date().toISOString(),
+    })
+    .eq('id', dishId)
+    .eq('menu_id', menuId)
+  if (error) throw new Error(error.message)
+  revalidate(restaurantId, menuId)
+}
+
+export async function updateCategorySchedule(
+  restaurantId: string,
+  menuId: string,
+  category: string,
+  schedule: { enabled: boolean; from: string | null; until: string | null },
+) {
+  validateSchedule(schedule)
+  const supabase = await createClient()
+  await verifyOwnership(supabase, restaurantId)
+  const { data: menu, error: readErr } = await supabase
+    .from('menus').select('category_schedules').eq('id', menuId).single()
+  if (readErr) throw new Error(readErr.message)
+  const schedules = ((menu?.category_schedules ?? {}) as Record<string, unknown>)
+  if (schedule.enabled) {
+    schedules[category] = { enabled: true, from: schedule.from, until: schedule.until }
+  } else {
+    delete schedules[category]  // spenta = nessuna voce: JSONB pulito
+  }
+  const { error } = await supabase
+    .from('menus').update({ category_schedules: schedules }).eq('id', menuId)
+  if (error) throw new Error(error.message)
   revalidate(restaurantId, menuId)
 }
 
