@@ -673,6 +673,20 @@ export function MenuPDFDocument({ restaurant, menu, theme: themeProp, registered
   const divWidth = m.layout.divider.width || 0.5
   const perPage  = m.layout.dishesPerPage || 0
 
+  // ── Prezzi con font custom: neutralizza lo shaping OpenType difettoso ────────
+  // Alcuni font OTF caricati a mano applicano feature contestuali difettose
+  // (legatura/kerning/alternate) su certe coppie di cifre: es. "19" reso come
+  // "9" (la "1" scompare sotto la "9"). Nella card questo non accade perché usa
+  // `tabular-nums`; il PDF (@react-pdf) non ha equivalente e non espone il toggle
+  // delle feature. Inserendo uno ZWNJ (U+200C) tra i caratteri del prezzo si
+  // interrompe lo shaping contestuale della coppia: fontkit tratta lo ZWNJ come
+  // "default-ignorable" azzerandone larghezza e outline (invisibile, zero spazio,
+  // a livello di shaper → indipendente dal font). Applicato SOLO quando il prezzo
+  // usa un font caricato dall'utente: Google Fonts e built-in restano intatti.
+  const priceFontIsCustom = !!theme.customFonts?.[m.prices.font] && reg.has(m.prices.font)
+  const priceText = (str: string | null): string | null =>
+    str != null && priceFontIsCustom ? Array.from(str).join('\u200C') : str
+
   // ── Marker invisibili per il text layer del flipbook ────────────────────────
   // Helvetica (font built-in WinAnsi) viene SEMPRE estratta in modo pulito da
   // PDF.js, anche quando il font scelto dall'utente (es. OTF decorativo caricato
@@ -739,7 +753,7 @@ export function MenuPDFDocument({ restaurant, menu, theme: themeProp, registered
   }
 
   function renderDish(dish: PDFDish, isLast: boolean, st: typeof s) {
-    const priceStr    = dish.price != null ? formatPrice(dish.price, m.prices.format, m.prices.currency) : null
+    const priceStr    = dish.price != null ? priceText(formatPrice(dish.price, m.prices.format, m.prices.currency)) : null
     const allergenStr = allergenText(dish)
 
     if (isBoxed) {
@@ -969,7 +983,7 @@ export function MenuPDFDocument({ restaurant, menu, theme: themeProp, registered
             {b.isGrid ? (
               <View style={s.gridRow}>
                 {b.dishes.map((dish) => {
-                  const priceStr    = dish.price != null ? formatPrice(dish.price, m.prices.format, m.prices.currency) : null
+                  const priceStr    = dish.price != null ? priceText(formatPrice(dish.price, m.prices.format, m.prices.currency)) : null
                   const allergenStr = allergenText(dish)
                   return (
                     <View key={dish.id} style={isGrid3 ? b.st.gridCell3 : b.st.gridCell2} wrap={false}>
