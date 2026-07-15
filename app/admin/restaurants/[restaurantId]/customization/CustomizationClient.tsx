@@ -13,6 +13,7 @@ import { ALL_GOOGLE_FONTS } from '@/lib/googleFontsCatalog'
 import { PRESETS, applyBaseFont, applyBaseSurface, applyBaseText, applyBaseAccent } from '@/lib/themePresets'
 import type { ThemePreset } from '@/lib/themePresets'
 import { removeUniformBackground } from '@/lib/imageBackground'
+import { compressImageFile, MAX_IMAGE_BYTES, MAX_VIDEO_BYTES } from '@/lib/imageCompress'
 import { getRecentFonts, addRecentFont } from '@/lib/recentFonts'
 import { useStaggerEntrance } from '@/lib/animations'
 import { Spinner } from '@/components/ui/Spinner'
@@ -22,7 +23,10 @@ import type {
   CategoryFlourish, DishLayout, AdConfig,
 } from '@/lib/theme'
 
-const MAX_MEDIA_BYTES = 5 * 1024 * 1024 // 5MB
+// Immagini: tetto 5MB (dopo la compressione lato client scendono molto sotto).
+// Video: tetto 20MB (dopo la compressione MediaRecorder). Costanti condivise
+// con lib/imageCompress così il limite è unico in tutta l'app.
+const MAX_MEDIA_BYTES = MAX_IMAGE_BYTES // 5MB — immagini
 const MAX_FONT_BYTES  = 2 * 1024 * 1024 // 2MB
 
 function slugifyFontName(name: string): string {
@@ -1864,8 +1868,17 @@ function BannerManager({ restaurantId, initialBanners }: { restaurantId: string;
 
   async function handleAdd() {
     if (!fileRef.current?.files?.[0]) { setError('Seleziona un file.'); return }
-    const file = fileRef.current.files[0]
-    if (file.size > MAX_MEDIA_BYTES) { setError('File troppo grande (max 5MB).'); return }
+    const rawFile = fileRef.current.files[0]
+    const isVideo = rawFile.type.startsWith('video/')
+    // Immagini: compressione + tetto 5MB. Video: compressione + tetto 20MB.
+    let file = rawFile
+    if (isVideo) {
+      if (rawFile.size > MAX_IMAGE_BYTES) { setError('Compressione video in corso…'); file = await compressVideoFile(rawFile) }
+      if (file.size > MAX_VIDEO_BYTES) { setError('Video troppo grande (max 20MB).'); return }
+    } else {
+      file = await compressImageFile(rawFile)
+      if (file.size > MAX_IMAGE_BYTES) { setError('File troppo grande (max 5MB).'); return }
+    }
     setUploading(true); setError(null)
     const supabase = createClient()
     const ext  = file.name.split('.').pop() ?? 'jpg'
@@ -2215,7 +2228,8 @@ export default function CustomizationClient({
 
   // ── Upload handlers ──────────────────────────────────────────────────────────
 
-  async function handleBgUpload(file: File) {
+  async function handleBgUpload(rawFile: File) {
+    const file = await compressImageFile(rawFile)
     if (file.size > MAX_MEDIA_BYTES) { setError('Immagine troppo grande (max 5MB).'); return }
     setBgUploading(true); setError(null)
     const supabase = createClient()
@@ -2232,7 +2246,8 @@ export default function CustomizationClient({
     setBgUploading(false)
   }
 
-  async function handleMenuBgUpload(file: File) {
+  async function handleMenuBgUpload(rawFile: File) {
+    const file = await compressImageFile(rawFile)
     if (file.size > MAX_MEDIA_BYTES) { setError('Immagine troppo grande (max 5MB).'); return }
     setMenuBgUploading(true); setError(null)
     const supabase = createClient()
@@ -2247,7 +2262,8 @@ export default function CustomizationClient({
     setMenuBgUploading(false)
   }
 
-  async function handleMenuPageBgUpload(file: File) {
+  async function handleMenuPageBgUpload(rawFile: File) {
+    const file = await compressImageFile(rawFile)
     if (file.size > MAX_MEDIA_BYTES) { setError('Immagine troppo grande (max 5MB).'); return }
     setPageBgUploading(true); setError(null)
     const supabase = createClient()
@@ -2304,7 +2320,8 @@ export default function CustomizationClient({
     return name
   }
 
-  async function handlePosterUpload(file: File) {
+  async function handlePosterUpload(rawFile: File) {
+    const file = await compressImageFile(rawFile)
     if (file.size > MAX_MEDIA_BYTES) { setError('Immagine troppo grande (max 5MB).'); return }
     setPosterUploading(true); setError(null)
     const supabase = createClient()
@@ -2324,11 +2341,11 @@ export default function CustomizationClient({
 
     // Compress oversized videos in-browser before upload (re-encode + downscale).
     let file = rawFile
-    if (rawFile.size > MAX_MEDIA_BYTES) {
+    if (rawFile.size > MAX_IMAGE_BYTES) {
       setError('Compressione video in corso…')
       file = await compressVideoFile(rawFile)
-      if (file.size > MAX_MEDIA_BYTES) {
-        setError(`Video ancora troppo grande dopo la compressione (${(file.size / 1024 / 1024).toFixed(1)}MB, max 5MB). Usa un video più corto.`)
+      if (file.size > MAX_VIDEO_BYTES) {
+        setError(`Video ancora troppo grande dopo la compressione (${(file.size / 1024 / 1024).toFixed(1)}MB, max 20MB). Usa un video più corto.`)
         setVidUploading(false); return
       }
       setError(null)
@@ -2682,7 +2699,8 @@ function AdsPanel({ ads, setAds, restaurantId }: {
     return () => { cancelled = true }
   }, [restaurantId])
 
-  async function handleImgUpload(file: File) {
+  async function handleImgUpload(rawFile: File) {
+    const file = await compressImageFile(rawFile)
     if (file.size > MAX_MEDIA_BYTES) { setImgError('Immagine troppo grande (max 5 MB).'); return }
     setImgUploading(true); setImgError(null)
     const supabase = createClient()
@@ -2698,11 +2716,11 @@ function AdsPanel({ ads, setAds, restaurantId }: {
   async function handleVidUpload(rawFile: File) {
     setVidUploading(true); setVidError(null)
     let file = rawFile
-    if (rawFile.size > MAX_MEDIA_BYTES) {
+    if (rawFile.size > MAX_IMAGE_BYTES) {
       setVidError('Compressione in corso…')
       file = await compressVideoFile(rawFile)
-      if (file.size > MAX_MEDIA_BYTES) {
-        setVidError(`Video ancora troppo grande (${(file.size / 1024 / 1024).toFixed(1)} MB, max 5 MB). Usa un clip più corto.`)
+      if (file.size > MAX_VIDEO_BYTES) {
+        setVidError(`Video ancora troppo grande (${(file.size / 1024 / 1024).toFixed(1)} MB, max 20 MB). Usa un clip più corto.`)
         setVidUploading(false); return
       }
       setVidError(null)

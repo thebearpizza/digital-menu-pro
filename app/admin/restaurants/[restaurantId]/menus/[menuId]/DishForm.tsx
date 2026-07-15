@@ -2,6 +2,7 @@
 
 import React, { useState, useRef, useCallback, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { compressImageFile } from '@/lib/imageCompress'
 import { createDish, updateDish, detectAllergens } from './actions'
 import { ALLERGENS } from '@/lib/allergens'
 import { Spinner } from '@/components/ui/Spinner'
@@ -463,8 +464,12 @@ export default function DishForm({
   const otherMenus      = allMenus.filter(m => m.id !== menuId)
   const currentMenuName = allMenus.find(m => m.id === menuId)?.name ?? 'Questo menu'
 
-  async function handleUpload(file: File) {
+  async function handleUpload(rawFile: File) {
     setUploading(true)
+    // Ridimensiona/comprimi prima dell'upload: la foto resta nitida sulla card
+    // ma pesa molto meno (meno egress). Il ritaglio successivo lavora invece sul
+    // file locale a piena risoluzione, per la massima qualità del riquadro.
+    const file = await compressImageFile(rawFile)
     const supabase = createClient()
     const ext  = file.name.split('.').pop() ?? 'jpg'
     const path = `${restaurantId}/${Date.now()}.${ext}`
@@ -480,7 +485,7 @@ export default function DishForm({
       dirtyRef.current.add('image_url')
       // Apri subito il selettore di ritaglio sul file locale (nessun round-trip).
       if (localSrcRef.current) URL.revokeObjectURL(localSrcRef.current)
-      const local = URL.createObjectURL(file)
+      const local = URL.createObjectURL(rawFile)
       localSrcRef.current = local
       setCropState({ src: local, initial: null })
     } else if (err) {

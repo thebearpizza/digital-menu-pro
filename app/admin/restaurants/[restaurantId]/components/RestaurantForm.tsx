@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { compressImageFile } from '@/lib/imageCompress'
 import { updateRestaurant } from '../actions'
 import VisibilityToggle from '@/components/ui/VisibilityToggle'
 import { Spinner } from '@/components/ui/Spinner'
@@ -64,8 +65,9 @@ export default function RestaurantForm({ restaurant }: Props) {
     setVis(v => ({ ...v, [key]: !v[key] }))
   }
 
-  async function handleLogoUpload(file: File) {
+  async function handleLogoUpload(rawFile: File) {
     setUploading(true)
+    const file = await compressImageFile(rawFile)
     const supabase = createClient()
     const ext  = file.name.split('.').pop() ?? 'jpg'
     const path = `${restaurant.id}/logo.${ext}`
