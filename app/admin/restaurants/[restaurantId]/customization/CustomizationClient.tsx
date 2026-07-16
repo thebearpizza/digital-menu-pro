@@ -97,7 +97,9 @@ async function compressVideoFile(
     const done = (result: File) => { URL.revokeObjectURL(url); resolve(result) }
 
     video.addEventListener('loadedmetadata', () => {
-      const maxW   = 1280
+      // 1080px + ~1 Mbps: un loop di sfondo pesa ~1 MB restando nitido su mobile.
+      // Il video parte a ogni scansione del QR → è la voce di egress principale.
+      const maxW   = 1080
       const ratio  = Math.min(maxW / (video.videoWidth || maxW), 1)
       const canvas = document.createElement('canvas')
       canvas.width  = Math.round((video.videoWidth  || 1280) * ratio)
@@ -111,7 +113,7 @@ async function compressVideoFile(
       const chunks: BlobPart[] = []
       let recorder: MediaRecorder
       try {
-        recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 2_200_000 })
+        recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 1_000_000 })
       } catch { done(file); return }
 
       recorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data) }
@@ -1873,7 +1875,8 @@ function BannerManager({ restaurantId, initialBanners }: { restaurantId: string;
     // Immagini: compressione + tetto 5MB. Video: compressione + tetto 20MB.
     let file = rawFile
     if (isVideo) {
-      if (rawFile.size > MAX_IMAGE_BYTES) { setError('Compressione video in corso…'); file = await compressVideoFile(rawFile) }
+      setError('Compressione video in corso…')
+      file = await compressVideoFile(rawFile)
       if (file.size > MAX_VIDEO_BYTES) { setError('Video troppo grande (max 20MB).'); return }
     } else {
       file = await compressImageFile(rawFile)
@@ -2339,17 +2342,16 @@ export default function CustomizationClient({
   async function handleVideoUpload(rawFile: File) {
     setVidUploading(true); setError(null)
 
-    // Compress oversized videos in-browser before upload (re-encode + downscale).
-    let file = rawFile
-    if (rawFile.size > MAX_IMAGE_BYTES) {
-      setError('Compressione video in corso…')
-      file = await compressVideoFile(rawFile)
-      if (file.size > MAX_VIDEO_BYTES) {
-        setError(`Video ancora troppo grande dopo la compressione (${(file.size / 1024 / 1024).toFixed(1)}MB, max 20MB). Usa un video più corto.`)
-        setVidUploading(false); return
-      }
-      setError(null)
+    // Comprimi SEMPRE i video prima dell'upload (re-encode + downscale): il video
+    // di sfondo parte a ogni scansione del QR, quindi è la voce di egress più
+    // pesante. compressVideoFile mantiene l'originale se non riesce a ridurlo.
+    setError('Compressione video in corso…')
+    let file = await compressVideoFile(rawFile)
+    if (file.size > MAX_VIDEO_BYTES) {
+      setError(`Video ancora troppo grande dopo la compressione (${(file.size / 1024 / 1024).toFixed(1)}MB, max 20MB). Usa un video più corto.`)
+      setVidUploading(false); return
     }
+    setError(null)
 
     const supabase = createClient()
     const ext  = file.name.split('.').pop() ?? 'mp4'
@@ -2715,16 +2717,13 @@ function AdsPanel({ ads, setAds, restaurantId }: {
 
   async function handleVidUpload(rawFile: File) {
     setVidUploading(true); setVidError(null)
-    let file = rawFile
-    if (rawFile.size > MAX_IMAGE_BYTES) {
-      setVidError('Compressione in corso…')
-      file = await compressVideoFile(rawFile)
-      if (file.size > MAX_VIDEO_BYTES) {
-        setVidError(`Video ancora troppo grande (${(file.size / 1024 / 1024).toFixed(1)} MB, max 20 MB). Usa un clip più corto.`)
-        setVidUploading(false); return
-      }
-      setVidError(null)
+    setVidError('Compressione in corso…')
+    let file = await compressVideoFile(rawFile)
+    if (file.size > MAX_VIDEO_BYTES) {
+      setVidError(`Video ancora troppo grande (${(file.size / 1024 / 1024).toFixed(1)} MB, max 20 MB). Usa un clip più corto.`)
+      setVidUploading(false); return
     }
+    setVidError(null)
     const supabase = createClient()
     const ext  = file.name.split('.').pop()?.toLowerCase() ?? 'mp4'
     const { data, error } = await supabase.storage
