@@ -268,46 +268,6 @@ export default function ScanStatsLive({
   const [updatedAt, setUpdated]   = useState<Date>(new Date())
   const [live,      setLive]      = useState(false)
 
-  function aggregate(views: { restaurant_id: string; created_at: string }[]): ScanRow[] {
-    const now = new Date()
-    const todayStart = new Date(now); todayStart.setHours(0, 0, 0, 0)
-    const ago7d  = new Date(now.getTime() - 7  * 86_400_000)
-    const ago30d = new Date(now.getTime() - 30 * 86_400_000)
-    const map = new Map<string, { today: number; last7d: number; last30d: number; total: number }>()
-    for (const id of restaurantIds) map.set(id, { today: 0, last7d: 0, last30d: 0, total: 0 })
-    for (const v of views) {
-      const row = map.get(v.restaurant_id); if (!row) continue
-      const ts = new Date(v.created_at)
-      row.total++
-      if (ts >= ago30d)     row.last30d++
-      if (ts >= ago7d)      row.last7d++
-      if (ts >= todayStart) row.today++
-    }
-    return restaurantIds
-      .map(id => ({ restaurantId: id, restaurantName: restaurantNames[id] ?? id, ...map.get(id)! }))
-      .filter(r => r.total > 0)
-      .sort((a, b) => b.total - a.total)
-  }
-
-  function aggregateChart(views: { restaurant_id: string; created_at: string }[]): ChartPoint[] {
-    const now   = new Date()
-    const ago30 = new Date(now.getTime() - 30 * 86_400_000)
-    const daily = new Map<string, number>()
-    for (const v of views) {
-      const ts = new Date(v.created_at)
-      if (ts < ago30) continue
-      const day = ts.toISOString().slice(0, 10)
-      daily.set(day, (daily.get(day) ?? 0) + 1)
-    }
-    const result: ChartPoint[] = []
-    for (let i = 29; i >= 0; i--) {
-      const d   = new Date(now.getTime() - i * 86_400_000)
-      const day = d.toISOString().slice(0, 10)
-      result.push({ date: day, scans: daily.get(day) ?? 0 })
-    }
-    return result
-  }
-
   function applyInsert(restaurantId: string, createdAt: string) {
     const now = new Date()
     const todayStart = new Date(now); todayStart.setHours(0, 0, 0, 0)
@@ -345,17 +305,23 @@ export default function ScanStatsLive({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [restaurantIds.join(',')])
 
-  // Polling fallback ogni 60 s
+  // Polling fallback ogni 60 s — aggregazione lato database (RPC
+  // get_scan_stats): scaricare le righe grezze e sommarle in JS troncava
+  // silenziosamente a 1000 (default PostgREST) oltre le 1000 scansioni.
   useEffect(() => {
     if (!restaurantIds.length) return
     const supabase = createClient()
     const iv = setInterval(async () => {
-      const { data } = await supabase.from('page_views').select('restaurant_id, created_at').in('restaurant_id', restaurantIds)
-      if (data) {
-        setRows(aggregate(data))
-        setChartData(aggregateChart(data))
-        setUpdated(new Date())
-      }
+      const { data: stats } = await supabase.rpc('get_scan_stats', { p_restaurant_ids: restaurantIds })
+      const statsRows = (stats?.rows  ?? []) as { restaurant_id: string; today: number; last7d: number; last30d: number; total: number }[]
+      const chart     = (stats?.chart ?? []) as ChartPoint[]
+      const next: ScanRow[] = statsRows
+        .map(r => ({ restaurantId: r.restaurant_id, restaurantName: restaurantNames[r.restaurant_id] ?? r.restaurant_id, today: r.today, last7d: r.last7d, last30d: r.last30d, total: r.total }))
+        .filter(r => r.total > 0)
+        .sort((a, b) => b.total - a.total)
+      setRows(next)
+      setChartData(chart)
+      setUpdated(new Date())
     }, 60_000)
     return () => clearInterval(iv)
   // eslint-disable-next-line react-hooks/exhaustive-deps

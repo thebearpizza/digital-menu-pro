@@ -12,43 +12,16 @@ export default async function ScanStatsTable({
 
   const supabase = await createClient()
 
-  const { data: views } = await supabase
-    .from('page_views')
-    .select('restaurant_id, created_at')
-    .in('restaurant_id', restaurantIds)
-
-  const now        = new Date()
-  const todayStart = new Date(now); todayStart.setHours(0, 0, 0, 0)
-  const ago7d      = new Date(now.getTime() - 7  * 86_400_000)
-  const ago30d     = new Date(now.getTime() - 30 * 86_400_000)
+  // Aggregazione lato database (RPC get_scan_stats): scaricare tutte le righe
+  // grezze e sommarle in JS troncava silenziosamente a 1000 (default
+  // PostgREST) non appena il ristorante superava 1000 scansioni totali.
+  const { data: stats } = await supabase.rpc('get_scan_stats', { p_restaurant_ids: restaurantIds })
+  const statsRows = (stats?.rows  ?? []) as { restaurant_id: string; today: number; last7d: number; last30d: number; total: number }[]
+  const chartData = (stats?.chart ?? []) as ChartPoint[]
 
   const map = new Map<string, { today: number; last7d: number; last30d: number; total: number }>()
   for (const id of restaurantIds) map.set(id, { today: 0, last7d: 0, last30d: 0, total: 0 })
-
-  // 30-day daily buckets: key = 'YYYY-MM-DD'
-  const dailyMap = new Map<string, number>()
-
-  for (const v of (views ?? [])) {
-    const row = map.get(v.restaurant_id)
-    if (!row) continue
-    const ts = new Date(v.created_at)
-    row.total++
-    if (ts >= ago30d) {
-      row.last30d++
-      const day = ts.toISOString().slice(0, 10)
-      dailyMap.set(day, (dailyMap.get(day) ?? 0) + 1)
-    }
-    if (ts >= ago7d)      row.last7d++
-    if (ts >= todayStart) row.today++
-  }
-
-  // Fill all 30 days (including zeros) so the chart has a continuous x-axis
-  const chartData: ChartPoint[] = []
-  for (let i = 29; i >= 0; i--) {
-    const d = new Date(now.getTime() - i * 86_400_000)
-    const day = d.toISOString().slice(0, 10)
-    chartData.push({ date: day, scans: dailyMap.get(day) ?? 0 })
-  }
+  for (const r of statsRows) map.set(r.restaurant_id, { today: r.today, last7d: r.last7d, last30d: r.last30d, total: r.total })
 
   const initial: ScanRow[] = restaurantIds
     .map(id => ({ restaurantId: id, restaurantName: restaurantNames[id] ?? id, ...map.get(id)! }))
