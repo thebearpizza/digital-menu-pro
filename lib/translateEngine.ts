@@ -3,7 +3,7 @@
 // Telegram, GEMINI_API_KEY). SOLO lato server: importato dalle server actions.
 //
 // Traduce in blocco testi italiani (nomi piatto, descrizioni, categorie, nomi
-// menu) verso en/fr/de/es. I fallimenti non devono mai bloccare i salvataggi:
+// menu) verso en/fr/de/es/ru. I fallimenti non devono mai bloccare i salvataggi:
 // chi chiama avvolge in try/catch e le traduzioni mancanti vengono rigenerate
 // alla prossima occasione (ensureMenuTranslations).
 // ─────────────────────────────────────────────────────────────────────────────
@@ -24,18 +24,19 @@ export function translateEnabled(): boolean {
 }
 
 export interface TranslatableItem { id: string; text: string }
-/** id → { en: '…', fr: '…', de: '…', es: '…' } (lingue mancanti = fallite) */
+/** id → { en: '…', fr: '…', de: '…', es: '…', ru: '…' } (lingue mancanti = fallite) */
 export type TranslationResult = Record<string, Partial<Record<TargetLang, string>>>
 
 const SYSTEM = `Sei un traduttore professionale di menu di ristoranti italiani.
-Traduci ogni testo dall'italiano verso inglese (en), francese (fr), tedesco (de) e spagnolo (es).
+Traduci ogni testo dall'italiano verso inglese (en), francese (fr), tedesco (de), spagnolo (es) e russo (ru).
 
 REGOLE:
 - Tono naturale da menu di ristorante, non letterale parola per parola.
 - I nomi propri di piatti italiani iconici restano riconoscibili (es. "Spaghetti alla carbonara" → en "Spaghetti alla Carbonara"), ma traduci gli ingredienti e le descrizioni.
+- Il russo va scritto in alfabeto cirillico, mai traslitterato in caratteri latini.
 - Mantieni maiuscole/minuscole coerenti con l'originale (un titolo resta un titolo).
 - Non aggiungere note, virgolette o testo extra: solo la traduzione.
-- Rispondi SOLO con un array JSON: [{"id": "...", "en": "...", "fr": "...", "de": "...", "es": "..."}, ...] con un elemento per ogni testo ricevuto, stesso id.`
+- Rispondi SOLO con un array JSON: [{"id": "...", "en": "...", "fr": "...", "de": "...", "es": "...", "ru": "..."}, ...] con un elemento per ogni testo ricevuto, stesso id.`
 
 async function translateChunk(items: TranslatableItem[]): Promise<TranslationResult> {
   const apiKey = process.env.GEMINI_API_KEY!

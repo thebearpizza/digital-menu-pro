@@ -20,7 +20,7 @@ function revalidate(restaurantId: string) {
 
 /**
  * Rigenera le traduzioni automatiche di titolo+testo del pop-up "come sfogliare
- * il menu" (en/fr/de/es), preservando gli override manuali. Ritorna null se non
+ * il menu" (en/fr/de/es/ru), preservando gli override manuali. Ritorna null se non
  * c'è nulla da fare (traduttore spento, pop-up disabilitato/vuoto, oppure le
  * traduzioni sono già fresche per il testo IT corrente) così da NON chiamare
  * Gemini a ogni salvataggio del tema (colori, font, layout…): solo quando il

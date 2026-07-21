@@ -1,6 +1,6 @@
 'use client'
 // ─────────────────────────────────────────────────────────────────────────────
-// TranslationPanel — editor delle traduzioni del menu (en/fr/de/es).
+// TranslationPanel — editor delle traduzioni del menu (en/fr/de/es/ru).
 //
 // All'apertura chiama ensureMenuTranslations: pre-genera in un colpo solo le
 // traduzioni mancanti di TUTTE le lingue, così il cambio bandierina successivo

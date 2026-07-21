@@ -11,17 +11,17 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const BASE_LANG = 'it' as const
-export const TARGET_LANGS = ['en', 'fr', 'de', 'es'] as const
+export const TARGET_LANGS = ['en', 'fr', 'de', 'es', 'ru'] as const
 export const ALL_LANGS = [BASE_LANG, ...TARGET_LANGS] as const
 
 export type Lang = (typeof ALL_LANGS)[number]
 export type TargetLang = (typeof TARGET_LANGS)[number]
 
 export const LANG_FLAGS: Record<Lang, string> = {
-  it: 'IT', en: 'EN', fr: 'FR', de: 'DE', es: 'ES',
+  it: 'IT', en: 'EN', fr: 'FR', de: 'DE', es: 'ES', ru: 'RU',
 }
 export const LANG_LABELS: Record<Lang, string> = {
-  it: 'Italiano', en: 'English', fr: 'Français', de: 'Deutsch', es: 'Español',
+  it: 'Italiano', en: 'English', fr: 'Français', de: 'Deutsch', es: 'Español', ru: 'Русский',
 }
 
 export function isLang(v: unknown): v is Lang {
@@ -102,12 +102,12 @@ export function hintText(itText: string, tr: HintTranslations | null | undefined
 // ── Stringhe UI del menu pubblico ─────────────────────────────────────────────
 
 const UI = {
-  allergens:    { it: 'Allergeni',               en: 'Allergens',              fr: 'Allergènes',             de: 'Allergene',              es: 'Alérgenos' },
-  pairing:      { it: 'Abbinamento consigliato', en: 'Recommended pairing',    fr: 'Accord conseillé',       de: 'Empfohlene Kombination', es: 'Maridaje recomendado' },
-  loading:      { it: 'Caricamento…',            en: 'Loading…',               fr: 'Chargement…',            de: 'Wird geladen…',          es: 'Cargando…' },
-  preparing:    { it: 'Preparazione menu…',      en: 'Preparing menu…',        fr: 'Préparation du menu…',   de: 'Menü wird vorbereitet…', es: 'Preparando el menú…' },
-  backToMenu:   { it: '← Menù',                  en: '← Menu',                 fr: '← Menu',                 de: '← Menü',                 es: '← Menú' },
-  browseMenu:   { it: 'Sfoglia il menu',         en: 'Browse the menu',        fr: 'Feuilleter le menu',     de: 'Menü durchblättern',     es: 'Hojear el menú' },
+  allergens:    { it: 'Allergeni',               en: 'Allergens',              fr: 'Allergènes',             de: 'Allergene',              es: 'Alérgenos',           ru: 'Аллергены' },
+  pairing:      { it: 'Abbinamento consigliato', en: 'Recommended pairing',    fr: 'Accord conseillé',       de: 'Empfohlene Kombination', es: 'Maridaje recomendado', ru: 'Рекомендуемое сочетание' },
+  loading:      { it: 'Caricamento…',            en: 'Loading…',               fr: 'Chargement…',            de: 'Wird geladen…',          es: 'Cargando…',            ru: 'Загрузка…' },
+  preparing:    { it: 'Preparazione menu…',      en: 'Preparing menu…',        fr: 'Préparation du menu…',   de: 'Menü wird vorbereitet…', es: 'Preparando el menú…',  ru: 'Подготовка меню…' },
+  backToMenu:   { it: '← Menù',                  en: '← Menu',                 fr: '← Menu',                 de: '← Menü',                 es: '← Menú',               ru: '← Меню' },
+  browseMenu:   { it: 'Sfoglia il menu',         en: 'Browse the menu',        fr: 'Feuilleter le menu',     de: 'Menü durchblättern',     es: 'Hojear el menú',       ru: 'Открыть меню' },
 } satisfies Record<string, Record<Lang, string>>
 
 export type UIKey = keyof typeof UI

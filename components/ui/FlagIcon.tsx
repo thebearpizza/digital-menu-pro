@@ -1,7 +1,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // FlagIcon — bandiere 2D disegnate in SVG (niente emoji): rendering identico su
 // ogni OS/browser, look "vecchio stampo" pulito e professionale. Una bandiera
-// per lingua supportata dal menu (it/en/fr/de/es).
+// per lingua supportata dal menu (it/en/fr/de/es/ru).
 // ─────────────────────────────────────────────────────────────────────────────
 
 import type { ReactNode } from 'react'
@@ -50,6 +50,14 @@ const FLAGS: Record<Lang, ReactNode> = {
     <svg viewBox="0 0 3 2" className="w-full h-full block">
       <rect width="3" height="2" fill="#aa151b" />
       <rect width="3" height="1" y="0.5" fill="#f1bf00" />
+    </svg>
+  ),
+  // Russia — tre bande orizzontali bianco/blu/rosso
+  ru: (
+    <svg viewBox="0 0 3 2" className="w-full h-full block">
+      <rect width="3" height="2" fill="#ffffff" />
+      <rect width="3" height="1.333" y="0.667" fill="#0039a6" />
+      <rect width="3" height="0.667" y="1.333" fill="#d52b1e" />
     </svg>
   ),
 }

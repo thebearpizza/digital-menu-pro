@@ -1,6 +1,6 @@
 'use server'
 // ─────────────────────────────────────────────────────────────────────────────
-// Server actions per le traduzioni native del menu (en/fr/de/es).
+// Server actions per le traduzioni native del menu (en/fr/de/es/ru).
 //
 // ensureMenuTranslations: pre-genera (Gemini) le traduzioni mancanti di nome
 // menu, categorie e piatti. Non tocca MAI i campi marcati `manual` (override

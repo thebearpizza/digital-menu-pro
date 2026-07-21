@@ -169,7 +169,7 @@ export async function createDish(
 
   if (error) throw new Error(error.message)
 
-  // Pre-genera le traduzioni (en/fr/de/es) — il menu pubblico non traduce mai
+  // Pre-genera le traduzioni (en/fr/de/es/ru) — il menu pubblico non traduce mai
   // al volo. Best effort: se fallisce, ensureMenuTranslations recupera dopo.
   try {
     const tr = await autoDishTranslations(data.name, data.description || null)
