@@ -6,10 +6,16 @@ import { useRouter } from 'next/navigation'
 import { Spinner } from '@/components/ui/Spinner'
 import { useStaggerEntrance } from '@/lib/animations'
 
+// Registrazione pubblica RIMOSSA: gli account non si creano più da qui.
+// Vengono forniti a mano dall'account padre tramite la tab "Utenti" del
+// gestionale (vedi app/admin/users/). Prima chiunque poteva registrarsi
+// liberamente, e ogni account autenticato rientrava nel perimetro delle
+// policy `authenticated` — quindi la registrazione aperta amplificava la
+// portata di qualunque policy troppo larga.
 export default function LoginPage() {
   const [email, setEmail]       = useState('')
   const [password, setPassword] = useState('')
-  const [loading, setLoading]   = useState<'login' | 'signup' | null>(null)
+  const [loading, setLoading]   = useState<'login' | null>(null)
   const [error, setError]       = useState<string | null>(null)
   const router   = useRouter()
   const supabase = createClient()
@@ -22,19 +28,6 @@ export default function LoginPage() {
     const { error } = await supabase.auth.signInWithPassword({ email, password })
     if (error) { setError('Email o password non corretti.'); setLoading(null) }
     else { router.push('/admin'); router.refresh() }
-  }
-
-  async function handleSignUp(e: React.MouseEvent) {
-    e.preventDefault()
-    if (!email || !password) { setError('Inserisci email e password.'); return }
-    setLoading('signup')
-    setError(null)
-    const { error } = await supabase.auth.signUp({ email, password })
-    if (error) { setError(error.message); setLoading(null) }
-    else {
-      setLoading(null)
-      alert('Registrazione effettuata! Controlla la tua email per confermare.')
-    }
   }
 
   return (
@@ -70,21 +63,19 @@ export default function LoginPage() {
               className="w-full px-3 py-2 border border-gray-300 text-sm text-gray-900 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
             />
           </div>
-          <div className="flex gap-2 pt-1">
+          <div className="pt-1">
             <button
               type="submit" disabled={!!loading}
-              className="flex-1 bg-blue-600 text-white text-sm font-medium py-2 hover:bg-blue-700 disabled:opacity-50 transition-colors flex items-center justify-center"
+              className="w-full bg-blue-600 text-white text-sm font-medium py-2 hover:bg-blue-700 disabled:opacity-50 transition-colors flex items-center justify-center"
             >
               {loading === 'login' ? <Spinner color="#fff" /> : 'Accedi'}
             </button>
-            <button
-              type="button" onClick={handleSignUp} disabled={!!loading}
-              className="flex-1 border border-gray-300 text-gray-600 text-sm font-medium py-2 hover:bg-gray-50 disabled:opacity-50 transition-colors flex items-center justify-center"
-            >
-              {loading === 'signup' ? <Spinner color="#9ca3af" /> : 'Registrati'}
-            </button>
           </div>
         </form>
+
+        <p className="mt-5 text-[11px] text-gray-400 text-center">
+          L&apos;accesso è riservato. Per ottenere un account contatta l&apos;amministratore.
+        </p>
       </div>
     </div>
   )
