@@ -33,11 +33,11 @@ export default function UsersClient({
   const [pending, startTransition] = useTransition()
 
   const [createOpen, setCreateOpen] = useState(false)
-  const [newEmail, setNewEmail]     = useState('')
+  const [newName, setNewName]       = useState('')
   const [newPassword, setNewPass]   = useState('')
 
   const [editing, setEditing]       = useState<ManagedUser | null>(null)
-  const [editEmail, setEditEmail]   = useState('')
+  const [editName, setEditName]     = useState('')
   const [editPass, setEditPass]     = useState('')
 
   const [error, setError]           = useState<string | null>(null)
@@ -51,11 +51,11 @@ export default function UsersClient({
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault()
     setError(null); setNotice(null); setBusy(true)
-    const res = await createUserAccount(newEmail, newPassword)
+    const res = await createUserAccount(newName, newPassword)
     setBusy(false)
     if (res.error) { setError(res.error); return }
-    setNotice(`Account ${newEmail.trim().toLowerCase()} creato. Comunica le credenziali di persona.`)
-    setNewEmail(''); setNewPass(''); setCreateOpen(false)
+    setNotice(`Account "${newName.trim().toLowerCase()}" creato. Comunica le credenziali di persona.`)
+    setNewName(''); setNewPass(''); setCreateOpen(false)
     refresh()
   }
 
@@ -63,25 +63,25 @@ export default function UsersClient({
     e.preventDefault()
     if (!editing) return
     setError(null); setNotice(null); setBusy(true)
-    const res = await updateUserAccount(editing.id, { email: editEmail, password: editPass })
+    const res = await updateUserAccount(editing.id, { username: editName, password: editPass })
     setBusy(false)
     if (res.error) { setError(res.error); return }
     setNotice(`Account aggiornato.`)
-    setEditing(null); setEditEmail(''); setEditPass('')
+    setEditing(null); setEditName(''); setEditPass('')
     refresh()
   }
 
   async function handleDelete(u: ManagedUser) {
     const msg = u.restaurants > 0
-      ? `"${u.email}" possiede ${u.restaurants} ristorante/i: l'eliminazione verrà rifiutata per non distruggere menu, piatti e QR code. Procedere comunque con il tentativo?`
-      : `Eliminare definitivamente l'account "${u.email}"? L'operazione non è reversibile.`
+      ? `"${u.username}" possiede ${u.restaurants} ristorante/i: l'eliminazione verrà rifiutata per non distruggere menu, piatti e QR code. Procedere comunque con il tentativo?`
+      : `Eliminare definitivamente l'account "${u.username}"? L'operazione non è reversibile.`
     if (!confirm(msg)) return
 
     setError(null); setNotice(null); setBusy(true)
     const res = await deleteUserAccount(u.id)
     setBusy(false)
     if (res.error) { setError(res.error); return }
-    setNotice(`Account ${u.email} eliminato.`)
+    setNotice(`Account ${u.username} eliminato.`)
     refresh()
   }
 
@@ -118,25 +118,27 @@ export default function UsersClient({
           <p className="text-xs font-medium uppercase tracking-wide text-gray-400">Nuovo account</p>
           <div className="grid sm:grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Email</label>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Nome utente</label>
               <input
-                type="email" value={newEmail} onChange={e => setNewEmail(e.target.value)}
-                required autoComplete="off"
+                type="text" value={newName} onChange={e => setNewName(e.target.value)}
+                required autoComplete="off" placeholder="es. trattoria.dalucia"
                 className="w-full px-3 py-2 border border-gray-300 text-sm text-gray-900 focus:outline-none focus:border-blue-500"
               />
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Password (min. 8 caratteri)</label>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Password</label>
               <input
                 type="text" value={newPassword} onChange={e => setNewPass(e.target.value)}
-                required minLength={8} autoComplete="new-password"
+                required autoComplete="new-password"
                 className="w-full px-3 py-2 border border-gray-300 text-sm text-gray-900 focus:outline-none focus:border-blue-500"
               />
             </div>
           </div>
           <p className="text-[11px] text-gray-400">
-            L&apos;account è subito attivo, senza email di conferma. La password è mostrata in chiaro
-            per poterla trascrivere e consegnare: dopo il salvataggio non sarà più recuperabile.
+            Il nome utente è quello con cui il ristoratore accede: lettere, cifre, punto, trattino e
+            underscore, senza spazi. Nessuna email richiesta. L&apos;account è subito attivo. La
+            password è mostrata in chiaro per poterla trascrivere e consegnare: dopo il salvataggio
+            non sarà più recuperabile, si può solo sostituire.
           </p>
           <button
             type="submit" disabled={busy}
@@ -151,7 +153,7 @@ export default function UsersClient({
         <table className="w-full min-w-[560px]">
           <thead>
             <tr className="border-b border-gray-200 bg-gray-50 text-left">
-              <th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Email</th>
+              <th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Nome utente</th>
               <th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Ristoranti</th>
               <th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Creato</th>
               <th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Ultimo accesso</th>
@@ -162,7 +164,7 @@ export default function UsersClient({
             {users.map(u => (
               <tr key={u.id} className="hover:bg-gray-50">
                 <td className="px-4 py-3">
-                  <span className="text-sm font-medium text-gray-900">{u.email}</span>
+                  <span className="text-sm font-medium text-gray-900">{u.username}</span>
                   {u.isSuperAdmin && (
                     <span className="ml-2 inline-block text-[10px] px-1.5 py-0.5 font-medium border bg-blue-50 text-blue-700 border-blue-200">
                       ACCOUNT PADRE
@@ -179,7 +181,7 @@ export default function UsersClient({
                   <div className="flex items-center justify-end gap-3">
                     <button
                       onClick={() => {
-                        setEditing(u); setEditEmail(u.email); setEditPass('')
+                        setEditing(u); setEditName(u.username); setEditPass('')
                         setError(null); setNotice(null)
                       }}
                       className="text-sm text-blue-600 hover:underline"
@@ -216,18 +218,18 @@ export default function UsersClient({
             className="w-full max-w-md bg-white border border-gray-200 p-5 space-y-3"
           >
             <p className="text-sm font-semibold text-gray-900">Modifica account</p>
-            <p className="text-xs text-gray-500 break-all">{editing.email}</p>
+            <p className="text-xs text-gray-500 break-all">{editing.username}</p>
 
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Email</label>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Nome utente</label>
               <input
-                type="email" value={editEmail} onChange={e => setEditEmail(e.target.value)}
+                type="text" value={editName} onChange={e => setEditName(e.target.value)}
                 disabled={editing.isSuperAdmin}
                 className="w-full px-3 py-2 border border-gray-300 text-sm text-gray-900 focus:outline-none focus:border-blue-500 disabled:bg-gray-50 disabled:text-gray-400"
               />
               {editing.isSuperAdmin && (
                 <p className="mt-1 text-[11px] text-gray-400">
-                  L&apos;email dell&apos;account padre non è modificabile da qui.
+                  Il nome utente dell&apos;account padre non è modificabile da qui.
                 </p>
               )}
             </div>

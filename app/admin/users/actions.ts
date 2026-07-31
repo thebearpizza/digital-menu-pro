@@ -14,11 +14,15 @@
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createSb } from '@supabase/supabase-js'
 import { isSuperAdmin, SUPER_ADMIN_EMAIL } from '@/lib/superAdmin'
+import { toLoginEmail, isValidUsername, displayUsername } from '@/lib/username'
 import { revalidatePath } from 'next/cache'
 
 export interface ManagedUser {
   id:           string
+  /** Email reale su Supabase (per gli account a nome utente è quella interna). */
   email:        string
+  /** Come va mostrato nell'interfaccia: nome utente, oppure email per gli account storici. */
+  username:     string
   createdAt:    string
   lastSignInAt: string | null
   restaurants:  number
@@ -61,11 +65,12 @@ export async function listUsers(): Promise<ManagedUser[]> {
   return data.users.map(u => ({
     id:           u.id,
     email:        u.email ?? '',
+    username:     displayUsername(u.email),
     createdAt:    u.created_at,
     lastSignInAt: u.last_sign_in_at ?? null,
     restaurants:  counts.get(u.id) ?? 0,
     isSuperAdmin: isSuperAdmin(u.email),
-  })).sort((a, b) => a.email.localeCompare(b.email))
+  })).sort((a, b) => a.username.localeCompare(b.username))
 }
 
 /**
@@ -73,14 +78,23 @@ export async function listUsers(): Promise<ManagedUser[]> {
  * consegnati a mano, non c'è un flusso di conferma via email da attendere.
  */
 export async function createUserAccount(
-  email: string, password: string,
+  username: string, password: string,
 ): Promise<{ error?: string }> {
   await requireSuperAdmin()
 
-  const mail = email.trim().toLowerCase()
-  if (!mail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(mail)) return { error: 'Email non valida.' }
-  if (password.length < 8) return { error: 'La password deve avere almeno 8 caratteri.' }
+  const name = username.trim().toLowerCase()
+  if (!name) return { error: 'Inserisci un nome utente.' }
+  // Chi digita già un'email la usa tal quale (utile per aggiungere account
+  // con email vera); altrimenti deve essere un nome utente valido.
+  if (!name.includes('@') && !isValidUsername(name)) {
+    return { error: 'Nome utente non valido: usa da 2 a 64 caratteri tra lettere, cifre, punto, trattino e underscore (niente spazi).' }
+  }
+  // Nessun minimo imposto qui sulla password: vale quello configurato in
+  // Supabase (Authentication → Policies), il cui messaggio viene riportato
+  // tale e quale se la rifiuta.
+  if (!password) return { error: 'Inserisci una password.' }
 
+  const mail = toLoginEmail(name)
   const sb = adminClient()
   const { data, error } = await sb.auth.admin.createUser({
     email: mail,
@@ -102,21 +116,23 @@ export async function createUserAccount(
   return {}
 }
 
-/** Aggiorna email e/o password di un account. Campi vuoti = invariati. */
+/** Aggiorna nome utente e/o password di un account. Campi vuoti = invariati. */
 export async function updateUserAccount(
-  userId: string, patch: { email?: string; password?: string },
+  userId: string, patch: { username?: string; password?: string },
 ): Promise<{ error?: string }> {
   await requireSuperAdmin()
 
   const body: { email?: string; password?: string } = {}
 
-  if (patch.email !== undefined && patch.email.trim()) {
-    const mail = patch.email.trim().toLowerCase()
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(mail)) return { error: 'Email non valida.' }
-    body.email = mail
+  if (patch.username !== undefined && patch.username.trim()) {
+    const name = patch.username.trim().toLowerCase()
+    if (!name.includes('@') && !isValidUsername(name)) {
+      return { error: 'Nome utente non valido: usa da 2 a 64 caratteri tra lettere, cifre, punto, trattino e underscore (niente spazi).' }
+    }
+    body.email = toLoginEmail(name)
   }
+  // Nessun minimo qui: vale quello configurato in Supabase.
   if (patch.password !== undefined && patch.password.trim()) {
-    if (patch.password.length < 8) return { error: 'La password deve avere almeno 8 caratteri.' }
     body.password = patch.password
   }
   if (!body.email && !body.password) return { error: 'Nessuna modifica da salvare.' }
@@ -126,8 +142,9 @@ export async function updateUserAccount(
   // L'account padre è identificato dall'email: cambiargliela lo taglierebbe
   // fuori dalla gestione utenti, lasciando il sistema senza amministratore.
   const { data: target } = await sb.auth.admin.getUserById(userId)
-  if (target?.user && isSuperAdmin(target.user.email) && body.email) {
-    return { error: `L'email dell'account padre (${SUPER_ADMIN_EMAIL}) non può essere modificata da qui: perderesti l'accesso alla gestione utenti.` }
+  if (target?.user && isSuperAdmin(target.user.email) && body.email &&
+      body.email !== target.user.email) {
+    return { error: `Il nome utente dell'account padre (${SUPER_ADMIN_EMAIL}) non può essere modificato da qui: perderesti l'accesso alla gestione utenti.` }
   }
 
   const { error } = await sb.auth.admin.updateUserById(userId, body)
