@@ -1124,7 +1124,13 @@ export default function DishList({
                 Scarica / Importa
               </button>
               {mobileFileOpen && (
-                <div className="absolute left-0 right-0 top-full mt-0.5 z-50 bg-white border border-gray-200 shadow-lg p-2 flex flex-col gap-2">
+                // Niente p-2/gap: stesso identico contenitore "nudo" della
+                // tendina "+ Aggiungi" (righe 1098 sopra) — il divisore tra
+                // "Scarica modulo" e "Importa modulo" lo rende già
+                // ExcelImportExport quando stacked. Un padding/gap qui
+                // sommato a quel divisore era lo spazio in più che rendeva
+                // le righe visibilmente più alte di "Aggiungi piatto".
+                <div className="absolute left-0 right-0 top-full mt-0.5 z-50 bg-white border border-gray-200 shadow-lg">
                   <ExcelImportExport
                     stacked
                     restaurantId={restaurantId}
