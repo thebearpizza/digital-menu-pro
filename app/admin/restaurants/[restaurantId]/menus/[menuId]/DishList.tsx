@@ -18,7 +18,8 @@ import MoveDishModal from './MoveDishModal'
 import MoveCategoryModal from './MoveCategoryModal'
 import ExcelImportExport from './ExcelImportExport'
 import TranslationPanel, { LangBar } from './TranslationPanel'
-import type { Lang } from '@/lib/translations'
+import { ALL_LANGS, LANG_LABELS, type Lang } from '@/lib/translations'
+import { FlagIcon } from '@/components/ui/FlagIcon'
 import VisibilityToggle from '@/components/ui/VisibilityToggle'
 import { Spinner } from '@/components/ui/Spinner'
 import {
@@ -576,16 +577,24 @@ export default function DishList({
   const mobileAddRef  = useRef<HTMLDivElement>(null)
   const mobileFileRef = useRef<HTMLDivElement>(null)
 
+  // Selettore lingua compatto su mobile: sostituisce la riga di 6 bandiere
+  // (LangBar, che resta invariata sul desktop) con un terzo bottone nella
+  // stessa riga di "+ Aggiungi"/"Scarica / Importa" — bandiera corrente +
+  // freccetta, si apre a tendina come gli altri due.
+  const [mobileLangOpen, setMobileLangOpen] = useState(false)
+  const mobileLangRef = useRef<HTMLDivElement>(null)
+
   useEffect(() => {
-    if (!mobileAddOpen && !mobileFileOpen) return
+    if (!mobileAddOpen && !mobileFileOpen && !mobileLangOpen) return
     function onOut(e: MouseEvent) {
       const t = e.target as Node
       if (mobileAddOpen  && mobileAddRef.current  && !mobileAddRef.current.contains(t))  setMobileAddOpen(false)
       if (mobileFileOpen && mobileFileRef.current && !mobileFileRef.current.contains(t)) setMobileFileOpen(false)
+      if (mobileLangOpen && mobileLangRef.current && !mobileLangRef.current.contains(t)) setMobileLangOpen(false)
     }
     document.addEventListener('mousedown', onOut)
     return () => document.removeEventListener('mousedown', onOut)
-  }, [mobileAddOpen, mobileFileOpen])
+  }, [mobileAddOpen, mobileFileOpen, mobileLangOpen])
 
   // Multi-select state
   const [selectedIds,       setSelectedIds]       = useState<Set<string>>(new Set())
@@ -1045,7 +1054,12 @@ export default function DishList({
 
   return (
     <div>
-      <LangBar lang={lang} onChange={setLang} />
+      {/* Barra bandiere completa: solo desktop. Su mobile è sostituita dal
+          selettore compatto (bandiera + freccetta) nella riga azioni qui
+          sotto — vedi il blocco "sm:hidden" più in basso. */}
+      <div className="hidden sm:block">
+        <LangBar lang={lang} onChange={setLang} />
+      </div>
       {/* Le 4 azioni — desktop: riga unica (sm e oltre). Sotto sm restava
           "spezzata" su due righe e appariva asimmetrica: quella variante è
           nascosta sotto sm, sostituita dal blocco a 2 tendine subito sotto. */}
@@ -1078,21 +1092,29 @@ export default function DishList({
         />
       </div>
 
-      {/* Le 4 azioni — mobile (sotto sm): 2 bottoni a tendina invece della
-          riga stretta. "+ Aggiungi" apre Aggiungi piatto/categoria;
-          "Scarica / Importa" apre le stesse identiche azioni del desktop,
-          impilate (vedi ExcelImportExport, prop `stacked`) — zero logica
-          duplicata, cambia solo la presentazione. */}
-      <div className="sm:hidden mb-5 max-w-3xl">
+      {/* Le 4 azioni + lingua — mobile (sotto sm): 3 elementi a tendina
+          invece della riga stretta a 2 più la barra bandiere separata.
+          "Aggiungi" apre Aggiungi piatto/categoria; "Scarica/Importa" apre
+          le stesse identiche azioni del desktop, impilate (vedi
+          ExcelImportExport, prop `stacked`) — zero logica duplicata, cambia
+          solo la presentazione. Il terzo bottone (bandiera + ▼, larghezza
+          fissa) sostituisce la barra a 6 bandiere: stessa lingua attiva,
+          stesso onChange, solo compattata a tendina per stare in riga con
+          gli altri due, accorciati apposta per farle spazio.
+          Il contenitore, come i due sopra, non ha margini propri: riempie
+          esattamente la larghezza del genitore, la stessa delle card
+          categoria sotto (nessuna delle due ha un max-width proprio) —
+          bordo sinistro e destro combaciano automaticamente. */}
+      <div className="sm:hidden mb-5">
         {addingCat ? categoryForm('flex items-center gap-1') : (
           <div className="flex gap-2">
             <div ref={mobileAddRef} className="relative flex-1">
               <button
                 type="button"
-                onClick={() => { setMobileFileOpen(false); setMobileAddOpen(o => !o) }}
-                className="w-full bg-blue-600 text-white text-sm font-medium px-4 py-2 hover:bg-blue-700 transition-colors"
+                onClick={() => { setMobileFileOpen(false); setMobileLangOpen(false); setMobileAddOpen(o => !o) }}
+                className="w-full bg-blue-600 text-white text-sm font-medium px-3 py-2 hover:bg-blue-700 transition-colors"
               >
-                + Aggiungi
+                Aggiungi
               </button>
               {mobileAddOpen && (
                 <div className="absolute left-0 right-0 top-full mt-0.5 z-50 bg-white border border-gray-200 shadow-lg">
@@ -1118,18 +1140,18 @@ export default function DishList({
             <div ref={mobileFileRef} className="relative flex-1">
               <button
                 type="button"
-                onClick={() => { setMobileAddOpen(false); setMobileFileOpen(o => !o) }}
-                className="w-full border border-gray-300 text-gray-700 text-sm font-medium px-4 py-2 hover:bg-gray-50 transition-colors"
+                onClick={() => { setMobileAddOpen(false); setMobileLangOpen(false); setMobileFileOpen(o => !o) }}
+                className="w-full border border-gray-300 text-gray-700 text-sm font-medium px-3 py-2 hover:bg-gray-50 transition-colors"
               >
-                Scarica / Importa
+                Scarica/Importa
               </button>
               {mobileFileOpen && (
                 // Niente p-2/gap: stesso identico contenitore "nudo" della
-                // tendina "+ Aggiungi" (righe 1098 sopra) — il divisore tra
-                // "Scarica modulo" e "Importa modulo" lo rende già
-                // ExcelImportExport quando stacked. Un padding/gap qui
-                // sommato a quel divisore era lo spazio in più che rendeva
-                // le righe visibilmente più alte di "Aggiungi piatto".
+                // tendina "Aggiungi" sopra — il divisore tra "Scarica
+                // modulo" e "Importa modulo" lo rende già ExcelImportExport
+                // quando stacked. Un padding/gap qui sommato a quel
+                // divisore era lo spazio in più che rendeva le righe
+                // visibilmente più alte di "Aggiungi piatto".
                 <div className="absolute left-0 right-0 top-full mt-0.5 z-50 bg-white border border-gray-200 shadow-lg">
                   <ExcelImportExport
                     stacked
@@ -1142,6 +1164,37 @@ export default function DishList({
                       syncCategories(next)
                     }}
                   />
+                </div>
+              )}
+            </div>
+
+            <div ref={mobileLangRef} className="relative shrink-0">
+              <button
+                type="button"
+                onClick={() => { setMobileAddOpen(false); setMobileFileOpen(false); setMobileLangOpen(o => !o) }}
+                aria-label={`Lingua: ${LANG_LABELS[lang]}`}
+                className="h-full flex items-center gap-1.5 border border-gray-300 px-2.5 py-2 hover:bg-gray-50 transition-colors"
+              >
+                <FlagIcon lang={lang} className="w-5 h-3.5" />
+                <span className="text-gray-400 text-[10px] leading-none">▼</span>
+              </button>
+              {mobileLangOpen && (
+                <div className="absolute right-0 top-full mt-0.5 z-50 bg-white border border-gray-200 shadow-lg min-w-[160px]">
+                  {ALL_LANGS.map((l, i) => (
+                    <div key={l}>
+                      {i > 0 && <div className="h-px bg-gray-100" />}
+                      <button
+                        type="button"
+                        onClick={() => { setMobileLangOpen(false); setLang(l) }}
+                        className={`w-full flex items-center gap-2 text-left px-4 py-2.5 text-sm transition-colors ${
+                          l === lang ? 'text-blue-700 font-medium bg-blue-50' : 'text-gray-700 hover:bg-gray-50'
+                        }`}
+                      >
+                        <FlagIcon lang={l} className="w-5 h-3.5 shrink-0" />
+                        {LANG_LABELS[l]}
+                      </button>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>
