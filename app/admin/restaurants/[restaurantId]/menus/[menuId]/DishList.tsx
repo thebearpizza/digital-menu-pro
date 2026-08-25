@@ -565,6 +565,28 @@ export default function DishList({
   const [addingCat,    setAddingCat]    = useState(false)
   const [newCatName,   setNewCatName]   = useState('')
 
+  // Azioni menu su mobile: le 4 azioni (Aggiungi piatto/categoria, Scarica/
+  // Importa modulo) diventano 2 bottoni a tendina invece di una riga stretta
+  // — sotto sm restava su due righe e appariva asimmetrica. Ogni tendina
+  // riusa esattamente gli stessi controlli del desktop (stesso onClick,
+  // stesso <ExcelImportExport>), solo impilati verticalmente: zero logica
+  // duplicata, la tendina è pura presentazione.
+  const [mobileAddOpen,  setMobileAddOpen]  = useState(false)
+  const [mobileFileOpen, setMobileFileOpen] = useState(false)
+  const mobileAddRef  = useRef<HTMLDivElement>(null)
+  const mobileFileRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!mobileAddOpen && !mobileFileOpen) return
+    function onOut(e: MouseEvent) {
+      const t = e.target as Node
+      if (mobileAddOpen  && mobileAddRef.current  && !mobileAddRef.current.contains(t))  setMobileAddOpen(false)
+      if (mobileFileOpen && mobileFileRef.current && !mobileFileRef.current.contains(t)) setMobileFileOpen(false)
+    }
+    document.addEventListener('mousedown', onOut)
+    return () => document.removeEventListener('mousedown', onOut)
+  }, [mobileAddOpen, mobileFileOpen])
+
   // Multi-select state
   const [selectedIds,       setSelectedIds]       = useState<Set<string>>(new Set())
   const [bulkPrice,         setBulkPrice]         = useState('')
@@ -986,6 +1008,36 @@ export default function DishList({
     )
   }
 
+  // Form inline "nome categoria": stessa identica UI serve sia nella riga
+  // azioni desktop (sostituisce il bottone "+ Aggiungi categoria") sia nel
+  // menu a tendina mobile (sostituisce l'intera riga dei 2 bottoni). Una
+  // funzione, non un componente — se fosse un componente definito qui la sua
+  // identity cambierebbe a ogni render e l'input perderebbe il focus a ogni
+  // carattere digitato.
+  const categoryForm = (className: string) => (
+    <form
+      onSubmit={e => { e.preventDefault(); handleAddCategory() }}
+      className={className}
+    >
+      <input
+        autoFocus
+        value={newCatName}
+        onChange={e => setNewCatName(e.target.value)}
+        onBlur={() => { if (!newCatName.trim()) { setAddingCat(false) } }}
+        placeholder="Nome categoria"
+        className="flex-1 min-w-0 px-3 py-2 border border-blue-400 text-base focus:outline-none"
+      />
+      <button type="submit"
+        className="text-sm text-blue-600 font-medium hover:underline px-1.5 min-h-[44px]">
+        OK
+      </button>
+      <button type="button" onClick={() => { setAddingCat(false); setNewCatName('') }}
+        className="text-sm text-gray-400 hover:underline px-1.5 min-h-[44px]">
+        ✕
+      </button>
+    </form>
+  )
+
   const activeDishName = activeDragId && !categories.includes(activeDragId)
     ? dishes.find(d => d.id === activeDragId)?.name ?? ''
     : null
@@ -994,12 +1046,10 @@ export default function DishList({
   return (
     <div>
       <LangBar lang={lang} onChange={setLang} />
-      {/* Le 4 azioni erano in una griglia 2×2 (max-w-md): su schermi larghi
-          restava stretta e "spezzata" su due righe senza motivo. Ora è una
-          riga flex unica — max-w-3xl dà lo spazio per starci tutte e 4 senza
-          diventare gigantesche — con flex-wrap come rete di sicurezza sui
-          viewport stretti (torna a incolonnarsi invece di schiacciarsi). */}
-      <div className="mb-5 flex flex-wrap gap-2 max-w-3xl">
+      {/* Le 4 azioni — desktop: riga unica (sm e oltre). Sotto sm restava
+          "spezzata" su due righe e appariva asimmetrica: quella variante è
+          nascosta sotto sm, sostituita dal blocco a 2 tendine subito sotto. */}
+      <div className="hidden sm:flex mb-5 flex-wrap gap-2 max-w-3xl">
         <button
           onClick={() => { setEditingDish(null); setFormOpen(true) }}
           className="flex-1 min-w-[140px] bg-blue-600 text-white text-sm font-medium px-4 py-2 hover:bg-blue-700 transition-colors"
@@ -1007,29 +1057,7 @@ export default function DishList({
           + Aggiungi piatto
         </button>
 
-        {addingCat ? (
-          <form
-            onSubmit={e => { e.preventDefault(); handleAddCategory() }}
-            className="flex-1 min-w-[140px] flex items-center gap-1"
-          >
-            <input
-              autoFocus
-              value={newCatName}
-              onChange={e => setNewCatName(e.target.value)}
-              onBlur={() => { if (!newCatName.trim()) { setAddingCat(false) } }}
-              placeholder="Nome categoria"
-              className="flex-1 min-w-0 px-3 py-2 border border-blue-400 text-base focus:outline-none"
-            />
-            <button type="submit"
-              className="text-sm text-blue-600 font-medium hover:underline px-1.5 min-h-[44px]">
-              OK
-            </button>
-            <button type="button" onClick={() => { setAddingCat(false); setNewCatName('') }}
-              className="text-sm text-gray-400 hover:underline px-1.5 min-h-[44px]">
-              ✕
-            </button>
-          </form>
-        ) : (
+        {addingCat ? categoryForm('flex-1 min-w-[140px] flex items-center gap-1') : (
           <button
             onClick={() => setAddingCat(true)}
             className="flex-1 min-w-[140px] border border-gray-300 text-gray-700 text-sm font-medium px-4 py-2 hover:bg-gray-50 transition-colors"
@@ -1048,6 +1076,71 @@ export default function DishList({
             syncCategories(next)
           }}
         />
+      </div>
+
+      {/* Le 4 azioni — mobile (sotto sm): 2 bottoni a tendina invece della
+          riga stretta. "+ Aggiungi" apre Aggiungi piatto/categoria;
+          "Scarica / Importa" apre le stesse identiche azioni del desktop,
+          impilate (vedi ExcelImportExport, prop `stacked`) — zero logica
+          duplicata, cambia solo la presentazione. */}
+      <div className="sm:hidden mb-5 max-w-3xl">
+        {addingCat ? categoryForm('flex items-center gap-1') : (
+          <div className="flex gap-2">
+            <div ref={mobileAddRef} className="relative flex-1">
+              <button
+                type="button"
+                onClick={() => { setMobileFileOpen(false); setMobileAddOpen(o => !o) }}
+                className="w-full bg-blue-600 text-white text-sm font-medium px-4 py-2 hover:bg-blue-700 transition-colors"
+              >
+                + Aggiungi
+              </button>
+              {mobileAddOpen && (
+                <div className="absolute left-0 right-0 top-full mt-0.5 z-50 bg-white border border-gray-200 shadow-lg">
+                  <button
+                    type="button"
+                    onClick={() => { setMobileAddOpen(false); setEditingDish(null); setFormOpen(true) }}
+                    className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                  >
+                    Aggiungi piatto
+                  </button>
+                  <div className="h-px bg-gray-100" />
+                  <button
+                    type="button"
+                    onClick={() => { setMobileAddOpen(false); setAddingCat(true) }}
+                    className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                  >
+                    Aggiungi categoria
+                  </button>
+                </div>
+              )}
+            </div>
+
+            <div ref={mobileFileRef} className="relative flex-1">
+              <button
+                type="button"
+                onClick={() => { setMobileAddOpen(false); setMobileFileOpen(o => !o) }}
+                className="w-full border border-gray-300 text-gray-700 text-sm font-medium px-4 py-2 hover:bg-gray-50 transition-colors"
+              >
+                Scarica / Importa
+              </button>
+              {mobileFileOpen && (
+                <div className="absolute left-0 right-0 top-full mt-0.5 z-50 bg-white border border-gray-200 shadow-lg p-2 flex flex-col gap-2">
+                  <ExcelImportExport
+                    stacked
+                    restaurantId={restaurantId}
+                    menuId={menuId}
+                    dishes={dishes}
+                    onImported={created => {
+                      const next = [...dishes, ...(created as Dish[])]
+                      setDishes(next)
+                      syncCategories(next)
+                    }}
+                  />
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       {(formOpen || editingDish) && (

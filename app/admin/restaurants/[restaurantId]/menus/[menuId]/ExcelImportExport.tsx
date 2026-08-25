@@ -39,6 +39,13 @@ interface Props {
   menuId: string
   dishes: Dish[]
   onImported: (created: any[]) => void
+  // true quando il componente è impilato verticalmente dentro il menu a
+  // tendina mobile (DishList) invece che affiancato in riga sul desktop:
+  // stessa identica logica, cambia solo il dimensionamento dei due bottoni
+  // radice (w-full anziché flex-1, che in un contenitore flex-col li
+  // farebbe crescere in altezza invece che restare della loro dimensione
+  // naturale).
+  stacked?: boolean
 }
 
 function buildLegendSheet() {
@@ -62,7 +69,7 @@ function colWidths() {
   return [{ wch: 28 }, { wch: 16 }, { wch: 10 }, { wch: 44 }, { wch: 32 }, { wch: 28 }, { wch: 26 }, { wch: 14 }]
 }
 
-export default function ExcelImportExport({ restaurantId, menuId, dishes, onImported }: Props) {
+export default function ExcelImportExport({ restaurantId, menuId, dishes, onImported, stacked }: Props) {
   const fileRef    = useRef<HTMLInputElement>(null)
   const dropRef    = useRef<HTMLDivElement>(null)
   const btnRef     = useRef<HTMLButtonElement>(null)
@@ -182,11 +189,14 @@ export default function ExcelImportExport({ restaurantId, menuId, dishes, onImpo
   return (
     <>
       {/* Scarica modulo — dropdown a due voci.
-          flex-1 min-w-[140px]: stessa logica di ridimensionamento degli altri
-          bottoni della riga (vedi DishList.tsx) — questo componente rende i
-          suoi due elementi come fratelli diretti nel flex del chiamante,
+          Dimensionamento condizionato da `stacked`: in riga (desktop)
+          flex-1 min-w-[140px] come gli altri bottoni della riga; impilato
+          (tendina mobile) w-full, altrimenti in un contenitore flex-col
+          flex-1 farebbe crescere il bottone in altezza invece di lasciarlo
+          alla sua dimensione naturale. Questo componente rende i suoi due
+          elementi come fratelli diretti nel contenitore del chiamante,
           quindi la classe va messa qui, non lì. */}
-      <div className="relative flex-1 min-w-[140px]">
+      <div className={stacked ? 'relative w-full' : 'relative flex-1 min-w-[140px]'}>
         <button
           ref={btnRef}
           type="button"
@@ -227,7 +237,7 @@ export default function ExcelImportExport({ restaurantId, menuId, dishes, onImpo
         type="button"
         disabled={importing}
         onClick={() => fileRef.current?.click()}
-        className="flex-1 min-w-[140px] border border-gray-300 text-gray-700 text-sm font-medium px-4 py-2 hover:bg-gray-50 disabled:opacity-50 transition-colors flex items-center justify-center"
+        className={(stacked ? 'w-full' : 'flex-1 min-w-[140px]') + ' border border-gray-300 text-gray-700 text-sm font-medium px-4 py-2 hover:bg-gray-50 disabled:opacity-50 transition-colors flex items-center justify-center'}
       >
         {importing ? <Spinner color="#374151" /> : 'Importa modulo'}
       </button>
