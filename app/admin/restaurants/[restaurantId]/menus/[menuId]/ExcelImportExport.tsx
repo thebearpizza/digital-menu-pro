@@ -195,13 +195,22 @@ export default function ExcelImportExport({ restaurantId, menuId, dishes, onImpo
           flex-1 farebbe crescere il bottone in altezza invece di lasciarlo
           alla sua dimensione naturale. Questo componente rende i suoi due
           elementi come fratelli diretti nel contenitore del chiamante,
-          quindi la classe va messa qui, non lì. */}
+          quindi la classe va messa qui, non lì.
+          Stile: impilato è una VOCE di menu dentro la tendina del chiamante
+          (DishList "Scarica / Importa"), non un bottone autonomo — deve
+          avere lo stesso look delle voci "Aggiungi piatto"/"Aggiungi
+          categoria" nell'altra tendina, non il blu/bordo pensato per stare
+          da solo nella riga desktop. */}
       <div className={stacked ? 'relative w-full' : 'relative flex-1 min-w-[140px]'}>
         <button
           ref={btnRef}
           type="button"
           onClick={() => setDropOpen(o => !o)}
-          className="w-full bg-blue-600 text-white text-sm font-medium px-4 py-2 hover:bg-blue-700 transition-colors"
+          className={
+            stacked
+              ? 'w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors'
+              : 'w-full bg-blue-600 text-white text-sm font-medium px-4 py-2 hover:bg-blue-700 transition-colors'
+          }
         >
           Scarica modulo
         </button>
@@ -233,13 +242,23 @@ export default function ExcelImportExport({ restaurantId, menuId, dishes, onImpo
         )}
       </div>
 
+      {/* Divisore tra le due voci: solo impilato, dove servono i due elementi
+          uniti visivamente come un unico menu (stesso pattern della tendina
+          "+ Aggiungi" — vedi DishList.tsx). In riga (desktop) i due bottoni
+          restano separati dal semplice gap del contenitore. */}
+      {stacked && <div className="h-px bg-gray-100" />}
+
       <button
         type="button"
         disabled={importing}
         onClick={() => fileRef.current?.click()}
-        className={(stacked ? 'w-full' : 'flex-1 min-w-[140px]') + ' border border-gray-300 text-gray-700 text-sm font-medium px-4 py-2 hover:bg-gray-50 disabled:opacity-50 transition-colors flex items-center justify-center'}
+        className={
+          stacked
+            ? 'w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50 transition-colors flex items-center gap-2'
+            : 'flex-1 min-w-[140px] border border-gray-300 text-gray-700 text-sm font-medium px-4 py-2 hover:bg-gray-50 disabled:opacity-50 transition-colors flex items-center justify-center'
+        }
       >
-        {importing ? <Spinner color="#374151" /> : 'Importa modulo'}
+        {importing ? <><Spinner color="#374151" size={3.5} /> Importa modulo</> : 'Importa modulo'}
       </button>
       <input
         ref={fileRef}
