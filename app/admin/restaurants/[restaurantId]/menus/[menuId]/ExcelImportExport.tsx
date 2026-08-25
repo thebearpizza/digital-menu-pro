@@ -181,8 +181,12 @@ export default function ExcelImportExport({ restaurantId, menuId, dishes, onImpo
 
   return (
     <>
-      {/* Scarica modulo — dropdown a due voci */}
-      <div className="relative">
+      {/* Scarica modulo — dropdown a due voci.
+          flex-1 min-w-[140px]: stessa logica di ridimensionamento degli altri
+          bottoni della riga (vedi DishList.tsx) — questo componente rende i
+          suoi due elementi come fratelli diretti nel flex del chiamante,
+          quindi la classe va messa qui, non lì. */}
+      <div className="relative flex-1 min-w-[140px]">
         <button
           ref={btnRef}
           type="button"
@@ -223,7 +227,7 @@ export default function ExcelImportExport({ restaurantId, menuId, dishes, onImpo
         type="button"
         disabled={importing}
         onClick={() => fileRef.current?.click()}
-        className="w-full border border-gray-300 text-gray-700 text-sm font-medium px-4 py-2 hover:bg-gray-50 disabled:opacity-50 transition-colors flex items-center justify-center"
+        className="flex-1 min-w-[140px] border border-gray-300 text-gray-700 text-sm font-medium px-4 py-2 hover:bg-gray-50 disabled:opacity-50 transition-colors flex items-center justify-center"
       >
         {importing ? <Spinner color="#374151" /> : 'Importa modulo'}
       </button>

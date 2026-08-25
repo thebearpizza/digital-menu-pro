@@ -994,10 +994,15 @@ export default function DishList({
   return (
     <div>
       <LangBar lang={lang} onChange={setLang} />
-      <div className="mb-5 grid grid-cols-2 gap-2 max-w-md">
+      {/* Le 4 azioni erano in una griglia 2×2 (max-w-md): su schermi larghi
+          restava stretta e "spezzata" su due righe senza motivo. Ora è una
+          riga flex unica — max-w-3xl dà lo spazio per starci tutte e 4 senza
+          diventare gigantesche — con flex-wrap come rete di sicurezza sui
+          viewport stretti (torna a incolonnarsi invece di schiacciarsi). */}
+      <div className="mb-5 flex flex-wrap gap-2 max-w-3xl">
         <button
           onClick={() => { setEditingDish(null); setFormOpen(true) }}
-          className="w-full bg-blue-600 text-white text-sm font-medium px-4 py-2 hover:bg-blue-700 transition-colors"
+          className="flex-1 min-w-[140px] bg-blue-600 text-white text-sm font-medium px-4 py-2 hover:bg-blue-700 transition-colors"
         >
           + Aggiungi piatto
         </button>
@@ -1005,7 +1010,7 @@ export default function DishList({
         {addingCat ? (
           <form
             onSubmit={e => { e.preventDefault(); handleAddCategory() }}
-            className="flex items-center gap-1"
+            className="flex-1 min-w-[140px] flex items-center gap-1"
           >
             <input
               autoFocus
@@ -1027,7 +1032,7 @@ export default function DishList({
         ) : (
           <button
             onClick={() => setAddingCat(true)}
-            className="w-full border border-gray-300 text-gray-700 text-sm font-medium px-4 py-2 hover:bg-gray-50 transition-colors"
+            className="flex-1 min-w-[140px] border border-gray-300 text-gray-700 text-sm font-medium px-4 py-2 hover:bg-gray-50 transition-colors"
           >
             + Aggiungi categoria
           </button>
