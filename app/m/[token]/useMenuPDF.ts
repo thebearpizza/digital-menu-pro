@@ -14,7 +14,6 @@ import { useEffect, useRef, useState } from 'react'
 import type { PDFMenu, PDFRestaurant } from './MenuPDFDocument'
 import { groupByCategory } from './MenuPDFDocument'
 import type { RestaurantTheme } from '@/lib/theme'
-import { needsCyrillicFallback, PDF_CYRILLIC_SERIF, PDF_CYRILLIC_SANS } from '@/lib/pdfFonts'
 
 // Same CDN as FlipbookViewer — script deduplication prevents double-loading.
 const PDFJS_CDN    = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js'
@@ -234,16 +233,6 @@ export function useMenuPDF(
           menu.extra_pages?.info?.enabled     ? (menu.extra_pages.info.font     ?? '') : '',
           menu.extra_pages?.allergen?.enabled ? (menu.extra_pages.allergen.font ?? '') : '',
         ]
-        // Lingue non latine: il font scelto dal ristoratore (spesso decorativo,
-        // o caricato a mano) quasi mai possiede i glifi cirillici, e senza un
-        // font che li abbia @react-pdf ripiega su Helvetica — WinAnsi, che
-        // rende il russo come simboli latini casuali. Questi due font vengono
-        // registrati SOLO quando la lingua li richiede (nessuna richiesta di
-        // rete in più per i menu latini) e MenuPDFDocument li accoda come
-        // fallback, lasciando il font del tema primo per il latino.
-        const cyrillicFonts = needsCyrillicFallback(menu.lang)
-          ? [PDF_CYRILLIC_SERIF, PDF_CYRILLIC_SANS]
-          : []
         const registeredFonts = theme
           ? registerThemeFonts(Font, [
               theme.menu.dishes.titleFont,
@@ -251,7 +240,6 @@ export function useMenuPDF(
               theme.menu.prices.font,
               theme.menu.categories.font,
               ...extraPageFonts,
-              ...cyrillicFonts,
             ].filter(Boolean), theme.customFonts)
           : new Set<string>()
 
