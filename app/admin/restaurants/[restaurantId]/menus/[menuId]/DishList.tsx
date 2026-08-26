@@ -415,8 +415,13 @@ function SortableCategory({
 
   return (
     <div ref={setNodeRef} style={style} className="bg-white border border-gray-200">
-      {/* Category header */}
-      <div className="px-3 py-2.5 bg-gray-50 border-b border-gray-200 flex items-center gap-2">
+      {/* Category header — py-1 (non py-2.5): l'altezza minima della riga è
+          comunque 44px, imposta dai bottoni interni (drag handle, occhio,
+          kebab, freccetta — min-h/h-[44px], target tattile standard, MAI
+          ridotti). Il padding verticale qui è solo lo spazio bianco intorno
+          a quel blocco da 44px: ridurlo accorcia la riga senza toccare
+          l'area cliccabile di nessun controllo. */}
+      <div className="px-3 py-1 bg-gray-50 border-b border-gray-200 flex items-center gap-2">
         <button
           {...attributes} {...listeners}
           className="text-gray-300 hover:text-gray-500 cursor-grab active:cursor-grabbing shrink-0 touch-none select-none text-base leading-none min-h-[44px] min-w-[36px] flex items-center justify-center"
