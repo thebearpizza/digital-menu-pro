@@ -1079,10 +1079,10 @@ export default function DishList({
         type="button"
         onClick={() => { onOpen(); setOpen(!open) }}
         aria-label={`Lingua: ${LANG_LABELS[lang]}`}
-        className="h-full flex items-center gap-1.5 border border-gray-300 px-2.5 py-2 hover:bg-gray-50 transition-colors"
+        className="group h-full flex items-center gap-1.5 border border-gray-300 px-2.5 py-2 hover:bg-blue-600 hover:border-blue-600 active:bg-blue-700 active:border-blue-700 transition-colors"
       >
         <FlagIcon lang={lang} className="w-5 h-3.5" />
-        <span className="text-gray-400 text-[10px] leading-none">▼</span>
+        <span className="text-gray-400 group-hover:text-white group-active:text-white text-[10px] leading-none transition-colors">▼</span>
       </button>
       {open && (
         <div className="absolute right-0 top-full mt-0.5 z-50 bg-white border border-gray-200 shadow-lg min-w-[160px]">
@@ -1128,7 +1128,7 @@ export default function DishList({
       <div className="hidden sm:flex mb-5 flex-wrap gap-2">
         <button
           onClick={() => { setEditingDish(null); setFormOpen(true) }}
-          className="flex-1 min-w-[140px] border border-gray-300 text-gray-700 text-sm font-medium px-4 py-2 hover:bg-gray-50 transition-colors"
+          className="flex-1 min-w-[140px] border border-gray-300 text-gray-700 text-sm font-medium px-4 py-2 hover:bg-blue-600 hover:text-white hover:border-blue-600 active:bg-blue-700 active:border-blue-700 transition-colors"
         >
           + Aggiungi piatto
         </button>
@@ -1136,7 +1136,7 @@ export default function DishList({
         {addingCat ? categoryForm('flex-1 min-w-[140px] flex items-center gap-1') : (
           <button
             onClick={() => setAddingCat(true)}
-            className="flex-1 min-w-[140px] border border-gray-300 text-gray-700 text-sm font-medium px-4 py-2 hover:bg-gray-50 transition-colors"
+            className="flex-1 min-w-[140px] border border-gray-300 text-gray-700 text-sm font-medium px-4 py-2 hover:bg-blue-600 hover:text-white hover:border-blue-600 active:bg-blue-700 active:border-blue-700 transition-colors"
           >
             + Aggiungi categoria
           </button>
@@ -1178,7 +1178,7 @@ export default function DishList({
               <button
                 type="button"
                 onClick={() => { setMobileFileOpen(false); setMobileLangOpen(false); setMobileAddOpen(o => !o) }}
-                className="w-full bg-blue-600 text-white text-sm font-medium px-3 py-2 hover:bg-blue-700 transition-colors"
+                className="w-full bg-blue-600 text-white text-sm font-medium px-3 py-2 hover:bg-blue-700 active:bg-blue-700 transition-colors"
               >
                 Aggiungi
               </button>
@@ -1207,7 +1207,7 @@ export default function DishList({
               <button
                 type="button"
                 onClick={() => { setMobileAddOpen(false); setMobileLangOpen(false); setMobileFileOpen(o => !o) }}
-                className="w-full border border-gray-300 text-gray-700 text-sm font-medium px-3 py-2 hover:bg-gray-50 transition-colors"
+                className="w-full border border-gray-300 text-gray-700 text-sm font-medium px-3 py-2 hover:bg-blue-600 hover:text-white hover:border-blue-600 active:bg-blue-700 active:border-blue-700 transition-colors"
               >
                 Scarica/Importa
               </button>

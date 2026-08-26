@@ -211,7 +211,7 @@ export default function ExcelImportExport({ restaurantId, menuId, dishes, onImpo
           className={
             stacked
               ? 'w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors'
-              : 'w-full border border-gray-300 text-gray-700 text-sm font-medium px-4 py-2 hover:bg-gray-50 transition-colors'
+              : 'w-full border border-gray-300 text-gray-700 text-sm font-medium px-4 py-2 hover:bg-blue-600 hover:text-white hover:border-blue-600 active:bg-blue-700 active:border-blue-700 transition-colors'
           }
         >
           Scarica modulo
@@ -257,7 +257,7 @@ export default function ExcelImportExport({ restaurantId, menuId, dishes, onImpo
         className={
           stacked
             ? 'w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50 transition-colors flex items-center gap-2'
-            : 'flex-1 min-w-[140px] border border-gray-300 text-gray-700 text-sm font-medium px-4 py-2 hover:bg-gray-50 disabled:opacity-50 transition-colors flex items-center justify-center'
+            : 'flex-1 min-w-[140px] border border-gray-300 text-gray-700 text-sm font-medium px-4 py-2 hover:bg-blue-600 hover:text-white hover:border-blue-600 active:bg-blue-700 active:border-blue-700 disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:text-gray-700 disabled:hover:border-gray-300 transition-colors flex items-center justify-center'
         }
       >
         {importing ? <><Spinner color="#374151" size={3.5} /> Importa modulo</> : 'Importa modulo'}
