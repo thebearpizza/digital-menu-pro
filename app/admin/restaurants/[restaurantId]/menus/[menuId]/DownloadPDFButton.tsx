@@ -21,10 +21,15 @@ interface Props {
   dishes:         PDFDishMin[]
   extraPages:     MenuExtraPages | null
   theme:          RestaurantTheme
+  // true quando il bottone è annegato nella riga azioni unificata di
+  // DishList (tablet/desktop): riempie la cella flex che lo ospita invece
+  // di restare dimensionato al proprio contenuto come nel posizionamento
+  // originale accanto al breadcrumb (mobile, invariato — vedi page.tsx).
+  fill?: boolean
 }
 
 export default function DownloadPDFButton({
-  restaurantName, menuId, menuName, dishes, extraPages, theme,
+  restaurantName, menuId, menuName, dishes, extraPages, theme, fill,
 }: Props) {
   const [loading, setLoading] = useState(false)
   const [error,   setError]   = useState<string | null>(null)
@@ -83,16 +88,25 @@ export default function DownloadPDFButton({
     }
   }
 
+  // fill=false (default): posizionamento originale accanto al breadcrumb
+  // (mobile) — stile e dimensionamento invariati. fill=true: annegato nella
+  // riga azioni unificata di DishList (tablet/desktop) — stessa identica
+  // classe flex-1 min-w-[140px] degli altri bottoni della riga, e lo stesso
+  // stile uniforme (bordo grigio, non più il proprio look leggermente
+  // diverso) per non essere "il bottone diverso dagli altri" nella riga.
   return (
-    <div className="flex items-center gap-2">
+    <div className={fill ? 'flex-1 min-w-[140px] flex items-center gap-2' : 'flex items-center gap-2'}>
       {error && <span className="text-xs text-red-500 max-w-[200px] truncate" title={error}>{error}</span>}
       <button
         type="button"
         onClick={handleDownload}
         disabled={loading || !dishes.length}
         title={!dishes.length ? 'Aggiungi piatti per scaricare il PDF' : 'Scarica PDF del menu'}
-        className="flex items-center gap-1.5 text-sm border border-gray-300 text-gray-600 px-3 py-1.5
-          hover:border-gray-500 hover:text-gray-900 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+        className={
+          fill
+            ? 'w-full flex items-center justify-center gap-1.5 text-sm font-medium border border-gray-300 text-gray-700 px-4 py-2 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors'
+            : 'flex items-center gap-1.5 text-sm border border-gray-300 text-gray-600 px-3 py-1.5 hover:border-gray-500 hover:text-gray-900 disabled:opacity-40 disabled:cursor-not-allowed transition-colors'
+        }
       >
         {loading ? (
           <><Spinner size={4} /><span>Generando…</span></>

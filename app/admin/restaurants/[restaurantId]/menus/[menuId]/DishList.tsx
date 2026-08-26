@@ -63,6 +63,12 @@ interface Props {
   allMenus: SimpleMenu[]
   initialCategoryOrder: string[] | null
   initialCategorySchedules: CategorySchedules
+  // Bottone "Scarica PDF": costruito dal chiamante (page.tsx, che ha già
+  // tutti i dati serviti — nome ristorante/menu, tema, pagine extra) e
+  // annegato qui nella riga azioni unificata di tablet/desktop, invece di
+  // restare nella posizione separata accanto al breadcrumb (quella resta
+  // solo su mobile, invariata — vedi page.tsx).
+  pdfButton?: React.ReactNode
 }
 
 interface SourceDish {
@@ -551,7 +557,7 @@ function SortableCategory({
 
 export default function DishList({
   restaurantId, menuId, initialDishes, allDishes, allMenus, initialCategoryOrder,
-  initialCategorySchedules,
+  initialCategorySchedules, pdfButton,
 }: Props) {
   const [dishes,       setDishes]       = useState(initialDishes)
   // Programmazione oraria: bersaglio della modale (piatto o categoria) e
@@ -582,24 +588,30 @@ export default function DishList({
   const mobileAddRef  = useRef<HTMLDivElement>(null)
   const mobileFileRef = useRef<HTMLDivElement>(null)
 
-  // Selettore lingua compatto su mobile: sostituisce la riga di 6 bandiere
-  // (LangBar, che resta invariata sul desktop) con un terzo bottone nella
-  // stessa riga di "+ Aggiungi"/"Scarica / Importa" — bandiera corrente +
-  // freccetta, si apre a tendina come gli altri due.
+  // Selettore lingua compatto: sostituisce la riga di 6 bandiere (LangBar)
+  // con un bottone in più nella riga azioni — bandiera corrente + freccetta,
+  // si apre a tendina. Usato SIA su mobile (accanto ad "Aggiungi"/"Scarica /
+  // Importa") SIA in riga su tablet/desktop: stati e ref separati perché,
+  // pur mostrandosi uno alla volta via CSS, entrambe le istanze restano
+  // sempre montate nel DOM — condividere un solo stato/ref tra le due
+  // spezzerebbe la chiusura al click esterno di quella non visibile.
   const [mobileLangOpen, setMobileLangOpen] = useState(false)
   const mobileLangRef = useRef<HTMLDivElement>(null)
+  const [desktopLangOpen, setDesktopLangOpen] = useState(false)
+  const desktopLangRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    if (!mobileAddOpen && !mobileFileOpen && !mobileLangOpen) return
+    if (!mobileAddOpen && !mobileFileOpen && !mobileLangOpen && !desktopLangOpen) return
     function onOut(e: MouseEvent) {
       const t = e.target as Node
-      if (mobileAddOpen  && mobileAddRef.current  && !mobileAddRef.current.contains(t))  setMobileAddOpen(false)
-      if (mobileFileOpen && mobileFileRef.current && !mobileFileRef.current.contains(t)) setMobileFileOpen(false)
-      if (mobileLangOpen && mobileLangRef.current && !mobileLangRef.current.contains(t)) setMobileLangOpen(false)
+      if (mobileAddOpen   && mobileAddRef.current   && !mobileAddRef.current.contains(t))   setMobileAddOpen(false)
+      if (mobileFileOpen  && mobileFileRef.current  && !mobileFileRef.current.contains(t))  setMobileFileOpen(false)
+      if (mobileLangOpen  && mobileLangRef.current  && !mobileLangRef.current.contains(t))  setMobileLangOpen(false)
+      if (desktopLangOpen && desktopLangRef.current && !desktopLangRef.current.contains(t)) setDesktopLangOpen(false)
     }
     document.addEventListener('mousedown', onOut)
     return () => document.removeEventListener('mousedown', onOut)
-  }, [mobileAddOpen, mobileFileOpen, mobileLangOpen])
+  }, [mobileAddOpen, mobileFileOpen, mobileLangOpen, desktopLangOpen])
 
   // Multi-select state
   const [selectedIds,       setSelectedIds]       = useState<Set<string>>(new Set())
@@ -1052,6 +1064,48 @@ export default function DishList({
     </form>
   )
 
+  // Selettore lingua compatto (bandiera + ▼): stessa funzione usata sia nel
+  // blocco mobile sia in quello desktop (vedi commento sopra
+  // mobileLangOpen/desktopLangOpen) — solo stato/ref/onClose cambiano tra le
+  // due chiamate, il markup e la lista lingue sono identici.
+  const langMenu = (
+    open: boolean,
+    setOpen: (v: boolean) => void,
+    ref: React.RefObject<HTMLDivElement>,
+    onOpen: () => void,
+  ) => (
+    <div ref={ref} className="relative shrink-0">
+      <button
+        type="button"
+        onClick={() => { onOpen(); setOpen(!open) }}
+        aria-label={`Lingua: ${LANG_LABELS[lang]}`}
+        className="h-full flex items-center gap-1.5 border border-gray-300 px-2.5 py-2 hover:bg-gray-50 transition-colors"
+      >
+        <FlagIcon lang={lang} className="w-5 h-3.5" />
+        <span className="text-gray-400 text-[10px] leading-none">▼</span>
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full mt-0.5 z-50 bg-white border border-gray-200 shadow-lg min-w-[160px]">
+          {ALL_LANGS.map((l, i) => (
+            <div key={l}>
+              {i > 0 && <div className="h-px bg-gray-100" />}
+              <button
+                type="button"
+                onClick={() => { setOpen(false); setLang(l) }}
+                className={`w-full flex items-center gap-2 text-left px-4 py-2.5 text-sm transition-colors ${
+                  l === lang ? 'text-blue-700 font-medium bg-blue-50' : 'text-gray-700 hover:bg-gray-50'
+                }`}
+              >
+                <FlagIcon lang={l} className="w-5 h-3.5 shrink-0" />
+                {LANG_LABELS[l]}
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+
   const activeDishName = activeDragId && !categories.includes(activeDragId)
     ? dishes.find(d => d.id === activeDragId)?.name ?? ''
     : null
@@ -1059,19 +1113,22 @@ export default function DishList({
 
   return (
     <div>
-      {/* Barra bandiere completa: solo desktop. Su mobile è sostituita dal
-          selettore compatto (bandiera + freccetta) nella riga azioni qui
-          sotto — vedi il blocco "sm:hidden" più in basso. */}
-      <div className="hidden sm:block">
-        <LangBar lang={lang} onChange={setLang} />
-      </div>
-      {/* Le 4 azioni — desktop: riga unica (sm e oltre). Sotto sm restava
-          "spezzata" su due righe e appariva asimmetrica: quella variante è
-          nascosta sotto sm, sostituita dal blocco a 2 tendine subito sotto. */}
-      <div className="hidden sm:flex mb-5 flex-wrap gap-2 max-w-3xl">
+      {/* Le 5 azioni + lingua — tablet/desktop (sm e oltre): riga unica,
+          senza limite di larghezza — riempie esattamente lo stesso spazio
+          delle card categoria sotto (nessuna delle due ha un max-width
+          proprio), quindi bordo sinistro e destro combaciano
+          automaticamente, come richiesto. Stile uniforme su TUTTI i
+          bottoni (bordo grigio, nessuno blu): il mix blu/bianco di prima
+          sembrava disordinato senza un vero motivo (non c'era un'azione
+          più "primaria" delle altre). "Scarica PDF" era in una posizione
+          separata accanto al breadcrumb (ora solo su mobile, vedi
+          page.tsx) — qui annegato nella riga come gli altri. La barra
+          delle 6 bandiere è sostituita dallo stesso selettore compatto
+          usato su mobile (langMenu), non più una riga a parte. */}
+      <div className="hidden sm:flex mb-5 flex-wrap gap-2">
         <button
           onClick={() => { setEditingDish(null); setFormOpen(true) }}
-          className="flex-1 min-w-[140px] bg-blue-600 text-white text-sm font-medium px-4 py-2 hover:bg-blue-700 transition-colors"
+          className="flex-1 min-w-[140px] border border-gray-300 text-gray-700 text-sm font-medium px-4 py-2 hover:bg-gray-50 transition-colors"
         >
           + Aggiungi piatto
         </button>
@@ -1095,6 +1152,10 @@ export default function DishList({
             syncCategories(next)
           }}
         />
+
+        {pdfButton}
+
+        {langMenu(desktopLangOpen, setDesktopLangOpen, desktopLangRef, () => {})}
       </div>
 
       {/* Le 4 azioni + lingua — mobile (sotto sm): 3 elementi a tendina
@@ -1173,36 +1234,9 @@ export default function DishList({
               )}
             </div>
 
-            <div ref={mobileLangRef} className="relative shrink-0">
-              <button
-                type="button"
-                onClick={() => { setMobileAddOpen(false); setMobileFileOpen(false); setMobileLangOpen(o => !o) }}
-                aria-label={`Lingua: ${LANG_LABELS[lang]}`}
-                className="h-full flex items-center gap-1.5 border border-gray-300 px-2.5 py-2 hover:bg-gray-50 transition-colors"
-              >
-                <FlagIcon lang={lang} className="w-5 h-3.5" />
-                <span className="text-gray-400 text-[10px] leading-none">▼</span>
-              </button>
-              {mobileLangOpen && (
-                <div className="absolute right-0 top-full mt-0.5 z-50 bg-white border border-gray-200 shadow-lg min-w-[160px]">
-                  {ALL_LANGS.map((l, i) => (
-                    <div key={l}>
-                      {i > 0 && <div className="h-px bg-gray-100" />}
-                      <button
-                        type="button"
-                        onClick={() => { setMobileLangOpen(false); setLang(l) }}
-                        className={`w-full flex items-center gap-2 text-left px-4 py-2.5 text-sm transition-colors ${
-                          l === lang ? 'text-blue-700 font-medium bg-blue-50' : 'text-gray-700 hover:bg-gray-50'
-                        }`}
-                      >
-                        <FlagIcon lang={l} className="w-5 h-3.5 shrink-0" />
-                        {LANG_LABELS[l]}
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
+            {langMenu(mobileLangOpen, setMobileLangOpen, mobileLangRef, () => {
+              setMobileAddOpen(false); setMobileFileOpen(false)
+            })}
           </div>
         )}
       </div>
@@ -1308,7 +1342,7 @@ export default function DishList({
           onDragEnd={handleDragEnd}
         >
           <SortableContext items={categories} strategy={verticalListSortingStrategy}>
-            <div ref={categoriesRef} className="space-y-5">
+            <div ref={categoriesRef} className="space-y-4">
               {categories.map(cat => (
                 <SortableCategory
                   key={cat}

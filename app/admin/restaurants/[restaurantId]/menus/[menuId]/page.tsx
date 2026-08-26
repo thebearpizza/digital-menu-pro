@@ -77,14 +77,20 @@ export default async function MenuDishesPage({
           <h1 className="text-lg font-semibold text-gray-900">{menu.name}</h1>
         </div>
 
-        <DownloadPDFButton
-          restaurantName={(restaurant as any)?.name ?? ''}
-          menuId={menu.id}
-          menuName={menu.name}
-          dishes={pdfDishes}
-          extraPages={extraPages}
-          theme={theme}
-        />
+        {/* Solo mobile: su tablet/desktop lo stesso bottone è annegato
+            nella riga azioni unificata di DishList (prop pdfButton sotto),
+            non serve più qui separato — era la posizione "disordinata"
+            segnalata. */}
+        <div className="sm:hidden">
+          <DownloadPDFButton
+            restaurantName={(restaurant as any)?.name ?? ''}
+            menuId={menu.id}
+            menuName={menu.name}
+            dishes={pdfDishes}
+            extraPages={extraPages}
+            theme={theme}
+          />
+        </div>
       </div>
 
       <DishList
@@ -95,6 +101,17 @@ export default async function MenuDishesPage({
         allMenus={(allMenus ?? []) as any[]}
         initialCategoryOrder={(menu.category_order as string[] | null) ?? null}
         initialCategorySchedules={((menu as any).category_schedules ?? {}) as Record<string, { enabled?: boolean; from?: string | null; until?: string | null }>}
+        pdfButton={
+          <DownloadPDFButton
+            fill
+            restaurantName={(restaurant as any)?.name ?? ''}
+            menuId={menu.id}
+            menuName={menu.name}
+            dishes={pdfDishes}
+            extraPages={extraPages}
+            theme={theme}
+          />
+        }
       />
 
       <TextPagesPanel

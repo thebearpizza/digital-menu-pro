@@ -197,10 +197,12 @@ export default function ExcelImportExport({ restaurantId, menuId, dishes, onImpo
           elementi come fratelli diretti nel contenitore del chiamante,
           quindi la classe va messa qui, non lì.
           Stile: impilato è una VOCE di menu dentro la tendina del chiamante
-          (DishList "Scarica / Importa"), non un bottone autonomo — deve
-          avere lo stesso look delle voci "Aggiungi piatto"/"Aggiungi
-          categoria" nell'altra tendina, non il blu/bordo pensato per stare
-          da solo nella riga desktop. */}
+          (DishList "Scarica / Importa" su mobile), non un bottone
+          autonomo — deve avere lo stesso look delle voci "Aggiungi
+          piatto"/"Aggiungi categoria" nell'altra tendina. In riga (tablet/
+          desktop) niente più blu: tutti i bottoni della riga unificata
+          hanno lo stesso stile neutro (bordo grigio), non più un mix di
+          blu/bianco che sembrava disordinato. */}
       <div className={stacked ? 'relative w-full' : 'relative flex-1 min-w-[140px]'}>
         <button
           ref={btnRef}
@@ -209,7 +211,7 @@ export default function ExcelImportExport({ restaurantId, menuId, dishes, onImpo
           className={
             stacked
               ? 'w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors'
-              : 'w-full bg-blue-600 text-white text-sm font-medium px-4 py-2 hover:bg-blue-700 transition-colors'
+              : 'w-full border border-gray-300 text-gray-700 text-sm font-medium px-4 py-2 hover:bg-gray-50 transition-colors'
           }
         >
           Scarica modulo
