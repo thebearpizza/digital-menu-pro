@@ -13,6 +13,33 @@
 
 import { PDF_FONT_URLS } from './pdfFontUrls'
 
+// ── Fallback per alfabeti non latini ────────────────────────────────────────
+// @react-pdf accetta `fontFamily` come ARRAY: il suo motore di sostituzione
+// prende ogni glifo dal primo font della catena che lo possiede. Se nessuno
+// lo ha, ripiega su Helvetica — che è WinAnsi (singolo byte) e trasforma il
+// cirillico in simboli latini casuali ("Аллергени" → ";;5@35=K").
+//
+// Il font scelto dal ristoratore resta quindi PRIMO nella catena (il latino
+// continua a usarlo, la grafica del menu non cambia), e questi due lo seguono
+// solo per i glifi che gli mancano. PT Serif/PT Sans sono di ParaType, nati
+// proprio per il cirillico: copertura completa, con regular, bold e corsivo.
+export const PDF_CYRILLIC_SERIF = 'PT Serif'
+export const PDF_CYRILLIC_SANS  = 'PT Sans'
+
+/** Lingue del menu che richiedono glifi fuori dal set latino. */
+export function needsCyrillicFallback(lang: string | null | undefined): boolean {
+  return lang === 'ru'
+}
+
+/**
+ * Catena di font da passare a `fontFamily`. Senza cirillico resta la stringa
+ * singola di sempre (zero impatto su tutti i menu esistenti).
+ */
+export function fontChain(family: string, cyrillic: boolean, serif = false): string | string[] {
+  if (!cyrillic) return family
+  return [family, serif ? PDF_CYRILLIC_SERIF : PDF_CYRILLIC_SANS]
+}
+
 // Families we've already handed to Font.register this session.
 const registered = new Set<string>()
 // Families known to be unavailable (not in the catalog) — skip silently.

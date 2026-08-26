@@ -7,6 +7,7 @@ import { formatAllergens } from '@/lib/allergens'
 import { uiText, isLang } from '@/lib/translations'
 import type { RestaurantTheme, MenuBgConfig } from '@/lib/theme'
 import { DEFAULT_THEME, lightenHex, formatPrice, resolveAlign } from '@/lib/theme'
+import { fontChain, needsCyrillicFallback } from '@/lib/pdfFonts'
 
 // Niente sillabazione per le parole normali: una parola che non entra nella
 // riga va a capo INTERA ("Margherita di\nbufala"), mai spezzata col trattino
@@ -182,7 +183,7 @@ function flipAlign(a: 'left' | 'center' | 'right'): 'left' | 'center' | 'right' 
   return a === 'left' ? 'right' : a === 'right' ? 'left' : 'center'
 }
 
-function makeStyles(theme: RestaurantTheme, registered: Set<string>, flipped = false) {
+function makeStyles(theme: RestaurantTheme, registered: Set<string>, flipped = false, cyrillic = false) {
   const m         = theme.menu
   const compact   = m.pdfLayout === 'compact'
   const catLineColor  = lightenHex(m.accent, 0.55)
@@ -210,10 +211,17 @@ function makeStyles(theme: RestaurantTheme, registered: Set<string>, flipped = f
   const priceAlign = maybeFlip(resolveAlign(m.prices.align, general))
 
   // Real font if it registered successfully, otherwise a built-in fallback.
-  const titleFamily = registered.has(m.dishes.titleFont)   ? m.dishes.titleFont   : 'Helvetica-Bold'
-  const descFamily  = registered.has(m.descriptions.font)  ? m.descriptions.font  : 'Helvetica'
-  const priceFamily = registered.has(m.prices.font)        ? m.prices.font        : 'Helvetica-Bold'
-  const catFamily   = registered.has(m.categories.font)    ? m.categories.font    : 'Times-Bold'
+  // fontChain aggiunge in coda un font cirillico SOLO per le lingue che ne
+  // hanno bisogno: il font del ristoratore resta primo (il latino continua a
+  // usarlo, nessun cambiamento grafico), il fallback copre i glifi che gli
+  // mancano. Senza cirillico la catena è la stringa singola di sempre.
+  const titleFamily = fontChain(registered.has(m.dishes.titleFont)   ? m.dishes.titleFont   : 'Helvetica-Bold', cyrillic, true)
+  const descFamily  = fontChain(registered.has(m.descriptions.font)  ? m.descriptions.font  : 'Helvetica',      cyrillic)
+  const priceFamily = fontChain(registered.has(m.prices.font)        ? m.prices.font        : 'Helvetica-Bold', cyrillic)
+  const catFamily   = fontChain(registered.has(m.categories.font)    ? m.categories.font    : 'Times-Bold',     cyrillic, true)
+  // Testi "di servizio" con Helvetica fissa (allergeni, note): senza catena
+  // sarebbero illeggibili in cirillico a prescindere dal tema scelto.
+  const plainFamily = fontChain('Helvetica', cyrillic)
   const titleBold   = registered.has(m.dishes.titleFont)   ? 700 : undefined
   const priceBold   = registered.has(m.prices.font)        ? 700 : undefined
   const catBold     = registered.has(m.categories.font)    ? 700 : undefined
@@ -352,7 +360,11 @@ function makeStyles(theme: RestaurantTheme, registered: Set<string>, flipped = f
       textAlign:    descAlign,
     },
     dishAllergens: {
-      fontFamily:    'Helvetica',
+      // plainFamily, non 'Helvetica' fissa: l'etichetta è tradotta e in russo
+      // Helvetica (WinAnsi) la rendeva illeggibile ("Аллергены" → ";;5@35=K").
+      // I due glifi decorativi qui sotto (flourishGlyph, dividerGlyph) restano
+      // Helvetica: sono ASCII puri, non testo tradotto.
+      fontFamily:    plainFamily,
       fontSize:      (compact ? 6.5 : 7) * alrgScale,
       color:         readableOn(m.allergens.color, bg),
       letterSpacing: 0.2,
@@ -491,14 +503,20 @@ function decodeEntities(s: string): string {
     .replace(/&nbsp;/g, ' ')
 }
 
-function boldVariant(family: string, registered: Set<string>): string {
-  if (registered.has(family)) return family   // Google Font: use fontWeight
-  if (family === 'Times-Roman') return 'Times-Bold'
-  if (family === 'Courier')     return 'Courier-Bold'
-  return 'Helvetica-Bold'                     // default or Helvetica
+// Accetta anche una catena [primario, fallbackCirillico]: applica la variante
+// bold SOLO al font primario e conserva il fallback in coda, altrimenti il
+// grassetto perderebbe i glifi cirillici tornando illeggibile.
+function boldVariant(family: string | string[], registered: Set<string>): string | string[] {
+  const [primary, ...rest] = Array.isArray(family) ? family : [family]
+  const bold =
+    registered.has(primary)       ? primary        // Google Font: use fontWeight
+    : primary === 'Times-Roman'   ? 'Times-Bold'
+    : primary === 'Courier'       ? 'Courier-Bold'
+    : 'Helvetica-Bold'                             // default or Helvetica
+  return rest.length ? [bold, ...rest] : bold
 }
 
-type InlineStyle = { fontFamily: string; fontWeight?: number; fontStyle?: 'normal' | 'italic' | 'oblique'; fontSize: number; color: string; lineHeight: number }
+type InlineStyle = { fontFamily: string | string[]; fontWeight?: number; fontStyle?: 'normal' | 'italic' | 'oblique'; fontSize: number; color: string; lineHeight: number }
 
 // Parse inline HTML marks (<strong>, <em>, <span style="color:...">) and
 // return an array of Text nodes (strings or nested <Text> elements).
@@ -541,13 +559,16 @@ function parseInline(
 // Render an EmbeddedPageContent body (HTML or plain text) as react-pdf nodes.
 // Each block element (h1–h3, p) becomes a separate <Text> with its own style.
 function EmbeddedTextBlock({
-  page, bg, registered,
+  page, bg, registered, cyrillic = false,
 }: {
   page:       EmbeddedPageContent
   bg:         string
   registered: Set<string>
+  cyrillic?:  boolean
 }) {
-  const baseFontFamily = registered.has(page.font) ? page.font : 'Helvetica'
+  // Testo libero scritto dal ristoratore e tradotto: stessa catena di
+  // fallback del resto del documento, altrimenti in russo sarebbe illeggibile.
+  const baseFontFamily = fontChain(registered.has(page.font) ? page.font : 'Helvetica', cyrillic)
   const baseFontSize   = Math.max(8, Math.min(36, page.fontSize))
   const defaultColor   = readableOn(page.color, bg)
   const body           = page.body ?? ''
@@ -644,8 +665,11 @@ export function MenuPDFDocument({ restaurant, menu, theme: themeProp, registered
   // Two style sets: base and horizontally mirrored. The alternating compact
   // mode applies the mirrored set to ODD categories so the WHOLE category
   // (title + dish names + descriptions + allergens + prices) flips coherently.
-  const s          = makeStyles(theme, reg, false)
-  const sFlip      = alternating ? makeStyles(theme, reg, true) : s
+  // Il menu arriva già tradotto: se la lingua usa il cirillico, ogni testo
+  // riceve in coda un font che ne possiede i glifi (vedi fontChain).
+  const cyrillic   = needsCyrillicFallback(menu.lang)
+  const s          = makeStyles(theme, reg, false, cyrillic)
+  const sFlip      = alternating ? makeStyles(theme, reg, true, cyrillic) : s
   const categories = groupByCategory(menu.dishes)
 
   // Collect enabled embedded pages sorted into 'first' and 'last' groups.
@@ -968,7 +992,7 @@ export function MenuPDFDocument({ restaurant, menu, theme: themeProp, registered
         {/* Embedded pages that appear before all dish categories */}
         {firstEmbedded.map((page, i) => (
           <View key={`first-${i}`} break={i > 0}>
-            <EmbeddedTextBlock page={page} bg={bg} registered={reg} />
+            <EmbeddedTextBlock page={page} bg={bg} registered={reg} cyrillic={cyrillic} />
           </View>
         ))}
 
@@ -1008,7 +1032,7 @@ export function MenuPDFDocument({ restaurant, menu, theme: themeProp, registered
         {/* Embedded pages that appear after all dish categories */}
         {lastEmbedded.map((page, i) => (
           <View key={`last-${i}`} break>
-            <EmbeddedTextBlock page={page} bg={bg} registered={reg} />
+            <EmbeddedTextBlock page={page} bg={bg} registered={reg} cyrillic={cyrillic} />
           </View>
         ))}
       </Page>
