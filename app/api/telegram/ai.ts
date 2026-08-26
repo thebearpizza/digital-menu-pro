@@ -456,7 +456,7 @@ export async function execute(sb: SupabaseClient, ctx: Ctx, it: Intent): Promise
       const ids = dishes!.map(d => d.id)
       const { error } = await sb.from('dishes').update(patch).in('id', ids)
       if (error) return `Errore: ${error.message}`
-      // Nome/descrizione cambiati → le traduzioni automatiche (en/fr/de/es/ru)
+      // Nome/descrizione cambiati → le traduzioni automatiche (en/fr/de/es)
       // sono stantie: meglio rimuoverle (il pubblico vede l'italiano) che
       // mostrare la traduzione del testo vecchio. Si rigenerano dal gestionale.
       if (patch.name !== undefined || patch.description !== undefined) {
