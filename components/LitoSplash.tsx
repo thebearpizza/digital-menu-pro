@@ -39,11 +39,26 @@ export default function LitoSplash() {
           <div className="ls-leaf ls-grain">
             <svg className="ls-logo" viewBox="0 0 50 50" aria-hidden="true">
               <defs>
+                <linearGradient id="ls-gold" x1="4" y1="8" x2="46" y2="42" gradientUnits="userSpaceOnUse">
+                  <stop offset="0" stopColor="#6e4c0c" />
+                  <stop offset=".22" stopColor="#b8871f" />
+                  <stop offset=".42" stopColor="#e9c86a" />
+                  <stop offset=".58" stopColor="#a87818" />
+                  <stop offset=".8" stopColor="#7a560f" />
+                  <stop offset="1" stopColor="#c89a36" />
+                </linearGradient>
+                <linearGradient id="ls-sheen" x1="-20" y1="0" x2="0" y2="20" gradientUnits="userSpaceOnUse">
+                  <stop offset="0" stopColor="#fff" stopOpacity="0" />
+                  <stop offset=".5" stopColor="#fff6d6" stopOpacity=".7" />
+                  <stop offset="1" stopColor="#fff" stopOpacity="0" />
+                  <animateTransform attributeName="gradientTransform" type="translate" from="0 0" to="70 0" begin="3.5s" dur="1.1s" fill="freeze" />
+                </linearGradient>
                 <mask id="ls-pen" maskUnits="userSpaceOnUse" x="-5" y="-5" width="60" height="60">
                   <path className="ls-pen" pathLength={1} d={PEN_PATH} />
                 </mask>
               </defs>
               <path className="ls-ink" mask="url(#ls-pen)" d={L_PATH} />
+              <path className="ls-sheen" mask="url(#ls-pen)" d={L_PATH} />
             </svg>
             <div className="ls-word">Lito</div>
           </div>
@@ -67,7 +82,8 @@ const CSS = `
 .ls-leaf{position:absolute;inset:0;border-radius:2px 6px 6px 2px;background:radial-gradient(120% 90% at 30% 20%,rgba(255,255,255,.7),transparent 60%),linear-gradient(90deg,rgba(0,0,0,.1),transparent 8%,transparent 92%,rgba(0,0,0,.04)),var(--paper);box-shadow:0 1px 0 var(--edge),0 2px 0 #e2dacb,0 3px 0 var(--edge),0 4px 0 #ddd4c3,0 24px 40px -12px rgba(0,0,0,.35)}
 .ls-grain::after{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;mix-blend-mode:multiply;background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 .4  0 0 0 0 .35  0 0 0 0 .28  0 0 0 .09 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>")}
 .ls-logo{shape-rendering:geometricPrecision;position:absolute;left:16%;top:18%;width:68%;height:auto;overflow:visible}
-.ls-ink{fill:#111}
+.ls-ink{fill:url(#ls-gold)}
+.ls-sheen{fill:url(#ls-sheen)}
 .ls-pen{fill:none;stroke:#fff;stroke-width:6;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:1;stroke-dashoffset:1;animation:ls-write var(--d) cubic-bezier(.4,0,.6,1) forwards}
 .ls-word{position:absolute;left:0;right:0;bottom:12%;text-align:center;letter-spacing:.42em;text-indent:.42em;font:500 11px/1 Georgia,"Times New Roman",serif;color:#6b6357;text-transform:uppercase;opacity:0;animation:ls-word var(--d) ease forwards}
 .ls-page{position:absolute;inset:0;transform-origin:left center;transform-style:preserve-3d;animation:ls-turn var(--d) cubic-bezier(.45,.05,.25,1) forwards}
