@@ -1662,6 +1662,7 @@ export default function FlipbookViewer({
             {/* Overlay caricamento */}
             {loadPhase === 'loading' && dims && (
               <div
+                data-app-loading
                 className="absolute inset-0 flex items-center justify-center"
                 style={{ background: '#141414' }}
               >
