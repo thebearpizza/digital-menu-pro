@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import AdminShell from '@/components/admin/AdminShell'
 import VoiceAssistant from '@/components/admin/VoiceAssistant'
 import LitoSplash from '@/components/LitoSplash'
+import { isSuperAdmin } from '@/lib/superAdmin'
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient()
@@ -18,6 +19,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   return (
     <AdminShell
       userEmail={user.email ?? ''}
+      isSuperAdmin={isSuperAdmin(user.email)}
       restaurants={(restaurants ?? []).map(r => ({ id: r.id as string, name: r.name as string }))}
     >
       {children}

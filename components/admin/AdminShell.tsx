@@ -28,10 +28,15 @@ export default function AdminShell({
   userEmail,
   children,
   restaurants = [],
+  isSuperAdmin = false,
 }: {
   userEmail:   string
   children:    React.ReactNode
   restaurants?: Restaurant[]
+  // Solo l'account padre vede la tab "Utenti". È una scelta di interfaccia,
+  // NON una misura di sicurezza: la protezione vera sta nella pagina e in
+  // ogni server action (vedi app/admin/users/).
+  isSuperAdmin?: boolean
 }) {
   const [drawerOpen,       setDrawerOpen]       = useState(false)
   const [restaurantsOpen,  setRestaurantsOpen]  = useState(false)
@@ -58,6 +63,7 @@ export default function AdminShell({
   const restaurantsActive = pathname.startsWith('/admin/restaurants')
   const dashboardActive   = pathname === '/admin'
   const telegramActive    = pathname.startsWith('/admin/telegram')
+  const usersActive       = pathname.startsWith('/admin/users')
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -212,6 +218,21 @@ export default function AdminShell({
           >
             Telegram
           </Link>
+
+          {/* Utenti — solo account padre (guardia reale lato server) */}
+          {isSuperAdmin && (
+            <Link
+              href="/admin/users"
+              onClick={close}
+              className={`flex items-center px-3 min-h-[44px] text-sm transition-colors ${
+                usersActive
+                  ? 'bg-blue-50 text-blue-700 font-medium'
+                  : 'text-gray-700 hover:bg-gray-100'
+              }`}
+            >
+              Utenti
+            </Link>
+          )}
 
         </nav>
 

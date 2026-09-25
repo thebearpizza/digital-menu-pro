@@ -18,7 +18,8 @@ import MoveDishModal from './MoveDishModal'
 import MoveCategoryModal from './MoveCategoryModal'
 import ExcelImportExport from './ExcelImportExport'
 import TranslationPanel, { LangBar } from './TranslationPanel'
-import type { Lang } from '@/lib/translations'
+import { ALL_LANGS, LANG_LABELS, type Lang } from '@/lib/translations'
+import { FlagIcon } from '@/components/ui/FlagIcon'
 import VisibilityToggle from '@/components/ui/VisibilityToggle'
 import { Spinner } from '@/components/ui/Spinner'
 import {
@@ -62,6 +63,12 @@ interface Props {
   allMenus: SimpleMenu[]
   initialCategoryOrder: string[] | null
   initialCategorySchedules: CategorySchedules
+  // Bottone "Scarica PDF": costruito dal chiamante (page.tsx, che ha già
+  // tutti i dati serviti — nome ristorante/menu, tema, pagine extra) e
+  // annegato qui nella riga azioni unificata di tablet/desktop, invece di
+  // restare nella posizione separata accanto al breadcrumb (quella resta
+  // solo su mobile, invariata — vedi page.tsx).
+  pdfButton?: React.ReactNode
 }
 
 interface SourceDish {
@@ -414,8 +421,13 @@ function SortableCategory({
 
   return (
     <div ref={setNodeRef} style={style} className="bg-white border border-gray-200">
-      {/* Category header */}
-      <div className="px-3 py-2.5 bg-gray-50 border-b border-gray-200 flex items-center gap-2">
+      {/* Category header — py-1 (non py-2.5): l'altezza minima della riga è
+          comunque 44px, imposta dai bottoni interni (drag handle, occhio,
+          kebab, freccetta — min-h/h-[44px], target tattile standard, MAI
+          ridotti). Il padding verticale qui è solo lo spazio bianco intorno
+          a quel blocco da 44px: ridurlo accorcia la riga senza toccare
+          l'area cliccabile di nessun controllo. */}
+      <div className="px-3 py-1 bg-gray-50 border-b border-gray-200 flex items-center gap-2">
         <button
           {...attributes} {...listeners}
           className="text-gray-300 hover:text-gray-500 cursor-grab active:cursor-grabbing shrink-0 touch-none select-none text-base leading-none min-h-[44px] min-w-[36px] flex items-center justify-center"
@@ -545,7 +557,7 @@ function SortableCategory({
 
 export default function DishList({
   restaurantId, menuId, initialDishes, allDishes, allMenus, initialCategoryOrder,
-  initialCategorySchedules,
+  initialCategorySchedules, pdfButton,
 }: Props) {
   const [dishes,       setDishes]       = useState(initialDishes)
   // Programmazione oraria: bersaglio della modale (piatto o categoria) e
@@ -564,6 +576,42 @@ export default function DishList({
 
   const [addingCat,    setAddingCat]    = useState(false)
   const [newCatName,   setNewCatName]   = useState('')
+
+  // Azioni menu su mobile: le 4 azioni (Aggiungi piatto/categoria, Scarica/
+  // Importa modulo) diventano 2 bottoni a tendina invece di una riga stretta
+  // — sotto sm restava su due righe e appariva asimmetrica. Ogni tendina
+  // riusa esattamente gli stessi controlli del desktop (stesso onClick,
+  // stesso <ExcelImportExport>), solo impilati verticalmente: zero logica
+  // duplicata, la tendina è pura presentazione.
+  const [mobileAddOpen,  setMobileAddOpen]  = useState(false)
+  const [mobileFileOpen, setMobileFileOpen] = useState(false)
+  const mobileAddRef  = useRef<HTMLDivElement>(null)
+  const mobileFileRef = useRef<HTMLDivElement>(null)
+
+  // Selettore lingua compatto: sostituisce la riga di 6 bandiere (LangBar)
+  // con un bottone in più nella riga azioni — bandiera corrente + freccetta,
+  // si apre a tendina. Usato SIA su mobile (accanto ad "Aggiungi"/"Scarica /
+  // Importa") SIA in riga su tablet/desktop: stati e ref separati perché,
+  // pur mostrandosi uno alla volta via CSS, entrambe le istanze restano
+  // sempre montate nel DOM — condividere un solo stato/ref tra le due
+  // spezzerebbe la chiusura al click esterno di quella non visibile.
+  const [mobileLangOpen, setMobileLangOpen] = useState(false)
+  const mobileLangRef = useRef<HTMLDivElement>(null)
+  const [desktopLangOpen, setDesktopLangOpen] = useState(false)
+  const desktopLangRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!mobileAddOpen && !mobileFileOpen && !mobileLangOpen && !desktopLangOpen) return
+    function onOut(e: MouseEvent) {
+      const t = e.target as Node
+      if (mobileAddOpen   && mobileAddRef.current   && !mobileAddRef.current.contains(t))   setMobileAddOpen(false)
+      if (mobileFileOpen  && mobileFileRef.current  && !mobileFileRef.current.contains(t))  setMobileFileOpen(false)
+      if (mobileLangOpen  && mobileLangRef.current  && !mobileLangRef.current.contains(t))  setMobileLangOpen(false)
+      if (desktopLangOpen && desktopLangRef.current && !desktopLangRef.current.contains(t)) setDesktopLangOpen(false)
+    }
+    document.addEventListener('mousedown', onOut)
+    return () => document.removeEventListener('mousedown', onOut)
+  }, [mobileAddOpen, mobileFileOpen, mobileLangOpen, desktopLangOpen])
 
   // Multi-select state
   const [selectedIds,       setSelectedIds]       = useState<Set<string>>(new Set())
@@ -986,6 +1034,78 @@ export default function DishList({
     )
   }
 
+  // Form inline "nome categoria": stessa identica UI serve sia nella riga
+  // azioni desktop (sostituisce il bottone "+ Aggiungi categoria") sia nel
+  // menu a tendina mobile (sostituisce l'intera riga dei 2 bottoni). Una
+  // funzione, non un componente — se fosse un componente definito qui la sua
+  // identity cambierebbe a ogni render e l'input perderebbe il focus a ogni
+  // carattere digitato.
+  const categoryForm = (className: string) => (
+    <form
+      onSubmit={e => { e.preventDefault(); handleAddCategory() }}
+      className={className}
+    >
+      <input
+        autoFocus
+        value={newCatName}
+        onChange={e => setNewCatName(e.target.value)}
+        onBlur={() => { if (!newCatName.trim()) { setAddingCat(false) } }}
+        placeholder="Nome categoria"
+        className="flex-1 min-w-0 px-3 py-2 border border-blue-400 text-base focus:outline-none"
+      />
+      <button type="submit"
+        className="text-sm text-blue-600 font-medium hover:underline px-1.5 min-h-[44px]">
+        OK
+      </button>
+      <button type="button" onClick={() => { setAddingCat(false); setNewCatName('') }}
+        className="text-sm text-gray-400 hover:underline px-1.5 min-h-[44px]">
+        ✕
+      </button>
+    </form>
+  )
+
+  // Selettore lingua compatto (bandiera + ▼): stessa funzione usata sia nel
+  // blocco mobile sia in quello desktop (vedi commento sopra
+  // mobileLangOpen/desktopLangOpen) — solo stato/ref/onClose cambiano tra le
+  // due chiamate, il markup e la lista lingue sono identici.
+  const langMenu = (
+    open: boolean,
+    setOpen: (v: boolean) => void,
+    ref: React.RefObject<HTMLDivElement>,
+    onOpen: () => void,
+  ) => (
+    <div ref={ref} className="relative shrink-0">
+      <button
+        type="button"
+        onClick={() => { onOpen(); setOpen(!open) }}
+        aria-label={`Lingua: ${LANG_LABELS[lang]}`}
+        className="group h-full flex items-center gap-1.5 border border-gray-300 px-2.5 py-2 hover:bg-blue-600 hover:border-blue-600 active:bg-blue-700 active:border-blue-700 transition-colors"
+      >
+        <FlagIcon lang={lang} className="w-5 h-3.5" />
+        <span className="text-gray-400 group-hover:text-white group-active:text-white text-[10px] leading-none transition-colors">▼</span>
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full mt-0.5 z-50 bg-white border border-gray-200 shadow-lg min-w-[160px]">
+          {ALL_LANGS.map((l, i) => (
+            <div key={l}>
+              {i > 0 && <div className="h-px bg-gray-100" />}
+              <button
+                type="button"
+                onClick={() => { setOpen(false); setLang(l) }}
+                className={`w-full flex items-center gap-2 text-left px-4 py-2.5 text-sm transition-colors ${
+                  l === lang ? 'text-blue-700 font-medium bg-blue-50' : 'text-gray-700 hover:bg-gray-50'
+                }`}
+              >
+                <FlagIcon lang={l} className="w-5 h-3.5 shrink-0" />
+                {LANG_LABELS[l]}
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+
   const activeDishName = activeDragId && !categories.includes(activeDragId)
     ? dishes.find(d => d.id === activeDragId)?.name ?? ''
     : null
@@ -993,41 +1113,30 @@ export default function DishList({
 
   return (
     <div>
-      <LangBar lang={lang} onChange={setLang} />
-      <div className="mb-5 grid grid-cols-2 gap-2 max-w-md">
+      {/* Le 5 azioni + lingua — tablet/desktop (sm e oltre): riga unica,
+          senza limite di larghezza — riempie esattamente lo stesso spazio
+          delle card categoria sotto (nessuna delle due ha un max-width
+          proprio), quindi bordo sinistro e destro combaciano
+          automaticamente, come richiesto. Stile uniforme su TUTTI i
+          bottoni (bordo grigio, nessuno blu): il mix blu/bianco di prima
+          sembrava disordinato senza un vero motivo (non c'era un'azione
+          più "primaria" delle altre). "Scarica PDF" era in una posizione
+          separata accanto al breadcrumb (ora solo su mobile, vedi
+          page.tsx) — qui annegato nella riga come gli altri. La barra
+          delle 6 bandiere è sostituita dallo stesso selettore compatto
+          usato su mobile (langMenu), non più una riga a parte. */}
+      <div className="hidden sm:flex mb-5 flex-wrap gap-2">
         <button
           onClick={() => { setEditingDish(null); setFormOpen(true) }}
-          className="w-full bg-blue-600 text-white text-sm font-medium px-4 py-2 hover:bg-blue-700 transition-colors"
+          className="flex-1 min-w-[140px] border border-gray-300 text-gray-700 text-sm font-medium px-4 py-2 hover:bg-blue-600 hover:text-white hover:border-blue-600 active:bg-blue-700 active:border-blue-700 transition-colors"
         >
           + Aggiungi piatto
         </button>
 
-        {addingCat ? (
-          <form
-            onSubmit={e => { e.preventDefault(); handleAddCategory() }}
-            className="flex items-center gap-1"
-          >
-            <input
-              autoFocus
-              value={newCatName}
-              onChange={e => setNewCatName(e.target.value)}
-              onBlur={() => { if (!newCatName.trim()) { setAddingCat(false) } }}
-              placeholder="Nome categoria"
-              className="flex-1 min-w-0 px-3 py-2 border border-blue-400 text-base focus:outline-none"
-            />
-            <button type="submit"
-              className="text-sm text-blue-600 font-medium hover:underline px-1.5 min-h-[44px]">
-              OK
-            </button>
-            <button type="button" onClick={() => { setAddingCat(false); setNewCatName('') }}
-              className="text-sm text-gray-400 hover:underline px-1.5 min-h-[44px]">
-              ✕
-            </button>
-          </form>
-        ) : (
+        {addingCat ? categoryForm('flex-1 min-w-[140px] flex items-center gap-1') : (
           <button
             onClick={() => setAddingCat(true)}
-            className="w-full border border-gray-300 text-gray-700 text-sm font-medium px-4 py-2 hover:bg-gray-50 transition-colors"
+            className="flex-1 min-w-[140px] border border-gray-300 text-gray-700 text-sm font-medium px-4 py-2 hover:bg-blue-600 hover:text-white hover:border-blue-600 active:bg-blue-700 active:border-blue-700 transition-colors"
           >
             + Aggiungi categoria
           </button>
@@ -1043,6 +1152,93 @@ export default function DishList({
             syncCategories(next)
           }}
         />
+
+        {pdfButton}
+
+        {langMenu(desktopLangOpen, setDesktopLangOpen, desktopLangRef, () => {})}
+      </div>
+
+      {/* Le 4 azioni + lingua — mobile (sotto sm): 3 elementi a tendina
+          invece della riga stretta a 2 più la barra bandiere separata.
+          "Aggiungi" apre Aggiungi piatto/categoria; "Scarica/Importa" apre
+          le stesse identiche azioni del desktop, impilate (vedi
+          ExcelImportExport, prop `stacked`) — zero logica duplicata, cambia
+          solo la presentazione. Il terzo bottone (bandiera + ▼, larghezza
+          fissa) sostituisce la barra a 6 bandiere: stessa lingua attiva,
+          stesso onChange, solo compattata a tendina per stare in riga con
+          gli altri due, accorciati apposta per farle spazio.
+          Il contenitore, come i due sopra, non ha margini propri: riempie
+          esattamente la larghezza del genitore, la stessa delle card
+          categoria sotto (nessuna delle due ha un max-width proprio) —
+          bordo sinistro e destro combaciano automaticamente. */}
+      <div className="sm:hidden mb-5">
+        {addingCat ? categoryForm('flex items-center gap-1') : (
+          <div className="flex gap-2">
+            <div ref={mobileAddRef} className="relative flex-1">
+              <button
+                type="button"
+                onClick={() => { setMobileFileOpen(false); setMobileLangOpen(false); setMobileAddOpen(o => !o) }}
+                className="w-full bg-blue-600 text-white text-sm font-medium px-3 py-2 hover:bg-blue-700 active:bg-blue-700 transition-colors"
+              >
+                Aggiungi
+              </button>
+              {mobileAddOpen && (
+                <div className="absolute left-0 right-0 top-full mt-0.5 z-50 bg-white border border-gray-200 shadow-lg">
+                  <button
+                    type="button"
+                    onClick={() => { setMobileAddOpen(false); setEditingDish(null); setFormOpen(true) }}
+                    className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                  >
+                    Aggiungi piatto
+                  </button>
+                  <div className="h-px bg-gray-100" />
+                  <button
+                    type="button"
+                    onClick={() => { setMobileAddOpen(false); setAddingCat(true) }}
+                    className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                  >
+                    Aggiungi categoria
+                  </button>
+                </div>
+              )}
+            </div>
+
+            <div ref={mobileFileRef} className="relative flex-1">
+              <button
+                type="button"
+                onClick={() => { setMobileAddOpen(false); setMobileLangOpen(false); setMobileFileOpen(o => !o) }}
+                className="w-full border border-gray-300 text-gray-700 text-sm font-medium px-3 py-2 hover:bg-blue-600 hover:text-white hover:border-blue-600 active:bg-blue-700 active:border-blue-700 transition-colors"
+              >
+                Scarica/Importa
+              </button>
+              {mobileFileOpen && (
+                // Niente p-2/gap: stesso identico contenitore "nudo" della
+                // tendina "Aggiungi" sopra — il divisore tra "Scarica
+                // modulo" e "Importa modulo" lo rende già ExcelImportExport
+                // quando stacked. Un padding/gap qui sommato a quel
+                // divisore era lo spazio in più che rendeva le righe
+                // visibilmente più alte di "Aggiungi piatto".
+                <div className="absolute left-0 right-0 top-full mt-0.5 z-50 bg-white border border-gray-200 shadow-lg">
+                  <ExcelImportExport
+                    stacked
+                    restaurantId={restaurantId}
+                    menuId={menuId}
+                    dishes={dishes}
+                    onImported={created => {
+                      const next = [...dishes, ...(created as Dish[])]
+                      setDishes(next)
+                      syncCategories(next)
+                    }}
+                  />
+                </div>
+              )}
+            </div>
+
+            {langMenu(mobileLangOpen, setMobileLangOpen, mobileLangRef, () => {
+              setMobileAddOpen(false); setMobileFileOpen(false)
+            })}
+          </div>
+        )}
       </div>
 
       {(formOpen || editingDish) && (
@@ -1146,7 +1342,7 @@ export default function DishList({
           onDragEnd={handleDragEnd}
         >
           <SortableContext items={categories} strategy={verticalListSortingStrategy}>
-            <div ref={categoriesRef} className="space-y-5">
+            <div ref={categoriesRef} className="space-y-4">
               {categories.map(cat => (
                 <SortableCategory
                   key={cat}

@@ -355,6 +355,27 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
   const activeMenuId = selectedMenuId ?? pendingMenuId
   const activeMenu   = activeMenuId ? localizedMenus.find(m => m.id === activeMenuId) ?? null : null
 
+  // Ads ancorati a una categoria: `categoryTarget` è salvato dal gestionale
+  // con il nome ITALIANO della categoria, mentre le categorie che arrivano al
+  // flipbook sono già tradotte (vedi localizedMenus → useMenuPDF, che ricava
+  // le etichette dai piatti tradotti). Senza tradurre anche il bersaglio, il
+  // confronto per nome dentro FlipbookViewer (resolveAdPage) non trova la
+  // categoria in nessuna lingua diversa dall'italiano e l'ad ricade sulla
+  // posizione di default `insertAfterPdfPage` — che per gli ad di categoria il
+  // gestionale salva a 1: risultato, TUTTI gli ad di categoria si ammassavano
+  // subito dopo la prima pagina invece di stare ciascuno prima della propria,
+  // rompendo l'ordine di sfoglio solo nelle lingue tradotte.
+  // Qui il bersaglio viene portato nella lingua corrente, così il confronto a
+  // valle torna identico al caso italiano: FlipbookViewer resta INVARIATO.
+  const localizedAds = useMemo(
+    () => t.ads
+      .filter(a => !a.menuId || a.menuId === activeMenuId)
+      .map(a => a.categoryTarget
+        ? { ...a, categoryTarget: categoryName(a.categoryTarget, activeMenu?.translations, lang) }
+        : a),
+    [t.ads, activeMenuId, activeMenu, lang],
+  )
+
   // m: MenuTheme effettivo per il menu attivo (override per-menu se presente,
   // altrimenti "Generale" — vedi resolveMenuTheme). effectiveTheme propaga
   // questa risoluzione a FlipbookViewer/DishModal/useMenuPDF senza altre modifiche.
@@ -940,7 +961,7 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
             onDishOpen={!editMode && activeMenuId ? (dishId) => track('dish_click', activeMenuId, dishId) : undefined}
             lang={lang}
             onLangChange={setLang}
-            ads={t.ads.filter(a => !a.menuId || a.menuId === activeMenuId)}
+            ads={localizedAds}
             pairingPool={pairingPool}
           />
         </div>

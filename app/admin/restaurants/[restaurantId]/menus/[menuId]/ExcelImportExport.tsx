@@ -39,6 +39,13 @@ interface Props {
   menuId: string
   dishes: Dish[]
   onImported: (created: any[]) => void
+  // true quando il componente è impilato verticalmente dentro il menu a
+  // tendina mobile (DishList) invece che affiancato in riga sul desktop:
+  // stessa identica logica, cambia solo il dimensionamento dei due bottoni
+  // radice (w-full anziché flex-1, che in un contenitore flex-col li
+  // farebbe crescere in altezza invece che restare della loro dimensione
+  // naturale).
+  stacked?: boolean
 }
 
 function buildLegendSheet() {
@@ -62,7 +69,7 @@ function colWidths() {
   return [{ wch: 28 }, { wch: 16 }, { wch: 10 }, { wch: 44 }, { wch: 32 }, { wch: 28 }, { wch: 26 }, { wch: 14 }]
 }
 
-export default function ExcelImportExport({ restaurantId, menuId, dishes, onImported }: Props) {
+export default function ExcelImportExport({ restaurantId, menuId, dishes, onImported, stacked }: Props) {
   const fileRef    = useRef<HTMLInputElement>(null)
   const dropRef    = useRef<HTMLDivElement>(null)
   const btnRef     = useRef<HTMLButtonElement>(null)
@@ -181,13 +188,31 @@ export default function ExcelImportExport({ restaurantId, menuId, dishes, onImpo
 
   return (
     <>
-      {/* Scarica modulo — dropdown a due voci */}
-      <div className="relative">
+      {/* Scarica modulo — dropdown a due voci.
+          Dimensionamento condizionato da `stacked`: in riga (desktop)
+          flex-1 min-w-[140px] come gli altri bottoni della riga; impilato
+          (tendina mobile) w-full, altrimenti in un contenitore flex-col
+          flex-1 farebbe crescere il bottone in altezza invece di lasciarlo
+          alla sua dimensione naturale. Questo componente rende i suoi due
+          elementi come fratelli diretti nel contenitore del chiamante,
+          quindi la classe va messa qui, non lì.
+          Stile: impilato è una VOCE di menu dentro la tendina del chiamante
+          (DishList "Scarica / Importa" su mobile), non un bottone
+          autonomo — deve avere lo stesso look delle voci "Aggiungi
+          piatto"/"Aggiungi categoria" nell'altra tendina. In riga (tablet/
+          desktop) niente più blu: tutti i bottoni della riga unificata
+          hanno lo stesso stile neutro (bordo grigio), non più un mix di
+          blu/bianco che sembrava disordinato. */}
+      <div className={stacked ? 'relative w-full' : 'relative flex-1 min-w-[140px]'}>
         <button
           ref={btnRef}
           type="button"
           onClick={() => setDropOpen(o => !o)}
-          className="w-full bg-blue-600 text-white text-sm font-medium px-4 py-2 hover:bg-blue-700 transition-colors"
+          className={
+            stacked
+              ? 'w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors'
+              : 'w-full border border-gray-300 text-gray-700 text-sm font-medium px-4 py-2 hover:bg-blue-600 hover:text-white hover:border-blue-600 active:bg-blue-700 active:border-blue-700 transition-colors'
+          }
         >
           Scarica modulo
         </button>
@@ -219,13 +244,23 @@ export default function ExcelImportExport({ restaurantId, menuId, dishes, onImpo
         )}
       </div>
 
+      {/* Divisore tra le due voci: solo impilato, dove servono i due elementi
+          uniti visivamente come un unico menu (stesso pattern della tendina
+          "+ Aggiungi" — vedi DishList.tsx). In riga (desktop) i due bottoni
+          restano separati dal semplice gap del contenitore. */}
+      {stacked && <div className="h-px bg-gray-100" />}
+
       <button
         type="button"
         disabled={importing}
         onClick={() => fileRef.current?.click()}
-        className="w-full border border-gray-300 text-gray-700 text-sm font-medium px-4 py-2 hover:bg-gray-50 disabled:opacity-50 transition-colors flex items-center justify-center"
+        className={
+          stacked
+            ? 'w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50 transition-colors flex items-center gap-2'
+            : 'flex-1 min-w-[140px] border border-gray-300 text-gray-700 text-sm font-medium px-4 py-2 hover:bg-blue-600 hover:text-white hover:border-blue-600 active:bg-blue-700 active:border-blue-700 disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:text-gray-700 disabled:hover:border-gray-300 transition-colors flex items-center justify-center'
+        }
       >
-        {importing ? <Spinner color="#374151" /> : 'Importa modulo'}
+        {importing ? <><Spinner color="#374151" size={3.5} /> Importa modulo</> : 'Importa modulo'}
       </button>
       <input
         ref={fileRef}

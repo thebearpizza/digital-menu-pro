@@ -281,13 +281,16 @@ export default function DishModal({ activeDish, allDishes, isNested, onClose, on
         </div>
 
 
-        {/* Hero image — 16:9 aspect ratio (photo-top layout only).
+        {/* Hero image — 3:2 (photo-top layout only). Prima era 16:9
+            (aspect-video): 3:2 è uno scatto leggermente più quadrato, che dà
+            più altezza alla foto del piatto senza arrivare al 4:3, più
+            invadente sullo spazio del testo sottostante.
             key={dish.id}: senza, React riusa lo stesso <img> cambiando solo
             src e il browser mostra la foto del piatto PRECEDENTE finché la
             nuova non è scaricata. Con la key l'elemento è nuovo a ogni piatto:
             mai immagini vecchie (le adiacenti sono precaricate → istantanee). */}
         {CARD_LAYOUT === 'photo-top' && dish.image_url && (
-          <div className="shrink-0 w-full aspect-video overflow-hidden" style={{ background: '#1a1a1a' }}>
+          <div className="shrink-0 w-full aspect-[3/2] overflow-hidden" style={{ background: '#1a1a1a' }}>
             <img
               key={dish.id}
               src={dish.image_url}
