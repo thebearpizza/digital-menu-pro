@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react'
 const ANIMATION_MS = 4200
 const MAX_WAIT_MS = 15000
 const L_PATH = 'm44.64 35.88c-2.07 1.87-4.98 2.83-7.76 2.83-5.43 0-10.09-2.8-14.39-4.56 3.09-3.22 5.32-7.98 7.34-12.61 1.55-3.490 3.02-6.41 5.3-8.86 1.76-1.84 4.06-3.2 6.03-3.2 1.27 0 1.97 0.78 1.97 1.84 0 4-6.45 9.45-12.76 11.56-0.22 0.08-0.16 0.31 0.12 0.3 8.4-0.73 15.68-6.16 15.67-10.87-0.01-2.42-1.9-3.86-5.04-3.86-4.56 0-9.68 2.68-13.21 7.3-3.66 4.79-5.49 11.38-9.17 17.15-1.75-0.46-3.56-0.68-5.25-0.68-5.21 0-9.6 2.66-9.6 5.73 0 2.11 1.91 3.2 4.48 3.2 4.31 0 8.94-2.8 12.01-5.27 4.27 2.26 8.96 5.67 14.47 5.67 5.72 0 9.42-3.27 10.11-5.27 0.09-0.28-0.16-0.54-0.32-0.4zm-33.53 3.18c-1.53-0.04-2.4-0.84-2.4-2.03 0-1.82 2.17-3.31 4.94-3.31 1.46 0 2.9 0.4 3.97 0.87-1.82 2.62-4.38 4.5-6.51 4.47z'
-const PEN_PATH = 'M30.4 22.4C34 19.5 40 15.5 44 12.5C46.8 10.2 45 7.6 41.5 8.2C37 9 33 11.5 30.5 15.5C26.5 21.5 24 28 19.2 32.8C16 34.5 11 34 7.8 35.5C5 37 5.3 40 8.8 40.2C12.5 40.4 17 37.5 20.5 34.8C26 37 31 40 37 40C41 40 43.5 37.8 44.8 36'
+const PEN_PATH = 'M31.4 22C32 21.73 33.57 21.18 35 20.4C36.43 19.62 38.5 18.43 40 17.3C41.5 16.17 43.1 14.65 44 13.6C44.9 12.55 45.4 11.73 45.4 11C45.4 10.27 44.73 9.57 44 9.2C43.27 8.83 42.13 8.68 41 8.8C39.87 8.92 38.43 9.32 37.2 9.9C35.97 10.48 34.67 11.42 33.6 12.3C32.53 13.18 31.63 14.15 30.8 15.2C29.97 16.25 29.28 17.38 28.6 18.6C27.92 19.82 27.4 21.1 26.7 22.5C26 23.9 25.2 25.58 24.4 27C23.6 28.42 22.8 29.9 21.9 31C21 32.1 20.15 33 19 33.6C17.85 34.2 16.42 34.38 15 34.6C13.58 34.82 11.8 34.65 10.5 34.9C9.2 35.15 8.02 35.53 7.2 36.1C6.38 36.67 5.7 37.63 5.6 38.3C5.5 38.97 5.95 39.72 6.6 40.1C7.25 40.48 8.35 40.7 9.5 40.6C10.65 40.5 12.22 40.05 13.5 39.5C14.78 38.95 16.08 37.98 17.2 37.3C18.32 36.62 19.07 35.53 20.2 35.4C21.33 35.27 22.53 35.97 24 36.5C25.47 37.03 27.33 37.98 29 38.6C30.67 39.22 32.42 39.9 34 40.2C35.58 40.5 37.12 40.63 38.5 40.4C39.88 40.17 41.28 39.5 42.3 38.8C43.32 38.1 44.22 36.63 44.6 36.2'
 
 // Sotto lo splash, qualunque elemento con [data-app-loading] (skeleton, overlay
 // di caricamento) tiene lo splash visibile finché non sparisce.
@@ -63,12 +63,12 @@ const CSS = `
 .lito-splash.is-leaving{opacity:0;pointer-events:none}
 .lito-splash *{box-sizing:border-box}
 .ls-stage{perspective:1400px;padding:16px;animation:ls-center var(--d) cubic-bezier(.45,.05,.25,1) forwards}
-.ls-book{position:relative;width:min(40vw,260px);aspect-ratio:3/4;transform-style:preserve-3d;transform:rotateX(8deg);animation:ls-in .5s ease both}
+.ls-book{position:relative;width:min(40vw,260px);aspect-ratio:3/4;transform-style:preserve-3d;animation:ls-in .5s ease both}
 .ls-leaf{position:absolute;inset:0;border-radius:2px 6px 6px 2px;background:radial-gradient(120% 90% at 30% 20%,rgba(255,255,255,.7),transparent 60%),linear-gradient(90deg,rgba(0,0,0,.1),transparent 8%,transparent 92%,rgba(0,0,0,.04)),var(--paper);box-shadow:0 1px 0 var(--edge),0 2px 0 #e2dacb,0 3px 0 var(--edge),0 4px 0 #ddd4c3,0 24px 40px -12px rgba(0,0,0,.35)}
 .ls-grain::after{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;mix-blend-mode:multiply;background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 .4  0 0 0 0 .35  0 0 0 0 .28  0 0 0 .09 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>")}
-.ls-logo{position:absolute;left:16%;top:18%;width:68%;height:auto;overflow:visible}
+.ls-logo{shape-rendering:geometricPrecision;position:absolute;left:16%;top:18%;width:68%;height:auto;overflow:visible}
 .ls-ink{fill:#111}
-.ls-pen{fill:none;stroke:#fff;stroke-width:4.6;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:1;stroke-dashoffset:1;animation:ls-write var(--d) cubic-bezier(.55,.1,.35,1) forwards}
+.ls-pen{fill:none;stroke:#fff;stroke-width:6;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:1;stroke-dashoffset:1;animation:ls-write var(--d) cubic-bezier(.4,0,.6,1) forwards}
 .ls-word{position:absolute;left:0;right:0;bottom:12%;text-align:center;letter-spacing:.42em;text-indent:.42em;font:500 11px/1 Georgia,"Times New Roman",serif;color:#6b6357;text-transform:uppercase;opacity:0;animation:ls-word var(--d) ease forwards}
 .ls-page{position:absolute;inset:0;transform-origin:left center;transform-style:preserve-3d;animation:ls-turn var(--d) cubic-bezier(.45,.05,.25,1) forwards}
 .ls-face{position:absolute;inset:0;backface-visibility:hidden;-webkit-backface-visibility:hidden;border-radius:2px 6px 6px 2px;overflow:hidden}
@@ -77,7 +77,7 @@ const CSS = `
 .ls-back{transform:rotateY(180deg);background:linear-gradient(270deg,rgba(0,0,0,.14),transparent 10%),var(--paper)}
 .ls-front::before,.ls-back::before{content:"";position:absolute;inset:0;pointer-events:none;background:linear-gradient(90deg,transparent 20%,rgba(0,0,0,.28) 100%);opacity:0;animation:ls-shade var(--d) ease-in-out forwards}
 .ls-cast{position:absolute;inset:0;pointer-events:none;border-radius:2px 6px 6px 2px;background:linear-gradient(90deg,rgba(0,0,0,.3),transparent 70%);opacity:0;animation:ls-shade var(--d) ease-in-out forwards}
-@keyframes ls-in{from{opacity:0;transform:rotateX(8deg) translateY(8px)}to{opacity:1;transform:rotateX(8deg)}}
+@keyframes ls-in{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
 @keyframes ls-center{0%,10%{transform:translateX(0)}58%,100%{transform:translateX(50%)}}
 @keyframes ls-turn{0%,10%{transform:rotateY(0)}34%{transform:rotateY(-70deg) skewY(-3deg)}50%{transform:rotateY(-150deg) skewY(1deg)}58%,100%{transform:rotateY(-180deg)}}
 @keyframes ls-shade{0%,10%{opacity:0}32%{opacity:1}54%,100%{opacity:0}}
