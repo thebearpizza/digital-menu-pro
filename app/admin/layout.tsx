@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import AdminShell from '@/components/admin/AdminShell'
 import VoiceAssistant from '@/components/admin/VoiceAssistant'
+import LitoSplash from '@/components/LitoSplash'
 import { isSuperAdmin } from '@/lib/superAdmin'
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
@@ -23,6 +24,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     >
       {children}
       <VoiceAssistant />
+      <LitoSplash />
     </AdminShell>
   )
 }

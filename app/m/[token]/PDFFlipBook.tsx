@@ -224,7 +224,7 @@ export default function PDFFlipBook({ pdfUrl, restaurantName, menuName, onBack }
 
           {/* Loading overlay */}
           {phase === 'loading' && dims && (
-            <div className="absolute inset-0 flex items-center justify-center bg-zinc-800 rounded">
+            <div data-app-loading className="absolute inset-0 flex items-center justify-center bg-zinc-800 rounded">
               <p className="text-zinc-400 text-sm">Caricamento menu…</p>
             </div>
           )}
