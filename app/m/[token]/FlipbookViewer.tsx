@@ -431,6 +431,55 @@ export default function FlipbookViewer({
       lastTouchStartY = e.touches[0]?.clientY ?? Infinity
     }
 
+    // ── Swipe orizzontale su tutta l'altezza della pagina ─────────────────
+    // turn.js avvia la piega solo dagli angoli in basso. Uno swipe veloce
+    // destra/sinistra in qualunque altro punto della pagina gira comunque
+    // pagina. Se nel gesto turn.js ha già avviato una piega (angolo), lo
+    // swipe non interviene.
+    let swipeStart: { x: number; y: number; t: number } | null = null
+    let foldStartedInGesture = false
+    const beginSwipe = (x: number, y: number, target: EventTarget | null) => {
+      foldStartedInGesture = false
+      swipeStart = el!.contains(target as Node) ? { x, y, t: Date.now() } : null
+    }
+    const endSwipe = (x: number, y: number) => {
+      const s = swipeStart
+      swipeStart = null
+      if (!s || foldStartedInGesture) return
+      const dx = x - s.x
+      const dy = y - s.y
+      if (Math.abs(dx) < 40 || Math.abs(dx) < Math.abs(dy) * 1.5 || Date.now() - s.t > 800) return
+      try {
+        const $el = window.$(el!)
+        if ($el.turn('animating')) return
+        const cur = $el.turn('page') as number
+        const total = $el.turn('pages') as number
+        if (dx < 0 && cur >= total) return
+        if (dx > 0 && cur <= 1) return
+        $el.turn(dx < 0 ? 'next' : 'previous')
+      } catch (_) { return }
+      if (pendingPageDest === null) return
+      const dest = pendingPageDest
+      clearHalfwayTimer()
+      halfwayTimer = setTimeout(() => { setCurrentPage(dest); halfwayTimer = null }, flipbook.duration / 2)
+      failsafeTimers.add(halfwayTimer)
+      armStuckWatchdog()
+    }
+    const onSwipeTouchStart = (e: TouchEvent) => {
+      if (e.touches.length !== 1) { swipeStart = null; return }
+      beginSwipe(e.touches[0].clientX, e.touches[0].clientY, e.target)
+    }
+    const onSwipeTouchEnd = (e: TouchEvent) => {
+      const t = e.changedTouches[0]
+      if (t) endSwipe(t.clientX, t.clientY)
+    }
+    const onSwipeMouseDown = (e: PointerEvent) => {
+      if (e.pointerType === 'mouse') beginSwipe(e.clientX, e.clientY, e.target)
+    }
+    const onSwipeMouseUp = (e: PointerEvent) => {
+      if (e.pointerType === 'mouse') endSwipe(e.clientX, e.clientY)
+    }
+
     async function renderPageToCanvas(pageNum: number): Promise<void> {
       if (cancelled) return
       const pdfPage = pdfPageObjects[pageNum - 1]
@@ -1429,6 +1478,10 @@ export default function FlipbookViewer({
         window.addEventListener('pointermove', onTimingPointerMove, true)
         window.addEventListener('pointerup',   onTimingPointerUp,   true)
         window.addEventListener('touchcancel', onTimingTouchCancel, true)
+        window.addEventListener('touchstart',  onSwipeTouchStart,   true)
+        window.addEventListener('touchend',    onSwipeTouchEnd,     true)
+        window.addEventListener('pointerdown', onSwipeMouseDown,    true)
+        window.addEventListener('pointerup',   onSwipeMouseUp,      true)
 
         window.$(el).turn({
           width:        dims.w,
@@ -1450,6 +1503,7 @@ export default function FlipbookViewer({
                 (_evt as any).preventDefault?.()
                 return
               }
+              if (pointerIsDown) foldStartedInGesture = true
               try {
                 const cur = opts?.page as number
                 if (!cur) return
@@ -1567,6 +1621,10 @@ export default function FlipbookViewer({
       window.removeEventListener('pointermove', onTimingPointerMove, true)
       window.removeEventListener('pointerup',   onTimingPointerUp,   true)
       window.removeEventListener('touchcancel', onTimingTouchCancel, true)
+      window.removeEventListener('touchstart',  onSwipeTouchStart,   true)
+      window.removeEventListener('touchend',    onSwipeTouchEnd,     true)
+      window.removeEventListener('pointerdown', onSwipeMouseDown,    true)
+      window.removeEventListener('pointerup',   onSwipeMouseUp,      true)
       renderTasks.forEach(t => { try { t.cancel() } catch (_) {} })
       failsafeTimers.forEach(t => clearTimeout(t))
       adVideoMap.forEach(vid => { try { vid.pause() } catch (_) {} })
