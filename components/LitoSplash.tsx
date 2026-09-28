@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import LitoMark from './LitoMark'
 
-const ANIMATION_MS = 4200
+const ANIMATION_MS = 4900
 const WRITE_START_MS = 1000
 const WRITE_MS = 2600
 const MAX_WAIT_MS = 15000
@@ -52,12 +52,12 @@ export default function LitoSplash() {
 }
 
 const CSS = `
-.lito-splash{--paper:#fbf8f2;--edge:#e9e2d4;--d:${ANIMATION_MS}ms;position:fixed;inset:0;z-index:2147483000;display:grid;place-items:center;background:#ece8e1;overflow:hidden;transition:opacity .6s ease}
+.lito-splash{--paper:#f6eedd;--edge:#e3d6ba;--d:${ANIMATION_MS}ms;position:fixed;inset:0;z-index:2147483000;display:grid;place-items:center;background:radial-gradient(120% 90% at 32% 22%,#f3ead7,#e2d4b7);overflow:hidden;transition:opacity .6s ease}
 .lito-splash.is-leaving{opacity:0;pointer-events:none}
 .lito-splash *{box-sizing:border-box}
 .ls-stage{perspective:1400px;padding:16px;animation:ls-center var(--d) cubic-bezier(.45,.05,.25,1) forwards}
 .ls-book{position:relative;width:min(40vw,260px);aspect-ratio:3/4;transform-style:preserve-3d;animation:ls-in .5s ease both}
-.ls-leaf{position:absolute;inset:0;border-radius:2px 6px 6px 2px;background:radial-gradient(120% 90% at 30% 20%,rgba(255,255,255,.7),transparent 60%),linear-gradient(90deg,rgba(0,0,0,.1),transparent 8%,transparent 92%,rgba(0,0,0,.04)),var(--paper);box-shadow:0 1px 0 var(--edge),0 2px 0 #e2dacb,0 3px 0 var(--edge),0 4px 0 #ddd4c3,0 24px 40px -12px rgba(0,0,0,.35)}
+.ls-leaf{position:absolute;inset:0;border-radius:2px 6px 6px 2px;background:radial-gradient(120% 90% at 30% 20%,rgba(255,255,255,.7),transparent 60%),linear-gradient(90deg,rgba(0,0,0,.1),transparent 8%,transparent 92%,rgba(0,0,0,.04)),var(--paper);box-shadow:0 1px 0 var(--edge),0 2px 0 #dccdae,0 3px 0 var(--edge),0 4px 0 #d6c6a5,0 24px 40px -12px rgba(0,0,0,.35)}
 .ls-grain::after{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;mix-blend-mode:multiply;background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 .4  0 0 0 0 .35  0 0 0 0 .28  0 0 0 .09 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>")}
 .ls-logo{position:absolute;left:16%;top:18%;width:68%;height:auto;overflow:visible}
 .ls-word{position:absolute;left:0;right:0;bottom:12%;text-align:center;letter-spacing:.42em;text-indent:.42em;font:500 11px/1 Georgia,"Times New Roman",serif;color:#6b6357;text-transform:uppercase;opacity:0;animation:ls-word var(--d) ease forwards}

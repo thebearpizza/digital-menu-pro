@@ -42,7 +42,7 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-100 flex flex-col items-center justify-center p-4">
+    <div className="min-h-screen flex flex-col items-center justify-center p-4" style={{ background: 'radial-gradient(120% 90% at 32% 22%, #f8f1e2, #e9dcc2 60%, #d9c7a6)' }}>
       <div className="flex flex-col items-center mb-6" aria-label="Lito">
         <LitoMark className="w-24 h-24 sm:w-28 sm:h-28" writeStartMs={250} writeMs={2400} />
         <div className="login-wordmark mt-1 text-[11px] uppercase text-stone-500">Lito</div>

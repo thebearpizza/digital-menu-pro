@@ -1,6 +1,6 @@
 'use client'
 
-import { useId } from 'react'
+import { useEffect, useId, useRef } from 'react'
 
 const L_PATH = 'm44.64 35.88c-2.07 1.87-4.98 2.83-7.76 2.83-5.43 0-10.09-2.8-14.39-4.56 3.09-3.22 5.32-7.98 7.34-12.61 1.55-3.490 3.02-6.41 5.3-8.86 1.76-1.84 4.06-3.2 6.03-3.2 1.27 0 1.97 0.78 1.97 1.84 0 4-6.45 9.45-12.76 11.56-0.22 0.08-0.16 0.31 0.12 0.3 8.4-0.73 15.68-6.16 15.67-10.87-0.01-2.42-1.9-3.86-5.04-3.86-4.56 0-9.68 2.68-13.21 7.3-3.66 4.79-5.49 11.38-9.17 17.15-1.75-0.46-3.56-0.68-5.25-0.68-5.21 0-9.6 2.66-9.6 5.73 0 2.11 1.91 3.2 4.48 3.2 4.31 0 8.94-2.8 12.01-5.27 4.27 2.26 8.96 5.67 14.47 5.67 5.72 0 9.42-3.27 10.11-5.27 0.09-0.28-0.16-0.54-0.32-0.4zm-33.53 3.18c-1.53-0.04-2.4-0.84-2.4-2.03 0-1.82 2.17-3.31 4.94-3.31 1.46 0 2.9 0.4 3.97 0.87-1.82 2.62-4.38 4.5-6.51 4.47z'
 // Zone da nascondere ai tratti già scritti, dipinte di nero nella maschera subito
@@ -35,10 +35,33 @@ export default function LitoMark({
 }) {
   const uid = useId().replace(/:/g, '')
   const id = (name: string) => `lm${uid}-${name}`
+  const svgRef = useRef<SVGSVGElement>(null)
   let before = 0
 
+  // Riflesso + comparsa del rilievo: partono insieme appena la penna finisce.
+  // Il momento si legge dall'animazione dell'ultimo tratto, così resta giusto
+  // anche con idratazione lenta o tornando al login senza ricaricare.
+  useEffect(() => {
+    const svg = svgRef.current
+    if (!svg) return
+    const finals = svg.querySelectorAll<SVGAnimationElement>('[data-lm-final]')
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      svg.querySelector(`#${id('reveal-rect')}`)?.setAttribute('x', '-2')
+      return
+    }
+    let wait = writeStartMs + writeMs
+    const pens = svg.querySelectorAll<SVGPathElement>('.lm-pen')
+    const anim = pens[pens.length - 1]?.getAnimations?.()[0]
+    const end = anim?.effect?.getComputedTiming().endTime
+    if (anim && typeof end === 'number' && typeof anim.currentTime === 'number') {
+      wait = Math.max(0, end - anim.currentTime)
+    }
+    const t = setTimeout(() => finals.forEach(a => a.beginElement()), Math.max(0, wait - 80))
+    return () => clearTimeout(t)
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
   return (
-    <svg className={`lito-mark${className ? ` ${className}` : ''}`} viewBox="0 0 50 50" aria-hidden="true">
+    <svg ref={svgRef} className={`lito-mark${className ? ` ${className}` : ''}`} viewBox="0 0 50 50" aria-hidden="true">
       <style dangerouslySetInnerHTML={{ __html: CSS }} />
       <defs>
         <linearGradient id={id('gold')} x1="4" y1="8" x2="46" y2="42" gradientUnits="userSpaceOnUse">
@@ -54,6 +77,48 @@ export default function LitoMark({
           <stop offset=".5" stopColor="#fff6d6" stopOpacity=".7" />
           <stop offset="1" stopColor="#fff" stopOpacity="0" />
         </linearGradient>
+        <linearGradient id={id('reveal')} x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0" stopColor="#fff" />
+          <stop offset=".78" stopColor="#fff" />
+          <stop offset="1" stopColor="#000" />
+        </linearGradient>
+        <mask id={id('reveal-mask')} maskUnits="userSpaceOnUse" x="-5" y="-5" width="60" height="60">
+          <rect id={id('reveal-rect')} x="-72" y="-5" width="70" height="60" fill={`url(#${id('reveal')})`}>
+            <animate
+              data-lm-final
+              attributeName="x" from="-72" to="-2" dur="1.1s" begin="indefinite" fill="freeze"
+              calcMode="spline" keyTimes="0;1" keySplines=".42 0 .58 1"
+            />
+          </rect>
+        </mask>
+        {/* Rilievo come nell'icona: ombra morbida + luce sui bordi (unità del viewBox 50). */}
+        <filter id={id('shadow')} filterUnits="userSpaceOnUse" x="-5" y="-5" width="60" height="62">
+          <feGaussianBlur in="SourceAlpha" stdDeviation="1.1" />
+          <feOffset dy="1.5" result="s1" />
+          <feComponentTransfer in="s1" result="s1b"><feFuncA type="linear" slope=".28" /></feComponentTransfer>
+          <feGaussianBlur in="SourceAlpha" stdDeviation=".45" />
+          <feOffset dy=".45" result="s2" />
+          <feComponentTransfer in="s2" result="s2b"><feFuncA type="linear" slope=".14" /></feComponentTransfer>
+          <feMerge><feMergeNode in="s1b" /><feMergeNode in="s2b" /></feMerge>
+        </filter>
+        <filter id={id('bevel')} filterUnits="userSpaceOnUse" x="-5" y="-5" width="60" height="60">
+          <feGaussianBlur in="SourceAlpha" stdDeviation=".5" result="blur" />
+          <feSpecularLighting in="blur" surfaceScale="4" specularConstant="1" specularExponent="22" lightingColor="#fff7dc" result="spec">
+            <feDistantLight azimuth={235} elevation={50} />
+          </feSpecularLighting>
+          <feComposite in="spec" in2="SourceAlpha" operator="in" result="specIn" />
+          <feDiffuseLighting in="blur" surfaceScale="3" diffuseConstant="1.05" lightingColor="#fff" result="diff">
+            <feDistantLight azimuth={235} elevation={55} />
+          </feDiffuseLighting>
+          <feComponentTransfer in="diff" result="diffSoft">
+            <feFuncR type="linear" slope=".45" intercept=".6" />
+            <feFuncG type="linear" slope=".45" intercept=".6" />
+            <feFuncB type="linear" slope=".45" intercept=".6" />
+          </feComponentTransfer>
+          <feComposite in="diffSoft" in2="SourceAlpha" operator="in" result="diffIn" />
+          <feBlend in="SourceGraphic" in2="diffIn" mode="multiply" result="shaded" />
+          <feComposite in="shaded" in2="specIn" operator="arithmetic" k1={0} k2={1} k3={0.75} k4={0} />
+        </filter>
         <mask id={id('glyph')} maskUnits="userSpaceOnUse" x="-5" y="-5" width="60" height="60">
           <path d={L_PATH} fill="#fff" />
         </mask>
@@ -82,14 +147,19 @@ export default function LitoMark({
       </defs>
       <g mask={`url(#${id('pen')})`}>
         <path d={L_PATH} fill={`url(#${id('gold')})`} />
-        <g mask={`url(#${id('glyph')})`}>
-          <rect
-            className="lm-sheen"
-            x="-20" y="0" width="20" height="50"
-            fill={`url(#${id('sheen')})`}
-            style={{ animationDelay: `${writeStartMs + writeMs - 100}ms` }}
+      </g>
+      <g mask={`url(#${id('reveal-mask')})`}>
+        <path d={L_PATH} fill="#000" filter={`url(#${id('shadow')})`} />
+        <path d={L_PATH} fill={`url(#${id('gold')})`} filter={`url(#${id('bevel')})`} />
+      </g>
+      <g className="lm-sheen" mask={`url(#${id('glyph')})`}>
+        <rect x="-20" y="0" width="20" height="50" fill={`url(#${id('sheen')})`}>
+          <animateTransform
+            data-lm-final
+            attributeName="transform" type="translate" from="0 0" to="70 0" dur="1.1s" begin="indefinite" fill="freeze"
+            calcMode="spline" keyTimes="0;1" keySplines=".42 0 .58 1"
           />
-        </g>
+        </rect>
       </g>
     </svg>
   )
@@ -98,8 +168,6 @@ export default function LitoMark({
 const CSS = `
 .lito-mark{display:block;overflow:visible;shape-rendering:geometricPrecision}
 .lm-pen{fill:none;stroke:#fff;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:1 2;stroke-dashoffset:1;animation-name:lm-write;animation-fill-mode:both}
-.lm-sheen{animation:lm-sheen 1.1s ease-in-out both}
 @keyframes lm-write{0%{stroke-dashoffset:1;stroke-opacity:0}.5%{stroke-opacity:1}100%{stroke-dashoffset:0;stroke-opacity:1}}
-@keyframes lm-sheen{from{transform:translateX(0)}to{transform:translateX(70px)}}
 @media (prefers-reduced-motion:reduce){.lm-pen{animation:none!important;stroke-dashoffset:0}.lm-sheen{display:none}}
 `
