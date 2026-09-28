@@ -932,7 +932,7 @@ export function MenuPDFDocument({ restaurant, menu, theme: themeProp, registered
     <Document
       title={`${restaurant.name} — ${menu.name}`}
       author={restaurant.name}
-      creator="Digital Menu Pro"
+      creator="Lito"
     >
       <Page size="A4" style={s.page} wrap>
         <PageBackgroundLayer bg={m.pageBackground} compact={compact} />
