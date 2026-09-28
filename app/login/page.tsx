@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import { Spinner } from '@/components/ui/Spinner'
 import { useStaggerEntrance } from '@/lib/animations'
 import { toLoginEmail } from '@/lib/username'
+import LitoMark from '@/components/LitoMark'
 
 // Registrazione pubblica RIMOSSA: gli account non si creano più da qui.
 // Vengono forniti a mano dall'account padre tramite la tab "Utenti" del
@@ -41,7 +42,11 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-gray-100 flex flex-col items-center justify-center p-4">
+      <div className="flex flex-col items-center mb-6" aria-label="Lito">
+        <LitoMark className="w-24 h-24 sm:w-28 sm:h-28" writeStartMs={250} writeMs={2400} />
+        <div className="login-wordmark mt-1 text-[11px] uppercase text-stone-500">Lito</div>
+      </div>
       <div ref={cardRef} className="w-full max-w-sm bg-white border border-gray-200 shadow-sm p-8">
         <div className="mb-7">
           <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-blue-600 mb-1">
