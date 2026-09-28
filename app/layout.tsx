@@ -12,6 +12,7 @@ export const metadata: Metadata = {
   title: 'Digital Menu Pro',
   description: 'Menu digitale per ristoranti',
   viewport: 'width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, user-scalable=no',
+  appleWebApp: { title: 'Lito' },
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
