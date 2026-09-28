@@ -49,9 +49,6 @@ export default function LoginPage() {
       </div>
       <div ref={cardRef} className="w-full max-w-sm bg-white border border-gray-200 shadow-sm p-8">
         <div className="mb-7">
-          <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-blue-600 mb-1">
-            Digital Menu Pro
-          </div>
           <h1 className="text-xl font-semibold text-gray-900">Accedi al gestionale</h1>
         </div>
 

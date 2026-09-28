@@ -83,7 +83,7 @@ export default function AdminShell({
           </svg>
         </button>
         <span className="text-[9px] font-bold uppercase tracking-[0.25em] text-blue-600">
-          Digital Menu Pro
+          Lito
         </span>
       </header>
 
@@ -104,7 +104,7 @@ export default function AdminShell({
       >
         <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
           <div className="text-[9px] font-bold uppercase tracking-[0.25em] text-blue-600">
-            Digital Menu Pro
+            Lito
           </div>
           <button
             onClick={close}

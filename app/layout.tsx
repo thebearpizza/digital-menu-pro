@@ -9,7 +9,7 @@ const inter = Inter({ subsets: ['latin'] })
 // zoom da pinch, doppio-tap o focus sugli input. (iOS Safari ignora
 // user-scalable/maximum-scale → la prevenzione runtime è in <NoZoom />.)
 export const metadata: Metadata = {
-  title: 'Digital Menu Pro',
+  title: 'Lito',
   description: 'Menu digitale per ristoranti',
   viewport: 'width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, user-scalable=no',
   appleWebApp: { title: 'Lito' },
