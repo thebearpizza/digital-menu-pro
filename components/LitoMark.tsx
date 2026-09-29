@@ -50,6 +50,7 @@ export default function LitoMark({
   className,
   loop = false,
   loopMs = 3400,
+  progress,
 }: {
   writeStartMs?: number
   writeMs?: number
@@ -57,7 +58,10 @@ export default function LitoMark({
   /** Scrive e riassorbe la L all'infinito (indicatore di caricamento). */
   loop?: boolean
   loopMs?: number
+  /** L ferma a questa frazione di scrittura (0–1), senza animazioni: fotogrammi del flip-book. */
+  progress?: number
 }) {
+  const still = progress !== undefined
   const uid = useId().replace(/:/g, '')
   const id = (name: string) => `lm${uid}-${name}`
   const svgRef = useRef<SVGSVGElement>(null)
@@ -68,7 +72,7 @@ export default function LitoMark({
   // anche con idratazione lenta o tornando al login senza ricaricare.
   useEffect(() => {
     const svg = svgRef.current
-    if (!svg || loop) return
+    if (!svg || loop || still) return
     const finals = svg.querySelectorAll<SVGAnimationElement>('[data-lm-final]')
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
       svg.querySelector(`#${id('reveal-rect')}`)?.setAttribute('x', '-2')
@@ -159,7 +163,10 @@ export default function LitoMark({
                 pathLength={1}
                 d={st.d}
                 strokeWidth={st.w}
-                style={loop ? {
+                style={still ? (() => {
+                  const f = Math.min(1, Math.max(0, (progress! * TOTAL_LEN - (before - st.len)) / st.len))
+                  return { animation: 'none', strokeDashoffset: 1 - f, strokeOpacity: f > 0 ? 1 : 0 }
+                })() : loop ? {
                   animation: `lm-loop-${i} ${loopMs}ms linear infinite`,
                 } : {
                   animationDelay: `${delay}ms`,
@@ -175,7 +182,7 @@ export default function LitoMark({
       <g mask={`url(#${id('pen')})`}>
         <path d={L_PATH} fill={`url(#${id('gold')})`} />
       </g>
-      {!loop && (
+      {!loop && !still && (
         <>
       <g mask={`url(#${id('reveal-mask')})`}>
         {/* Rettangolo trasparente: Safari ritaglia i filtri al riquadro dell'elemento,

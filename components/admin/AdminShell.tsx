@@ -14,7 +14,16 @@ function Icon({ name }: { name: IconName }) {
     case 'home':
       return <svg {...common}><path d="M3 10.5 12 3l9 7.5" /><path d="M5 9.5V20h5v-6h4v6h5V9.5" /></svg>
     case 'book':
-      return <svg {...common}><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H12v17H6.5A2.5 2.5 0 0 0 4 22.5z" /><path d="M20 5.5A2.5 2.5 0 0 0 17.5 3H12v17h5.5a2.5 2.5 0 0 1 2.5 2.5z" /></svg>
+      // Menu chiuso: copertina con "Menù", costa, bordo pagine e nastrino segnapagina.
+      return (
+        <svg width={24} height={24} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round">
+          <path d="M6.5 2.5h11a1.5 1.5 0 0 1 1.5 1.5v14.5H6.5A1.5 1.5 0 0 1 5 17V4a1.5 1.5 0 0 1 1.5-1.5z" />
+          <path d="M8 2.5v16" />
+          <path d="M5 17a1.5 1.5 0 0 0 1.5 1.5H19v2H6.5A1.5 1.5 0 0 1 5 19" />
+          <path d="M15 18.5v4.5l1.1-.9 1.1.9v-4.5" />
+          <text x="13.5" y="11.6" textAnchor="middle" fontSize="4.1" fontWeight="700" fill="currentColor" stroke="none" fontFamily="Georgia, 'Times New Roman', serif" letterSpacing=".1">Menù</text>
+        </svg>
+      )
     case 'send':
       return <svg {...common}><path d="M21 3 10 14" /><path d="M21 3 14.5 21l-4.5-7-7-4.5z" /></svg>
     case 'users':
