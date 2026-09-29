@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useLayoutEffect, useRef } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { LogoutButton } from '@/components/admin/LogoutButton'
@@ -8,21 +8,32 @@ import NavigationProgress from '@/components/admin/NavigationProgress'
 
 interface Restaurant { id: string; name: string }
 
-function ChevronRight({ className = '' }: { className?: string }) {
-  return (
-    <svg width="12" height="12" viewBox="0 0 12 12" fill="none"
-      stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
-      className={className}>
-      <polyline points="4,2 8,6 4,10" />
-    </svg>
-  )
+type IconName = 'home' | 'book' | 'send' | 'users' | 'user'
+
+function Icon({ name }: { name: IconName }) {
+  const common = { width: 22, height: 22, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const }
+  switch (name) {
+    case 'home':
+      return <svg {...common}><path d="M3 10.5 12 3l9 7.5" /><path d="M5 9.5V20h5v-6h4v6h5V9.5" /></svg>
+    case 'book':
+      return <svg {...common}><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H12v17H6.5A2.5 2.5 0 0 0 4 22.5z" /><path d="M20 5.5A2.5 2.5 0 0 0 17.5 3H12v17h5.5a2.5 2.5 0 0 1 2.5 2.5z" /></svg>
+    case 'send':
+      return <svg {...common}><path d="M21 3 10 14" /><path d="M21 3 14.5 21l-4.5-7-7-4.5z" /></svg>
+    case 'users':
+      return <svg {...common}><circle cx="9" cy="8" r="3.5" /><path d="M2.5 20a6.5 6.5 0 0 1 13 0" /><path d="M16 4.5a3.5 3.5 0 0 1 0 7" /><path d="M18 14.2a6.5 6.5 0 0 1 3.5 5.8" /></svg>
+    case 'user':
+      return <svg {...common}><circle cx="12" cy="8" r="4" /><path d="M4 21a8 8 0 0 1 16 0" /></svg>
+  }
 }
 
-const RESTAURANT_TABS = [
-  { label: 'Informazioni',     segment: ''               },
-  { label: 'Menu',             segment: '/menus'         },
-  { label: 'Personalizzazione', segment: '/customization' },
-]
+interface DockItem {
+  key: string
+  label: string
+  icon: IconName
+  href?: string
+  active: boolean
+  popover?: 'restaurants' | 'account'
+}
 
 export default function AdminShell({
   userEmail,
@@ -38,216 +49,124 @@ export default function AdminShell({
   // ogni server action (vedi app/admin/users/).
   isSuperAdmin?: boolean
 }) {
-  const [drawerOpen,       setDrawerOpen]       = useState(false)
-  const [restaurantsOpen,  setRestaurantsOpen]  = useState(false)
-  const [openRestaurantId, setOpenRestaurantId] = useState<string | null>(null)
   const pathname = usePathname()
+  const [popover, setPopover] = useState<'restaurants' | 'account' | null>(null)
+  const dockRef  = useRef<HTMLDivElement>(null)
+  const itemRefs = useRef<Record<string, HTMLElement | null>>({})
+  const [pill, setPill] = useState<{ left: number; width: number } | null>(null)
 
-  // Auto-expand sidebar sections that match the current route
+  // Tema avorio/oro su tutta la pagina (anche finestre montate fuori dallo shell).
   useEffect(() => {
-    if (pathname.startsWith('/admin/restaurants')) {
-      setRestaurantsOpen(true)
-      const m = pathname.match(/\/admin\/restaurants\/([^/]+)/)
-      if (m) setOpenRestaurantId(m[1])
+    document.documentElement.classList.add('lito-admin')
+    return () => document.documentElement.classList.remove('lito-admin')
+  }, [])
+
+  useEffect(() => { setPopover(null) }, [pathname])
+
+  useEffect(() => {
+    if (!popover) return
+    const onDown = (e: PointerEvent) => {
+      if (!dockRef.current?.parentElement?.contains(e.target as Node)) setPopover(null)
     }
-  }, [pathname])
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setPopover(null) }
+    window.addEventListener('pointerdown', onDown)
+    window.addEventListener('keydown', onKey)
+    return () => { window.removeEventListener('pointerdown', onDown); window.removeEventListener('keydown', onKey) }
+  }, [popover])
 
-  function close() { setDrawerOpen(false) }
+  const items: DockItem[] = [
+    { key: 'dashboard',   label: 'Dashboard', icon: 'home', href: '/admin', active: pathname === '/admin' },
+    { key: 'restaurants', label: 'Ristoranti', icon: 'book', active: pathname.startsWith('/admin/restaurants'), popover: 'restaurants' },
+    { key: 'telegram',    label: 'Telegram',  icon: 'send', href: '/admin/telegram', active: pathname.startsWith('/admin/telegram') },
+    ...(isSuperAdmin
+      ? [{ key: 'users', label: 'Utenti', icon: 'users' as const, href: '/admin/users', active: pathname.startsWith('/admin/users') }]
+      : []),
+    { key: 'account',     label: 'Account',   icon: 'user', active: false, popover: 'account' },
+  ]
+  const activeKey = (popover && items.find(i => i.popover === popover)?.key) ?? items.find(i => i.active)?.key
 
-  function tabActive(restaurantId: string, segment: string) {
-    const base = `/admin/restaurants/${restaurantId}`
-    if (segment === '') return pathname === base
-    return pathname.startsWith(base + segment)
-  }
-
-  const restaurantsActive = pathname.startsWith('/admin/restaurants')
-  const dashboardActive   = pathname === '/admin'
-  const telegramActive    = pathname.startsWith('/admin/telegram')
-  const usersActive       = pathname.startsWith('/admin/users')
+  useLayoutEffect(() => {
+    const measure = () => {
+      const el = activeKey ? itemRefs.current[activeKey] : null
+      const dock = dockRef.current
+      if (!el || !dock) { setPill(null); return }
+      setPill({ left: el.offsetLeft, width: el.offsetWidth })
+    }
+    measure()
+    window.addEventListener('resize', measure)
+    return () => window.removeEventListener('resize', measure)
+  }, [activeKey, items.length])
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen">
       <NavigationProgress />
 
-      {/* ── Mobile top bar ─────────────────────────────────────────────── */}
-      <header className="md:hidden sticky top-0 z-30 flex items-center gap-3 h-14 px-4 bg-white border-b border-gray-200">
-        <button
-          onClick={() => setDrawerOpen(true)}
-          aria-label="Apri menu"
-          className="min-h-[44px] min-w-[44px] -ml-2 flex items-center justify-center text-gray-600"
-        >
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-            <line x1="3" y1="6"  x2="21" y2="6"  />
-            <line x1="3" y1="12" x2="21" y2="12" />
-            <line x1="3" y1="18" x2="21" y2="18" />
-          </svg>
-        </button>
-        <span className="text-[9px] font-bold uppercase tracking-[0.25em] text-blue-600">
-          Lito
-        </span>
-      </header>
-
-      {/* ── Overlay (mobile) ───────────────────────────────────────────── */}
-      {drawerOpen && (
-        <div
-          onClick={close}
-          className="md:hidden fixed inset-0 z-40 bg-black/40"
-          aria-hidden
-        />
-      )}
-
-      {/* ── Sidebar ────────────────────────────────────────────────────── */}
-      <aside
-        className={`fixed top-0 left-0 h-full w-60 md:w-52 bg-white border-r border-gray-200 flex flex-col z-50
-          transition-transform duration-200 ease-out
-          ${drawerOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0`}
-      >
-        <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
-          <div className="text-[9px] font-bold uppercase tracking-[0.25em] text-blue-600">
-            Lito
-          </div>
-          <button
-            onClick={close}
-            aria-label="Chiudi menu"
-            className="md:hidden text-gray-400 hover:text-gray-700 text-xl leading-none"
-          >
-            ×
-          </button>
-        </div>
-
-        <nav className="flex-1 px-3 py-3 overflow-y-auto space-y-0.5">
-
-          {/* Dashboard */}
-          <Link
-            href="/admin"
-            onClick={close}
-            className={`flex items-center px-3 min-h-[44px] text-sm transition-colors ${
-              dashboardActive
-                ? 'bg-blue-50 text-blue-700 font-medium'
-                : 'text-gray-700 hover:bg-gray-100'
-            }`}
-          >
-            Dashboard
-          </Link>
-
-          {/* ── Ristoranti (split: text = link, arrow = toggle) ─────────── */}
-          <div>
-            <div className={`flex items-center min-h-[44px] transition-colors ${
-              restaurantsActive ? 'text-blue-700' : 'text-gray-700'
-            }`}>
-              <Link
-                href="/admin/restaurants"
-                onClick={close}
-                className={`flex-1 flex items-center px-3 h-full text-sm font-[inherit] transition-colors ${
-                  restaurantsActive ? 'font-medium' : 'hover:bg-gray-100'
-                }`}
-              >
-                Ristoranti
-              </Link>
-              <button
-                onClick={() => setRestaurantsOpen(o => !o)}
-                aria-label={restaurantsOpen ? 'Chiudi ristoranti' : 'Espandi ristoranti'}
-                className="flex items-center justify-center w-9 h-full flex-shrink-0 hover:bg-gray-100 transition-colors"
-              >
-                <ChevronRight className={`transition-transform duration-200 ${restaurantsOpen ? 'rotate-90' : ''}`} />
-              </button>
-            </div>
-
-            {/* Lista ristoranti */}
-            {restaurantsOpen && restaurants.length > 0 && (
-              <div className="mt-0.5 space-y-0.5">
-                {restaurants.map(r => {
-                  const rActive  = pathname.startsWith(`/admin/restaurants/${r.id}`)
-                  const rOpen    = openRestaurantId === r.id
-
-                  return (
-                    <div key={r.id}>
-                      {/* Riga ristorante */}
-                      <button
-                        onClick={() => setOpenRestaurantId(id => id === r.id ? null : r.id)}
-                        className={`w-full flex items-center justify-between pl-5 pr-2 min-h-[38px] text-sm transition-colors ${
-                          rActive
-                            ? 'text-blue-700 font-medium'
-                            : 'text-gray-600 hover:bg-gray-50'
-                        }`}
-                      >
-                        <span className="truncate text-left">{r.name}</span>
-                        <ChevronRight className={`flex-shrink-0 ml-1 transition-transform duration-200 ${rOpen ? 'rotate-90' : ''}`} />
-                      </button>
-
-                      {/* Tab del ristorante */}
-                      {rOpen && (
-                        <div className="mt-0.5 mb-1">
-                          {RESTAURANT_TABS.map(({ label, segment }) => {
-                            const href    = `/admin/restaurants/${r.id}${segment}`
-                            const active  = tabActive(r.id, segment)
-                            return (
-                              <Link
-                                key={segment}
-                                href={href}
-                                onClick={close}
-                                className={`flex items-center gap-2 pl-8 pr-3 min-h-[34px] text-xs transition-colors ${
-                                  active
-                                    ? 'text-blue-700 font-semibold bg-blue-50'
-                                    : 'text-gray-500 hover:bg-gray-50 hover:text-gray-700'
-                                }`}
-                              >
-                                <span className={`w-1 h-1 rounded-full flex-shrink-0 ${active ? 'bg-blue-600' : 'bg-gray-300'}`} />
-                                {label}
-                              </Link>
-                            )
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
-            )}
-          </div>
-
-          {/* Telegram */}
-          <Link
-            href="/admin/telegram"
-            onClick={close}
-            className={`flex items-center px-3 min-h-[44px] text-sm transition-colors ${
-              telegramActive
-                ? 'bg-blue-50 text-blue-700 font-medium'
-                : 'text-gray-700 hover:bg-gray-100'
-            }`}
-          >
-            Telegram
-          </Link>
-
-          {/* Utenti — solo account padre (guardia reale lato server) */}
-          {isSuperAdmin && (
-            <Link
-              href="/admin/users"
-              onClick={close}
-              className={`flex items-center px-3 min-h-[44px] text-sm transition-colors ${
-                usersActive
-                  ? 'bg-blue-50 text-blue-700 font-medium'
-                  : 'text-gray-700 hover:bg-gray-100'
-              }`}
-            >
-              Utenti
-            </Link>
-          )}
-
-        </nav>
-
-        <div className="px-5 py-4 border-t border-gray-100">
-          <div className="text-[11px] text-gray-400 truncate mb-1.5">{userEmail}</div>
-          <LogoutButton />
-        </div>
-      </aside>
-
-      {/* ── Main ───────────────────────────────────────────────────────── */}
-      <main className="md:ml-52 min-h-screen">
+      <main className="min-h-screen pb-36">
         <div className="max-w-6xl mx-auto p-4 md:p-8">
           {children}
         </div>
       </main>
+
+      {/* ── Dock ──────────────────────────────────────────────────────── */}
+      <div className="lito-dock-wrap">
+        {popover === 'restaurants' && (
+          <div className="lito-dock-pop" role="dialog" aria-label="Ristoranti">
+            <Link href="/admin/restaurants" className="lito-dock-pop-row font-medium">
+              Tutti i ristoranti
+            </Link>
+            {restaurants.length > 0 && <div className="lito-dock-pop-sep" />}
+            <div className="max-h-[45vh] overflow-y-auto">
+              {restaurants.map(r => (
+                <Link
+                  key={r.id}
+                  href={`/admin/restaurants/${r.id}`}
+                  className={`lito-dock-pop-row ${pathname.startsWith(`/admin/restaurants/${r.id}`) ? 'is-current' : ''}`}
+                >
+                  <span className="truncate">{r.name}</span>
+                </Link>
+              ))}
+            </div>
+          </div>
+        )}
+        {popover === 'account' && (
+          <div className="lito-dock-pop lito-dock-pop-right" role="dialog" aria-label="Account">
+            <div className="px-3 pt-1 pb-2 text-[11px] text-gray-500 truncate">{userEmail}</div>
+            <div className="lito-dock-pop-sep" />
+            <div className="px-3 py-2"><LogoutButton /></div>
+          </div>
+        )}
+
+        <nav ref={dockRef} className="lito-dock" aria-label="Navigazione">
+          {pill && <span className="lito-dock-pill" style={{ transform: `translateX(${pill.left}px)`, width: pill.width }} aria-hidden />}
+          {items.map(item => {
+            const isActive = item.key === activeKey
+            const content = (
+              <>
+                <span className="lito-dock-icon"><Icon name={item.icon} /></span>
+                <span className="lito-dock-label">{item.label}</span>
+              </>
+            )
+            const cls = `lito-dock-item${isActive ? ' is-active' : ''}`
+            const setRef = (el: HTMLElement | null) => { itemRefs.current[item.key] = el }
+            return item.href ? (
+              <Link key={item.key} ref={setRef} href={item.href} className={cls} aria-current={isActive ? 'page' : undefined}>
+                {content}
+              </Link>
+            ) : (
+              <button
+                key={item.key}
+                ref={setRef}
+                type="button"
+                className={cls}
+                aria-expanded={popover === item.popover}
+                onClick={() => setPopover(p => (p === item.popover ? null : item.popover!))}
+              >
+                {content}
+              </button>
+            )
+          })}
+        </nav>
+      </div>
     </div>
   )
 }

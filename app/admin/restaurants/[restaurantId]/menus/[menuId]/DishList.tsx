@@ -1400,7 +1400,7 @@ export default function DishList({
 
       {/* Floating multi-select action bar */}
       {selectedIds.size > 0 && (
-        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[200] bg-gray-900 text-white shadow-2xl rounded-lg px-4 py-3 flex items-center gap-3 flex-wrap max-w-[calc(100vw-2rem)]">
+        <div className="fixed bottom-28 left-1/2 -translate-x-1/2 z-[200] bg-gray-900 text-white shadow-2xl rounded-lg px-4 py-3 flex items-center gap-3 flex-wrap max-w-[calc(100vw-2rem)]">
           <span className="text-sm font-medium whitespace-nowrap">
             {selectedIds.size} {selectedIds.size === 1 ? 'piatto selezionato' : 'piatti selezionati'}
           </span>
