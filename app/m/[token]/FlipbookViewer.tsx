@@ -1135,7 +1135,83 @@ export default function FlipbookViewer({
           ctx.fillText(`${turnPage}/${navTotal}`, w / 2, h - 12)
           ctx.restore()
         }
-        const buildAdPageDOM = (config: AdConfig, turnPage: number): { el: HTMLElement; video?: HTMLVideoElement; canvas?: HTMLCanvasElement; kbImageUrl?: string } => {
+
+        // Ridisegna nello snapshot i testi REALI del blocco titolo (nome,
+        // descrizione, prezzo): il blocco viene impaginato fuori schermo alle
+        // dimensioni della pagina e ogni carattere è ridisegnato nella sua
+        // posizione esatta, con font/colore/maiuscole/spaziatura veri. Così la
+        // pagina scoperta durante il trascinamento coincide con quella finale.
+        const drawDomText = async (ctx: CanvasRenderingContext2D, src: HTMLElement, w: number, h: number) => {
+          const holder = document.createElement('div')
+          holder.style.cssText = `position:fixed;left:-30000px;top:0;width:${w}px;height:${h}px;pointer-events:none;`
+          const clone = src.cloneNode(true) as HTMLElement
+          ;[clone, ...Array.from(clone.querySelectorAll<HTMLElement>('*'))].forEach(e => { e.style.visibility = 'visible'; e.style.animation = 'none' })
+          holder.appendChild(clone)
+          document.body.appendChild(holder)
+          try {
+            // Carica esplicitamente i font usati dal blocco (il fallback
+            // falserebbe metriche e posizioni).
+            const fontsToLoad = new Set<string>()
+            ;[clone, ...Array.from(clone.querySelectorAll<HTMLElement>('*'))].forEach(e => {
+              const cs = getComputedStyle(e)
+              fontsToLoad.add(`${cs.fontStyle} ${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`)
+            })
+            try { await Promise.all(Array.from(fontsToLoad).map(f => (document as any).fonts?.load(f))) } catch (_) {}
+            try { await (document as any).fonts?.ready } catch (_) {}
+            const hr = holder.getBoundingClientRect()
+            const walker = document.createTreeWalker(clone, NodeFilter.SHOW_TEXT)
+            const range = document.createRange()
+            for (let node = walker.nextNode() as Text | null; node; node = walker.nextNode() as Text | null) {
+              const elp = node.parentElement
+              if (!elp) continue
+              const cs = getComputedStyle(elp)
+              let alpha = 1
+              for (let e: HTMLElement | null = elp; e && e !== holder; e = e.parentElement) alpha *= parseFloat(getComputedStyle(e).opacity || '1')
+              ctx.save()
+              ctx.globalAlpha = alpha
+              ctx.fillStyle = cs.color
+              ctx.font = `${cs.fontStyle} ${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`
+              ctx.textBaseline = 'alphabetic'
+              const upper = cs.textTransform === 'uppercase'
+              const strike = (cs.textDecorationLine || (cs as any).textDecoration || '').includes('line-through')
+              for (let i = 0; i < node.data.length; i++) {
+                const ch = node.data[i]
+                if (!ch.trim()) continue
+                range.setStart(node, i); range.setEnd(node, i + 1)
+                const r = range.getClientRects()[0]
+                if (!r) continue
+                const glyph = upper ? ch.toUpperCase() : ch
+                const m = ctx.measureText(glyph)
+                const asc = (m as any).fontBoundingBoxAscent ?? parseFloat(cs.fontSize) * 0.8
+                const x = r.left - hr.left, y = r.top - hr.top + asc
+                ctx.fillText(glyph, x, y)
+                if (strike) ctx.fillRect(x, r.top - hr.top + r.height / 2, r.width, Math.max(1, parseFloat(cs.fontSize) / 14))
+              }
+              ctx.restore()
+            }
+          } finally {
+            holder.remove()
+          }
+        }
+        // Snapshot completo della pagina Ad alla risoluzione dello schermo.
+        const composeAdSnapshot = async (paintMedia: (ctx: CanvasRenderingContext2D, w: number, h: number) => void, title: HTMLElement | undefined, turnPage: number): Promise<string> => {
+          const w = dims!.w, h = dims!.h
+          const sc = document.createElement('canvas')
+          sc.width = Math.round(w * dpr); sc.height = Math.round(h * dpr)
+          const ctx = sc.getContext('2d')!
+          ctx.scale(dpr, dpr)
+          paintMedia(ctx, w, h)
+          // Overlay gradient (come .ad-overlay)
+          const g = ctx.createLinearGradient(0, h, 0, 0)
+          g.addColorStop(0, 'rgba(0,0,0,0.88)')
+          g.addColorStop(0.45, 'rgba(0,0,0,0.30)')
+          g.addColorStop(1, 'rgba(0,0,0,0.10)')
+          ctx.fillStyle = g; ctx.fillRect(0, 0, w, h)
+          if (title) { try { await drawDomText(ctx, title, w, h) } catch (_) {} }
+          drawAdNav(ctx, w, h, turnPage)
+          return sc.toDataURL('image/jpeg', 0.9)
+        }
+        const buildAdPageDOM = (config: AdConfig, turnPage: number): { el: HTMLElement; video?: HTMLVideoElement; canvas?: HTMLCanvasElement; kbImageUrl?: string; title?: HTMLElement } => {
           const container = document.createElement('div')
           container.style.cssText = 'width:100%;height:100%;display:flex;flex-direction:column;'
 
@@ -1180,9 +1256,9 @@ export default function FlipbookViewer({
             // Inizialmente display:'block' (default canvas) → copre il video.
             // Viene nascosto con display:'none' in crossfadeToVideo dopo il turned.
             canvasEl = document.createElement('canvas')
-            canvasEl.width  = dims!.w
-            // Altezza = solo la zona video (esclusa la safe area).
-            canvasEl.height = dims!.h
+            // Risoluzione reale dello schermo (dpr): niente primo frame sfocato.
+            canvasEl.width  = Math.round(dims!.w * dpr)
+            canvasEl.height = Math.round(dims!.h * dpr)
             canvasEl.style.cssText =
               'position:absolute;inset:0;width:100%;height:100%;z-index:10;'
             const ctx0 = canvasEl.getContext('2d')
@@ -1331,7 +1407,7 @@ export default function FlipbookViewer({
 
           container.appendChild(main)
           container.appendChild(safe)
-          return { el: container, video: videoEl, canvas: canvasEl, kbImageUrl: kbImageUrlResult }
+          return { el: container, video: videoEl, canvas: canvasEl, kbImageUrl: kbImageUrlResult, title: titleBlock.childElementCount > 0 ? titleBlock : undefined }
         }
 
         // ── FASE 2: div + canvas nel DOM ─────────────────────────────────────
@@ -1347,7 +1423,7 @@ export default function FlipbookViewer({
             `backface-visibility:hidden;-webkit-backface-visibility:hidden;`
 
           if (page.type === 'ad') {
-            const { el: adEl, video, canvas, kbImageUrl } = buildAdPageDOM(page.config, domIdx + 1)
+            const { el: adEl, video, canvas, kbImageUrl, title: adTitle } = buildAdPageDOM(page.config, domIdx + 1)
             pageDiv.appendChild(adEl)
             const turnPage = domIdx + 1  // 1-based turn page
             if (video) adVideoMap.set(turnPage, video)
@@ -1367,7 +1443,6 @@ export default function FlipbookViewer({
                 // off-screen ma RENDERIZZATO (opacity:0, non display:none) che
                 // decodifica liberamente, da cui catturiamo il frame.
                 const snapUrl = page.config.mediaUrl
-                const snapName = page.config.dishName?.trim() || page.config.categoryTarget?.trim() || ''
                 const tmp = document.createElement('video')
                 tmp.crossOrigin = 'anonymous'
                 tmp.muted = true; tmp.playsInline = true; tmp.preload = 'auto'
@@ -1388,29 +1463,19 @@ export default function FlipbookViewer({
                     const vw = tmp.videoWidth, vh = tmp.videoHeight
                     if (!vw || !vh) return
                     const w = dims!.w, h = dims!.h
-                    const sc = document.createElement('canvas'); sc.width = w; sc.height = h
-                    const ctx = sc.getContext('2d'); if (!ctx) return
                     const s = Math.max(w / vw, h / vh)
-                    ctx.drawImage(tmp, (w - vw * s) / 2, (h - vh * s) / 2, vw * s, vh * s)
-                    // Overlay gradient + titolo (coerente con .ad-overlay / .ad-title-block)
-                    const g = ctx.createLinearGradient(0, h, 0, 0)
-                    g.addColorStop(0, 'rgba(0,0,0,0.88)')
-                    g.addColorStop(0.45, 'rgba(0,0,0,0.30)')
-                    g.addColorStop(1, 'rgba(0,0,0,0.10)')
-                    ctx.fillStyle = g; ctx.fillRect(0, 0, w, h)
-                    if (snapName) {
-                      const size = Math.round(Math.min(32, w * 0.062))
-                      ctx.font = `300 ${size}px ${theme.fontSerif}`
-                      ctx.fillStyle = '#fff'
-                      ctx.fillText(snapName, 20, h - AD_TITLE_BOTTOM)
-                    }
-                    drawAdNav(ctx, w, h, turnPage)
-                    adCanvasDataUrls.set(turnPage, sc.toDataURL('image/jpeg', 0.9))
-                    // Dipingi anche il canvas on-page (stesse dimensioni di sc) così,
-                    // a piega conclusa e prima del play del video, mostra il primo
-                    // frame invece del fill #111 (niente flash nero).
+                    // Frame congelato ora (il video temporaneo viene poi rimosso).
+                    const frame = document.createElement('canvas')
+                    frame.width = Math.round(w * dpr); frame.height = Math.round(h * dpr)
+                    const fctx = frame.getContext('2d'); if (!fctx) return
+                    fctx.scale(dpr, dpr)
+                    fctx.drawImage(tmp, (w - vw * s) / 2, (h - vh * s) / 2, vw * s, vh * s)
+                    // Canvas on-page: primo frame invece del fill #111 (niente flash nero).
                     const onCtx = canvas.getContext('2d')
-                    if (onCtx) onCtx.drawImage(tmp, (w - vw * s) / 2, (h - vh * s) / 2, vw * s, vh * s)
+                    if (onCtx) onCtx.drawImage(frame, 0, 0)
+                    composeAdSnapshot((c, ww, hh) => c.drawImage(frame, 0, 0, ww, hh), adTitle, turnPage)
+                      .then(url => { if (!cancelled) adCanvasDataUrls.set(turnPage, url) })
+                      .catch(() => {})
                   } catch (_) { /* CORS/tainted: resta il fallback backup/black */ }
                   cleanup()
                 }
@@ -1437,32 +1502,16 @@ export default function FlipbookViewer({
                     const el = new Image(); el.crossOrigin = 'anonymous'
                     el.onload = () => res(el); el.onerror = rej; el.src = kbImageUrl
                   })
-                  const w = dims!.w, h = dims!.h
-                  const sc = document.createElement('canvas'); sc.width = w; sc.height = h
-                  const ctx = sc.getContext('2d')
-                  if (!ctx || cancelled) return
-                  // Cover scaling + 10% overflow (matching ad-kb-img inset:-5% a scale(1))
-                  const ks = Math.max(w / img.naturalWidth, h / img.naturalHeight) * 1.1
-                  ctx.drawImage(img,
-                    (w - img.naturalWidth  * ks) / 2,
-                    (h - img.naturalHeight * ks) / 2,
-                    img.naturalWidth * ks, img.naturalHeight * ks)
-                  // Overlay gradient (matching .ad-overlay CSS)
-                  const g = ctx.createLinearGradient(0, h, 0, 0)
-                  g.addColorStop(0, 'rgba(0,0,0,0.88)')
-                  g.addColorStop(0.45, 'rgba(0,0,0,0.30)')
-                  g.addColorStop(1, 'rgba(0,0,0,0.10)')
-                  ctx.fillStyle = g; ctx.fillRect(0, 0, w, h)
-                  // Testo titolo (matching .ad-title-block + .ad-dish-name)
-                  const name = page.config.dishName?.trim() || page.config.categoryTarget?.trim() || ''
-                  if (name) {
-                    const size = Math.round(Math.min(32, w * 0.062))
-                    ctx.font = `300 ${size}px ${theme.fontSerif}`
-                    ctx.fillStyle = '#fff'
-                    ctx.fillText(name, 20, h - AD_TITLE_BOTTOM)
-                  }
-                  drawAdNav(ctx, w, h, turnPage)
-                  if (!cancelled) adCanvasDataUrls.set(turnPage, sc.toDataURL('image/jpeg', 0.9))
+                  if (cancelled) return
+                  const url = await composeAdSnapshot((ctx, w, h) => {
+                    // Cover scaling + 10% overflow (matching ad-kb-img inset:-5% a scale(1))
+                    const ks = Math.max(w / img.naturalWidth, h / img.naturalHeight) * 1.1
+                    ctx.drawImage(img,
+                      (w - img.naturalWidth  * ks) / 2,
+                      (h - img.naturalHeight * ks) / 2,
+                      img.naturalWidth * ks, img.naturalHeight * ks)
+                  }, adTitle, turnPage)
+                  if (!cancelled) adCanvasDataUrls.set(turnPage, url)
                 } catch (_) { /* CORS failure: keep kbImageUrl fallback */ }
               })()
             }
