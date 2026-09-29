@@ -41,11 +41,15 @@ interface Props {
   pairingPool?: DishData[]
   /** Mostra la scheda come PAGINA del libro (riempie il foglio, senza backdrop). */
   asPage?: boolean
+  /** Copia solo visiva (pagine del mini-libro durante lo sfoglio): niente input. */
+  visualOnly?: boolean
+  /** Notifica il piatto attualmente mostrato (cambia scorrendo tra i piatti). */
+  onDishChange?: (dish: DishData) => void
 }
 
 // ── Component ──────────────────────────────────────────────────────────────────
 
-export default function DishModal({ activeDish, allDishes, isNested, onClose, onBack, onOpenDish, editMode = false, theme, lang = 'it', pairingPool, asPage = false }: Props) {
+export default function DishModal({ activeDish, allDishes, isNested, onClose, onBack, onOpenDish, editMode = false, theme, lang = 'it', pairingPool, asPage = false, visualOnly = false, onDishChange }: Props) {
   const allergenCatalog = useAllergenCatalog()
   const mn   = theme?.menu
   const card = theme?.card
@@ -123,12 +127,30 @@ export default function DishModal({ activeDish, allDishes, isNested, onClose, on
 
   // Pop-in entrance for the card + backdrop, played once when the modal mounts.
   useEffect(() => {
+    if (asPage) return // come pagina del libro l'ingresso è lo sfoglio stesso
     const anims = animateCardIn(cardRef.current, backdropRef.current)
     return () => { anims.forEach(a => a.revert()) }
-  }, [])
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const total = allDishes.length
   const dish  = idx >= 0 ? (allDishes[idx] ?? activeDish) : activeDish
+
+  useEffect(() => { onDishChange?.(dish) }, [dish.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Indicatore "scorri": visibile finché sotto c'è altro contenuto (allergeni,
+  // abbinamento…) e l'utente non ha ancora scorso fino in fondo.
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const [moreBelow, setMoreBelow] = useState(false)
+  const checkMore = () => {
+    const el = scrollRef.current
+    if (!el) return
+    setMoreBelow(el.scrollHeight - el.scrollTop - el.clientHeight > 8)
+  }
+  useEffect(() => {
+    checkMore()
+    const t = setTimeout(checkMore, 400) // dopo il caricamento della foto
+    return () => clearTimeout(t)
+  }, [contentKey]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // When activeDish changes (new modal pushed onto stack), reset to that dish
   useEffect(() => {
@@ -149,6 +171,7 @@ export default function DishModal({ activeDish, allDishes, isNested, onClose, on
   // ── Keyboard ───────────────────────────────────────────────────────────────
 
   useEffect(() => {
+    if (visualOnly) return
     function onKey(e: KeyboardEvent) {
       if (e.key === 'Escape') {
         if (onBack) { onBack(); return }
@@ -222,7 +245,7 @@ export default function DishModal({ activeDish, allDishes, isNested, onClose, on
   return (
     <div
       className={asPage ? 'absolute inset-0 flex' : 'fixed inset-0 z-[99999] flex items-end sm:items-center justify-center'}
-      style={{ fontFamily: FONT_SANS }}
+      style={{ fontFamily: FONT_SANS, ...(visualOnly ? { pointerEvents: 'none' as const } : {}) }}
     >
       {/* Backdrop — clicking it always closes everything */}
       {!asPage && <div
@@ -312,8 +335,12 @@ export default function DishModal({ activeDish, allDishes, isNested, onClose, on
             touch-action:pan-y: browser handles vertical scroll natively;
             horizontal gestures pass through to the card's swipe handlers.
             Scrollbar completely hidden on all engines. */}
+        <div className="relative flex-1 min-h-0 flex flex-col">
         <div
           key={contentKey}
+          ref={scrollRef}
+          data-dish-scroll
+          onScroll={checkMore}
           className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden overscroll-contain [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]"
           style={{ ...animStyle, padding: '20px 24px 4px', touchAction: 'pan-y' }}
         >
@@ -466,6 +493,12 @@ export default function DishModal({ activeDish, allDishes, isNested, onClose, on
               </button>
             </EditHandle>
           )}
+        </div>
+        {moreBelow && (
+          <div className="dish-more-hint" aria-hidden style={{ background: `linear-gradient(to bottom, transparent, ${CARD_BG})` }}>
+            <span style={{ color: ACCENT }}>⌄</span>
+          </div>
+        )}
         </div>
 
         {/* Navigation bar — hidden in nested mode */}

@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState, useCallback } from 'react'
+import { createPortal } from 'react-dom'
 import DishModal, { DishData } from './DishModal'
 import { useIsMobilePreview } from './EditHandle'
 import { fontStack, hexToRgb, toOpaqueColor, PAGINATION_OPTIONS, menuBackgroundCss } from '@/lib/theme'
@@ -274,25 +275,175 @@ export default function FlipbookViewer({
   const [modalStack, setModalStack] = useState<DishData[]>([])
   // Immagine della pagina corrente (per la pagina che si gira sopra la scheda).
   const pageSnapRef = useRef<(turnPage: number) => string | undefined>(() => undefined)
-  const [dishFlap, setDishFlap] = useState<{ src?: string; phase: 'in' | 'out' } | null>(null)
-  // Apertura: la pagina corrente "si gira" e scopre la scheda sotto.
+  // ── Scheda piatto come pagina: mini-libro turn.js ─────────────────────────
+  // Un secondo libro turn.js (stesse opzioni del menu) sovrapposto al primo:
+  // pagina 1 = immagine della pagina del menu, pagina k+1 = scheda del livello k
+  // (piatto → abbinamento → …). È visibile SOLO durante gli sfogli; a riposo
+  // sopra c'è la scheda interattiva identica. Il libro del menu non viene
+  // toccato (salvo il salto alla pagina del piatto alla chiusura).
+  const miniRootRef   = useRef<HTMLDivElement>(null)
+  const [miniPages, setMiniPages]     = useState<HTMLElement[]>([])
+  const [miniVisible, setMiniVisible] = useState(false)
+  const miniPhaseRef  = useRef<'open' | 'push' | 'pop' | 'close' | null>(null)
+  const miniBusyRef   = useRef(false)
+  const currentDishes = useRef<DishData[]>([])     // piatto mostrato a ogni livello
+  const skipAutoClose = useRef(false)
+  const miniSnapRef   = useRef<HTMLElement | null>(null)   // pagina 1 del mini-libro
+  const $ = () => (window as any).$
+
+  const makeMiniPage = (bg?: string): { page: HTMLElement; mount: HTMLElement } => {
+    const page = document.createElement('div')
+    page.style.cssText = `width:${dims?.w ?? 0}px;height:${dims?.h ?? 0}px;overflow:hidden;background:${pageBgColor};`
+    if (bg) page.style.cssText += `background-image:url("${bg}");background-size:100% 100%;`
+    const mount = document.createElement('div')
+    mount.style.cssText = 'position:relative;width:100%;height:100%;'
+    page.appendChild(mount)
+    return { page, mount }
+  }
+  // Posizione di scorrimento della scheda interattiva (letta PRIMA dei cambi di stato)
+  // e riportata sulla copia nel mini-libro, così lo sfoglio parte dallo stesso punto.
+  const readScroll = () => document.querySelector<HTMLElement>('.fv-dish-page [data-dish-scroll]')?.scrollTop ?? 0
+  const applyScroll = (level: number, top: number) => {
+    const root = miniRootRef.current
+    const mounts = root ? Array.from(root.querySelectorAll<HTMLElement>('[data-mini-level]')) : []
+    const to = mounts.find(m => m.dataset.miniLevel === String(level))?.querySelector<HTMLElement>('[data-dish-scroll]')
+    if (to) to.scrollTop = top
+  }
+  const afterPaint = (fn: () => void) => requestAnimationFrame(() => requestAnimationFrame(fn))
+  // Fissa sul livello corrente il piatto effettivamente mostrato (scorrendo).
+  const commitTop = () => setModalStack(st => {
+    if (!st.length) return st
+    const cur = currentDishes.current[st.length - 1]
+    return cur && cur.id !== st[st.length - 1].id ? [...st.slice(0, -1), cur] : st
+  })
+  const destroyMini = () => {
+    try { $()?.(miniRootRef.current).turn('destroy') } catch (_) {}
+    if (miniRootRef.current) miniRootRef.current.innerHTML = ''
+    setMiniPages([]); setMiniVisible(false)
+    miniPhaseRef.current = null; miniBusyRef.current = false
+  }
+  const onMiniTurned = (_e: unknown, page: number) => {
+    const phase = miniPhaseRef.current
+    let pages = 0
+    try { pages = $()(miniRootRef.current).turn('pages') } catch (_) {}
+    // Ignora eventi che non corrispondono alla fine dello sfoglio in corso.
+    if ((phase === 'open' || phase === 'push') && page !== pages) return
+    if (phase === 'pop' && page !== pages - 1) return
+    if (phase === 'close' && page !== 1) return
+    if (phase === 'open' || phase === 'push') { setMiniVisible(false); miniBusyRef.current = false; miniPhaseRef.current = null }
+    else if (phase === 'pop') {
+      const root = miniRootRef.current
+      try { const n = $()(root).turn('pages'); $()(root).turn('removePage', n) } catch (_) {}
+      setMiniPages(p => p.slice(0, -1))
+      setModalStack(st => st.slice(0, -1))
+      currentDishes.current = currentDishes.current.slice(0, -1)
+      setMiniVisible(false); miniBusyRef.current = false; miniPhaseRef.current = null
+    } else if (phase === 'close') {
+      destroyMini(); setModalStack([]); currentDishes.current = []
+    }
+  }
+  // Apertura (il tap sul piatto imposta modalStack = [dish]).
   useEffect(() => {
     if (!DISH_AS_PAGE) return
-    if (modalStack.length > 0 && !dishFlap) setDishFlap({ src: pageSnapRef.current(currentPage), phase: 'in' })
-    if (modalStack.length === 0 && dishFlap) setDishFlap(null)
+    if (modalStack.length === 1 && miniPages.length === 0 && !miniBusyRef.current && dims) {
+      const root = miniRootRef.current
+      if (!root || !$()?.fn?.turn) { return }
+      miniBusyRef.current = true
+      miniPhaseRef.current = 'open'
+      currentDishes.current = [modalStack[0]]
+      const snap = makeMiniPage(pageSnapRef.current(currentPage))
+      miniSnapRef.current = snap.page
+      const card = makeMiniPage()
+      card.mount.dataset.miniLevel = '0'
+      root.innerHTML = ''
+      root.appendChild(snap.page); root.appendChild(card.page)
+      setMiniPages([card.mount])
+      setMiniVisible(true)
+      afterPaint(() => {
+        try {
+          $()(root).turn({
+            width: dims.w, height: dims.h, autoCenter: false, display: 'single',
+            duration: menuConfig.flipbook.duration, gradients: true, acceleration: true,
+            elevation: menuConfig.flipbook.elevation,
+            when: { turned: onMiniTurned },
+          })
+          $()(root).turn('next')
+        } catch (_) { destroyMini() }
+      })
+    }
+    if (modalStack.length === 0 && miniPages.length > 0 && !miniBusyRef.current) destroyMini()
   }, [modalStack.length]) // eslint-disable-line react-hooks/exhaustive-deps
-  // Cambio pagina (tab categoria, swipe…) con la scheda aperta: chiudila.
-  useEffect(() => {
-    if (!DISH_AS_PAGE) return
-    setModalStack(s => (s.length ? [] : s))
-    setDishFlap(null)
-  }, [currentPage])
-  // Chiusura: la pagina si rigira coprendo la scheda, poi la scheda sparisce.
+  // Abbinamento: nuova pagina in coda, sfoglio avanti.
+  const pushDish = (dish: DishData) => {
+    if (!DISH_AS_PAGE) { setModalStack(st => [...st, dish]); return }
+    const root = miniRootRef.current
+    if (!root || miniBusyRef.current) return
+    miniBusyRef.current = true
+    miniPhaseRef.current = 'push'
+    commitTop()
+    const level = modalStack.length - 1
+    const top = readScroll()
+    const next = makeMiniPage()
+    next.mount.dataset.miniLevel = String(level + 1)
+    try { $()(root).turn('addPage', next.page, $()(root).turn('pages') + 1) } catch (_) { miniBusyRef.current = false; return }
+    setMiniPages(p => [...p, next.mount])
+    setModalStack(st => [...st, dish])
+    currentDishes.current = [...currentDishes.current, dish]
+    setMiniVisible(true)
+    afterPaint(() => { applyScroll(level, top); try { $()(root).turn('next') } catch (_) { miniBusyRef.current = false } })
+  }
+  // Indietro: sfoglio indietro alla scheda da cui si era aperto l'abbinamento.
+  const popDish = () => {
+    if (!DISH_AS_PAGE) { setModalStack(st => st.slice(0, -1)); return }
+    const root = miniRootRef.current
+    if (!root || miniBusyRef.current) return
+    miniBusyRef.current = true
+    miniPhaseRef.current = 'pop'
+    const top = readScroll()
+    commitTop()
+    const level = modalStack.length - 1
+    setMiniVisible(true)
+    afterPaint(() => { applyScroll(level, top); try { $()(root).turn('previous') } catch (_) { miniBusyRef.current = false } })
+  }
+  // Chiusura: il menu si porta sulla pagina del piatto guardato per ultimo e si
+  // sfoglia indietro fino a quella pagina.
   const closeDishPage = () => {
     if (!DISH_AS_PAGE) { setModalStack([]); return }
-    setDishFlap(f => (f ? { ...f, phase: 'out' } : f))
-    setTimeout(() => { setModalStack([]); setDishFlap(null) }, 620)
+    const root = miniRootRef.current
+    if (!root || miniBusyRef.current) return
+    miniBusyRef.current = true
+    miniPhaseRef.current = 'close'
+    const top = readScroll()
+    commitTop()
+    const level = modalStack.length - 1
+    // Pagina del menu che contiene il piatto (livello 0) guardato per ultimo.
+    let target = currentPage
+    const base = currentDishes.current[0]
+    const span = base ? bookRef.current?.querySelector(`[data-dish-id="${base.id}"]`) : null
+    if (span) {
+      let e: HTMLElement | null = span as HTMLElement
+      while (e && !e.querySelector(':scope > canvas[data-page]')) e = e.parentElement
+      const pdfP = Number(e?.querySelector(':scope > canvas[data-page]')?.getAttribute('data-page'))
+      const tp = pdfToTurnRef.current.get(pdfP)
+      if (tp) target = tp
+    }
+    const snapSrc = pageSnapRef.current(target)
+    const el0 = miniSnapRef.current
+    if (el0 && snapSrc) { el0.style.backgroundImage = `url("${snapSrc}")`; el0.style.backgroundSize = '100% 100%' }
+    if (target !== currentPage) {
+      skipAutoClose.current = true
+      try { $()(bookRef.current).turn('page', target) } catch (_) {}
+    }
+    setMiniVisible(true)
+    afterPaint(() => { applyScroll(level, top); try { $()(root).turn('page', 1) } catch (_) { destroyMini(); setModalStack([]) } })
   }
+  // Cambio pagina del menu con la scheda aperta (tab categoria…): chiudi subito.
+  useEffect(() => {
+    if (!DISH_AS_PAGE) return
+    if (skipAutoClose.current) { skipAutoClose.current = false; return }
+    if (miniPhaseRef.current === 'close') return
+    if (modalStack.length) { destroyMini(); setModalStack([]); currentDishes.current = [] }
+  }, [currentPage]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Sincronizza activeCatIdx quando currentPage cambia (sfoglio manuale)
   // o quando le categorie cambiano (cambio menu o caricamento ads).
@@ -1932,32 +2083,45 @@ export default function FlipbookViewer({
             {pagesReady && <div className="fv-book-curve" aria-hidden />}
             {pagesReady && <div className="fv-book-spine" aria-hidden />}
 
-            {/* Scheda piatto come pagina del libro */}
+            {/* Scheda piatto come pagina del libro: scheda interattiva a riposo,
+                mini-libro turn.js visibile solo durante gli sfogli. */}
             {DISH_AS_PAGE && modalStack.length > 0 && (
-              <>
-                <div className="fv-dish-page">
-                  <DishModal
-                    asPage
-                    activeDish={modalStack[modalStack.length - 1]}
-                    allDishes={dishesRef.current}
-                    isNested={modalStack.length > 1}
-                    onClose={closeDishPage}
-                    onBack={modalStack.length > 1 ? () => setModalStack(st => st.slice(0, -1)) : undefined}
-                    onOpenDish={(dish) => setModalStack(st => [...st, dish])}
-                    theme={themeProp}
-                    lang={lang}
-                    pairingPool={pairingPool}
-                  />
-                </div>
-                {dishFlap?.src && (
-                  <div
-                    className={`fv-page-flap is-${dishFlap.phase}`}
-                    style={{ backgroundImage: `url("${dishFlap.src}")` }}
-                    aria-hidden
-                  />
-                )}
-              </>
+              <div className="fv-dish-page" style={{ visibility: miniVisible ? 'hidden' : 'visible' }}>
+                <DishModal
+                  key={`${modalStack.length}-${modalStack[modalStack.length - 1].id}`}
+                  asPage
+                  activeDish={modalStack[modalStack.length - 1]}
+                  allDishes={dishesRef.current}
+                  isNested={modalStack.length > 1}
+                  onClose={closeDishPage}
+                  onBack={modalStack.length > 1 ? popDish : undefined}
+                  onOpenDish={pushDish}
+                  onDishChange={(d) => { currentDishes.current[modalStack.length - 1] = d }}
+                  theme={themeProp}
+                  lang={lang}
+                  pairingPool={pairingPool}
+                />
+              </div>
             )}
+            {DISH_AS_PAGE && (
+              <div ref={miniRootRef} className="fv-mini-book" style={{ visibility: miniVisible ? 'visible' : 'hidden' }} aria-hidden />
+            )}
+            {DISH_AS_PAGE && miniPages.map((node, k) => modalStack[k] ? createPortal(
+              <DishModal
+                asPage
+                visualOnly
+                activeDish={modalStack[k]}
+                allDishes={dishesRef.current}
+                isNested={k > 0}
+                onClose={() => {}}
+                onOpenDish={() => {}}
+                theme={themeProp}
+                lang={lang}
+                pairingPool={pairingPool}
+              />,
+              node,
+              `mini-${k}`,
+            ) : null)}
 
             {/* Overlay caricamento */}
             {loadPhase === 'loading' && dims && (

@@ -649,3 +649,32 @@ html.lito-admin body {
 @keyframes fv-flap-in  { from { transform: perspective(1800px) rotateY(0deg); } to { transform: perspective(1800px) rotateY(-180deg); } }
 @keyframes fv-flap-out { from { transform: perspective(1800px) rotateY(-180deg); } to { transform: perspective(1800px) rotateY(0deg); } }
 @keyframes fv-flap-shade { 0% { opacity: 0; } 45% { opacity: 1; } 55%, 100% { opacity: 0; } }
+
+/* Indicatore "scorri" nella scheda piatto */
+.dish-more-hint {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 46px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding-bottom: 2px;
+  pointer-events: none;
+}
+.dish-more-hint span {
+  font-size: 26px;
+  line-height: 1;
+  animation: dish-more-bob 1.6s ease-in-out infinite;
+}
+@keyframes dish-more-bob {
+  0%, 100% { transform: translateY(0); opacity: 0.55; }
+  50% { transform: translateY(5px); opacity: 1; }
+}
+.fv-mini-book {
+  position: absolute;
+  inset: 0;
+  z-index: 62;
+  pointer-events: none;
+}
