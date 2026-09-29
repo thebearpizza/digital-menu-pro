@@ -4,15 +4,15 @@ import { useEffect, useState } from 'react'
 import LitoMark from './LitoMark'
 
 const ANIMATION_MS = 3700
-const WRITE_START_MS = 500
-const WRITE_MS = 1700
+const WRITE_START_MS = 620
+const WRITE_MS = 1350
 // Sfoglio: copertina, poi pagine a raffica che scoprono la L mentre si scrive.
-const COVER_START_MS = 450
-const COVER_MS = 520
-const PAGES = 8
-const PAGE_START_MS = 820
-const PAGE_STAGGER_MS = 165
-const PAGE_MS = 300
+const COVER_START_MS = 380
+const COVER_MS = 460
+const PAGES = 16
+const PAGE_START_MS = 640
+const PAGE_STAGGER_MS = 80
+const PAGE_MS = 260
 const MAX_WAIT_MS = 15000
 // Variante "loop": resta almeno finché la L non è stata scritta una volta.
 const LOOP_MIN_MS = 1800
@@ -60,7 +60,6 @@ export default function LitoSplash({ variant = 'book' }: { variant?: 'book' | 'l
       <div className="ls-stage">
         <div className="ls-book">
           <div className="ls-leaf ls-grain">
-            <LitoMark className="ls-logo" writeStartMs={WRITE_START_MS} writeMs={WRITE_MS} />
             <div className="ls-word">Lito</div>
           </div>
           {Array.from({ length: PAGES }, (_, i) => (
@@ -72,13 +71,16 @@ export default function LitoSplash({ variant = 'book' }: { variant?: 'book' | 'l
                 animationDelay: `${PAGE_START_MS + i * PAGE_STAGGER_MS}ms`,
                 animationDuration: `${PAGE_MS}ms`,
               }}
-            >
-              <LitoMark className="ls-logo" progress={(i + 1) / (PAGES + 1)} />
-            </div>
+            />
           ))}
+          {/* Inchiostro fermo sopra le pagine bianche: la L cresce senza muoversi
+              mentre le pagine sfogliano via sotto. La copertina la nasconde. */}
+          <div className="ls-ink" style={{ zIndex: PAGES + 1 }}>
+            <LitoMark className="ls-logo" writeStartMs={WRITE_START_MS} writeMs={WRITE_MS} />
+          </div>
           <div
             className="ls-page ls-cover ls-grain"
-            style={{ zIndex: PAGES + 1, animationDelay: `${COVER_START_MS}ms`, animationDuration: `${COVER_MS}ms` }}
+            style={{ zIndex: PAGES + 2, animationDelay: `${COVER_START_MS}ms`, animationDuration: `${COVER_MS}ms` }}
           >
             <div className="ls-rule">Menu</div>
           </div>
@@ -102,13 +104,15 @@ const CSS = `
 .ls-grain::after{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;mix-blend-mode:multiply;background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 .4  0 0 0 0 .35  0 0 0 0 .28  0 0 0 .09 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>")}
 .ls-logo{position:absolute;left:16%;top:22%;width:68%;height:auto;overflow:visible}
 .ls-word{position:absolute;left:0;right:0;bottom:13%;text-align:center;letter-spacing:.42em;text-indent:.42em;font:500 11px/1 Georgia,"Times New Roman",serif;color:#6b6357;text-transform:uppercase;opacity:0;animation:ls-word var(--d) ease forwards}
-.ls-page{position:absolute;inset:0;border-radius:3px 8px 8px 3px;transform-origin:left center;backface-visibility:hidden;-webkit-backface-visibility:hidden;background:linear-gradient(90deg,rgba(0,0,0,.07),transparent 7%),radial-gradient(120% 80% at 70% 10%,rgba(255,255,255,.6),transparent 55%),#f8f1e3;animation-name:ls-flip;animation-timing-function:cubic-bezier(.5,.05,.7,.4);animation-fill-mode:both;will-change:transform}
-.ls-page::before{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;background:linear-gradient(90deg,transparent 15%,rgba(60,40,10,.32) 100%);opacity:0;animation:inherit;animation-name:ls-flip-shade}
-.ls-cover{display:grid;place-items:center;background:linear-gradient(90deg,rgba(0,0,0,.16),transparent 6%),radial-gradient(120% 80% at 70% 10%,rgba(255,255,255,.55),transparent 55%),var(--paper);animation-timing-function:cubic-bezier(.45,.05,.55,.35)}
+.ls-page{position:absolute;inset:0;border-radius:3px 8px 8px 3px;transform-origin:left center;backface-visibility:hidden;-webkit-backface-visibility:hidden;background:linear-gradient(90deg,rgba(0,0,0,.07),transparent 7%),#f7efe0;animation-name:ls-flip;animation-timing-function:linear;animation-fill-mode:both;will-change:transform}
+.ls-page::before{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;background:linear-gradient(90deg,transparent 30%,rgba(60,40,10,.12) 100%);opacity:0;animation:inherit;animation-name:ls-flip-shade}
+.ls-ink{position:absolute;inset:0;pointer-events:none}
+.ls-cover{display:grid;place-items:center;background:linear-gradient(90deg,rgba(0,0,0,.16),transparent 6%),radial-gradient(120% 80% at 70% 10%,rgba(255,255,255,.55),transparent 55%),var(--paper);animation-name:ls-cover-flip;animation-timing-function:cubic-bezier(.45,.05,.55,.35)}
 .ls-rule{width:46%;aspect-ratio:1;border:1px solid rgba(17,17,17,.18);border-radius:50%;display:grid;place-items:center;font:italic 400 13px Georgia,serif;color:rgba(17,17,17,.45);letter-spacing:.2em}
 @keyframes ls-in{from{opacity:0;transform:translateY(8px) scale(.98)}to{opacity:1;transform:none}}
-@keyframes ls-flip{from{transform:rotateY(0)}to{transform:rotateY(-180deg)}}
-@keyframes ls-flip-shade{0%{opacity:0}45%{opacity:1}50%,100%{opacity:0}}
+@keyframes ls-flip{0%{transform:rotateY(0);opacity:1}45%{opacity:0}100%{transform:rotateY(-180deg);opacity:0}}
+@keyframes ls-cover-flip{from{transform:rotateY(0)}to{transform:rotateY(-180deg)}}
+@keyframes ls-flip-shade{0%{opacity:0}40%{opacity:1}50%,100%{opacity:0}}
 @keyframes ls-word{0%,84%{opacity:0;transform:translateY(4px)}96%,100%{opacity:1;transform:none}}
 @media (prefers-reduced-motion:reduce){.ls-page{display:none}.ls-book{animation:none}.ls-word{animation:none;opacity:1}}
 `
