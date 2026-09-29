@@ -1,6 +1,8 @@
 'use client'
 
 import { useState, useCallback, useRef, useEffect } from 'react'
+import { formatAllergensShort } from '@/lib/allergens'
+import { useAllergenCatalog } from '@/components/AllergenCatalog'
 import {
   DndContext, closestCorners, DragEndEvent, DragStartEvent, DragOverlay,
   PointerSensor, TouchSensor, useSensor, useSensors,
@@ -127,6 +129,7 @@ function SortableDish({
   onSchedule: (dish: Dish) => void
   deletingId: string | null
 }) {
+  const allergenCatalog = useAllergenCatalog()
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: dish.id })
 
@@ -145,19 +148,19 @@ function SortableDish({
       if (kebabRef.current && !kebabRef.current.contains(e.target as Node)) setKebabOpen(false)
     }
     document.addEventListener('mousedown', onOut)
-    return () => document.removeEventListener('mousedown', onOut)
+  return () => document.removeEventListener('mousedown', onOut)
   }, [kebabOpen])
 
   return (
     <li
       ref={setNodeRef}
       style={style}
-      className={`px-3 py-2.5 hover:bg-gray-50 flex items-center gap-2 ${!dish.is_active ? 'opacity-40' : ''}`}
+      className={`px-3 h-[84px] hover:bg-gray-50 flex items-center gap-2 ${!dish.is_active ? 'opacity-40' : ''}`}
     >
       {/* Drag handle */}
       <button
         {...attributes} {...listeners}
-        className="text-gray-300 hover:text-gray-500 cursor-grab active:cursor-grabbing shrink-0 touch-none select-none text-base leading-none min-h-[44px] min-w-[28px] flex items-center justify-center"
+        className="text-gray-300 hover:text-gray-500 cursor-grab active:cursor-grabbing shrink-0 touch-none select-none text-base leading-none min-h-[44px] min-w-[20px] flex items-center justify-center"
         aria-label="Trascina per riordinare"
         title="Trascina per riordinare"
       >
@@ -175,14 +178,20 @@ function SortableDish({
 
       {/* Mini-anteprima foto: mostra a colpo d'occhio quali piatti hanno
           un'immagine caricata. loading=lazy: nessun impatto su liste lunghe. */}
-      {dish.image_url && (
+      {dish.image_url ? (
         <img
           src={dish.image_url}
           alt=""
           loading="lazy"
-          className="w-9 h-9 rounded object-cover shrink-0 border border-gray-200 bg-gray-100"
+          className="w-14 h-14 rounded-xl object-cover shrink-0 border border-gray-200 bg-gray-100"
           draggable={false}
         />
+      ) : (
+        <div className="w-14 h-14 rounded-xl shrink-0 border border-gray-200 bg-gray-100 flex items-center justify-center text-gray-300" aria-hidden>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="3" y="5" width="18" height="14" rx="3" /><circle cx="9" cy="10" r="1.6" /><path d="m21 16-5-5-8 8" />
+          </svg>
+        </div>
       )}
 
       <div
@@ -193,7 +202,7 @@ function SortableDish({
         onKeyDown={(e) => e.key === 'Enter' && onEdit(dish)}
         aria-label={`Modifica ${dish.name}`}
       >
-        <div className="text-sm font-medium text-gray-900 truncate">
+        <div className="text-sm font-medium text-gray-900 leading-snug line-clamp-2 break-words">
           {dish.name}
           {windowLabel(dish.schedule_enabled, dish.schedule_from, dish.schedule_until) && (
             <span className="ml-2 text-[10px] font-normal text-blue-500 whitespace-nowrap">
@@ -201,18 +210,17 @@ function SortableDish({
             </span>
           )}
         </div>
-        {dish.description && (
-          <div className="text-xs text-gray-400 mt-0.5 line-clamp-1">{dish.description}</div>
-        )}
-        {dish.allergens?.length > 0 && (
-          <div className="text-[10px] text-orange-500 mt-0.5">Allergeni: {dish.allergens.join(', ')}</div>
-        )}
+        <div className="mt-1 flex items-baseline gap-1.5 min-w-0 text-xs">
+          <span className="font-semibold text-blue-700 tabular-nums whitespace-nowrap">
+            {dish.price != null ? `€ ${Number(dish.price).toFixed(2)}` : '—'}
+          </span>
+          {dish.allergens?.length > 0 && (
+            <span className="text-[10px] text-orange-500 truncate">· Allergeni: {formatAllergensShort(dish.allergens, allergenCatalog)}</span>
+          )}
+        </div>
       </div>
 
-      <div className="flex items-center gap-1 shrink-0">
-        <span className="text-sm text-gray-600 tabular-nums whitespace-nowrap min-w-[52px] text-right">
-          {dish.price != null ? `€ ${Number(dish.price).toFixed(2)}` : '—'}
-        </span>
+      <div className="flex items-center gap-0.5 shrink-0">
 
         <VisibilityToggle isVisible={dish.is_active} onToggle={() => onToggle(dish)} />
 
@@ -520,7 +528,7 @@ function SortableCategory({
             </p>
           ) : (
             <SortableContext items={dishes.map(d => d.id)} strategy={verticalListSortingStrategy}>
-              <ul className="divide-y divide-gray-50">
+              <ul className="divide-y divide-gray-300">
                 {dishes.map(dish => (
                   <SortableDish
                     key={dish.id}
@@ -1400,7 +1408,7 @@ export default function DishList({
 
       {/* Floating multi-select action bar */}
       {selectedIds.size > 0 && (
-        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[200] bg-gray-900 text-white shadow-2xl rounded-lg px-4 py-3 flex items-center gap-3 flex-wrap max-w-[calc(100vw-2rem)]">
+        <div className="fixed bottom-28 left-1/2 -translate-x-1/2 z-[200] bg-gray-900 text-white shadow-2xl rounded-lg px-4 py-3 flex items-center gap-3 flex-wrap max-w-[calc(100vw-2rem)]">
           <span className="text-sm font-medium whitespace-nowrap">
             {selectedIds.size} {selectedIds.size === 1 ? 'piatto selezionato' : 'piatti selezionati'}
           </span>
@@ -1472,7 +1480,7 @@ export default function DishList({
                   type="button"
                   onClick={openBulkMoveCatModal}
                   disabled={bulkMoving || bulkMoveCatLoading}
-                  className="bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-sm font-medium px-3 py-1.5 rounded transition-colors whitespace-nowrap flex items-center gap-1"
+                  className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-sm font-medium px-3 py-1.5 rounded transition-colors whitespace-nowrap flex items-center gap-1"
                 >
                   {bulkMoveCatLoading ? <Spinner color="#fff" size={4} /> : 'Sposta'}
                 </button>

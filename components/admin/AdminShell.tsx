@@ -1,253 +1,194 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useLayoutEffect, useRef } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { LogoutButton } from '@/components/admin/LogoutButton'
 import NavigationProgress from '@/components/admin/NavigationProgress'
+import { AllergenCatalogProvider } from '@/components/AllergenCatalog'
+import type { AllergenCatalog } from '@/lib/allergens'
 
-interface Restaurant { id: string; name: string }
+type IconName = 'home' | 'book' | 'eye' | 'gear'
 
-function ChevronRight({ className = '' }: { className?: string }) {
-  return (
-    <svg width="12" height="12" viewBox="0 0 12 12" fill="none"
-      stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
-      className={className}>
-      <polyline points="4,2 8,6 4,10" />
-    </svg>
-  )
+function Icon({ name }: { name: IconName }) {
+  const common = { width: 22, height: 22, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const }
+  switch (name) {
+    case 'home':
+      return <svg {...common}><path d="M3 10.5 12 3l9 7.5" /><path d="M5 9.5V20h5v-6h4v6h5V9.5" /></svg>
+    case 'book':
+      // Menu chiuso: copertina con "Menù", costa, bordo pagine e nastrino segnapagina.
+      return (
+        <svg width={24} height={24} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round">
+          <path d="M6.5 2.5h11a1.5 1.5 0 0 1 1.5 1.5v14.5H6.5A1.5 1.5 0 0 1 5 17V4a1.5 1.5 0 0 1 1.5-1.5z" />
+          <path d="M8 2.5v16" />
+          <path d="M5 17a1.5 1.5 0 0 0 1.5 1.5H19v2H6.5A1.5 1.5 0 0 1 5 19" />
+          <path d="M15 18.5v4.5l1.1-.9 1.1.9v-4.5" />
+          <text x="13.5" y="11.6" textAnchor="middle" fontSize="4.1" fontWeight="700" fill="currentColor" stroke="none" fontFamily="Georgia, 'Times New Roman', serif" letterSpacing=".1">Menù</text>
+        </svg>
+      )
+    case 'eye':
+      return <svg {...common}><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z" /><circle cx="12" cy="12" r="3" /></svg>
+    case 'gear':
+      return (
+        <svg {...common}>
+          <circle cx="12" cy="12" r="3" />
+          <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" />
+        </svg>
+      )
+  }
 }
 
-const RESTAURANT_TABS = [
-  { label: 'Informazioni',     segment: ''               },
-  { label: 'Menu',             segment: '/menus'         },
-  { label: 'Personalizzazione', segment: '/customization' },
-]
+interface DockItem {
+  key: string
+  label: string
+  icon: IconName
+  href?: string
+  external?: boolean
+  active: boolean
+  popover?: 'preview'
+}
+
+export interface PreviewMenu { name: string; token: string }
 
 export default function AdminShell({
-  userEmail,
   children,
-  restaurants = [],
-  isSuperAdmin = false,
+  dockAccessory,
+  previewMenus = [],
+  allergenCatalog = null,
 }: {
-  userEmail:   string
   children:    React.ReactNode
-  restaurants?: Restaurant[]
-  // Solo l'account padre vede la tab "Utenti". È una scelta di interfaccia,
-  // NON una misura di sicurezza: la protezione vera sta nella pagina e in
-  // ogni server action (vedi app/admin/users/).
-  isSuperAdmin?: boolean
+  // Pillola separata accanto al dock (es. assistente IA).
+  dockAccessory?: React.ReactNode
+  // Menu pubblici apribili dal tasto "Anteprima" del dock.
+  previewMenus?: PreviewMenu[]
+  // Allergeni personalizzati dell'account (nomi/numeri).
+  allergenCatalog?: AllergenCatalog
 }) {
-  const [drawerOpen,       setDrawerOpen]       = useState(false)
-  const [restaurantsOpen,  setRestaurantsOpen]  = useState(false)
-  const [openRestaurantId, setOpenRestaurantId] = useState<string | null>(null)
   const pathname = usePathname()
+  const [popover, setPopover] = useState<'preview' | null>(null)
+  const dockRef  = useRef<HTMLDivElement>(null)
+  const itemRefs = useRef<Record<string, HTMLElement | null>>({})
+  const [pill, setPill] = useState<{ left: number; width: number } | null>(null)
 
-  // Auto-expand sidebar sections that match the current route
+  // Tema avorio/oro su tutta la pagina (anche finestre montate fuori dallo shell).
   useEffect(() => {
-    if (pathname.startsWith('/admin/restaurants')) {
-      setRestaurantsOpen(true)
-      const m = pathname.match(/\/admin\/restaurants\/([^/]+)/)
-      if (m) setOpenRestaurantId(m[1])
+    document.documentElement.classList.add('lito-admin')
+    return () => document.documentElement.classList.remove('lito-admin')
+  }, [])
+
+  useEffect(() => { setPopover(null) }, [pathname])
+
+  // Con una finestra aperta (overlay .fixed.inset-0) il dock scende e libera i bottoni.
+  const [modalOpen, setModalOpen] = useState(false)
+  useEffect(() => {
+    const check = () => setModalOpen(!!document.querySelector('.fixed.inset-0'))
+    check()
+    const obs = new MutationObserver(check)
+    obs.observe(document.body, { childList: true, subtree: true })
+    return () => obs.disconnect()
+  }, [])
+
+  useEffect(() => {
+    if (!popover) return
+    const onDown = (e: PointerEvent) => {
+      if (!dockRef.current?.parentElement?.contains(e.target as Node)) setPopover(null)
     }
-  }, [pathname])
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setPopover(null) }
+    window.addEventListener('pointerdown', onDown)
+    window.addEventListener('keydown', onKey)
+    return () => { window.removeEventListener('pointerdown', onDown); window.removeEventListener('keydown', onKey) }
+  }, [popover])
 
-  function close() { setDrawerOpen(false) }
+  const singlePreview = previewMenus.length === 1 ? previewMenus[0] : null
+  const items: DockItem[] = [
+    { key: 'dashboard',   label: 'Dashboard',  icon: 'home', href: '/admin', active: pathname === '/admin' },
+    { key: 'restaurants', label: 'Ristoranti', icon: 'book', href: '/admin/restaurants', active: pathname.startsWith('/admin/restaurants') },
+    singlePreview
+      ? { key: 'preview', label: 'Anteprima', icon: 'eye', href: `/m/${singlePreview.token}?from=admin`, external: true, active: false }
+      : { key: 'preview', label: 'Anteprima', icon: 'eye', active: false, popover: 'preview' },
+    { key: 'settings',    label: 'Impostazioni', icon: 'gear', href: '/admin/settings',
+      active: ['/admin/settings', '/admin/telegram', '/admin/users'].some(p => pathname.startsWith(p)) },
+  ]
+  const activeKey = (popover && items.find(i => i.popover === popover)?.key) ?? items.find(i => i.active)?.key
 
-  function tabActive(restaurantId: string, segment: string) {
-    const base = `/admin/restaurants/${restaurantId}`
-    if (segment === '') return pathname === base
-    return pathname.startsWith(base + segment)
-  }
-
-  const restaurantsActive = pathname.startsWith('/admin/restaurants')
-  const dashboardActive   = pathname === '/admin'
-  const telegramActive    = pathname.startsWith('/admin/telegram')
-  const usersActive       = pathname.startsWith('/admin/users')
+  useLayoutEffect(() => {
+    const measure = () => {
+      const el = activeKey ? itemRefs.current[activeKey] : null
+      const dock = dockRef.current
+      if (!el || !dock) { setPill(null); return }
+      setPill({ left: el.offsetLeft, width: el.offsetWidth })
+    }
+    measure()
+    window.addEventListener('resize', measure)
+    return () => window.removeEventListener('resize', measure)
+  }, [activeKey, items.length])
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen">
       <NavigationProgress />
 
-      {/* ── Mobile top bar ─────────────────────────────────────────────── */}
-      <header className="md:hidden sticky top-0 z-30 flex items-center gap-3 h-14 px-4 bg-white border-b border-gray-200">
-        <button
-          onClick={() => setDrawerOpen(true)}
-          aria-label="Apri menu"
-          className="min-h-[44px] min-w-[44px] -ml-2 flex items-center justify-center text-gray-600"
-        >
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-            <line x1="3" y1="6"  x2="21" y2="6"  />
-            <line x1="3" y1="12" x2="21" y2="12" />
-            <line x1="3" y1="18" x2="21" y2="18" />
-          </svg>
-        </button>
-        <span className="text-[9px] font-bold uppercase tracking-[0.25em] text-blue-600">
-          Lito
-        </span>
-      </header>
-
-      {/* ── Overlay (mobile) ───────────────────────────────────────────── */}
-      {drawerOpen && (
-        <div
-          onClick={close}
-          className="md:hidden fixed inset-0 z-40 bg-black/40"
-          aria-hidden
-        />
-      )}
-
-      {/* ── Sidebar ────────────────────────────────────────────────────── */}
-      <aside
-        className={`fixed top-0 left-0 h-full w-60 md:w-52 bg-white border-r border-gray-200 flex flex-col z-50
-          transition-transform duration-200 ease-out
-          ${drawerOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0`}
-      >
-        <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
-          <div className="text-[9px] font-bold uppercase tracking-[0.25em] text-blue-600">
-            Lito
-          </div>
-          <button
-            onClick={close}
-            aria-label="Chiudi menu"
-            className="md:hidden text-gray-400 hover:text-gray-700 text-xl leading-none"
-          >
-            ×
-          </button>
-        </div>
-
-        <nav className="flex-1 px-3 py-3 overflow-y-auto space-y-0.5">
-
-          {/* Dashboard */}
-          <Link
-            href="/admin"
-            onClick={close}
-            className={`flex items-center px-3 min-h-[44px] text-sm transition-colors ${
-              dashboardActive
-                ? 'bg-blue-50 text-blue-700 font-medium'
-                : 'text-gray-700 hover:bg-gray-100'
-            }`}
-          >
-            Dashboard
-          </Link>
-
-          {/* ── Ristoranti (split: text = link, arrow = toggle) ─────────── */}
-          <div>
-            <div className={`flex items-center min-h-[44px] transition-colors ${
-              restaurantsActive ? 'text-blue-700' : 'text-gray-700'
-            }`}>
-              <Link
-                href="/admin/restaurants"
-                onClick={close}
-                className={`flex-1 flex items-center px-3 h-full text-sm font-[inherit] transition-colors ${
-                  restaurantsActive ? 'font-medium' : 'hover:bg-gray-100'
-                }`}
-              >
-                Ristoranti
-              </Link>
-              <button
-                onClick={() => setRestaurantsOpen(o => !o)}
-                aria-label={restaurantsOpen ? 'Chiudi ristoranti' : 'Espandi ristoranti'}
-                className="flex items-center justify-center w-9 h-full flex-shrink-0 hover:bg-gray-100 transition-colors"
-              >
-                <ChevronRight className={`transition-transform duration-200 ${restaurantsOpen ? 'rotate-90' : ''}`} />
-              </button>
-            </div>
-
-            {/* Lista ristoranti */}
-            {restaurantsOpen && restaurants.length > 0 && (
-              <div className="mt-0.5 space-y-0.5">
-                {restaurants.map(r => {
-                  const rActive  = pathname.startsWith(`/admin/restaurants/${r.id}`)
-                  const rOpen    = openRestaurantId === r.id
-
-                  return (
-                    <div key={r.id}>
-                      {/* Riga ristorante */}
-                      <button
-                        onClick={() => setOpenRestaurantId(id => id === r.id ? null : r.id)}
-                        className={`w-full flex items-center justify-between pl-5 pr-2 min-h-[38px] text-sm transition-colors ${
-                          rActive
-                            ? 'text-blue-700 font-medium'
-                            : 'text-gray-600 hover:bg-gray-50'
-                        }`}
-                      >
-                        <span className="truncate text-left">{r.name}</span>
-                        <ChevronRight className={`flex-shrink-0 ml-1 transition-transform duration-200 ${rOpen ? 'rotate-90' : ''}`} />
-                      </button>
-
-                      {/* Tab del ristorante */}
-                      {rOpen && (
-                        <div className="mt-0.5 mb-1">
-                          {RESTAURANT_TABS.map(({ label, segment }) => {
-                            const href    = `/admin/restaurants/${r.id}${segment}`
-                            const active  = tabActive(r.id, segment)
-                            return (
-                              <Link
-                                key={segment}
-                                href={href}
-                                onClick={close}
-                                className={`flex items-center gap-2 pl-8 pr-3 min-h-[34px] text-xs transition-colors ${
-                                  active
-                                    ? 'text-blue-700 font-semibold bg-blue-50'
-                                    : 'text-gray-500 hover:bg-gray-50 hover:text-gray-700'
-                                }`}
-                              >
-                                <span className={`w-1 h-1 rounded-full flex-shrink-0 ${active ? 'bg-blue-600' : 'bg-gray-300'}`} />
-                                {label}
-                              </Link>
-                            )
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
-            )}
-          </div>
-
-          {/* Telegram */}
-          <Link
-            href="/admin/telegram"
-            onClick={close}
-            className={`flex items-center px-3 min-h-[44px] text-sm transition-colors ${
-              telegramActive
-                ? 'bg-blue-50 text-blue-700 font-medium'
-                : 'text-gray-700 hover:bg-gray-100'
-            }`}
-          >
-            Telegram
-          </Link>
-
-          {/* Utenti — solo account padre (guardia reale lato server) */}
-          {isSuperAdmin && (
-            <Link
-              href="/admin/users"
-              onClick={close}
-              className={`flex items-center px-3 min-h-[44px] text-sm transition-colors ${
-                usersActive
-                  ? 'bg-blue-50 text-blue-700 font-medium'
-                  : 'text-gray-700 hover:bg-gray-100'
-              }`}
-            >
-              Utenti
-            </Link>
-          )}
-
-        </nav>
-
-        <div className="px-5 py-4 border-t border-gray-100">
-          <div className="text-[11px] text-gray-400 truncate mb-1.5">{userEmail}</div>
-          <LogoutButton />
-        </div>
-      </aside>
-
-      {/* ── Main ───────────────────────────────────────────────────────── */}
-      <main className="md:ml-52 min-h-screen">
+      <main className="min-h-screen pb-36">
         <div className="max-w-6xl mx-auto p-4 md:p-8">
-          {children}
+          <AllergenCatalogProvider catalog={allergenCatalog}>
+            {children}
+          </AllergenCatalogProvider>
         </div>
       </main>
+
+      {/* ── Dock ──────────────────────────────────────────────────────── */}
+      <div className={`lito-dock-wrap${modalOpen ? ' is-hidden' : ''}`} aria-hidden={modalOpen || undefined}>
+        <div className="lito-dock-main">
+        {popover === 'preview' && (
+          <div className="lito-dock-pop" role="dialog" aria-label="Anteprima menu">
+            {previewMenus.length === 0 ? (
+              <div className="px-3 py-2 text-sm text-gray-500">Nessun ristorante ancora.</div>
+            ) : previewMenus.map(m => (
+              <a key={m.token} href={`/m/${m.token}?from=admin`} className="lito-dock-pop-row" onClick={() => setPopover(null)}>
+                <span className="truncate">{m.name}</span>
+              </a>
+            ))}
+          </div>
+        )}
+
+        <nav ref={dockRef} className="lito-dock" aria-label="Navigazione">
+          {pill && <span className="lito-dock-pill" style={{ transform: `translateX(${pill.left}px)`, width: pill.width }} aria-hidden />}
+          {items.map(item => {
+            const isActive = item.key === activeKey
+            const content = (
+              <>
+                <span className="lito-dock-icon"><Icon name={item.icon} /></span>
+                <span className="lito-dock-label">{item.label}</span>
+              </>
+            )
+            const cls = `lito-dock-item${isActive ? ' is-active' : ''}`
+            const setRef = (el: HTMLElement | null) => { itemRefs.current[item.key] = el }
+            if (item.href && item.external) {
+              return (
+                <a key={item.key} ref={setRef} href={item.href} className={cls}>
+                  {content}
+                </a>
+              )
+            }
+            return item.href ? (
+              <Link key={item.key} ref={setRef} href={item.href} className={cls} aria-current={isActive ? 'page' : undefined}>
+                {content}
+              </Link>
+            ) : (
+              <button
+                key={item.key}
+                ref={setRef}
+                type="button"
+                className={cls}
+                aria-expanded={popover === item.popover}
+                onClick={() => setPopover(p => (p === item.popover ? null : item.popover!))}
+              >
+                {content}
+              </button>
+            )
+          })}
+        </nav>
+        </div>
+        {dockAccessory}
+      </div>
     </div>
   )
 }

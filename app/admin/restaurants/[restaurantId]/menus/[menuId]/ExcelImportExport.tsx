@@ -6,7 +6,8 @@
 
 import { useRef, useState, useEffect } from 'react'
 import * as XLSX from 'xlsx'
-import { ALLERGENS } from '@/lib/allergens'
+import { allergenList, allergenIdFromNumber, formatAllergensShort, type AllergenCatalog } from '@/lib/allergens'
+import { useAllergenCatalog } from '@/components/AllergenCatalog'
 import { Spinner } from '@/components/ui/Spinner'
 import { bulkCreateDishes } from './actions'
 
@@ -48,12 +49,12 @@ interface Props {
   stacked?: boolean
 }
 
-function buildLegendSheet() {
+function buildLegendSheet(catalog: AllergenCatalog) {
   const ws = XLSX.utils.aoa_to_sheet([
     ['Legenda allergeni (usa i numeri nella colonna "Allergeni")'],
     [],
     ['Numero', 'Allergene'],
-    ...ALLERGENS.map(a => [a.id, a.name]),
+    ...allergenList(catalog).map(a => [a.number, a.name]),
     [],
     ['Note:'],
     ['- Nome e Categoria sono obbligatori; gli altri campi sono facoltativi.'],
@@ -70,6 +71,7 @@ function colWidths() {
 }
 
 export default function ExcelImportExport({ restaurantId, menuId, dishes, onImported, stacked }: Props) {
+  const allergenCatalog = useAllergenCatalog()
   const fileRef    = useRef<HTMLInputElement>(null)
   const dropRef    = useRef<HTMLDivElement>(null)
   const btnRef     = useRef<HTMLButtonElement>(null)
@@ -99,7 +101,7 @@ export default function ExcelImportExport({ restaurantId, menuId, dishes, onImpo
     const ws = XLSX.utils.aoa_to_sheet([HEADERS as unknown as string[], example])
     ws['!cols'] = colWidths()
     XLSX.utils.book_append_sheet(wb, ws, 'Piatti')
-    XLSX.utils.book_append_sheet(wb, buildLegendSheet(), 'Istruzioni')
+    XLSX.utils.book_append_sheet(wb, buildLegendSheet(allergenCatalog), 'Istruzioni')
     XLSX.writeFile(wb, 'modulo-piatti-vuoto.xlsx')
   }
 
@@ -116,7 +118,7 @@ export default function ExcelImportExport({ restaurantId, menuId, dishes, onImpo
         d.category ?? '',
         d.price ?? '',
         d.description ?? '',
-        d.allergens.join(', '),
+        formatAllergensShort(d.allergens, allergenCatalog),
         d.image_url ?? '',
         pairingName,
         d.is_active ? 'SI' : 'NO',
@@ -125,7 +127,7 @@ export default function ExcelImportExport({ restaurantId, menuId, dishes, onImpo
     const ws = XLSX.utils.aoa_to_sheet([HEADERS as unknown as string[], ...rows])
     ws['!cols'] = colWidths()
     XLSX.utils.book_append_sheet(wb, ws, 'Piatti')
-    XLSX.utils.book_append_sheet(wb, buildLegendSheet(), 'Istruzioni')
+    XLSX.utils.book_append_sheet(wb, buildLegendSheet(allergenCatalog), 'Istruzioni')
     XLSX.writeFile(wb, 'modulo-piatti-attuali.xlsx')
   }
 
@@ -153,9 +155,10 @@ export default function ExcelImportExport({ restaurantId, menuId, dishes, onImpo
           if (isNaN(p) || p < 0) errors.push(`Riga ${rowN}: prezzo non valido ("${r[2]}").`)
           else price = p
         }
-        const allergens = String(r[4] ?? '').split(/[,;]/).map(s => s.trim()).filter(Boolean).map(Number)
-        if (allergens.some(a => isNaN(a) || a < 1 || a > 14)) {
-          errors.push(`Riga ${rowN}: allergeni non validi ("${r[4]}") — usa i numeri 1–14.`)
+        const allergenNums = String(r[4] ?? '').split(/[,;]/).map(s => s.trim()).filter(Boolean).map(Number)
+        const allergens = allergenNums.map(n => (isNaN(n) ? NaN : allergenIdFromNumber(n, allergenCatalog) ?? NaN))
+        if (allergens.some(a => isNaN(a))) {
+          errors.push(`Riga ${rowN}: allergeni non validi ("${r[4]}") — usa i numeri della legenda.`)
         }
         const vis = String(r[7] ?? '').trim().toLowerCase()
         return {

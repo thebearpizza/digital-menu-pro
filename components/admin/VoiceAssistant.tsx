@@ -115,8 +115,8 @@ export default function VoiceAssistant() {
     <>
       {/* Pannello conversazione */}
       {open && (
-        <div className="fixed bottom-24 right-5 z-[400] w-80 max-w-[calc(100vw-2.5rem)] bg-white border border-gray-200 shadow-2xl rounded-xl overflow-hidden flex flex-col">
-          <div className="px-4 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white flex items-center justify-between">
+        <div className="lito-voice-panel fixed right-3 z-[400] w-80 max-w-[calc(100vw-1.5rem)] bg-white border border-gray-200 shadow-2xl rounded-2xl overflow-hidden flex flex-col">
+          <div className="px-4 py-3 bg-gradient-to-r from-blue-500 to-blue-700 text-white flex items-center justify-between">
             <div>
               <div className="text-sm font-semibold">Assistente menu</div>
               <div className="text-[11px] text-blue-100">
@@ -191,18 +191,15 @@ export default function VoiceAssistant() {
           if (!speechSupported) return
           listening ? stopListening() : startListening()
         }}
-        className={`fixed bottom-5 right-5 z-[400] w-14 h-14 rounded-full shadow-xl flex items-center justify-center text-white transition-all
-          ${listening
-            ? 'bg-red-500 animate-pulse scale-110'
-            : 'bg-gradient-to-br from-blue-600 to-indigo-700 hover:scale-105'}`}
+        className={`lito-dock-side${listening ? ' is-listening' : ''}${open ? ' is-open' : ''}`}
         aria-label={open ? (listening ? 'Ferma ascolto' : 'Parla') : 'Apri assistente'}
         title={open ? (listening ? 'Ferma ascolto' : 'Parla') : 'Assistente menu'}
       >
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <rect x="9" y="2" width="6" height="12" rx="3" />
-          <path d="M5 10v1a7 7 0 0 0 14 0v-1" />
-          <line x1="12" y1="18" x2="12" y2="22" />
-          <line x1="8" y1="22" x2="16" y2="22" />
+        {/* Assistente IA: scintille */}
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M10 3.5 11.6 8a3 3 0 0 0 1.9 1.9L18 11.5l-4.5 1.6a3 3 0 0 0-1.9 1.9L10 19.5 8.4 15a3 3 0 0 0-1.9-1.9L2 11.5l4.5-1.6A3 3 0 0 0 8.4 8z" />
+          <path d="M18.5 2.5v4M16.5 4.5h4" />
+          <path d="M19 16.5v3M17.5 18h3" />
         </svg>
       </button>
     </>

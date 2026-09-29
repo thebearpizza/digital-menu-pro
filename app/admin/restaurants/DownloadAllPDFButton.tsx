@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Spinner } from '@/components/ui/Spinner'
+import { useAllergenCatalog } from '@/components/AllergenCatalog'
 
 interface Props {
   restaurantId:   string
@@ -10,6 +11,7 @@ interface Props {
 }
 
 export default function DownloadAllPDFButton({ restaurantId, restaurantName }: Props) {
+  const allergenCatalog = useAllergenCatalog()
   const [loading, setLoading] = useState(false)
   const [error,   setError]   = useState<string | null>(null)
 
@@ -101,7 +103,7 @@ export default function DownloadAllPDFButton({ restaurantId, restaurantName }: P
         )
 
         const menuObj = { id: menu.id, name: menu.name, lang: 'it' as const, dishes, extra_pages: extraPages }
-        const restObj = { name: restaurantName }
+        const restObj = { name: restaurantName, allergenCatalog }
 
         let blob: Blob
         try {

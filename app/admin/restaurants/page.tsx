@@ -39,27 +39,27 @@ export default async function RestaurantsPage() {
           </Link>
         </div>
       ) : (
-        <div className="bg-white border border-gray-200 overflow-x-auto">
-          <table className="w-full min-w-[420px]">
+        <div className="bg-white border border-gray-200 overflow-hidden">
+          <table className="w-full">
             <thead>
               <tr className="border-b border-gray-200 bg-gray-50 text-left">
-                <th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Nome</th>
-                <th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Stato</th>
-                <th className="px-4 py-3" />
+                <th className="w-full px-3 sm:px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Nome</th>
+                <th className="px-2 sm:px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">Stato</th>
+                <th className="px-2 sm:px-4 py-3" />
               </tr>
             </thead>
             <RestaurantsTableBody>
               {restaurants.map(r => (
                 <tr key={r.id} className="hover:bg-gray-50">
-                  <td className="px-4 py-3">
+                  <td className="w-full max-w-0 px-3 sm:px-4 py-3">
                     <Link
                       href={`/admin/restaurants/${r.id}`}
-                      className="text-sm font-medium text-gray-900 hover:text-blue-600 hover:underline"
+                      className="block truncate text-sm font-medium text-gray-900 hover:text-blue-600 hover:underline"
                     >
                       {r.name}
                     </Link>
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="px-2 sm:px-4 py-3 whitespace-nowrap">
                     <span className={`inline-block text-xs px-2 py-0.5 font-medium border ${
                       r.is_active
                         ? 'bg-green-50 text-green-700 border-green-200'
@@ -68,7 +68,7 @@ export default async function RestaurantsPage() {
                       {r.is_active ? 'Attivo' : 'Inattivo'}
                     </span>
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="px-2 sm:px-4 py-3 whitespace-nowrap">
                     <div className="flex items-center justify-end gap-2">
                       <DownloadAllPDFButton
                         restaurantId={r.id}

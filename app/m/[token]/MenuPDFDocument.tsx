@@ -3,7 +3,7 @@
 // Dynamically imported by useMenuPDF (never SSR-ed).
 // ─────────────────────────────────────────────────────────────────────────────
 import { Document, Page, Text, View, Image, StyleSheet, Svg, Path, Defs, LinearGradient, RadialGradient, Stop, Rect, Font } from '@react-pdf/renderer'
-import { formatAllergens } from '@/lib/allergens'
+import { formatAllergens, type AllergenCatalog } from '@/lib/allergens'
 import { uiText, isLang } from '@/lib/translations'
 import type { RestaurantTheme, MenuBgConfig } from '@/lib/theme'
 import { DEFAULT_THEME, lightenHex, formatPrice, resolveAlign } from '@/lib/theme'
@@ -104,6 +104,7 @@ export interface PDFMenu {
 
 export interface PDFRestaurant {
   name: string
+  allergenCatalog?: AllergenCatalog
 }
 
 export const MOCK_RESTAURANT: PDFRestaurant = { name: 'Ristorante Da Marco' }
@@ -748,7 +749,7 @@ export function MenuPDFDocument({ restaurant, menu, theme: themeProp, registered
     const lang = menu.lang ?? 'it'
     return dish.allergens.length > 0
       ? uiText('allergens', isLang(lang) ? lang : 'it') + ': ' +
-        formatAllergens(dish.allergens, m.allergens.display, m.allergens.separator, lang)
+        formatAllergens(dish.allergens, m.allergens.display, m.allergens.separator, lang, restaurant.allergenCatalog)
       : null
   }
 

@@ -315,3 +315,247 @@ body.menu-locked {
   box-shadow: inset 1px 1px 3px rgba(128, 60, 30, 0.15);
 }
 .login-note { color: #9a8a70; }
+
+/* ── Palette: default Tailwind ovunque, avorio/oro nel gestionale ────────── */
+:root {
+  --tw-white: 255 255 255;
+  --tw-gray-50: 249 250 251;  --tw-gray-100: 243 244 246; --tw-gray-200: 229 231 235;
+  --tw-gray-300: 209 213 219; --tw-gray-400: 156 163 175; --tw-gray-500: 107 114 128;
+  --tw-gray-600: 75 85 99;    --tw-gray-700: 55 65 81;    --tw-gray-800: 31 41 55;
+  --tw-gray-900: 17 24 39;    --tw-gray-950: 3 7 18;
+  --tw-blue-50: 239 246 255;  --tw-blue-100: 219 234 254; --tw-blue-200: 191 219 254;
+  --tw-blue-300: 147 197 253; --tw-blue-400: 96 165 250;  --tw-blue-500: 59 130 246;
+  --tw-blue-600: 37 99 235;   --tw-blue-700: 29 78 216;   --tw-blue-800: 30 64 175;
+  --tw-blue-900: 30 58 138;   --tw-blue-950: 23 37 84;
+}
+.lito-admin {
+  --tw-white: 250 245 236;
+  --tw-gray-50: 244 237 224;  --tw-gray-100: 236 227 210; --tw-gray-200: 223 211 189;
+  --tw-gray-300: 205 189 159; --tw-gray-400: 168 151 122; --tw-gray-500: 138 122 96;
+  --tw-gray-600: 111 97 75;   --tw-gray-700: 87 75 57;    --tw-gray-800: 63 53 40;
+  --tw-gray-900: 46 38 28;    --tw-gray-950: 30 24 17;
+  --tw-blue-50: 250 242 220;  --tw-blue-100: 244 229 187; --tw-blue-200: 235 212 145;
+  --tw-blue-300: 225 191 110; --tw-blue-400: 212 169 60;  --tw-blue-500: 198 152 46;
+  --tw-blue-600: 168 120 24;  --tw-blue-700: 139 101 20;  --tw-blue-800: 110 76 12;
+  --tw-blue-900: 87 64 15;    --tw-blue-950: 58 42 8;
+}
+html.lito-admin body {
+  background: radial-gradient(120% 90% at 32% 12%, #f8f1e2, #ede2cb 55%, #e2d3b5) fixed;
+}
+
+/* ── Dock del gestionale ─────────────────────────────────────────────────── */
+.lito-dock-wrap {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: calc(14px + env(safe-area-inset-bottom));
+  z-index: 300;
+  display: flex;
+  justify-content: center;
+  align-items: stretch;
+  gap: 10px;
+  padding: 0 10px;
+  pointer-events: none;
+}
+.lito-dock-wrap > * { pointer-events: auto; }
+.lito-dock-wrap { transition: transform 0.45s cubic-bezier(0.34, 1.3, 0.64, 1), opacity 0.3s ease; }
+.lito-dock-wrap.is-hidden {
+  transform: translateY(calc(100% + 48px));
+  opacity: 0;
+  pointer-events: none;
+  transition: transform 0.4s cubic-bezier(0.55, 0, 0.75, 0.2), opacity 0.3s ease 0.08s;
+}
+.lito-dock-wrap.is-hidden > * { pointer-events: none; }
+.lito-dock-main { position: relative; min-width: 0; flex: 1 1 auto; max-width: 540px; }
+.lito-dock-main > .lito-dock { width: 100%; }
+.lito-dock {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  padding: 6px;
+  border-radius: 24px;
+  background: linear-gradient(150deg, rgba(248, 241, 227, 0.94), rgba(233, 221, 197, 0.94));
+  -webkit-backdrop-filter: blur(14px) saturate(1.2);
+  backdrop-filter: blur(14px) saturate(1.2);
+  box-shadow:
+    0 14px 34px rgba(110, 86, 45, 0.30),
+    0 3px 8px rgba(110, 86, 45, 0.16),
+    inset 1px 1px 0 rgba(255, 255, 255, 0.75),
+    inset -1px -1px 0 rgba(150, 124, 80, 0.2);
+  animation: lito-dock-in 0.55s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+.lito-dock-pill {
+  position: absolute;
+  top: 6px;
+  bottom: 6px;
+  left: 0;
+  border-radius: 18px;
+  background: linear-gradient(180deg, #f0d686 0%, #d4a93c 45%, #b88923 100%);
+  box-shadow:
+    0 5px 12px rgba(124, 88, 16, 0.32),
+    inset 0 1px 0 rgba(255, 246, 214, 0.85),
+    inset 0 -2px 0 rgba(110, 76, 12, 0.3);
+  transition: transform 0.5s cubic-bezier(0.34, 1.45, 0.64, 1), width 0.5s cubic-bezier(0.34, 1.45, 0.64, 1);
+  pointer-events: none;
+}
+.lito-dock-item {
+  position: relative;
+  z-index: 1;
+  flex: 1 1 0;
+  min-width: 56px;
+  padding: 7px 8px 6px;
+  border-radius: 18px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  color: #7d6c52;
+  -webkit-tap-highlight-color: transparent;
+  transition: color 0.3s ease;
+}
+.lito-dock-icon {
+  display: grid;
+  place-items: center;
+  transition: transform 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.lito-dock-label {
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  transition: opacity 0.3s ease;
+  opacity: 0.85;
+}
+.lito-dock-item.is-active { color: #3a2a08; }
+.lito-dock-item.is-active .lito-dock-icon { transform: translateY(-2px) scale(1.12); }
+.lito-dock-item.is-active .lito-dock-label { opacity: 1; font-weight: 600; }
+.lito-dock-item:active .lito-dock-icon { transform: scale(0.9); }
+@media (hover: hover) {
+  .lito-dock-item:hover .lito-dock-icon { transform: translateY(-4px) scale(1.2); }
+  .lito-dock-item:hover { color: #3a2a08; }
+}
+@media (max-width: 440px) {
+  .lito-dock-item { min-width: 48px; padding-left: 4px; padding-right: 4px; }
+  .lito-dock-label { font-size: 9.5px; }
+}
+.lito-dock-pop {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  left: 0;
+  min-width: 220px;
+  max-width: calc(100vw - 20px);
+  padding: 8px 6px;
+  border-radius: 18px;
+  background: linear-gradient(150deg, #f8f1e3, #ece0c8);
+  box-shadow:
+    0 16px 36px rgba(110, 86, 45, 0.30),
+    inset 1px 1px 0 rgba(255, 255, 255, 0.75),
+    inset -1px -1px 0 rgba(150, 124, 80, 0.2);
+  transform-origin: bottom left;
+  animation: lito-pop-in 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+.lito-dock-pop-right { left: auto; right: 0; transform-origin: bottom right; }
+.lito-dock-pop-row {
+  display: flex;
+  align-items: center;
+  min-height: 40px;
+  padding: 0 12px;
+  border-radius: 12px;
+  font-size: 14px;
+  color: #3b2f22;
+  transition: background 0.2s ease;
+}
+.lito-dock-pop-row:hover { background: rgba(198, 152, 46, 0.14); }
+.lito-dock-pop-row.is-current { color: #8b6514; font-weight: 600; background: rgba(198, 152, 46, 0.12); }
+.lito-dock-pop-sep { height: 1px; margin: 4px 8px; background: rgba(150, 124, 80, 0.22); }
+@keyframes lito-dock-in {
+  from { opacity: 0; transform: translateY(24px) scale(0.96); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes lito-pop-in {
+  from { opacity: 0; transform: translateY(8px) scale(0.94); }
+  to { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lito-dock, .lito-dock-pop { animation: none; }
+  .lito-dock-pill, .lito-dock-icon { transition: none; }
+}
+
+/* Pillola dell'assistente vocale accanto al dock */
+.lito-dock-side {
+  flex: none;
+  width: 62px;
+  border-radius: 24px;
+  display: grid;
+  place-items: center;
+  color: #7d6c52;
+  background: linear-gradient(150deg, rgba(248, 241, 227, 0.94), rgba(233, 221, 197, 0.94));
+  -webkit-backdrop-filter: blur(14px) saturate(1.2);
+  backdrop-filter: blur(14px) saturate(1.2);
+  box-shadow:
+    0 14px 34px rgba(110, 86, 45, 0.30),
+    0 3px 8px rgba(110, 86, 45, 0.16),
+    inset 1px 1px 0 rgba(255, 255, 255, 0.75),
+    inset -1px -1px 0 rgba(150, 124, 80, 0.2);
+  animation: lito-dock-in 0.55s 0.08s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  transition: color 0.3s ease, transform 0.2s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+.lito-dock-side svg { transition: transform 0.45s cubic-bezier(0.34, 1.56, 0.64, 1); }
+.lito-dock-side.is-open { color: #3a2a08; }
+.lito-dock-side.is-open svg {
+  transform: scale(1.1);
+  filter: drop-shadow(0 1px 0 rgba(255, 246, 214, 0.8));
+  color: #8b6514;
+}
+.lito-dock-side.is-listening {
+  color: #fff;
+  background: linear-gradient(180deg, #ef6b5b, #c53a2a);
+  animation: lito-listen 1.2s ease-in-out infinite;
+}
+.lito-dock-side:active { transform: scale(0.94); }
+@media (hover: hover) { .lito-dock-side:hover svg { transform: translateY(-3px) scale(1.15); } }
+@keyframes lito-listen {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(197, 58, 42, 0.45), 0 10px 26px rgba(110, 86, 45, 0.3); }
+  50% { box-shadow: 0 0 0 10px rgba(197, 58, 42, 0), 0 10px 26px rgba(110, 86, 45, 0.3); }
+}
+.lito-voice-panel { bottom: calc(96px + env(safe-area-inset-bottom)); }
+@media (max-width: 440px) { .lito-dock-side { width: 54px; } }
+
+/* ── Forme arrotondate nel gestionale ──────────────────────────────────────
+   :where() = specificità zero: le classi rounded-* già presenti vincono. */
+.lito-admin :where(button:not([role="switch"]), a[class*="bg-"], a.border) { border-radius: 9999px; }
+.lito-admin :where(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select, textarea) { border-radius: 12px; }
+.lito-admin :where(.border, [class*="shadow-"]):not(button):not(a):not(input):not(select):not(textarea):not(tr):not(td):not(th):not(img) { border-radius: 16px; }
+.lito-admin :where(.border.overflow-hidden, .border.overflow-x-auto) { border-radius: 16px; }
+.lito-admin :where(span.border, span[class*="bg-"][class*="px-"]) { border-radius: 9999px; }
+.lito-admin :where(.border > :first-child:not(button):not(a):not(input):not(select):not(textarea):not(span):not(img):not(label)) { border-top-left-radius: inherit; border-top-right-radius: inherit; }
+.lito-admin :where(.border > :last-child:not(button):not(a):not(input):not(select):not(textarea):not(span):not(img):not(label)) { border-bottom-left-radius: inherit; border-bottom-right-radius: inherit; }
+.lito-admin input[type="file"]::file-selector-button {
+  border-radius: 9999px;
+  border: 1px solid rgb(var(--tw-gray-300));
+  background: rgb(var(--tw-white));
+  color: rgb(var(--tw-gray-700));
+  padding: 6px 14px;
+  margin-right: 10px;
+}
+
+/* Bottone secondario in rilievo (avorio), riconoscibile come cliccabile */
+.lito-raised-btn {
+  border-radius: 9999px;
+  color: #574b39;
+  background: linear-gradient(180deg, #fdf9f1 0%, #efe5d1 100%);
+  border: 1px solid rgba(168, 147, 108, 0.45);
+  box-shadow:
+    0 3px 8px rgba(110, 86, 45, 0.18),
+    0 1px 2px rgba(110, 86, 45, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  transition: transform 0.12s ease, box-shadow 0.12s ease, background 0.2s ease;
+}
+.lito-raised-btn:hover { background: linear-gradient(180deg, #fffcf6 0%, #f3ead8 100%); }
+.lito-raised-btn:active {
+  transform: translateY(1px);
+  box-shadow: 0 1px 3px rgba(110, 86, 45, 0.2), inset 0 1px 2px rgba(110, 86, 45, 0.15);
+}

@@ -1,4 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
+import AdminBackButton from './AdminBackButton'
+import { AllergenCatalogProvider } from '@/components/AllergenCatalog'
+import type { AllergenOverride } from '@/lib/allergens'
 import { notFound } from 'next/navigation'
 import type { Metadata } from 'next'
 import PublicMenuView from './PublicMenuView'
@@ -17,24 +20,36 @@ export const metadata: Metadata = {
 
 export default async function PublicMenuPage({
   params,
+  searchParams,
 }: {
   params: { token: string }
+  searchParams?: { from?: string }
 }) {
   const supabase = await createClient()
 
   const { data: restaurant } = await supabase
     .from('restaurants')
-    .select('id, name, description, logo_url, instagram_url, facebook_url, website_url, tripadvisor_url, google_maps_url, visibility, theme_config, hint_translations')
+    .select('id, owner_id, name, description, logo_url, instagram_url, facebook_url, website_url, tripadvisor_url, google_maps_url, visibility, theme_config, hint_translations')
     .eq('qr_public_token', params.token)
     .eq('is_active', true)
     .single()
 
   if (!restaurant) notFound()
 
+  // Allergeni personalizzati dall'account proprietario (nomi/numeri).
+  const { data: allergenOverrides } = await supabase
+    .from('allergen_overrides')
+    .select('items')
+    .eq('user_id', (restaurant as any).owner_id)
+    .maybeSingle()
+
   // Track QR scan — awaited so the insert completes before response is sent
-  try {
-    await supabase.from('page_views').insert({ restaurant_id: restaurant.id })
-  } catch {}
+  // Le aperture dall'anteprima del gestionale non contano come scansioni.
+  if (searchParams?.from !== 'admin') {
+    try {
+      await supabase.from('page_views').insert({ restaurant_id: restaurant.id })
+    } catch {}
+  }
 
   const [{ data: rawMenus }, { data: banners }, { data: info }] = await Promise.all([
     supabase
@@ -173,6 +188,7 @@ export default async function PublicMenuPage({
       {fontsHref && <link rel="stylesheet" href={fontsHref} data-theme-fonts="1" />}
       {customCss && <style data-custom-fonts="1" dangerouslySetInnerHTML={{ __html: customCss }} />}
       <style dangerouslySetInnerHTML={{ __html: themeRootCssVars(theme, defaultMenuId) }} />
+      <AllergenCatalogProvider catalog={(allergenOverrides?.items as AllergenOverride[] | undefined) ?? null}>
       <PublicMenuView
         restaurant={{
           name:             restaurant.name as string,
@@ -194,6 +210,8 @@ export default async function PublicMenuPage({
         restaurantId={restaurant.id as string}
         extraPairingDishes={extraPairingDishes}
       />
+      </AllergenCatalogProvider>
+      {searchParams?.from === 'admin' && <AdminBackButton />}
     </>
   )
 }

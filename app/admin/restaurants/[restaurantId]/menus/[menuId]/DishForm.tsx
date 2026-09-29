@@ -4,7 +4,8 @@ import React, { useState, useRef, useCallback, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { compressImageFile } from '@/lib/imageCompress'
 import { createDish, updateDish, detectAllergens } from './actions'
-import { ALLERGENS } from '@/lib/allergens'
+import { allergenList } from '@/lib/allergens'
+import { useAllergenCatalog } from '@/components/AllergenCatalog'
 import { Spinner } from '@/components/ui/Spinner'
 
 interface Dish {
@@ -50,6 +51,7 @@ const AllergenGrid = React.memo(function AllergenGrid({
   initial: number[]
   onChange: (ids: number[]) => void
 }) {
+  const catalog = useAllergenCatalog()
   // Coerce to numbers defensively — Supabase may return JSON scalars.
   const [selected, setSelected] = useState<Set<number>>(
     () => new Set((initial ?? []).map(Number))
@@ -67,7 +69,7 @@ const AllergenGrid = React.memo(function AllergenGrid({
 
   return (
     <div className="grid grid-cols-2 gap-1">
-      {ALLERGENS.map(a => (
+      {allergenList(catalog).map(a => (
         <label key={a.id} className="flex items-center gap-2 text-xs cursor-pointer py-1 select-none">
           <input
             type="checkbox"
@@ -76,7 +78,7 @@ const AllergenGrid = React.memo(function AllergenGrid({
             className="accent-blue-600 shrink-0"
           />
           <span className="text-gray-600">
-            <span className="font-mono text-gray-400 mr-1">{a.id}.</span>
+            <span className="font-mono text-gray-400 mr-1">{a.number}.</span>
             {a.name}
           </span>
         </label>

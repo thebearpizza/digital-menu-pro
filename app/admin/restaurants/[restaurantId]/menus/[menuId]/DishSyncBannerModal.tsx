@@ -2,7 +2,8 @@
 
 import { useMemo, useState } from 'react'
 import { applyDishSync, DishTwin } from './actions'
-import { formatAllergensFull } from '@/lib/allergens'
+import { formatAllergensFull, type AllergenCatalog } from '@/lib/allergens'
+import { useAllergenCatalog } from '@/components/AllergenCatalog'
 import { Spinner } from '@/components/ui/Spinner'
 
 interface SourceDish {
@@ -45,8 +46,8 @@ function fieldEqual(key: FieldKey, source: SourceDish, twin: DishTwin): boolean 
   return (source[key] ?? '') === (twin[key] ?? '')
 }
 
-function preview(key: FieldKey, source: SourceDish): string {
-  if (key === 'allergens') return formatAllergensFull(source.allergens) || '— nessuno —'
+function preview(key: FieldKey, source: SourceDish, catalog?: AllergenCatalog): string {
+  if (key === 'allergens') return formatAllergensFull(source.allergens, catalog) || '— nessuno —'
   if (key === 'price')     return source.price != null ? `€ ${Number(source.price).toFixed(2)}` : '—'
   if (key === 'image_url') return source.image_url ? 'Foto aggiornata' : '— nessuna —'
   const v = source[key]
@@ -54,6 +55,7 @@ function preview(key: FieldKey, source: SourceDish): string {
 }
 
 export default function DishSyncBannerModal({ restaurantId, source, twins, onClose }: Props) {
+  const allergenCatalog = useAllergenCatalog()
   // Campi che differiscono in almeno un gemello
   const diffFields = useMemo(
     () => FIELDS.filter(f => twins.some(t => !fieldEqual(f.key, source, t))),
@@ -128,7 +130,7 @@ export default function DishSyncBannerModal({ restaurantId, source, twins, onClo
                   />
                   <span className="min-w-0">
                     <span className="font-medium text-gray-800">{f.label}</span>
-                    <span className="block text-xs text-gray-400 truncate">{preview(f.key, source)}</span>
+                    <span className="block text-xs text-gray-400 truncate">{preview(f.key, source, allergenCatalog)}</span>
                   </span>
                 </label>
               ))}

@@ -85,7 +85,34 @@ const ALLERGEN_I18N: Record<AllergenLang, { name: string; short: string }[]> = {
   ],
 }
 
-export function allergenName(id: number, lang: string = 'it'): string {
+// ── Personalizzazione per account ─────────────────────────────────────────────
+// Ogni account può rinominare gli allergeni e cambiarne il numero mostrato.
+// Negli array dei piatti resta sempre l'id ufficiale (1–14): cambia solo come
+// viene presentato. Senza personalizzazione tutto resta come da normativa UE.
+export type AllergenOverride = {
+  id: number
+  number?: number
+  name?: string
+  i18n?: Partial<Record<AllergenLang, string>>
+}
+export type AllergenCatalog = AllergenOverride[] | null | undefined
+
+function override(id: number, catalog: AllergenCatalog): AllergenOverride | undefined {
+  return catalog?.find(o => o.id === id)
+}
+
+/** Numero mostrato per l'allergene (default: id ufficiale). */
+export function allergenNumber(id: number, catalog?: AllergenCatalog): number {
+  const n = override(id, catalog)?.number
+  return typeof n === 'number' && Number.isFinite(n) ? n : id
+}
+
+export function allergenName(id: number, lang: string = 'it', catalog?: AllergenCatalog): string {
+  const o = override(id, catalog)
+  if (o?.name) {
+    if (lang !== 'it') return o.i18n?.[lang as AllergenLang] || o.name
+    return o.name
+  }
   if (lang !== 'it') {
     const entry = ALLERGEN_I18N[lang as AllergenLang]?.[id - 1]
     if (entry) return entry.name
@@ -93,12 +120,25 @@ export function allergenName(id: number, lang: string = 'it'): string {
   return ALLERGENS.find(a => a.id === id)?.name ?? `Allergene ${id}`
 }
 
-export function allergenShort(id: number, lang: string = 'it'): string {
+export function allergenShort(id: number, lang: string = 'it', catalog?: AllergenCatalog): string {
+  if (override(id, catalog)?.name) return allergenName(id, lang, catalog)
   if (lang !== 'it') {
     const entry = ALLERGEN_I18N[lang as AllergenLang]?.[id - 1]
     if (entry) return entry.short
   }
   return ALLERGENS.find(a => a.id === id)?.short ?? String(id)
+}
+
+/** Elenco completo (per form, legende, Excel) ordinato per numero mostrato. */
+export function allergenList(catalog?: AllergenCatalog): { id: number; number: number; name: string; defaultName: string }[] {
+  return ALLERGENS
+    .map(a => ({ id: a.id, number: allergenNumber(a.id, catalog), name: allergenName(a.id, 'it', catalog), defaultName: a.name }))
+    .sort((x, y) => x.number - y.number)
+}
+
+/** Da numero mostrato a id ufficiale (import Excel). null se non esiste. */
+export function allergenIdFromNumber(n: number, catalog?: AllergenCatalog): number | null {
+  return ALLERGENS.find(a => allergenNumber(a.id, catalog) === n)?.id ?? null
 }
 
 // ── Parsing difensivo ───────────────────────────────────────────────────────────
@@ -126,13 +166,13 @@ function toIds(allergens: unknown): number[] {
 }
 
 /** Vista sintetica (testo sopra il PDF / lista) → solo numeri: "1, 3, 5". */
-export function formatAllergensShort(allergens: unknown): string {
-  return toIds(allergens).join(', ')
+export function formatAllergensShort(allergens: unknown, catalog?: AllergenCatalog): string {
+  return toIds(allergens).map(id => allergenNumber(id, catalog)).sort((a, b) => a - b).join(', ')
 }
 
 /** Vista dettaglio (modale) → nomi completi: "Cereali e glutine, Uova". */
-export function formatAllergensFull(allergens: unknown): string {
-  return toIds(allergens).map(id => allergenName(id)).join(', ')
+export function formatAllergensFull(allergens: unknown, catalog?: AllergenCatalog): string {
+  return toIds(allergens).map(id => allergenName(id, 'it', catalog)).join(', ')
 }
 
 export type AllergenDisplay = 'full' | 'short' | 'number'
@@ -149,11 +189,12 @@ export function formatAllergens(
   display: AllergenDisplay = 'full',
   separator = ', ',
   lang: string = 'it',
+  catalog?: AllergenCatalog,
 ): string {
-  const ids = toIds(allergens)
+  const ids = toIds(allergens).sort((a, b) => allergenNumber(a, catalog) - allergenNumber(b, catalog))
   const render =
-    display === 'number' ? (id: number) => String(id)
-    : display === 'short' ? (id: number) => allergenShort(id, lang)
-    : (id: number) => allergenName(id, lang)
+    display === 'number' ? (id: number) => String(allergenNumber(id, catalog))
+    : display === 'short' ? (id: number) => allergenShort(id, lang, catalog)
+    : (id: number) => allergenName(id, lang, catalog)
   return ids.map(render).join(separator)
 }
