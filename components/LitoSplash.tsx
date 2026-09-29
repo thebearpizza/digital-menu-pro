@@ -52,7 +52,7 @@ export default function LitoSplash() {
 }
 
 const CSS = `
-.lito-splash{--paper:#f6eedd;--edge:#e3d6ba;--d:${ANIMATION_MS}ms;position:fixed;inset:0;z-index:2147483000;display:grid;place-items:center;background:radial-gradient(120% 90% at 32% 22%,#f3ead7,#e2d4b7);overflow:hidden;transition:opacity .6s ease}
+.lito-splash{--paper:#f6eedd;--edge:#e3d6ba;--d:${ANIMATION_MS}ms;position:fixed;inset:0;z-index:2147483000;display:grid;place-items:center;background:radial-gradient(120% 90% at 50% 38%,#fffefb,#faf6ee 55%,#f1eadd);overflow:hidden;transition:opacity .6s ease}
 .lito-splash.is-leaving{opacity:0;pointer-events:none}
 .lito-splash *{box-sizing:border-box}
 .ls-stage{perspective:1400px;padding:16px;animation:ls-center var(--d) cubic-bezier(.45,.05,.25,1) forwards}
