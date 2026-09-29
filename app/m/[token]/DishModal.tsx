@@ -39,11 +39,13 @@ interface Props {
   // menu (l'abbinamento può puntare a un menu diverso da quello aperto).
   // Fallback su allDishes quando assente (es. card preview dell'admin).
   pairingPool?: DishData[]
+  /** Mostra la scheda come PAGINA del libro (riempie il foglio, senza backdrop). */
+  asPage?: boolean
 }
 
 // ── Component ──────────────────────────────────────────────────────────────────
 
-export default function DishModal({ activeDish, allDishes, isNested, onClose, onBack, onOpenDish, editMode = false, theme, lang = 'it', pairingPool }: Props) {
+export default function DishModal({ activeDish, allDishes, isNested, onClose, onBack, onOpenDish, editMode = false, theme, lang = 'it', pairingPool, asPage = false }: Props) {
   const allergenCatalog = useAllergenCatalog()
   const mn   = theme?.menu
   const card = theme?.card
@@ -219,11 +221,11 @@ export default function DishModal({ activeDish, allDishes, isNested, onClose, on
 
   return (
     <div
-      className="fixed inset-0 z-[99999] flex items-end sm:items-center justify-center"
+      className={asPage ? 'absolute inset-0 flex' : 'fixed inset-0 z-[99999] flex items-end sm:items-center justify-center'}
       style={{ fontFamily: FONT_SANS }}
     >
       {/* Backdrop — clicking it always closes everything */}
-      <div
+      {!asPage && <div
         ref={backdropRef}
         className="absolute inset-0 touch-none"
         style={{
@@ -232,13 +234,15 @@ export default function DishModal({ activeDish, allDishes, isNested, onClose, on
           WebkitBackdropFilter:'blur(6px)',
         } as React.CSSProperties}
         onClick={onClose}
-      />
+      />}
 
       {/* Card */}
       <div
         ref={cardRef}
-        className="relative w-full sm:max-w-md flex flex-col overflow-hidden"
-        style={{
+        className={asPage ? 'relative w-full h-full flex flex-col overflow-hidden' : 'relative w-full sm:max-w-md flex flex-col overflow-hidden'}
+        style={asPage ? {
+          background:   CARD_BG,
+        } : {
           background:   CARD_BG,
           border:       `1px solid ${ACCENT}22`,
           borderRadius: CARD_RADIUS,

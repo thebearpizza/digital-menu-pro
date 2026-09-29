@@ -137,6 +137,9 @@ interface Props {
 // ═══════════════════════════════════════════════════════════════════════════════
 // Inclinazione prospettica del libro (0 = disattivata). Prova in anteprima.
 const BOOK_TILT_DEG = 14
+// Scheda piatto come pagina del libro (una pagina si gira e la scopre).
+// false = scheda a comparsa classica.
+const DISH_AS_PAGE = true
 
 // Solo decorazione: spessore delle pagine a destra (ancora da leggere) e a
 // sinistra (già lette), in proporzione alla pagina corrente. Nessun effetto
@@ -269,6 +272,27 @@ export default function FlipbookViewer({
   const onDishOpenRef = useRef(onDishOpen)
   useEffect(() => { onDishOpenRef.current = onDishOpen }, [onDishOpen])
   const [modalStack, setModalStack] = useState<DishData[]>([])
+  // Immagine della pagina corrente (per la pagina che si gira sopra la scheda).
+  const pageSnapRef = useRef<(turnPage: number) => string | undefined>(() => undefined)
+  const [dishFlap, setDishFlap] = useState<{ src?: string; phase: 'in' | 'out' } | null>(null)
+  // Apertura: la pagina corrente "si gira" e scopre la scheda sotto.
+  useEffect(() => {
+    if (!DISH_AS_PAGE) return
+    if (modalStack.length > 0 && !dishFlap) setDishFlap({ src: pageSnapRef.current(currentPage), phase: 'in' })
+    if (modalStack.length === 0 && dishFlap) setDishFlap(null)
+  }, [modalStack.length]) // eslint-disable-line react-hooks/exhaustive-deps
+  // Cambio pagina (tab categoria, swipe…) con la scheda aperta: chiudila.
+  useEffect(() => {
+    if (!DISH_AS_PAGE) return
+    setModalStack(s => (s.length ? [] : s))
+    setDishFlap(null)
+  }, [currentPage])
+  // Chiusura: la pagina si rigira coprendo la scheda, poi la scheda sparisce.
+  const closeDishPage = () => {
+    if (!DISH_AS_PAGE) { setModalStack([]); return }
+    setDishFlap(f => (f ? { ...f, phase: 'out' } : f))
+    setTimeout(() => { setModalStack([]); setDishFlap(null) }, 620)
+  }
 
   // Sincronizza activeCatIdx quando currentPage cambia (sfoglio manuale)
   // o quando le categorie cambiano (cambio menu o caricamento ads).
@@ -1110,6 +1134,10 @@ export default function FlipbookViewer({
           if (p.type === 'pdf') { pdfToTurn.set(p.pdfPage, i + 1); turnToPdf.set(i + 1, p.pdfPage) }
         })
         pdfToTurnRef.current = pdfToTurn
+        pageSnapRef.current = (tp: number) => {
+          const pdfP = turnToPdf.get(tp)
+          return pdfP !== undefined ? pageDataUrls.get(pdfP) : adCanvasDataUrls.get(tp)
+        }
 
         // ── Helper: costruisce il DOM di una pagina Ad ───────────────────────
         // Safe area fissa in px — spazio minimo per rendere visibili i tasti
@@ -1904,6 +1932,33 @@ export default function FlipbookViewer({
             {pagesReady && <div className="fv-book-curve" aria-hidden />}
             {pagesReady && <div className="fv-book-spine" aria-hidden />}
 
+            {/* Scheda piatto come pagina del libro */}
+            {DISH_AS_PAGE && modalStack.length > 0 && (
+              <>
+                <div className="fv-dish-page">
+                  <DishModal
+                    asPage
+                    activeDish={modalStack[modalStack.length - 1]}
+                    allDishes={dishesRef.current}
+                    isNested={modalStack.length > 1}
+                    onClose={closeDishPage}
+                    onBack={modalStack.length > 1 ? () => setModalStack(st => st.slice(0, -1)) : undefined}
+                    onOpenDish={(dish) => setModalStack(st => [...st, dish])}
+                    theme={themeProp}
+                    lang={lang}
+                    pairingPool={pairingPool}
+                  />
+                </div>
+                {dishFlap?.src && (
+                  <div
+                    className={`fv-page-flap is-${dishFlap.phase}`}
+                    style={{ backgroundImage: `url("${dishFlap.src}")` }}
+                    aria-hidden
+                  />
+                )}
+              </>
+            )}
+
             {/* Overlay caricamento */}
             {loadPhase === 'loading' && dims && (
               <div
@@ -2076,7 +2131,7 @@ export default function FlipbookViewer({
 
       {/* Dish modal — rendered outside the flipbook DOM to avoid z-index conflicts.
           modalStack[last] = currently visible dish; closing pops the stack. */}
-      {modalStack.length > 0 && (
+      {!DISH_AS_PAGE && modalStack.length > 0 && (
         <DishModal
           activeDish={modalStack[modalStack.length - 1]}
           allDishes={dishesRef.current}
