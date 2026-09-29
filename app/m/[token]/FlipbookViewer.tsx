@@ -1116,6 +1116,25 @@ export default function FlipbookViewer({
         // Prec/Succ (absolute bottom-3 = 12px + testo 10px + buffer = ~28px).
         // Px fissi (non %) sono immuni al ricalcolo turn.js durante il clone.
         const AD_SAFE_PX = 28
+        // Titolo/prezzo della pagina Ad: sopra la navigazione (che sta in basso
+        // sopra la foto, non più in una striscia separata).
+        const AD_TITLE_BOTTOM = 46
+        // Zona in basso riservata allo sfoglio dagli angoli (tap/drag → turn.js).
+        const AD_CORNER_ZONE = 44
+        // Navigazione nello snapshot dell'Ad (reveal durante il trascinamento).
+        const drawAdNav = (ctx: CanvasRenderingContext2D, w: number, h: number, turnPage: number) => {
+          if (navTotal <= 0) return
+          ctx.save()
+          ctx.globalAlpha = 0.78
+          ctx.fillStyle = '#fff'
+          ctx.font = `${pagNavWeight} ${navSizePx}px ${pagNavFont}`
+          ctx.textBaseline = 'bottom'
+          if (navOpt.prev && turnPage > 1)        drawSpaced(ctx, navOpt.prev.toUpperCase(), 8, h - 12, 'left', 0.2 * navSizePx)
+          if (navOpt.next && turnPage < navTotal) drawSpaced(ctx, navOpt.next.toUpperCase(), w - 8, h - 12, 'right', 0.2 * navSizePx)
+          ctx.textAlign = 'center'
+          ctx.fillText(`${turnPage}/${navTotal}`, w / 2, h - 12)
+          ctx.restore()
+        }
         const buildAdPageDOM = (config: AdConfig, turnPage: number): { el: HTMLElement; video?: HTMLVideoElement; canvas?: HTMLCanvasElement; kbImageUrl?: string } => {
           const container = document.createElement('div')
           container.style.cssText = 'width:100%;height:100%;display:flex;flex-direction:column;'
@@ -1128,7 +1147,7 @@ export default function FlipbookViewer({
           // massimizza lo spazio video lasciando i tasti navigazione visibili.
           const main = document.createElement('div')
           main.className = 'ad-root'
-          main.style.setProperty('height', `calc(100% - ${AD_SAFE_PX}px)`, 'important')
+          main.style.setProperty('height', '100%', 'important')
 
           let videoEl: HTMLVideoElement | undefined
           let canvasEl: HTMLCanvasElement | undefined
@@ -1163,7 +1182,7 @@ export default function FlipbookViewer({
             canvasEl = document.createElement('canvas')
             canvasEl.width  = dims!.w
             // Altezza = solo la zona video (esclusa la safe area).
-            canvasEl.height = dims!.h - AD_SAFE_PX
+            canvasEl.height = dims!.h
             canvasEl.style.cssText =
               'position:absolute;inset:0;width:100%;height:100%;z-index:10;'
             const ctx0 = canvasEl.getContext('2d')
@@ -1264,28 +1283,45 @@ export default function FlipbookViewer({
           if (titleBlock.childElementCount > 0) main.appendChild(titleBlock)
 
           // Click apre la card del piatto collegato
+          const inCornerZone = (clientY: number) => {
+            const r = main.getBoundingClientRect()
+            return clientY > r.bottom - AD_CORNER_ZONE * (r.height / (dims?.h || r.height))
+          }
           main.addEventListener('click', (e) => {
+            if (inCornerZone(e.clientY)) return  // zona angoli: la gestisce turn.js
             e.stopPropagation()
             if (!config.dishId) return
             const dish = dishesRef.current.find(d => d.id === config.dishId)
             if (dish) setModalStack([dish])
           })
           // Blocca swipe su turn.js dentro la zona ad
-          main.addEventListener('touchend', (e) => { e.stopPropagation() }, { passive: false })
+          // SOLO per i tap: un trascinamento deve arrivare a turn.js, altrimenti
+          // la piega resta bloccata a metà (turn.js non riceve mai il rilascio).
+          let adTouchX = 0, adTouchY = 0
+          main.addEventListener('touchstart', (e) => {
+            const t = e.touches[0]; if (t) { adTouchX = t.clientX; adTouchY = t.clientY }
+          }, { passive: true })
+          main.addEventListener('touchend', (e) => {
+            const t = e.changedTouches[0]
+            const moved = t ? Math.hypot(t.clientX - adTouchX, t.clientY - adTouchY) > 10 : true
+            if (moved || (t && inCornerZone(t.clientY))) return
+            e.stopPropagation()
+          }, { passive: false })
 
           // Safe area — altezza px FISSA, immune al ricalcolo percentuale di turn.js
           const safe = document.createElement('div')
           safe.className = 'ad-safe-area'
           safe.style.setProperty('height', `${AD_SAFE_PX}px`, 'important')
-          // Navigazione dentro la pagina Ad (come nelle pagine del menu): gira
-          // con la carta. Stesso stile/posizione di drawPageNav.
-          safe.style.position = 'relative'
+          // Navigazione dentro la pagina Ad, SOPRA la foto (in basso, sulla
+          // sfumatura scura): gira con la carta e non taglia più la pagina.
+          safe.style.cssText += 'position:absolute;left:0;right:0;bottom:0;z-index:20;'
+          container.style.position = 'relative'
           const navSpan = (text: string, pos: string, spaced: boolean) => {
             const sp = document.createElement('span')
             sp.textContent = text
             sp.style.cssText =
               `position:absolute;bottom:12px;${pos}white-space:nowrap;pointer-events:none;` +
-              `color:${theme.navColor};opacity:0.6;font-family:${pagNavFont};font-size:${pagNavSize};` +
+              `color:#fff;opacity:0.78;font-family:${pagNavFont};font-size:${pagNavSize};` +
               `font-weight:${pagNavWeight};` + (spaced ? 'text-transform:uppercase;letter-spacing:0.2em;' : 'font-variant-numeric:tabular-nums;')
             safe.appendChild(sp)
           }
@@ -1351,7 +1387,7 @@ export default function FlipbookViewer({
                   try {
                     const vw = tmp.videoWidth, vh = tmp.videoHeight
                     if (!vw || !vh) return
-                    const w = dims!.w, h = dims!.h - AD_SAFE_PX
+                    const w = dims!.w, h = dims!.h
                     const sc = document.createElement('canvas'); sc.width = w; sc.height = h
                     const ctx = sc.getContext('2d'); if (!ctx) return
                     const s = Math.max(w / vw, h / vh)
@@ -1366,8 +1402,9 @@ export default function FlipbookViewer({
                       const size = Math.round(Math.min(32, w * 0.062))
                       ctx.font = `300 ${size}px ${theme.fontSerif}`
                       ctx.fillStyle = '#fff'
-                      ctx.fillText(snapName, 20, h - 28)
+                      ctx.fillText(snapName, 20, h - AD_TITLE_BOTTOM)
                     }
+                    drawAdNav(ctx, w, h, turnPage)
                     adCanvasDataUrls.set(turnPage, sc.toDataURL('image/jpeg', 0.9))
                     // Dipingi anche il canvas on-page (stesse dimensioni di sc) così,
                     // a piega conclusa e prima del play del video, mostra il primo
@@ -1400,7 +1437,7 @@ export default function FlipbookViewer({
                     const el = new Image(); el.crossOrigin = 'anonymous'
                     el.onload = () => res(el); el.onerror = rej; el.src = kbImageUrl
                   })
-                  const w = dims!.w, h = dims!.h - AD_SAFE_PX
+                  const w = dims!.w, h = dims!.h
                   const sc = document.createElement('canvas'); sc.width = w; sc.height = h
                   const ctx = sc.getContext('2d')
                   if (!ctx || cancelled) return
@@ -1422,8 +1459,9 @@ export default function FlipbookViewer({
                     const size = Math.round(Math.min(32, w * 0.062))
                     ctx.font = `300 ${size}px ${theme.fontSerif}`
                     ctx.fillStyle = '#fff'
-                    ctx.fillText(name, 20, h - 28)
+                    ctx.fillText(name, 20, h - AD_TITLE_BOTTOM)
                   }
+                  drawAdNav(ctx, w, h, turnPage)
                   if (!cancelled) adCanvasDataUrls.set(turnPage, sc.toDataURL('image/jpeg', 0.9))
                 } catch (_) { /* CORS failure: keep kbImageUrl fallback */ }
               })()
@@ -1517,7 +1555,7 @@ export default function FlipbookViewer({
             window.$(wrap).css({
               backgroundImage:    `url("${src}")`,
               backgroundSize:     !isAdSrc ? '100% 100%'
-                                : isDataUrl ? `100% calc(100% - ${AD_SAFE_PX}px)`
+                                : isDataUrl ? '100% 100%'
                                 : 'cover',
               backgroundRepeat:   'no-repeat',
               backgroundPosition: isAdSrc && !isDataUrl ? 'center' : '0 0',

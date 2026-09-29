@@ -715,8 +715,16 @@ export function MenuPDFDocument({ restaurant, menu, theme: themeProp, registered
     const invisible = 'rgba(0,0,0,0)'
     const nameStrut  = <Text style={{ fontFamily: st.dishName.fontFamily, fontWeight: st.dishName.fontWeight, fontSize: st.dishName.fontSize, color: invisible }}> </Text>
     const priceStrut = <Text style={{ fontFamily: st.dishPrice.fontFamily, fontWeight: st.dishPrice.fontWeight, fontSize: st.dishPrice.fontSize, color: invisible }}> </Text>
-    const nameEl  = <Text style={st.dishName}>{dish.name}{priceStr ? priceStrut : null}</Text>
-    const priceEl = priceStr ? <Text style={st.dishPrice}>{nameStrut}{priceStr}</Text> : null
+    // Con linee di base allineate, il testo più piccolo "sembra basso": lo si
+    // alza di metà della differenza di altezza delle maiuscole (~0.7 em), così
+    // il prezzo risulta centrato otticamente sulle lettere del nome.
+    const nSize = Number(st.dishName.fontSize) || 10
+    const pSize = Number(st.dishPrice.fontSize) || 10
+    const lift  = 0.35 * Math.abs(nSize - pSize)
+    const priceLift = pSize < nSize ? { position: 'relative' as const, top: -lift } : null
+    const nameLift  = nSize < pSize ? { position: 'relative' as const, top: -lift } : null
+    const nameEl  = <Text style={nameLift ? [st.dishName, nameLift] : st.dishName}>{dish.name}{priceStr ? priceStrut : null}</Text>
+    const priceEl = priceStr ? <Text style={priceLift ? [st.dishPrice, priceLift] : st.dishPrice}>{nameStrut}{priceStr}</Text> : null
     if (!priceEl) return <View style={st.dishRow}>{nameEl}</View>
     if (pos === 'above' || pos === 'below') {
       const stackNameEl = <Text style={[st.dishName, st.stackName]}>{dish.name}</Text>
@@ -724,7 +732,7 @@ export function MenuPDFDocument({ restaurant, menu, theme: themeProp, registered
         ? <View style={st.dishStack}><Text style={[st.dishPrice, st.stackPrice]}>{priceStr}</Text>{stackNameEl}</View>
         : <View style={st.dishStack}>{stackNameEl}<Text style={[st.dishPrice, st.stackPriceBelow]}>{priceStr}</Text></View>
     }
-    if (pos === 'left')  return <View style={st.dishRow}><Text style={st.dishPrice}>{priceStr}{nameStrut}</Text>{nameEl}</View>
+    if (pos === 'left')  return <View style={st.dishRow}><Text style={priceLift ? [st.dishPrice, priceLift] : st.dishPrice}>{priceStr}{nameStrut}</Text>{nameEl}</View>
     return <View style={st.dishRow}>{nameEl}{priceEl}</View>  // 'right' (default)
   }
 
