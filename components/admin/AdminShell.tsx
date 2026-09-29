@@ -81,6 +81,16 @@ export default function AdminShell({
   // Apertura anteprima: la pagina del menu impiega un attimo ad arrivare dal
   // server; nel frattempo mostriamo subito la L in loop come negli altri caricamenti.
   const [openingPreview, setOpeningPreview] = useState(false)
+  // Safari smette di ridisegnare la pagina appena parte la navigazione: prima
+  // mostriamo la L, poi (dopo due frame) navighiamo.
+  function openPreview(e: React.MouseEvent<HTMLAnchorElement>) {
+    if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return
+    e.preventDefault()
+    const href = e.currentTarget.href
+    setPopover(null)
+    setOpeningPreview(true)
+    requestAnimationFrame(() => requestAnimationFrame(() => { window.location.href = href }))
+  }
   useEffect(() => {
     // Tornando indietro (cache del browser) la pagina viene ripristinata così com'era.
     const onShow = (e: PageTransitionEvent) => { if (e.persisted) setOpeningPreview(false) }
@@ -159,7 +169,7 @@ export default function AdminShell({
             {previewMenus.length === 0 ? (
               <div className="px-3 py-2 text-sm text-gray-500">Nessun ristorante ancora.</div>
             ) : previewMenus.map(m => (
-              <a key={m.token} href={`/m/${m.token}?from=admin`} className="lito-dock-pop-row" onClick={() => { setPopover(null); setOpeningPreview(true) }}>
+              <a key={m.token} href={`/m/${m.token}?from=admin`} className="lito-dock-pop-row" onClick={openPreview}>
                 <span className="truncate">{m.name}</span>
               </a>
             ))}
@@ -180,7 +190,7 @@ export default function AdminShell({
             const setRef = (el: HTMLElement | null) => { itemRefs.current[item.key] = el }
             if (item.href && item.external) {
               return (
-                <a key={item.key} ref={setRef} href={item.href} className={cls} onClick={() => setOpeningPreview(true)}>
+                <a key={item.key} ref={setRef} href={item.href} className={cls} onClick={openPreview}>
                   {content}
                 </a>
               )
