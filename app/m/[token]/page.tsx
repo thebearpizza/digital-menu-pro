@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import AdminBackButton from './AdminBackButton'
 import { AllergenCatalogProvider } from '@/components/AllergenCatalog'
 import type { AllergenOverride } from '@/lib/allergens'
 import { notFound } from 'next/navigation'
@@ -19,8 +20,10 @@ export const metadata: Metadata = {
 
 export default async function PublicMenuPage({
   params,
+  searchParams,
 }: {
   params: { token: string }
+  searchParams?: { from?: string }
 }) {
   const supabase = await createClient()
 
@@ -41,9 +44,12 @@ export default async function PublicMenuPage({
     .maybeSingle()
 
   // Track QR scan — awaited so the insert completes before response is sent
-  try {
-    await supabase.from('page_views').insert({ restaurant_id: restaurant.id })
-  } catch {}
+  // Le aperture dall'anteprima del gestionale non contano come scansioni.
+  if (searchParams?.from !== 'admin') {
+    try {
+      await supabase.from('page_views').insert({ restaurant_id: restaurant.id })
+    } catch {}
+  }
 
   const [{ data: rawMenus }, { data: banners }, { data: info }] = await Promise.all([
     supabase
@@ -205,6 +211,7 @@ export default async function PublicMenuPage({
         extraPairingDishes={extraPairingDishes}
       />
       </AllergenCatalogProvider>
+      {searchParams?.from === 'admin' && <AdminBackButton />}
     </>
   )
 }

@@ -103,7 +103,7 @@ export default function AdminShell({
     { key: 'dashboard',   label: 'Dashboard',  icon: 'home', href: '/admin', active: pathname === '/admin' },
     { key: 'restaurants', label: 'Ristoranti', icon: 'book', href: '/admin/restaurants', active: pathname.startsWith('/admin/restaurants') },
     singlePreview
-      ? { key: 'preview', label: 'Anteprima', icon: 'eye', href: `/m/${singlePreview.token}`, external: true, active: false }
+      ? { key: 'preview', label: 'Anteprima', icon: 'eye', href: `/m/${singlePreview.token}?from=admin`, external: true, active: false }
       : { key: 'preview', label: 'Anteprima', icon: 'eye', active: false, popover: 'preview' },
     { key: 'settings',    label: 'Impostazioni', icon: 'gear', href: '/admin/settings',
       active: ['/admin/settings', '/admin/telegram', '/admin/users'].some(p => pathname.startsWith(p)) },
@@ -142,7 +142,7 @@ export default function AdminShell({
             {previewMenus.length === 0 ? (
               <div className="px-3 py-2 text-sm text-gray-500">Nessun ristorante ancora.</div>
             ) : previewMenus.map(m => (
-              <a key={m.token} href={`/m/${m.token}`} target="_blank" rel="noopener noreferrer" className="lito-dock-pop-row" onClick={() => setPopover(null)}>
+              <a key={m.token} href={`/m/${m.token}?from=admin`} className="lito-dock-pop-row" onClick={() => setPopover(null)}>
                 <span className="truncate">{m.name}</span>
               </a>
             ))}
@@ -163,7 +163,7 @@ export default function AdminShell({
             const setRef = (el: HTMLElement | null) => { itemRefs.current[item.key] = el }
             if (item.href && item.external) {
               return (
-                <a key={item.key} ref={setRef} href={item.href} target="_blank" rel="noopener noreferrer" className={cls}>
+                <a key={item.key} ref={setRef} href={item.href} className={cls}>
                   {content}
                 </a>
               )
