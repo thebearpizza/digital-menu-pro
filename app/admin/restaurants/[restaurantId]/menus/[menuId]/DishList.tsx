@@ -1,6 +1,8 @@
 'use client'
 
 import { useState, useCallback, useRef, useEffect } from 'react'
+import { formatAllergensShort } from '@/lib/allergens'
+import { useAllergenCatalog } from '@/components/AllergenCatalog'
 import {
   DndContext, closestCorners, DragEndEvent, DragStartEvent, DragOverlay,
   PointerSensor, TouchSensor, useSensor, useSensors,
@@ -127,6 +129,7 @@ function SortableDish({
   onSchedule: (dish: Dish) => void
   deletingId: string | null
 }) {
+  const allergenCatalog = useAllergenCatalog()
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: dish.id })
 
@@ -145,7 +148,7 @@ function SortableDish({
       if (kebabRef.current && !kebabRef.current.contains(e.target as Node)) setKebabOpen(false)
     }
     document.addEventListener('mousedown', onOut)
-    return () => document.removeEventListener('mousedown', onOut)
+  return () => document.removeEventListener('mousedown', onOut)
   }, [kebabOpen])
 
   return (
@@ -212,7 +215,7 @@ function SortableDish({
             {dish.price != null ? `€ ${Number(dish.price).toFixed(2)}` : '—'}
           </span>
           {dish.allergens?.length > 0 && (
-            <span className="text-[10px] text-orange-500 truncate">· Allergeni: {dish.allergens.join(', ')}</span>
+            <span className="text-[10px] text-orange-500 truncate">· Allergeni: {formatAllergensShort(dish.allergens, allergenCatalog)}</span>
           )}
         </div>
       </div>

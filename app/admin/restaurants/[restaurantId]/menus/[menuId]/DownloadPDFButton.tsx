@@ -4,6 +4,7 @@ import { useState } from 'react'
 import type { RestaurantTheme } from '@/lib/theme'
 import type { MenuExtraPages } from '../menuExtraPages'
 import { Spinner } from '@/components/ui/Spinner'
+import { useAllergenCatalog } from '@/components/AllergenCatalog'
 
 interface PDFDishMin {
   id:          string
@@ -31,6 +32,7 @@ interface Props {
 export default function DownloadPDFButton({
   restaurantName, menuId, menuName, dishes, extraPages, theme, fill,
 }: Props) {
+  const allergenCatalog = useAllergenCatalog()
   const [loading, setLoading] = useState(false)
   const [error,   setError]   = useState<string | null>(null)
 
@@ -63,7 +65,7 @@ export default function DownloadPDFButton({
         theme.customFonts,
       )
 
-      const restaurant = { name: restaurantName }
+      const restaurant = { name: restaurantName, allergenCatalog }
       const menu = { id: menuId, name: menuName, lang: 'it' as const, dishes, extra_pages: extraPages }
 
       let blob: Blob

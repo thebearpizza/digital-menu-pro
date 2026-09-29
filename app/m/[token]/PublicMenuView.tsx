@@ -7,6 +7,7 @@
 
 import { useState, useEffect, useRef, useMemo, useCallback, type CSSProperties } from 'react'
 import FlipbookViewer  from './FlipbookViewer'
+import { useAllergenCatalog } from '@/components/AllergenCatalog'
 import DishModal       from './DishModal'
 import type { DishData } from './DishModal'
 import { EditHandle, sendEdit, useIsMobilePreview } from './EditHandle'
@@ -166,6 +167,7 @@ function BannerCarousel({ banners, accent }: { banners: Banner[]; accent: string
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 export default function PublicMenuView({ restaurant, menus, banners, defaultMenuId, restaurantId, extraPairingDishes }: Props) {
+  const allergenCatalog = useAllergenCatalog()
   // selectedMenuId: what the user has chosen to view (null = landing)
   const [selectedMenuId, setSelectedMenuId] = useState<string | null>(defaultMenuId ?? null)
   // pendingMenuId: set during immersive video transition (PDF generation starts early)
@@ -383,7 +385,7 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
   const effectiveTheme: RestaurantTheme = { ...t, menu: m }
 
   const { pdfUrl, categories, isGenerating, error } = useMenuPDF(
-    { name: restaurant.name },
+    { name: restaurant.name, allergenCatalog },
     activeMenu ? {
       id: activeMenu.id, name: activeMenu.name, lang,
       extra_pages: activeMenu.extra_pages ?? null,

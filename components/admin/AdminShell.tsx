@@ -3,10 +3,11 @@
 import { useState, useEffect, useLayoutEffect, useRef } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { LogoutButton } from '@/components/admin/LogoutButton'
 import NavigationProgress from '@/components/admin/NavigationProgress'
+import { AllergenCatalogProvider } from '@/components/AllergenCatalog'
+import type { AllergenCatalog } from '@/lib/allergens'
 
-type IconName = 'home' | 'book' | 'send' | 'users' | 'user'
+type IconName = 'home' | 'book' | 'eye' | 'gear'
 
 function Icon({ name }: { name: IconName }) {
   const common = { width: 22, height: 22, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const }
@@ -24,12 +25,15 @@ function Icon({ name }: { name: IconName }) {
           <text x="13.5" y="11.6" textAnchor="middle" fontSize="4.1" fontWeight="700" fill="currentColor" stroke="none" fontFamily="Georgia, 'Times New Roman', serif" letterSpacing=".1">Menù</text>
         </svg>
       )
-    case 'send':
-      return <svg {...common}><path d="M21 3 10 14" /><path d="M21 3 14.5 21l-4.5-7-7-4.5z" /></svg>
-    case 'users':
-      return <svg {...common}><circle cx="9" cy="8" r="3.5" /><path d="M2.5 20a6.5 6.5 0 0 1 13 0" /><path d="M16 4.5a3.5 3.5 0 0 1 0 7" /><path d="M18 14.2a6.5 6.5 0 0 1 3.5 5.8" /></svg>
-    case 'user':
-      return <svg {...common}><circle cx="12" cy="8" r="4" /><path d="M4 21a8 8 0 0 1 16 0" /></svg>
+    case 'eye':
+      return <svg {...common}><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z" /><circle cx="12" cy="12" r="3" /></svg>
+    case 'gear':
+      return (
+        <svg {...common}>
+          <circle cx="12" cy="12" r="3" />
+          <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" />
+        </svg>
+      )
   }
 }
 
@@ -38,27 +42,29 @@ interface DockItem {
   label: string
   icon: IconName
   href?: string
+  external?: boolean
   active: boolean
-  popover?: 'account'
+  popover?: 'preview'
 }
 
+export interface PreviewMenu { name: string; token: string }
+
 export default function AdminShell({
-  userEmail,
   children,
-  isSuperAdmin = false,
   dockAccessory,
+  previewMenus = [],
+  allergenCatalog = null,
 }: {
-  userEmail:   string
   children:    React.ReactNode
-  // Pillola separata accanto al dock (es. assistente vocale).
+  // Pillola separata accanto al dock (es. assistente IA).
   dockAccessory?: React.ReactNode
-  // Solo l'account padre vede la tab "Utenti". È una scelta di interfaccia,
-  // NON una misura di sicurezza: la protezione vera sta nella pagina e in
-  // ogni server action (vedi app/admin/users/).
-  isSuperAdmin?: boolean
+  // Menu pubblici apribili dal tasto "Anteprima" del dock.
+  previewMenus?: PreviewMenu[]
+  // Allergeni personalizzati dell'account (nomi/numeri).
+  allergenCatalog?: AllergenCatalog
 }) {
   const pathname = usePathname()
-  const [popover, setPopover] = useState<'account' | null>(null)
+  const [popover, setPopover] = useState<'preview' | null>(null)
   const dockRef  = useRef<HTMLDivElement>(null)
   const itemRefs = useRef<Record<string, HTMLElement | null>>({})
   const [pill, setPill] = useState<{ left: number; width: number } | null>(null)
@@ -92,14 +98,15 @@ export default function AdminShell({
     return () => { window.removeEventListener('pointerdown', onDown); window.removeEventListener('keydown', onKey) }
   }, [popover])
 
+  const singlePreview = previewMenus.length === 1 ? previewMenus[0] : null
   const items: DockItem[] = [
-    { key: 'dashboard',   label: 'Dashboard', icon: 'home', href: '/admin', active: pathname === '/admin' },
+    { key: 'dashboard',   label: 'Dashboard',  icon: 'home', href: '/admin', active: pathname === '/admin' },
     { key: 'restaurants', label: 'Ristoranti', icon: 'book', href: '/admin/restaurants', active: pathname.startsWith('/admin/restaurants') },
-    { key: 'telegram',    label: 'Telegram',  icon: 'send', href: '/admin/telegram', active: pathname.startsWith('/admin/telegram') },
-    ...(isSuperAdmin
-      ? [{ key: 'users', label: 'Utenti', icon: 'users' as const, href: '/admin/users', active: pathname.startsWith('/admin/users') }]
-      : []),
-    { key: 'account',     label: 'Account',   icon: 'user', active: false, popover: 'account' },
+    singlePreview
+      ? { key: 'preview', label: 'Anteprima', icon: 'eye', href: `/m/${singlePreview.token}`, external: true, active: false }
+      : { key: 'preview', label: 'Anteprima', icon: 'eye', active: false, popover: 'preview' },
+    { key: 'settings',    label: 'Impostazioni', icon: 'gear', href: '/admin/settings',
+      active: ['/admin/settings', '/admin/telegram', '/admin/users'].some(p => pathname.startsWith(p)) },
   ]
   const activeKey = (popover && items.find(i => i.popover === popover)?.key) ?? items.find(i => i.active)?.key
 
@@ -121,18 +128,24 @@ export default function AdminShell({
 
       <main className="min-h-screen pb-36">
         <div className="max-w-6xl mx-auto p-4 md:p-8">
-          {children}
+          <AllergenCatalogProvider catalog={allergenCatalog}>
+            {children}
+          </AllergenCatalogProvider>
         </div>
       </main>
 
       {/* ── Dock ──────────────────────────────────────────────────────── */}
       <div className={`lito-dock-wrap${modalOpen ? ' is-hidden' : ''}`} aria-hidden={modalOpen || undefined}>
         <div className="lito-dock-main">
-        {popover === 'account' && (
-          <div className="lito-dock-pop lito-dock-pop-right" role="dialog" aria-label="Account">
-            <div className="px-3 pt-1 pb-2 text-[11px] text-gray-500 truncate">{userEmail}</div>
-            <div className="lito-dock-pop-sep" />
-            <div className="px-3 py-2"><LogoutButton /></div>
+        {popover === 'preview' && (
+          <div className="lito-dock-pop" role="dialog" aria-label="Anteprima menu">
+            {previewMenus.length === 0 ? (
+              <div className="px-3 py-2 text-sm text-gray-500">Nessun ristorante ancora.</div>
+            ) : previewMenus.map(m => (
+              <a key={m.token} href={`/m/${m.token}`} target="_blank" rel="noopener noreferrer" className="lito-dock-pop-row" onClick={() => setPopover(null)}>
+                <span className="truncate">{m.name}</span>
+              </a>
+            ))}
           </div>
         )}
 
@@ -148,6 +161,13 @@ export default function AdminShell({
             )
             const cls = `lito-dock-item${isActive ? ' is-active' : ''}`
             const setRef = (el: HTMLElement | null) => { itemRefs.current[item.key] = el }
+            if (item.href && item.external) {
+              return (
+                <a key={item.key} ref={setRef} href={item.href} target="_blank" rel="noopener noreferrer" className={cls}>
+                  {content}
+                </a>
+              )
+            }
             return item.href ? (
               <Link key={item.key} ref={setRef} href={item.href} className={cls} aria-current={isActive ? 'page' : undefined}>
                 {content}

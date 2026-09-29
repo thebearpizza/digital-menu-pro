@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { formatAllergens } from '@/lib/allergens'
+import { useAllergenCatalog } from '@/components/AllergenCatalog'
 import { fontStack, formatPrice, cardBorderRadius, cardNavColors } from '@/lib/theme'
 import type { CardTheme, RestaurantTheme } from '@/lib/theme'
 import { EditHandle, sendEdit, useIsMobilePreview } from './EditHandle'
@@ -43,6 +44,7 @@ interface Props {
 // ── Component ──────────────────────────────────────────────────────────────────
 
 export default function DishModal({ activeDish, allDishes, isNested, onClose, onBack, onOpenDish, editMode = false, theme, lang = 'it', pairingPool }: Props) {
+  const allergenCatalog = useAllergenCatalog()
   const mn   = theme?.menu
   const card = theme?.card
   // Card-specific: use card theme if available, fall back to menu theme
@@ -415,7 +417,7 @@ export default function DishModal({ activeDish, allDishes, isNested, onClose, on
               >
                 {!ALRG_BADGE && <p style={{ color: ALRG_LABEL, fontSize: 8, letterSpacing: '0.26em', textTransform: 'uppercase', marginBottom: 6 }}>{uiText('allergens', lang)}</p>}
                 <p style={{ color: ALRG_COLOR, fontSize: `${ALRG_SIZE}rem`, lineHeight: 1.6 }}>
-                  {ALRG_BADGE ? '⚠ ' : ''}{formatAllergens(dish.allergens, ALRG_DISPLAY, ALRG_SEP, lang)}
+                  {ALRG_BADGE ? '⚠ ' : ''}{formatAllergens(dish.allergens, ALRG_DISPLAY, ALRG_SEP, lang, allergenCatalog)}
                 </p>
               </div>
             </EditHandle>
