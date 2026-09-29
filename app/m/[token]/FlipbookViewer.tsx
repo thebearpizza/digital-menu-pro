@@ -135,6 +135,27 @@ interface Props {
 // ═══════════════════════════════════════════════════════════════════════════════
 // COMPONENT
 // ═══════════════════════════════════════════════════════════════════════════════
+// Solo decorazione: spessore delle pagine a destra (ancora da leggere) e a
+// sinistra (già lette), in proporzione alla pagina corrente. Nessun effetto
+// sulla logica di sfoglio.
+function bookStackStyle(current: number, total: number): React.CSSProperties {
+  const MAX = 5
+  const frac = total > 1 ? (current - 1) / (total - 1) : 0
+  const right = Math.round((1 - frac) * MAX)
+  const left  = Math.round(frac * MAX)
+  const edges: string[] = []
+  for (let i = 1; i <= right; i++) {
+    const o = i * 1.5
+    edges.push(`${o}px ${o}px 0 ${i % 2 ? '#e9e4da' : '#c9c1b3'}`)
+  }
+  for (let i = 1; i <= left; i++) {
+    const o = i * 1.5
+    edges.push(`${-o}px ${o}px 0 ${i % 2 ? '#e9e4da' : '#c9c1b3'}`)
+  }
+  edges.push('14px 22px 34px -6px rgba(0,0,0,.55)', '0 3px 10px rgba(0,0,0,.25)')
+  return { boxShadow: edges.join(', ') }
+}
+
 export default function FlipbookViewer({
   pdfUrl,
   restaurantName,
@@ -1712,7 +1733,7 @@ export default function FlipbookViewer({
           >
             {/* Solo decorazione (effetto libro): spessore delle pagine e ombra,
                 dietro al libro. pointer-events: none — non riceve mai tocchi. */}
-            {pagesReady && <div className="fv-book-stack" aria-hidden />}
+            {pagesReady && <div className="fv-book-stack" aria-hidden style={bookStackStyle(currentPage, totalPages)} />}
 
             {/* turn.js mount target — always in DOM, fv-book per CSS targeting */}
             <div
@@ -1722,6 +1743,7 @@ export default function FlipbookViewer({
             />
 
             {/* Solo decorazione: ombra della rilegatura sul bordo sinistro. */}
+            {pagesReady && <div className="fv-book-curve" aria-hidden />}
             {pagesReady && <div className="fv-book-spine" aria-hidden />}
 
             {/* Overlay caricamento */}

@@ -584,15 +584,7 @@ html.lito-admin body {
   pointer-events: none;
   border-radius: 1px 3px 3px 1px;
   background: #f4f1ea;
-  box-shadow:
-    1.5px 1.5px 0 #e9e4da,
-    2.5px 2.5px 0 #cfc8bb,
-    4px 4px 0 #ece7de,
-    5px 5px 0 #cbc3b5,
-    6.5px 6.5px 0 #e7e1d6,
-    7.5px 7.5px 0 #c4bcad,
-    14px 22px 34px -6px rgba(0, 0, 0, 0.55),
-    0 3px 10px rgba(0, 0, 0, 0.25);
+  transition: box-shadow 0.35s ease;
 }
 .fv-book-spine {
   position: absolute;
@@ -604,4 +596,20 @@ html.lito-admin body {
   pointer-events: none;
   background: linear-gradient(90deg, rgba(0, 0, 0, 0.22), rgba(0, 0, 0, 0.07) 35%, rgba(255, 255, 255, 0.10) 60%, transparent);
   mix-blend-mode: multiply;
+}
+
+.fv-book-curve {
+  position: absolute;
+  inset: 0;
+  z-index: 44;
+  pointer-events: none;
+  background:
+    linear-gradient(90deg,
+      rgba(255, 255, 255, 0.10) 0%,
+      rgba(255, 255, 255, 0.06) 12%,
+      rgba(255, 255, 255, 0) 30%,
+      rgba(0, 0, 0, 0) 78%,
+      rgba(0, 0, 0, 0.035) 92%,
+      rgba(0, 0, 0, 0.07) 100%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(0, 0, 0, 0) 20%, rgba(0, 0, 0, 0) 85%, rgba(0, 0, 0, 0.035));
 }
