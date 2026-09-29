@@ -348,7 +348,7 @@ html.lito-admin body {
   position: fixed;
   left: 0;
   right: 0;
-  bottom: calc(14px + env(safe-area-inset-bottom));
+  bottom: max(24px, calc(12px + env(safe-area-inset-bottom)));
   z-index: 300;
   display: flex;
   justify-content: center;
@@ -521,7 +521,12 @@ html.lito-admin body {
   0%, 100% { box-shadow: 0 0 0 0 rgba(197, 58, 42, 0.45), 0 10px 26px rgba(110, 86, 45, 0.3); }
   50% { box-shadow: 0 0 0 10px rgba(197, 58, 42, 0), 0 10px 26px rgba(110, 86, 45, 0.3); }
 }
-.lito-voice-panel { bottom: calc(96px + env(safe-area-inset-bottom)); }
+.lito-voice-panel { bottom: max(108px, calc(96px + env(safe-area-inset-bottom))); }
+/* Web app aperta dalla Home: lo schermo arriva fino ai bordi arrotondati. */
+@media (display-mode: standalone) {
+  .lito-dock-wrap { bottom: max(30px, calc(16px + env(safe-area-inset-bottom))); }
+  .lito-voice-panel { bottom: max(116px, calc(100px + env(safe-area-inset-bottom))); }
+}
 @media (max-width: 440px) { .lito-dock-side { width: 54px; } }
 
 /* ── Forme arrotondate nel gestionale ──────────────────────────────────────
