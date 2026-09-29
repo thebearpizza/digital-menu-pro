@@ -1194,7 +1194,7 @@ export default function FlipbookViewer({
           }
         }
         // Snapshot completo della pagina Ad alla risoluzione dello schermo.
-        const composeAdSnapshot = async (paintMedia: (ctx: CanvasRenderingContext2D, w: number, h: number) => void, title: HTMLElement | undefined, turnPage: number): Promise<string> => {
+        const composeAdSnapshot = async (paintMedia: (ctx: CanvasRenderingContext2D, w: number, h: number) => void, title: HTMLElement | undefined, nav: HTMLElement | undefined, turnPage: number): Promise<string> => {
           const w = dims!.w, h = dims!.h
           const sc = document.createElement('canvas')
           sc.width = Math.round(w * dpr); sc.height = Math.round(h * dpr)
@@ -1208,10 +1208,12 @@ export default function FlipbookViewer({
           g.addColorStop(1, 'rgba(0,0,0,0.10)')
           ctx.fillStyle = g; ctx.fillRect(0, 0, w, h)
           if (title) { try { await drawDomText(ctx, title, w, h) } catch (_) {} }
-          drawAdNav(ctx, w, h, turnPage)
+          // Navigazione: copiata dalla fascia reale (stesse posizioni al pixel).
+          if (nav) { try { await drawDomText(ctx, nav, w, h) } catch (_) { drawAdNav(ctx, w, h, turnPage) } }
+          else drawAdNav(ctx, w, h, turnPage)
           return sc.toDataURL('image/jpeg', 0.9)
         }
-        const buildAdPageDOM = (config: AdConfig, turnPage: number): { el: HTMLElement; video?: HTMLVideoElement; canvas?: HTMLCanvasElement; kbImageUrl?: string; title?: HTMLElement } => {
+        const buildAdPageDOM = (config: AdConfig, turnPage: number): { el: HTMLElement; video?: HTMLVideoElement; canvas?: HTMLCanvasElement; kbImageUrl?: string; title?: HTMLElement; nav?: HTMLElement } => {
           const container = document.createElement('div')
           container.style.cssText = 'width:100%;height:100%;display:flex;flex-direction:column;'
 
@@ -1407,7 +1409,7 @@ export default function FlipbookViewer({
 
           container.appendChild(main)
           container.appendChild(safe)
-          return { el: container, video: videoEl, canvas: canvasEl, kbImageUrl: kbImageUrlResult, title: titleBlock.childElementCount > 0 ? titleBlock : undefined }
+          return { el: container, video: videoEl, canvas: canvasEl, kbImageUrl: kbImageUrlResult, title: titleBlock.childElementCount > 0 ? titleBlock : undefined, nav: safe }
         }
 
         // ── FASE 2: div + canvas nel DOM ─────────────────────────────────────
@@ -1423,7 +1425,7 @@ export default function FlipbookViewer({
             `backface-visibility:hidden;-webkit-backface-visibility:hidden;`
 
           if (page.type === 'ad') {
-            const { el: adEl, video, canvas, kbImageUrl, title: adTitle } = buildAdPageDOM(page.config, domIdx + 1)
+            const { el: adEl, video, canvas, kbImageUrl, title: adTitle, nav: adNav } = buildAdPageDOM(page.config, domIdx + 1)
             pageDiv.appendChild(adEl)
             const turnPage = domIdx + 1  // 1-based turn page
             if (video) adVideoMap.set(turnPage, video)
@@ -1473,7 +1475,7 @@ export default function FlipbookViewer({
                     // Canvas on-page: primo frame invece del fill #111 (niente flash nero).
                     const onCtx = canvas.getContext('2d')
                     if (onCtx) onCtx.drawImage(frame, 0, 0)
-                    composeAdSnapshot((c, ww, hh) => c.drawImage(frame, 0, 0, ww, hh), adTitle, turnPage)
+                    composeAdSnapshot((c, ww, hh) => c.drawImage(frame, 0, 0, ww, hh), adTitle, adNav, turnPage)
                       .then(url => { if (!cancelled) adCanvasDataUrls.set(turnPage, url) })
                       .catch(() => {})
                   } catch (_) { /* CORS/tainted: resta il fallback backup/black */ }
@@ -1510,7 +1512,7 @@ export default function FlipbookViewer({
                       (w - img.naturalWidth  * ks) / 2,
                       (h - img.naturalHeight * ks) / 2,
                       img.naturalWidth * ks, img.naturalHeight * ks)
-                  }, adTitle, turnPage)
+                  }, adTitle, adNav, turnPage)
                   if (!cancelled) adCanvasDataUrls.set(turnPage, url)
                 } catch (_) { /* CORS failure: keep kbImageUrl fallback */ }
               })()
