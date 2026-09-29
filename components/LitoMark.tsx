@@ -23,15 +23,40 @@ const PEN_STROKES = [
 const HIDE_AFTER: Record<number, string> = { 0: SWASH_HIDE, 3: CROSSING_HIDE }
 const TOTAL_LEN = PEN_STROKES.reduce((a, b) => a + b.len, 0)
 
+// Loop (indicatore di caricamento): la penna scrive la L, la tiene, poi la
+// "riassorbe" seguendo lo stesso percorso e ricomincia dallo svolazzo.
+const LOOP_WRITE_END = 0.5
+const LOOP_ERASE_START = 0.6
+const LOOP_ERASE_END = 0.94
+const pct = (x: number) => `${(x * 100).toFixed(2)}%`
+const LOOP_KEYFRAMES = (() => {
+  let before = 0
+  return PEN_STROKES.map((st, i) => {
+    const s0 = before / TOTAL_LEN
+    const s1 = (before + st.len) / TOTAL_LEN
+    before += st.len
+    const a = LOOP_WRITE_END * s0
+    const b = LOOP_WRITE_END * s1
+    const c = LOOP_ERASE_START + (LOOP_ERASE_END - LOOP_ERASE_START) * s0
+    const d = LOOP_ERASE_START + (LOOP_ERASE_END - LOOP_ERASE_START) * s1
+    return `@keyframes lm-loop-${i}{0%,${pct(a)}{stroke-dashoffset:1;stroke-opacity:0}${pct(a + 0.001)}{stroke-opacity:1}${pct(b)},${pct(c)}{stroke-dashoffset:0;stroke-opacity:1}${pct(d)}{stroke-dashoffset:-1;stroke-opacity:1}${pct(d + 0.001)},100%{stroke-dashoffset:-1;stroke-opacity:0}}`
+  }).join('')
+})()
+
 /** La L dorata di Lito che si scrive a pennino, su sfondo trasparente. */
 export default function LitoMark({
   writeStartMs = 0,
   writeMs = 2600,
   className,
+  loop = false,
+  loopMs = 3400,
 }: {
   writeStartMs?: number
   writeMs?: number
   className?: string
+  /** Scrive e riassorbe la L all'infinito (indicatore di caricamento). */
+  loop?: boolean
+  loopMs?: number
 }) {
   const uid = useId().replace(/:/g, '')
   const id = (name: string) => `lm${uid}-${name}`
@@ -43,7 +68,7 @@ export default function LitoMark({
   // anche con idratazione lenta o tornando al login senza ricaricare.
   useEffect(() => {
     const svg = svgRef.current
-    if (!svg) return
+    if (!svg || loop) return
     const finals = svg.querySelectorAll<SVGAnimationElement>('[data-lm-final]')
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
       svg.querySelector(`#${id('reveal-rect')}`)?.setAttribute('x', '-2')
@@ -134,7 +159,9 @@ export default function LitoMark({
                 pathLength={1}
                 d={st.d}
                 strokeWidth={st.w}
-                style={{
+                style={loop ? {
+                  animation: `lm-loop-${i} ${loopMs}ms linear infinite`,
+                } : {
                   animationDelay: `${delay}ms`,
                   animationDuration: `${(writeMs * st.len) / TOTAL_LEN}ms`,
                   animationTimingFunction: i === 0 ? 'cubic-bezier(.5,0,1,1)' : last ? 'cubic-bezier(0,0,.4,1)' : 'linear',
@@ -148,6 +175,8 @@ export default function LitoMark({
       <g mask={`url(#${id('pen')})`}>
         <path d={L_PATH} fill={`url(#${id('gold')})`} />
       </g>
+      {!loop && (
+        <>
       <g mask={`url(#${id('reveal-mask')})`}>
         {/* Rettangolo trasparente: Safari ritaglia i filtri al riquadro dell'elemento,
             così l'ombra sotto la L non viene tagliata. */}
@@ -169,13 +198,16 @@ export default function LitoMark({
           />
         </rect>
       </g>
+        </>
+      )}
     </svg>
   )
 }
 
 const CSS = `
+${LOOP_KEYFRAMES}
 .lito-mark{display:block;overflow:visible;shape-rendering:geometricPrecision}
 .lm-pen{fill:none;stroke:#fff;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:1 2;stroke-dashoffset:1;animation-name:lm-write;animation-fill-mode:both}
 @keyframes lm-write{0%{stroke-dashoffset:1;stroke-opacity:0}.5%{stroke-opacity:1}100%{stroke-dashoffset:0;stroke-opacity:1}}
-@media (prefers-reduced-motion:reduce){.lm-pen{animation:none!important;stroke-dashoffset:0}.lm-sheen{display:none}}
+@media (prefers-reduced-motion:reduce){.lm-pen{animation:none!important;stroke-dashoffset:0;stroke-opacity:1}.lm-sheen{display:none}}
 `

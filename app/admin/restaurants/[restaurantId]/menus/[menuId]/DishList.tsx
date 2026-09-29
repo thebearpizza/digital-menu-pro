@@ -152,7 +152,7 @@ function SortableDish({
     <li
       ref={setNodeRef}
       style={style}
-      className={`px-3 py-2.5 hover:bg-gray-50 flex items-center gap-2 ${!dish.is_active ? 'opacity-40' : ''}`}
+      className={`px-3 h-[84px] hover:bg-gray-50 flex items-center gap-2 ${!dish.is_active ? 'opacity-40' : ''}`}
     >
       {/* Drag handle */}
       <button
@@ -175,7 +175,7 @@ function SortableDish({
 
       {/* Mini-anteprima foto: mostra a colpo d'occhio quali piatti hanno
           un'immagine caricata. loading=lazy: nessun impatto su liste lunghe. */}
-      {dish.image_url && (
+      {dish.image_url ? (
         <img
           src={dish.image_url}
           alt=""
@@ -183,6 +183,12 @@ function SortableDish({
           className="w-14 h-14 rounded-xl object-cover shrink-0 border border-gray-200 bg-gray-100"
           draggable={false}
         />
+      ) : (
+        <div className="w-14 h-14 rounded-xl shrink-0 border border-gray-200 bg-gray-100 flex items-center justify-center text-gray-300" aria-hidden>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="3" y="5" width="18" height="14" rx="3" /><circle cx="9" cy="10" r="1.6" /><path d="m21 16-5-5-8 8" />
+          </svg>
+        </div>
       )}
 
       <div
@@ -205,7 +211,7 @@ function SortableDish({
           <div className="text-xs text-gray-400 mt-0.5 line-clamp-1">{dish.description}</div>
         )}
         {dish.allergens?.length > 0 && (
-          <div className="text-[10px] text-orange-500 mt-0.5">Allergeni: {dish.allergens.join(', ')}</div>
+          <div className="text-[10px] text-orange-500 mt-0.5 truncate">Allergeni: {dish.allergens.join(', ')}</div>
         )}
       </div>
 
@@ -520,7 +526,7 @@ function SortableCategory({
             </p>
           ) : (
             <SortableContext items={dishes.map(d => d.id)} strategy={verticalListSortingStrategy}>
-              <ul className="divide-y divide-gray-50">
+              <ul className="divide-y divide-gray-300">
                 {dishes.map(dish => (
                   <SortableDish
                     key={dish.id}
