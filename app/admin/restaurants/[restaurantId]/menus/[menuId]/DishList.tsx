@@ -180,7 +180,7 @@ function SortableDish({
           src={dish.image_url}
           alt=""
           loading="lazy"
-          className="w-9 h-9 rounded object-cover shrink-0 border border-gray-200 bg-gray-100"
+          className="w-14 h-14 rounded-xl object-cover shrink-0 border border-gray-200 bg-gray-100"
           draggable={false}
         />
       )}
