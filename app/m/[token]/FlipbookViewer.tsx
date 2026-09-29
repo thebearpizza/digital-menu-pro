@@ -1101,6 +1101,8 @@ export default function FlipbookViewer({
           }
         }
 
+        navTotal = pages.length
+
         // Mapping bidirezionale PDF page ↔ turn.js page (identity senza ads).
         const pdfToTurn = new Map<number, number>()
         const turnToPdf = new Map<number, number>()
@@ -1114,7 +1116,7 @@ export default function FlipbookViewer({
         // Prec/Succ (absolute bottom-3 = 12px + testo 10px + buffer = ~28px).
         // Px fissi (non %) sono immuni al ricalcolo turn.js durante il clone.
         const AD_SAFE_PX = 28
-        const buildAdPageDOM = (config: AdConfig): { el: HTMLElement; video?: HTMLVideoElement; canvas?: HTMLCanvasElement; kbImageUrl?: string } => {
+        const buildAdPageDOM = (config: AdConfig, turnPage: number): { el: HTMLElement; video?: HTMLVideoElement; canvas?: HTMLCanvasElement; kbImageUrl?: string } => {
           const container = document.createElement('div')
           container.style.cssText = 'width:100%;height:100%;display:flex;flex-direction:column;'
 
@@ -1275,6 +1277,21 @@ export default function FlipbookViewer({
           const safe = document.createElement('div')
           safe.className = 'ad-safe-area'
           safe.style.setProperty('height', `${AD_SAFE_PX}px`, 'important')
+          // Navigazione dentro la pagina Ad (come nelle pagine del menu): gira
+          // con la carta. Stesso stile/posizione di drawPageNav.
+          safe.style.position = 'relative'
+          const navSpan = (text: string, pos: string, spaced: boolean) => {
+            const sp = document.createElement('span')
+            sp.textContent = text
+            sp.style.cssText =
+              `position:absolute;bottom:12px;${pos}white-space:nowrap;pointer-events:none;` +
+              `color:${theme.navColor};opacity:0.6;font-family:${pagNavFont};font-size:${pagNavSize};` +
+              `font-weight:${pagNavWeight};` + (spaced ? 'text-transform:uppercase;letter-spacing:0.2em;' : 'font-variant-numeric:tabular-nums;')
+            safe.appendChild(sp)
+          }
+          if (navOpt.prev && turnPage > 1)        navSpan(navOpt.prev, 'left:8px;', true)
+          if (navOpt.next && turnPage < navTotal) navSpan(navOpt.next, 'right:8px;', true)
+          if (navTotal > 0) navSpan(`${turnPage}/${navTotal}`, 'left:50%;transform:translateX(-50%);', false)
 
           container.appendChild(main)
           container.appendChild(safe)
@@ -1294,7 +1311,7 @@ export default function FlipbookViewer({
             `backface-visibility:hidden;-webkit-backface-visibility:hidden;`
 
           if (page.type === 'ad') {
-            const { el: adEl, video, canvas, kbImageUrl } = buildAdPageDOM(page.config)
+            const { el: adEl, video, canvas, kbImageUrl } = buildAdPageDOM(page.config, domIdx + 1)
             pageDiv.appendChild(adEl)
             const turnPage = domIdx + 1  // 1-based turn page
             if (video) adVideoMap.set(turnPage, video)
@@ -1718,9 +1735,6 @@ export default function FlipbookViewer({
   const atFirst = currentPage <= 1
   const atLast  = totalPages > 0 && currentPage >= totalPages
   const pagOpt  = PAGINATION_OPTIONS[mn?.navigation.style ?? 'prec_succ']
-  // Sulle pagine del menu la navigazione è disegnata nella pagina stessa
-  // (drawPageNav): gli hint sovrapposti restano solo sulle pagine Ad.
-  const onPdfPage = Array.from(pdfToTurnRef.current.values()).includes(currentPage)
 
   // ═══════════════════════════════════════════════════════════════════════════
   // RENDER
@@ -1833,58 +1847,9 @@ export default function FlipbookViewer({
               </div>
             )}
 
-            {/* ── Hint angolari — driven by theme.paginationStyle.
-                 pointer-events-none: i click devono raggiungere gli angoli turn.js. */}
-            {pagesReady && !onPdfPage && pagOpt.prev && (
-              <span
-                className="pointer-events-none absolute bottom-3 left-2 z-50 uppercase tracking-[0.2em] select-none"
-                style={{
-                  color:      theme.navColor,
-                  opacity:    atFirst ? 0 : 0.6,
-                  transition: 'opacity 0.25s ease',
-                  fontFamily: pagNavFont,
-                  fontSize:   pagNavSize,
-                  fontWeight: pagNavWeight,
-                }}
-              >
-                {pagOpt.prev}
-              </span>
-            )}
-            {pagesReady && !onPdfPage && pagOpt.next && (
-              <span
-                className="pointer-events-none absolute bottom-3 right-2 z-50 uppercase tracking-[0.2em] select-none"
-                style={{
-                  color:      theme.navColor,
-                  opacity:    atLast ? 0 : 0.6,
-                  transition: 'opacity 0.25s ease',
-                  fontFamily: pagNavFont,
-                  fontSize:   pagNavSize,
-                  fontWeight: pagNavWeight,
-                }}
-              >
-                {pagOpt.next}
-              </span>
-            )}
-
-            {/* ── Numero pagina — centrato tra prec. e succ., SOLO TESTO.
-                 CATEGORICO: pointer-events-none e nessun handler — non deve mai
-                 intercettare un tap, i click devono raggiungere i piatti e gli
-                 angoli di turn.js sottostanti. ── */}
-            {pagesReady && !onPdfPage && totalPages > 0 && (
-              <span
-                aria-hidden="true"
-                className="pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 z-50 tabular-nums select-none"
-                style={{
-                  color:      theme.navColor,
-                  opacity:    0.6,
-                  fontFamily: pagNavFont,
-                  fontSize:   pagNavSize,
-                  fontWeight: pagNavWeight,
-                }}
-              >
-                {currentPage}/{totalPages}
-              </span>
-            )}
+            {/* Navigazione (prec / numero / succ): disegnata DENTRO ogni pagina
+                 — canvas per il menu (drawPageNav), fascia inferiore per le Ad —
+                 così gira con la carta. */}
 
           </div>
         </div>
