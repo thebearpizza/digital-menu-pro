@@ -37,9 +37,12 @@ export default function AdminShell({
   userEmail,
   children,
   isSuperAdmin = false,
+  dockAccessory,
 }: {
   userEmail:   string
   children:    React.ReactNode
+  // Pillola separata accanto al dock (es. assistente vocale).
+  dockAccessory?: React.ReactNode
   // Solo l'account padre vede la tab "Utenti". È una scelta di interfaccia,
   // NON una misura di sicurezza: la protezione vera sta nella pagina e in
   // ogni server action (vedi app/admin/users/).
@@ -105,6 +108,7 @@ export default function AdminShell({
 
       {/* ── Dock ──────────────────────────────────────────────────────── */}
       <div className="lito-dock-wrap">
+        <div className="lito-dock-main">
         {popover === 'account' && (
           <div className="lito-dock-pop lito-dock-pop-right" role="dialog" aria-label="Account">
             <div className="px-3 pt-1 pb-2 text-[11px] text-gray-500 truncate">{userEmail}</div>
@@ -143,6 +147,8 @@ export default function AdminShell({
             )
           })}
         </nav>
+        </div>
+        {dockAccessory}
       </div>
     </div>
   )

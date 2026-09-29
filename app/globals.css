@@ -346,12 +346,19 @@ html.lito-admin body {
 /* ── Dock del gestionale ─────────────────────────────────────────────────── */
 .lito-dock-wrap {
   position: fixed;
-  left: 50%;
+  left: 0;
+  right: 0;
   bottom: calc(14px + env(safe-area-inset-bottom));
-  transform: translateX(-50%);
   z-index: 300;
-  max-width: calc(100vw - 20px);
+  display: flex;
+  justify-content: center;
+  align-items: stretch;
+  gap: 10px;
+  padding: 0 10px;
+  pointer-events: none;
 }
+.lito-dock-wrap > * { pointer-events: auto; }
+.lito-dock-main { position: relative; min-width: 0; }
 .lito-dock {
   position: relative;
   display: flex;
@@ -419,8 +426,9 @@ html.lito-admin body {
   .lito-dock-item:hover .lito-dock-icon { transform: translateY(-4px) scale(1.2); }
   .lito-dock-item:hover { color: #3a2a08; }
 }
-@media (max-width: 380px) {
-  .lito-dock-item { min-width: 54px; padding-left: 6px; padding-right: 6px; }
+@media (max-width: 440px) {
+  .lito-dock-item { min-width: 52px; padding-left: 5px; padding-right: 5px; }
+  .lito-dock-label { font-size: 9.5px; }
 }
 .lito-dock-pop {
   position: absolute;
@@ -464,3 +472,54 @@ html.lito-admin body {
   .lito-dock, .lito-dock-pop { animation: none; }
   .lito-dock-pill, .lito-dock-icon { transition: none; }
 }
+
+/* Pillola dell'assistente vocale accanto al dock */
+.lito-dock-side {
+  flex: none;
+  width: 62px;
+  border-radius: 24px;
+  display: grid;
+  place-items: center;
+  color: #7d6c52;
+  background: linear-gradient(150deg, rgba(248, 241, 227, 0.94), rgba(233, 221, 197, 0.94));
+  -webkit-backdrop-filter: blur(14px) saturate(1.2);
+  backdrop-filter: blur(14px) saturate(1.2);
+  box-shadow:
+    0 14px 34px rgba(110, 86, 45, 0.30),
+    0 3px 8px rgba(110, 86, 45, 0.16),
+    inset 1px 1px 0 rgba(255, 255, 255, 0.75),
+    inset -1px -1px 0 rgba(150, 124, 80, 0.2);
+  animation: lito-dock-in 0.55s 0.08s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  transition: color 0.3s ease, transform 0.2s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+.lito-dock-side svg { transition: transform 0.45s cubic-bezier(0.34, 1.56, 0.64, 1); }
+.lito-dock-side.is-open { color: #3a2a08; }
+.lito-dock-side.is-open svg {
+  transform: scale(1.1);
+  filter: drop-shadow(0 1px 0 rgba(255, 246, 214, 0.8));
+  color: #8b6514;
+}
+.lito-dock-side.is-listening {
+  color: #fff;
+  background: linear-gradient(180deg, #ef6b5b, #c53a2a);
+  animation: lito-listen 1.2s ease-in-out infinite;
+}
+.lito-dock-side:active { transform: scale(0.94); }
+@media (hover: hover) { .lito-dock-side:hover svg { transform: translateY(-3px) scale(1.15); } }
+@keyframes lito-listen {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(197, 58, 42, 0.45), 0 10px 26px rgba(110, 86, 45, 0.3); }
+  50% { box-shadow: 0 0 0 10px rgba(197, 58, 42, 0), 0 10px 26px rgba(110, 86, 45, 0.3); }
+}
+.lito-voice-panel { bottom: calc(96px + env(safe-area-inset-bottom)); }
+@media (max-width: 440px) { .lito-dock-side { width: 54px; } }
+
+/* ── Forme arrotondate nel gestionale ──────────────────────────────────────
+   :where() = specificità zero: le classi rounded-* già presenti vincono. */
+.lito-admin :where(button:not([role="switch"]), a[class*="bg-"], a[class*="border"]) { border-radius: 9999px; }
+.lito-admin :where(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select, textarea) { border-radius: 12px; }
+.lito-admin :where(.border, [class*="shadow-"]):not(button):not(a):not(input):not(select):not(textarea):not(tr):not(td):not(th) { border-radius: 16px; }
+.lito-admin :where(.border.overflow-hidden, .border.overflow-x-auto) { border-radius: 16px; }
+.lito-admin :where(span.border, span[class*="bg-"][class*="px-"]) { border-radius: 9999px; }
+.lito-admin :where(.border > :first-child) { border-top-left-radius: inherit; border-top-right-radius: inherit; }
+.lito-admin :where(.border > :last-child) { border-bottom-left-radius: inherit; border-bottom-right-radius: inherit; }

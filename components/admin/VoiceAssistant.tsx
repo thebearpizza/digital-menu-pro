@@ -115,7 +115,7 @@ export default function VoiceAssistant() {
     <>
       {/* Pannello conversazione */}
       {open && (
-        <div className="fixed bottom-44 right-5 z-[400] w-80 max-w-[calc(100vw-2.5rem)] bg-white border border-gray-200 shadow-2xl rounded-xl overflow-hidden flex flex-col">
+        <div className="lito-voice-panel fixed right-3 z-[400] w-80 max-w-[calc(100vw-1.5rem)] bg-white border border-gray-200 shadow-2xl rounded-2xl overflow-hidden flex flex-col">
           <div className="px-4 py-3 bg-gradient-to-r from-blue-500 to-blue-700 text-white flex items-center justify-between">
             <div>
               <div className="text-sm font-semibold">Assistente menu</div>
@@ -191,10 +191,7 @@ export default function VoiceAssistant() {
           if (!speechSupported) return
           listening ? stopListening() : startListening()
         }}
-        className={`fixed bottom-28 right-5 z-[400] w-14 h-14 rounded-full shadow-xl flex items-center justify-center text-white transition-all
-          ${listening
-            ? 'bg-red-500 animate-pulse scale-110'
-            : 'bg-gradient-to-br from-blue-500 to-blue-800 hover:scale-105'}`}
+        className={`lito-dock-side${listening ? ' is-listening' : ''}${open ? ' is-open' : ''}`}
         aria-label={open ? (listening ? 'Ferma ascolto' : 'Parla') : 'Apri assistente'}
         title={open ? (listening ? 'Ferma ascolto' : 'Parla') : 'Assistente menu'}
       >

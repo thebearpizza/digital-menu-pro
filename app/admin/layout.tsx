@@ -14,9 +14,9 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     <AdminShell
       userEmail={user.email ?? ''}
       isSuperAdmin={isSuperAdmin(user.email)}
+      dockAccessory={<VoiceAssistant />}
     >
       {children}
-      <VoiceAssistant />
       <LitoSplash />
     </AdminShell>
   )
