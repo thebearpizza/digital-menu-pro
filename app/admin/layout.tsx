@@ -17,7 +17,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
       dockAccessory={<VoiceAssistant />}
     >
       {children}
-      <LitoSplash />
+      <LitoSplash variant="loop" />
     </AdminShell>
   )
 }

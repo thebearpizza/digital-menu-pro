@@ -7,29 +7,45 @@ const ANIMATION_MS = 4900
 const WRITE_START_MS = 1000
 const WRITE_MS = 2600
 const MAX_WAIT_MS = 15000
+// Variante "loop": resta almeno finché la L non è stata scritta una volta.
+const LOOP_MIN_MS = 1800
 // Sotto lo splash, qualunque elemento con [data-app-loading] (skeleton, overlay
 // di caricamento) tiene lo splash visibile finché non sparisce.
 function contentReady() {
   return document.readyState === 'complete' && !document.querySelector('[data-app-loading]')
 }
 
-export default function LitoSplash() {
+/** book = libro che si sfoglia (menu cliente); loop = L scritta in loop (gestionale). */
+export default function LitoSplash({ variant = 'book' }: { variant?: 'book' | 'loop' }) {
   const [phase, setPhase] = useState<'playing' | 'leaving' | 'gone'>('playing')
+  const minMs = variant === 'loop' ? LOOP_MIN_MS : ANIMATION_MS
 
   useEffect(() => {
     const start = performance.now()
     const tick = setInterval(() => {
       const elapsed = performance.now() - start
-      if ((elapsed >= ANIMATION_MS && contentReady()) || elapsed >= MAX_WAIT_MS) {
+      if ((elapsed >= minMs && contentReady()) || elapsed >= MAX_WAIT_MS) {
         clearInterval(tick)
         setPhase('leaving')
         setTimeout(() => setPhase('gone'), 600)
       }
     }, 100)
     return () => clearInterval(tick)
-  }, [])
+  }, [minMs])
 
   if (phase === 'gone') return null
+
+  if (variant === 'loop') {
+    return (
+      <div className={`lito-splash lito-splash-loop${phase === 'leaving' ? ' is-leaving' : ''}`} role="status" aria-label="Caricamento">
+        <style dangerouslySetInnerHTML={{ __html: CSS }} />
+        <div className="ls-loop">
+          <LitoMark loop className="ls-loop-mark" />
+          <div className="ls-loop-word">Lito</div>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className={`lito-splash${phase === 'leaving' ? ' is-leaving' : ''}`} role="status" aria-label="Caricamento">
@@ -54,6 +70,10 @@ export default function LitoSplash() {
 const CSS = `
 .lito-splash{--paper:#f6eedd;--edge:#e3d6ba;--d:${ANIMATION_MS}ms;position:fixed;inset:0;z-index:2147483000;display:grid;place-items:center;background:radial-gradient(120% 90% at 50% 38%,#fffefb,#faf6ee 55%,#f1eadd);overflow:hidden;transition:opacity .6s ease}
 .lito-splash.is-leaving{opacity:0;pointer-events:none}
+.lito-splash-loop{background:radial-gradient(120% 90% at 50% 38%,#fbf6ea,#efe4cd 60%,#e2d3b5)}
+.ls-loop{display:flex;flex-direction:column;align-items:center;animation:ls-in .5s ease both}
+.ls-loop-mark{width:min(34vw,140px);height:auto}
+.ls-loop-word{margin-top:6px;font:500 12px/1 Georgia,"Times New Roman",serif;letter-spacing:.42em;text-indent:.42em;text-transform:uppercase;color:#7d6c52}
 .lito-splash *{box-sizing:border-box}
 .ls-stage{perspective:1400px;padding:16px;animation:ls-center var(--d) cubic-bezier(.45,.05,.25,1) forwards}
 .ls-book{position:relative;width:min(40vw,260px);aspect-ratio:3/4;transform-style:preserve-3d;animation:ls-in .5s ease both}
