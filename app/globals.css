@@ -541,3 +541,21 @@ html.lito-admin body {
   padding: 6px 14px;
   margin-right: 10px;
 }
+
+/* Bottone secondario in rilievo (avorio), riconoscibile come cliccabile */
+.lito-raised-btn {
+  border-radius: 9999px;
+  color: #574b39;
+  background: linear-gradient(180deg, #fdf9f1 0%, #efe5d1 100%);
+  border: 1px solid rgba(168, 147, 108, 0.45);
+  box-shadow:
+    0 3px 8px rgba(110, 86, 45, 0.18),
+    0 1px 2px rgba(110, 86, 45, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  transition: transform 0.12s ease, box-shadow 0.12s ease, background 0.2s ease;
+}
+.lito-raised-btn:hover { background: linear-gradient(180deg, #fffcf6 0%, #f3ead8 100%); }
+.lito-raised-btn:active {
+  transform: translateY(1px);
+  box-shadow: 0 1px 3px rgba(110, 86, 45, 0.2), inset 0 1px 2px rgba(110, 86, 45, 0.15);
+}

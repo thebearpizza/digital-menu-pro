@@ -105,12 +105,12 @@ const CSS = `
 .ls-logo{position:absolute;left:16%;top:22%;width:68%;height:auto;overflow:visible}
 .ls-word{position:absolute;left:0;right:0;bottom:13%;text-align:center;letter-spacing:.42em;text-indent:.42em;font:500 11px/1 Georgia,"Times New Roman",serif;color:#6b6357;text-transform:uppercase;opacity:0;animation:ls-word var(--d) ease forwards}
 .ls-page{position:absolute;inset:0;border-radius:3px 8px 8px 3px;transform-origin:left center;backface-visibility:hidden;-webkit-backface-visibility:hidden;background:linear-gradient(90deg,rgba(0,0,0,.07),transparent 7%),#f7efe0;animation-name:ls-flip;animation-timing-function:linear;animation-fill-mode:both;will-change:transform}
-.ls-page::before{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;background:linear-gradient(90deg,transparent 30%,rgba(60,40,10,.12) 100%);opacity:0;animation:inherit;animation-name:ls-flip-shade}
+.ls-page::before{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;background:linear-gradient(90deg,transparent 25%,rgba(60,40,10,.17) 100%);opacity:0;animation:inherit;animation-name:ls-flip-shade}
 .ls-ink{position:absolute;inset:0;pointer-events:none}
 .ls-cover{display:grid;place-items:center;background:linear-gradient(90deg,rgba(0,0,0,.16),transparent 6%),radial-gradient(120% 80% at 70% 10%,rgba(255,255,255,.55),transparent 55%),var(--paper);animation-name:ls-cover-flip;animation-timing-function:cubic-bezier(.45,.05,.55,.35)}
 .ls-rule{width:46%;aspect-ratio:1;border:1px solid rgba(17,17,17,.18);border-radius:50%;display:grid;place-items:center;font:italic 400 13px Georgia,serif;color:rgba(17,17,17,.45);letter-spacing:.2em}
 @keyframes ls-in{from{opacity:0;transform:translateY(8px) scale(.98)}to{opacity:1;transform:none}}
-@keyframes ls-flip{0%{transform:rotateY(0);opacity:1}45%{opacity:0}100%{transform:rotateY(-180deg);opacity:0}}
+@keyframes ls-flip{0%{transform:rotateY(0);opacity:1}30%{opacity:.85}52%{opacity:0}100%{transform:rotateY(-180deg);opacity:0}}
 @keyframes ls-cover-flip{from{transform:rotateY(0)}to{transform:rotateY(-180deg)}}
 @keyframes ls-flip-shade{0%{opacity:0}40%{opacity:1}50%,100%{opacity:0}}
 @keyframes ls-word{0%,84%{opacity:0;transform:translateY(4px)}96%,100%{opacity:1;transform:none}}
