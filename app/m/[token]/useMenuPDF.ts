@@ -10,7 +10,7 @@
 //   4. Returns { pdfUrl, categories, isGenerating, error }.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { PDFMenu, PDFRestaurant } from './MenuPDFDocument'
 import { groupByCategory } from './MenuPDFDocument'
 import type { RestaurantTheme } from '@/lib/theme'
@@ -177,46 +177,60 @@ async function detectCategoryPages(
   }
 }
 
-// ── Hook ──────────────────────────────────────────────────────────────────────
+// ── Generazione con cache ────────────────────────────────────────────────────
+// Il PDF di un menu viene generato una volta sola e riusato: il menu pubblico
+// lo pre-genera durante l'animazione d'apertura (prefetchMenuPDF), così al tap
+// sul menu è già pronto. Chiave = contenuto effettivo (menu, tema, allergeni):
+// qualsiasi modifica produce una chiave nuova e quindi un PDF rigenerato.
+interface MenuPDFReady { url: string; categories: CategoryNav[] }
+const PDF_CACHE_MAX = 6
+const pdfCache = new Map<string, Promise<MenuPDFReady>>()
+const pdfReady = new Map<string, MenuPDFReady>()
 
-export function useMenuPDF(
-  restaurant: PDFRestaurant | null,
-  menu:       PDFMenu | null,
-  theme?:     RestaurantTheme,
-): UseMenuPDFResult {
-  const [result, setResult] = useState<UseMenuPDFResult>({
-    pdfUrl: null, categories: [], isGenerating: false, error: null,
+function readyPDF(restaurant: PDFRestaurant, menu: PDFMenu, theme?: RestaurantTheme): MenuPDFReady | null {
+  return pdfReady.get(pdfCacheKey(restaurant, menu, theme)) ?? null
+}
+
+function pdfCacheKey(restaurant: PDFRestaurant, menu: PDFMenu, theme?: RestaurantTheme): string {
+  return JSON.stringify([restaurant, menu, theme?.menu ?? null, theme?.customFonts ?? null])
+}
+
+function getMenuPDF(restaurant: PDFRestaurant, menu: PDFMenu, theme?: RestaurantTheme): Promise<MenuPDFReady> {
+  const key = pdfCacheKey(restaurant, menu, theme)
+  const hit = pdfCache.get(key)
+  if (hit) {
+    pdfCache.delete(key); pdfCache.set(key, hit) // LRU: più recente in coda
+    return hit
+  }
+  const job = generateMenuPDF(restaurant, menu, theme).then(r => {
+    if (pdfCache.has(key)) pdfReady.set(key, r)
+    return r
+  }, err => {
+    pdfCache.delete(key) // un errore non resta in cache: il prossimo tentativo riprova
+    throw err
   })
+  pdfCache.set(key, job)
+  while (pdfCache.size > PDF_CACHE_MAX) {
+    const oldestKey = pdfCache.keys().next().value as string
+    const oldest = pdfCache.get(oldestKey)
+    pdfCache.delete(oldestKey)
+    pdfReady.delete(oldestKey)
+    oldest?.then(r => URL.revokeObjectURL(r.url)).catch(() => {})
+  }
+  return job
+}
 
-  // Tracks the current active blob URL so we can revoke it at the right time.
-  const activeUrlRef = useRef<string | null>(null)
+/** Pre-genera il PDF di un menu (nessun effetto sulla UI). */
+export function prefetchMenuPDF(restaurant: PDFRestaurant, menu: PDFMenu, theme?: RestaurantTheme): Promise<void> {
+  if ((menu.dishes?.length ?? 0) === 0) return Promise.resolve()
+  return getMenuPDF(restaurant, menu, theme).then(() => undefined, () => undefined)
+}
 
-  // Revoke the active URL on component unmount.
-  useEffect(() => () => {
-    if (activeUrlRef.current) URL.revokeObjectURL(activeUrlRef.current)
-  }, [])
-
-  // Stable string key for the custom-fonts map, so the regen effect below can
-  // depend on a primitive instead of an inline expression (exhaustive-deps).
-  const customFontsKey = theme?.customFonts ? JSON.stringify(theme.customFonts) : undefined
-
-  useEffect(() => {
-    // No menu or no dishes → show welcome screen.
-    const hasContent = (menu?.dishes?.length ?? 0) > 0
-    if (!menu || !restaurant || !hasContent) {
-      if (activeUrlRef.current) {
-        URL.revokeObjectURL(activeUrlRef.current)
-        activeUrlRef.current = null
-      }
-      setResult({ pdfUrl: null, categories: [], isGenerating: false, error: null })
-      return
-    }
-
-    let cancelled = false
-    setResult(r => ({ ...r, pdfUrl: null, isGenerating: true, error: null }))
-
-    ;(async () => {
-      try {
+async function generateMenuPDF(restaurant: PDFRestaurant, menu: PDFMenu, theme?: RestaurantTheme): Promise<MenuPDFReady> {
+  // La generazione in cache non viene mai interrotta a metà: chi la chiede e
+  // cambia idea semplicemente ignora il risultato, che resta pronto per dopo.
+  const cancelled = false as boolean
+  {
         // Dynamic imports — keeps @react-pdf/renderer out of the server bundle.
         const [{ createElement }, reactPdf, { MenuPDFDocument }, { registerThemeFonts }] = await Promise.all([
           import('react'),
@@ -224,7 +238,7 @@ export function useMenuPDF(
           import('./MenuPDFDocument'),
           import('@/lib/pdfFonts'),
         ])
-        if (cancelled) return
+        if (cancelled) throw new Error('annullato')
         const { pdf, Font } = reactPdf as any
 
         // Embed the real Google fonts chosen in the theme. Also register any
@@ -261,10 +275,10 @@ export function useMenuPDF(
             createElement(MenuPDFDocument, { restaurant, menu, theme, registeredFonts: fontsUsed })
           ).toBlob()
         }
-        if (cancelled) return
+        if (cancelled) throw new Error('annullato')
 
         const newUrl = URL.createObjectURL(blob)
-        if (cancelled) { URL.revokeObjectURL(newUrl); return }
+        if (cancelled) { URL.revokeObjectURL(newUrl); throw new Error('annullato') }
 
         // ── Rilevamento pagine categoria + etichette, ad ANELLO CHIUSO ────────
         // La mappa pagina→categoria viene costruita dalla scansione di un blob e
@@ -342,16 +356,16 @@ export function useMenuPDF(
         if (det.totalPages === 0 && !cancelled) {
           det = await detectOn(newUrl)
         }
-        if (cancelled) { URL.revokeObjectURL(newUrl); return }
+        if (cancelled) { URL.revokeObjectURL(newUrl); throw new Error('annullato') }
         let diagPath = 'pass1'
 
         const map1 = buildContMap(det)
         if (map1) {
           try {
             const url2 = URL.createObjectURL(await renderWithMap(map1))
-            if (cancelled) { URL.revokeObjectURL(url2); URL.revokeObjectURL(newUrl); return }
+            if (cancelled) { URL.revokeObjectURL(url2); URL.revokeObjectURL(newUrl); throw new Error('annullato') }
             const det2 = await detectOn(url2)
-            if (cancelled) { URL.revokeObjectURL(url2); URL.revokeObjectURL(newUrl); return }
+            if (cancelled) { URL.revokeObjectURL(url2); URL.revokeObjectURL(newUrl); throw new Error('annullato') }
 
             if (headerKey(det2) === headerKey(det)) {
               // Verifica superata: gli header del blob etichettato coincidono
@@ -367,9 +381,9 @@ export function useMenuPDF(
               let converged = false
               if (map2) {
                 const url3 = URL.createObjectURL(await renderWithMap(map2))
-                if (cancelled) { URL.revokeObjectURL(url3); URL.revokeObjectURL(url2); URL.revokeObjectURL(newUrl); return }
+                if (cancelled) { URL.revokeObjectURL(url3); URL.revokeObjectURL(url2); URL.revokeObjectURL(newUrl); throw new Error('annullato') }
                 const det3 = await detectOn(url3)
-                if (cancelled) { URL.revokeObjectURL(url3); URL.revokeObjectURL(url2); URL.revokeObjectURL(newUrl); return }
+                if (cancelled) { URL.revokeObjectURL(url3); URL.revokeObjectURL(url2); URL.revokeObjectURL(newUrl); throw new Error('annullato') }
                 if (headerKey(det3) === headerKey(det2)) {
                   finalUrl = url3
                   det = det3
@@ -410,7 +424,7 @@ export function useMenuPDF(
         if (infoLast      && infoPageNum     !== null) categories.push({ label: 'Info',      targetPage: infoPageNum })
         if (allergenLast  && allergenPageNum !== null) categories.push({ label: 'Allergeni', targetPage: allergenPageNum })
 
-        if (cancelled) { URL.revokeObjectURL(finalUrl); return }
+        if (cancelled) { URL.revokeObjectURL(finalUrl); throw new Error('annullato') }
 
         // Diagnostica per l'overlay ?diag=1 (vedi PublicMenuView).
         lastDiag = {
@@ -429,11 +443,50 @@ export function useMenuPDF(
           try { console.warn('[DMP-diag]', JSON.stringify(lastDiag)) } catch {}
         }
 
-        // Revoke the previous URL only after the new one is ready (no gap).
-        if (activeUrlRef.current) URL.revokeObjectURL(activeUrlRef.current)
-        activeUrlRef.current = finalUrl
 
-        setResult({ pdfUrl: finalUrl, categories, isGenerating: false, error: null })
+        return { url: finalUrl, categories }
+  }
+  throw new Error('Generazione PDF interrotta')
+}
+
+// ── Hook ──────────────────────────────────────────────────────────────────────
+
+export function useMenuPDF(
+  restaurant: PDFRestaurant | null,
+  menu:       PDFMenu | null,
+  theme?:     RestaurantTheme,
+): UseMenuPDFResult {
+  const [result, setResult] = useState<UseMenuPDFResult>({
+    pdfUrl: null, categories: [], isGenerating: false, error: null,
+  })
+
+  // Stable string key for the custom-fonts map, so the regen effect below can
+  // depend on a primitive instead of an inline expression (exhaustive-deps).
+  const customFontsKey = theme?.customFonts ? JSON.stringify(theme.customFonts) : undefined
+
+  useEffect(() => {
+    // No menu or no dishes → show welcome screen.
+    const hasContent = (menu?.dishes?.length ?? 0) > 0
+    if (!menu || !restaurant || !hasContent) {
+      setResult({ pdfUrl: null, categories: [], isGenerating: false, error: null })
+      return
+    }
+
+    // Già pronto in cache (es. pre-generato durante lo splash): subito, senza loader.
+    const ready = readyPDF(restaurant, menu, theme)
+    if (ready) {
+      setResult({ pdfUrl: ready.url, categories: ready.categories, isGenerating: false, error: null })
+      return
+    }
+
+    let cancelled = false
+    setResult(r => ({ ...r, pdfUrl: null, isGenerating: true, error: null }))
+
+    ;(async () => {
+      try {
+        const res = await getMenuPDF(restaurant, menu, theme)
+        if (cancelled) return
+        setResult({ pdfUrl: res.url, categories: res.categories, isGenerating: false, error: null })
       } catch (err: any) {
         if (!cancelled) {
           setResult({

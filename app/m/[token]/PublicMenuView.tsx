@@ -11,7 +11,7 @@ import { useAllergenCatalog } from '@/components/AllergenCatalog'
 import DishModal       from './DishModal'
 import type { DishData } from './DishModal'
 import { EditHandle, sendEdit, useIsMobilePreview } from './EditHandle'
-import { useMenuPDF, getMenuPDFDiag }  from './useMenuPDF'
+import { useMenuPDF, getMenuPDFDiag, prefetchMenuPDF }  from './useMenuPDF'
 import { animateLandingIn } from '@/lib/animations'
 import { RingSpinner } from '@/components/ui/Spinner'
 import {
@@ -384,18 +384,49 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
   const m = resolveMenuTheme(t, activeMenuId)
   const effectiveTheme: RestaurantTheme = { ...t, menu: m }
 
+  const toPDFMenu = (menu: Menu) => ({
+    id: menu.id, name: menu.name, lang,
+    extra_pages: menu.extra_pages ?? null,
+    dishes: menu.dishes.map(d => ({
+      id: d.id, name: d.name, description: d.description,
+      price: d.price, category: d.category||'Menu', allergens: d.allergens,
+    })),
+  })
+
   const { pdfUrl, categories, isGenerating, error } = useMenuPDF(
     { name: restaurant.name, allergenCatalog },
-    activeMenu ? {
-      id: activeMenu.id, name: activeMenu.name, lang,
-      extra_pages: activeMenu.extra_pages ?? null,
-      dishes: activeMenu.dishes.map(d => ({
-        id: d.id, name: d.name, description: d.description,
-        price: d.price, category: d.category||'Menu', allergens: d.allergens,
-      })),
-    } : null,
+    activeMenu ? toPDFMenu(activeMenu) : null,
     effectiveTheme,
   )
+
+  // ── Pre-generazione di tutti i menu ────────────────────────────────────────
+  // Parte subito (durante l'animazione d'apertura): al tap su un menu il PDF è
+  // già pronto. Il primo menu tiene aperto lo splash ([data-app-loading]); gli
+  // altri continuano in sottofondo.
+  const [prefetchingFirst, setPrefetchingFirst] = useState(true)
+  useEffect(() => {
+    if (!langReady) return
+    let alive = true
+    const ordered = [...localizedMenus].sort((a, b) =>
+      (a.id === defaultMenuId ? -1 : 0) - (b.id === defaultMenuId ? -1 : 0))
+    ;(async () => {
+      for (let i = 0; i < ordered.length; i++) {
+        if (!alive) return
+        const menu = ordered[i]
+        await prefetchMenuPDF(
+          { name: restaurant.name, allergenCatalog },
+          toPDFMenu(menu),
+          { ...t, menu: resolveMenuTheme(t, menu.id) },
+        )
+        if (i === 0 && alive) setPrefetchingFirst(false)
+      }
+      if (alive) setPrefetchingFirst(false)
+    })()
+    return () => { alive = false }
+    // Solo al cambio lingua: le modifiche live del tema (anteprima admin) le
+    // gestisce già useMenuPDF sul menu aperto.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [langReady, lang])
 
   // ── Derived visibility flags ───────────────────────────────────────────────
   const transitioning = pendingMenuId !== null
@@ -714,6 +745,7 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
 
   return (
     <div className="fixed inset-0 h-[100dvh]">
+      {prefetchingFirst && <div data-app-loading hidden />}
       <ThemeInjector theme={effectiveTheme} />
       <ThemeFontLoader theme={t} />
 
