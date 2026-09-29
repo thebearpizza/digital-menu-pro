@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import NavigationProgress from '@/components/admin/NavigationProgress'
 import { AllergenCatalogProvider } from '@/components/AllergenCatalog'
+import LitoMark from '@/components/LitoMark'
 import type { AllergenCatalog } from '@/lib/allergens'
 
 type IconName = 'home' | 'book' | 'eye' | 'gear'
@@ -77,6 +78,16 @@ export default function AdminShell({
 
   useEffect(() => { setPopover(null) }, [pathname])
 
+  // Apertura anteprima: la pagina del menu impiega un attimo ad arrivare dal
+  // server; nel frattempo mostriamo subito la L in loop come negli altri caricamenti.
+  const [openingPreview, setOpeningPreview] = useState(false)
+  useEffect(() => {
+    // Tornando indietro (cache del browser) la pagina viene ripristinata così com'era.
+    const onShow = (e: PageTransitionEvent) => { if (e.persisted) setOpeningPreview(false) }
+    window.addEventListener('pageshow', onShow)
+    return () => window.removeEventListener('pageshow', onShow)
+  }, [])
+
   // Con una finestra aperta (overlay .fixed.inset-0) il dock scende e libera i bottoni.
   const [modalOpen, setModalOpen] = useState(false)
   useEffect(() => {
@@ -134,6 +145,12 @@ export default function AdminShell({
         </div>
       </main>
 
+      {openingPreview && (
+        <div className="lito-nav-loading" role="status" aria-label="Apertura anteprima">
+          <LitoMark loop className="w-20 h-20" />
+        </div>
+      )}
+
       {/* ── Dock ──────────────────────────────────────────────────────── */}
       <div className={`lito-dock-wrap${modalOpen ? ' is-hidden' : ''}`} aria-hidden={modalOpen || undefined}>
         <div className="lito-dock-main">
@@ -142,7 +159,7 @@ export default function AdminShell({
             {previewMenus.length === 0 ? (
               <div className="px-3 py-2 text-sm text-gray-500">Nessun ristorante ancora.</div>
             ) : previewMenus.map(m => (
-              <a key={m.token} href={`/m/${m.token}?from=admin`} className="lito-dock-pop-row" onClick={() => setPopover(null)}>
+              <a key={m.token} href={`/m/${m.token}?from=admin`} className="lito-dock-pop-row" onClick={() => { setPopover(null); setOpeningPreview(true) }}>
                 <span className="truncate">{m.name}</span>
               </a>
             ))}
@@ -163,7 +180,7 @@ export default function AdminShell({
             const setRef = (el: HTMLElement | null) => { itemRefs.current[item.key] = el }
             if (item.href && item.external) {
               return (
-                <a key={item.key} ref={setRef} href={item.href} className={cls}>
+                <a key={item.key} ref={setRef} href={item.href} className={cls} onClick={() => setOpeningPreview(true)}>
                   {content}
                 </a>
               )

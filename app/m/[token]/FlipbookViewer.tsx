@@ -1710,12 +1710,19 @@ export default function FlipbookViewer({
               visibility: dims ? 'visible' : 'hidden',
             }}
           >
+            {/* Solo decorazione (effetto libro): spessore delle pagine e ombra,
+                dietro al libro. pointer-events: none — non riceve mai tocchi. */}
+            {pagesReady && <div className="fv-book-stack" aria-hidden />}
+
             {/* turn.js mount target — always in DOM, fv-book per CSS targeting */}
             <div
               ref={bookRef}
               className="fv-book"
               style={{ width: dims?.w ?? 0, height: dims?.h ?? 0 }}
             />
+
+            {/* Solo decorazione: ombra della rilegatura sul bordo sinistro. */}
+            {pagesReady && <div className="fv-book-spine" aria-hidden />}
 
             {/* Overlay caricamento */}
             {loadPhase === 'loading' && dims && (
