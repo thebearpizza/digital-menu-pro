@@ -135,24 +135,31 @@ interface Props {
 // ═══════════════════════════════════════════════════════════════════════════════
 // COMPONENT
 // ═══════════════════════════════════════════════════════════════════════════════
+// Inclinazione prospettica del libro (0 = disattivata). Prova in anteprima.
+const BOOK_TILT_DEG = 14
+
 // Solo decorazione: spessore delle pagine a destra (ancora da leggere) e a
 // sinistra (già lette), in proporzione alla pagina corrente. Nessun effetto
 // sulla logica di sfoglio.
 function bookStackStyle(current: number, total: number): React.CSSProperties {
-  const MAX = 5
+  // Più il libro è inclinato, più si vede il bordo inferiore (verso chi legge):
+  // lo spessore in basso cresce con l'inclinazione.
+  const MAX  = 6
+  const stepX = 1.5
+  const stepY = 1.5 + BOOK_TILT_DEG * 0.13
   const frac = total > 1 ? (current - 1) / (total - 1) : 0
   const right = Math.round((1 - frac) * MAX)
   const left  = Math.round(frac * MAX)
   const edges: string[] = []
   for (let i = 1; i <= right; i++) {
-    const o = i * 1.5
-    edges.push(`${o}px ${o}px 0 ${i % 2 ? '#e9e4da' : '#c9c1b3'}`)
+    edges.push(`${(i * stepX).toFixed(1)}px ${(i * stepY).toFixed(1)}px 0 ${i % 2 ? '#e9e4da' : '#c9c1b3'}`)
   }
   for (let i = 1; i <= left; i++) {
-    const o = i * 1.5
-    edges.push(`${-o}px ${o}px 0 ${i % 2 ? '#e9e4da' : '#c9c1b3'}`)
+    edges.push(`${(-i * stepX).toFixed(1)}px ${(i * stepY).toFixed(1)}px 0 ${i % 2 ? '#e9e4da' : '#c9c1b3'}`)
   }
-  edges.push('14px 22px 34px -6px rgba(0,0,0,.55)', '0 3px 10px rgba(0,0,0,.25)')
+  // Ombra sul "tavolo": si allunga verso il basso con l'inclinazione.
+  const drop = Math.round(22 + BOOK_TILT_DEG * 1.2)
+  edges.push(`10px ${drop}px 36px -6px rgba(0,0,0,.6)`, '0 4px 12px rgba(0,0,0,.28)')
   return { boxShadow: edges.join(', ') }
 }
 
@@ -1770,6 +1777,13 @@ export default function FlipbookViewer({
               width:      dims?.w ?? 0,
               height:     dims?.h ?? 0,
               visibility: dims ? 'visible' : 'hidden',
+              // Libro appoggiato sul tavolo: lieve inclinazione prospettica con
+              // perno sul bordo INFERIORE, così gli angoli in basso (gli unici
+              // da cui si sfoglia) restano dove turn.js li cerca.
+              ...(BOOK_TILT_DEG > 0 ? {
+                transform:       `perspective(${Math.round((dims?.h ?? 600) * 2.4)}px) rotateX(${BOOK_TILT_DEG}deg)`,
+                transformOrigin: '50% 100%',
+              } : {}),
             }}
           >
             {/* Solo decorazione (effetto libro): spessore delle pagine e ombra,
