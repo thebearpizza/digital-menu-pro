@@ -157,7 +157,7 @@ function SortableDish({
       {/* Drag handle */}
       <button
         {...attributes} {...listeners}
-        className="text-gray-300 hover:text-gray-500 cursor-grab active:cursor-grabbing shrink-0 touch-none select-none text-base leading-none min-h-[44px] min-w-[28px] flex items-center justify-center"
+        className="text-gray-300 hover:text-gray-500 cursor-grab active:cursor-grabbing shrink-0 touch-none select-none text-base leading-none min-h-[44px] min-w-[20px] flex items-center justify-center"
         aria-label="Trascina per riordinare"
         title="Trascina per riordinare"
       >
@@ -199,7 +199,7 @@ function SortableDish({
         onKeyDown={(e) => e.key === 'Enter' && onEdit(dish)}
         aria-label={`Modifica ${dish.name}`}
       >
-        <div className="text-sm font-medium text-gray-900 truncate">
+        <div className="text-sm font-medium text-gray-900 leading-snug line-clamp-2 break-words">
           {dish.name}
           {windowLabel(dish.schedule_enabled, dish.schedule_from, dish.schedule_until) && (
             <span className="ml-2 text-[10px] font-normal text-blue-500 whitespace-nowrap">
@@ -207,18 +207,17 @@ function SortableDish({
             </span>
           )}
         </div>
-        {dish.description && (
-          <div className="text-xs text-gray-400 mt-0.5 line-clamp-1">{dish.description}</div>
-        )}
-        {dish.allergens?.length > 0 && (
-          <div className="text-[10px] text-orange-500 mt-0.5 truncate">Allergeni: {dish.allergens.join(', ')}</div>
-        )}
+        <div className="mt-1 flex items-baseline gap-1.5 min-w-0 text-xs">
+          <span className="font-semibold text-blue-700 tabular-nums whitespace-nowrap">
+            {dish.price != null ? `€ ${Number(dish.price).toFixed(2)}` : '—'}
+          </span>
+          {dish.allergens?.length > 0 && (
+            <span className="text-[10px] text-orange-500 truncate">· Allergeni: {dish.allergens.join(', ')}</span>
+          )}
+        </div>
       </div>
 
-      <div className="flex items-center gap-1 shrink-0">
-        <span className="text-sm text-gray-600 tabular-nums whitespace-nowrap min-w-[52px] text-right">
-          {dish.price != null ? `€ ${Number(dish.price).toFixed(2)}` : '—'}
-        </span>
+      <div className="flex items-center gap-0.5 shrink-0">
 
         <VisibilityToggle isVisible={dish.is_active} onToggle={() => onToggle(dish)} />
 

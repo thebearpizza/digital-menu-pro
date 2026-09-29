@@ -62,6 +62,16 @@ export default function AdminShell({
 
   useEffect(() => { setPopover(null) }, [pathname])
 
+  // Con una finestra aperta (overlay .fixed.inset-0) il dock scende e libera i bottoni.
+  const [modalOpen, setModalOpen] = useState(false)
+  useEffect(() => {
+    const check = () => setModalOpen(!!document.querySelector('.fixed.inset-0'))
+    check()
+    const obs = new MutationObserver(check)
+    obs.observe(document.body, { childList: true, subtree: true })
+    return () => obs.disconnect()
+  }, [])
+
   useEffect(() => {
     if (!popover) return
     const onDown = (e: PointerEvent) => {
@@ -107,7 +117,7 @@ export default function AdminShell({
       </main>
 
       {/* ── Dock ──────────────────────────────────────────────────────── */}
-      <div className="lito-dock-wrap">
+      <div className={`lito-dock-wrap${modalOpen ? ' is-hidden' : ''}`} aria-hidden={modalOpen || undefined}>
         <div className="lito-dock-main">
         {popover === 'account' && (
           <div className="lito-dock-pop lito-dock-pop-right" role="dialog" aria-label="Account">

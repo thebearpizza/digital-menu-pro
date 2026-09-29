@@ -359,14 +359,15 @@ html.lito-admin body {
 }
 .lito-dock-wrap > * { pointer-events: auto; }
 .lito-dock-wrap { transition: transform 0.45s cubic-bezier(0.34, 1.3, 0.64, 1), opacity 0.3s ease; }
-/* Con una finestra aperta (overlay a tutto schermo) il dock scende e libera i bottoni. */
-html.lito-admin:has(.fixed.inset-0) .lito-dock-wrap {
-  transform: translateY(calc(100% + 40px));
+.lito-dock-wrap.is-hidden {
+  transform: translateY(calc(100% + 48px));
   opacity: 0;
   pointer-events: none;
+  transition: transform 0.4s cubic-bezier(0.55, 0, 0.75, 0.2), opacity 0.3s ease 0.08s;
 }
-html.lito-admin:has(.fixed.inset-0) .lito-dock-wrap > * { pointer-events: none; }
-.lito-dock-main { position: relative; min-width: 0; }
+.lito-dock-wrap.is-hidden > * { pointer-events: none; }
+.lito-dock-main { position: relative; min-width: 0; flex: 1 1 auto; max-width: 540px; }
+.lito-dock-main > .lito-dock { width: 100%; }
 .lito-dock {
   position: relative;
   display: flex;
@@ -401,8 +402,9 @@ html.lito-admin:has(.fixed.inset-0) .lito-dock-wrap > * { pointer-events: none; 
 .lito-dock-item {
   position: relative;
   z-index: 1;
-  min-width: 62px;
-  padding: 7px 10px 6px;
+  flex: 1 1 0;
+  min-width: 56px;
+  padding: 7px 8px 6px;
   border-radius: 18px;
   display: flex;
   flex-direction: column;
@@ -435,7 +437,7 @@ html.lito-admin:has(.fixed.inset-0) .lito-dock-wrap > * { pointer-events: none; 
   .lito-dock-item:hover { color: #3a2a08; }
 }
 @media (max-width: 440px) {
-  .lito-dock-item { min-width: 52px; padding-left: 5px; padding-right: 5px; }
+  .lito-dock-item { min-width: 48px; padding-left: 4px; padding-right: 4px; }
   .lito-dock-label { font-size: 9.5px; }
 }
 .lito-dock-pop {

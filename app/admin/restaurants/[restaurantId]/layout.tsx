@@ -20,7 +20,7 @@ export default async function RestaurantLayout({
   if (!restaurant) notFound()
 
   return (
-    <div className="max-w-5xl mx-auto px-6 py-6">
+    <div className="max-w-5xl mx-auto px-0 sm:px-6 py-2 sm:py-6">
       {/* Breadcrumb */}
       <div className="flex items-center gap-2 text-xs text-gray-400 mb-4">
         <Link href="/admin/restaurants" className="hover:text-gray-600">Ristoranti</Link>
