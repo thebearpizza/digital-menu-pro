@@ -233,6 +233,7 @@ body.menu-locked {
   font-family: Georgia, 'Times New Roman', serif;
   letter-spacing: 0.42em;
   text-indent: 0.42em;
+  color: #7d6c52;
   animation: login-wordmark-in 0.6s ease 2.5s both;
 }
 @keyframes login-wordmark-in {
@@ -242,3 +243,75 @@ body.menu-locked {
 @media (prefers-reduced-motion: reduce) {
   .login-wordmark { animation: none; }
 }
+
+/* ── Login: cartoncino avorio in rilievo, tono su tono ───────────────────── */
+.login-page {
+  background: radial-gradient(120% 90% at 32% 22%, #f8f1e2, #e9dcc2 60%, #d9c7a6);
+}
+.login-card {
+  border-radius: 22px;
+  background: linear-gradient(150deg, #f7f0e1 0%, #efe5d1 55%, #e7dac0 100%);
+  box-shadow:
+    14px 16px 34px rgba(128, 101, 58, 0.28),
+    -10px -10px 26px rgba(255, 252, 243, 0.75),
+    inset 1px 1px 0 rgba(255, 255, 255, 0.7),
+    inset -1px -1px 0 rgba(150, 124, 80, 0.18);
+}
+.login-title {
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 1.3rem;
+  font-weight: 400;
+  color: #3b2f22;
+}
+.login-label {
+  font-size: 0.72rem;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: #7d6c52;
+}
+.login-input {
+  border-radius: 12px;
+  border: 0;
+  color: #3b2f22;
+  background: #ece2cd;
+  box-shadow:
+    inset 3px 3px 7px rgba(128, 101, 58, 0.24),
+    inset -3px -3px 7px rgba(255, 252, 243, 0.8);
+  transition: box-shadow 0.2s ease;
+}
+.login-input:focus {
+  outline: none;
+  box-shadow:
+    inset 3px 3px 7px rgba(128, 101, 58, 0.24),
+    inset -3px -3px 7px rgba(255, 252, 243, 0.8),
+    0 0 0 2px rgba(198, 152, 46, 0.55);
+}
+.login-button {
+  border-radius: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: #3a2a08;
+  background: linear-gradient(180deg, #f0d686 0%, #d4a93c 42%, #b88923 100%);
+  box-shadow:
+    0 6px 14px rgba(124, 88, 16, 0.32),
+    inset 0 1px 0 rgba(255, 246, 214, 0.85),
+    inset 0 -2px 0 rgba(110, 76, 12, 0.35);
+  text-shadow: 0 1px 0 rgba(255, 240, 200, 0.5);
+  transition: transform 0.12s ease, box-shadow 0.12s ease, filter 0.2s ease;
+}
+.login-button:hover { filter: brightness(1.04); }
+.login-button:active {
+  transform: translateY(1px);
+  box-shadow:
+    0 3px 8px rgba(124, 88, 16, 0.3),
+    inset 0 1px 0 rgba(255, 246, 214, 0.7),
+    inset 0 -1px 0 rgba(110, 76, 12, 0.3);
+}
+.login-button:disabled { opacity: 0.6; }
+.login-error {
+  border-radius: 10px;
+  color: #8a2f1d;
+  background: #f1dccb;
+  box-shadow: inset 1px 1px 3px rgba(128, 60, 30, 0.15);
+}
+.login-note { color: #9a8a70; }
