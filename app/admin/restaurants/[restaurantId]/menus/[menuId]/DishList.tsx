@@ -1472,7 +1472,7 @@ export default function DishList({
                   type="button"
                   onClick={openBulkMoveCatModal}
                   disabled={bulkMoving || bulkMoveCatLoading}
-                  className="bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-sm font-medium px-3 py-1.5 rounded transition-colors whitespace-nowrap flex items-center gap-1"
+                  className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-sm font-medium px-3 py-1.5 rounded transition-colors whitespace-nowrap flex items-center gap-1"
                 >
                   {bulkMoveCatLoading ? <Spinner color="#fff" size={4} /> : 'Sposta'}
                 </button>

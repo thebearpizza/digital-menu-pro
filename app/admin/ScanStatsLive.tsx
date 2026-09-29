@@ -47,8 +47,8 @@ function Digit({ char, prevChar }: { char: string; prevChar: string }) {
     return () => { clearTimeout(t1); clearTimeout(t2) }
   }, [char, prevChar]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const BG   = '#2563eb'
-  const TEXT = '#ffffff'
+  const BG   = '#a87818'
+  const TEXT = '#fffaf0'
   const FONT = 'ui-monospace,"Courier New",monospace'
 
   // Stile base condiviso da tutti i layer: full-size, carattere centrato
@@ -146,13 +146,13 @@ function ChartTooltip({ active, payload, label }: any) {
   const formatted = date.toLocaleDateString('it-IT', { day: 'numeric', month: 'short' })
   return (
     <div style={{
-      background: '#fff', border: '1px solid #e5e7eb',
+      background: '#faf5ec', border: '1px solid #dfd3bd',
       borderRadius: '0.375rem', padding: '0.5rem 0.75rem',
-      fontSize: '0.75rem', color: '#374151',
+      fontSize: '0.75rem', color: '#574b39',
       boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
     }}>
       <p style={{ fontWeight: 600, marginBottom: '0.2rem' }}>{formatted}</p>
-      <p style={{ color: '#2563eb' }}>{payload[0].value} scansioni</p>
+      <p style={{ color: '#a87818' }}>{payload[0].value} scansioni</p>
     </div>
   )
 }
@@ -200,23 +200,23 @@ function ScanChart({ data }: { data: ChartPoint[] }) {
         <AreaChart data={displayed} margin={{ top: 4, right: 4, left: -28, bottom: 0 }}>
           <defs>
             <linearGradient id="scanGrad" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%"  stopColor="#2563eb" stopOpacity={0.18} />
-              <stop offset="95%" stopColor="#2563eb" stopOpacity={0} />
+              <stop offset="5%"  stopColor="#a87818" stopOpacity={0.18} />
+              <stop offset="95%" stopColor="#a87818" stopOpacity={0} />
             </linearGradient>
           </defs>
-          <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" vertical={false} />
+          <CartesianGrid strokeDasharray="3 3" stroke="#e6dcc8" vertical={false} />
           <XAxis
             dataKey="date"
             ticks={ticks}
             tickFormatter={tickFormatter}
-            tick={{ fontSize: 9, fill: '#9ca3af' }}
+            tick={{ fontSize: 9, fill: '#a8977a' }}
             axisLine={false}
             tickLine={false}
           />
           <YAxis
             allowDecimals={false}
             domain={[0, maxVal + 1]}
-            tick={{ fontSize: 9, fill: '#9ca3af' }}
+            tick={{ fontSize: 9, fill: '#a8977a' }}
             axisLine={false}
             tickLine={false}
           />
@@ -224,11 +224,11 @@ function ScanChart({ data }: { data: ChartPoint[] }) {
           <Area
             type="monotone"
             dataKey="scans"
-            stroke="#2563eb"
+            stroke="#a87818"
             strokeWidth={2}
             fill="url(#scanGrad)"
             dot={false}
-            activeDot={{ r: 3, fill: '#2563eb', strokeWidth: 0 }}
+            activeDot={{ r: 3, fill: '#a87818', strokeWidth: 0 }}
           />
         </AreaChart>
       </ResponsiveContainer>

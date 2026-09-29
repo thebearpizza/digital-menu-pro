@@ -116,7 +116,7 @@ export default function VoiceAssistant() {
       {/* Pannello conversazione */}
       {open && (
         <div className="fixed bottom-44 right-5 z-[400] w-80 max-w-[calc(100vw-2.5rem)] bg-white border border-gray-200 shadow-2xl rounded-xl overflow-hidden flex flex-col">
-          <div className="px-4 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white flex items-center justify-between">
+          <div className="px-4 py-3 bg-gradient-to-r from-blue-500 to-blue-700 text-white flex items-center justify-between">
             <div>
               <div className="text-sm font-semibold">Assistente menu</div>
               <div className="text-[11px] text-blue-100">
@@ -194,7 +194,7 @@ export default function VoiceAssistant() {
         className={`fixed bottom-28 right-5 z-[400] w-14 h-14 rounded-full shadow-xl flex items-center justify-center text-white transition-all
           ${listening
             ? 'bg-red-500 animate-pulse scale-110'
-            : 'bg-gradient-to-br from-blue-600 to-indigo-700 hover:scale-105'}`}
+            : 'bg-gradient-to-br from-blue-500 to-blue-800 hover:scale-105'}`}
         aria-label={open ? (listening ? 'Ferma ascolto' : 'Parla') : 'Apri assistente'}
         title={open ? (listening ? 'Ferma ascolto' : 'Parla') : 'Assistente menu'}
       >

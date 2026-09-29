@@ -6,8 +6,6 @@ import { usePathname } from 'next/navigation'
 import { LogoutButton } from '@/components/admin/LogoutButton'
 import NavigationProgress from '@/components/admin/NavigationProgress'
 
-interface Restaurant { id: string; name: string }
-
 type IconName = 'home' | 'book' | 'send' | 'users' | 'user'
 
 function Icon({ name }: { name: IconName }) {
@@ -32,25 +30,23 @@ interface DockItem {
   icon: IconName
   href?: string
   active: boolean
-  popover?: 'restaurants' | 'account'
+  popover?: 'account'
 }
 
 export default function AdminShell({
   userEmail,
   children,
-  restaurants = [],
   isSuperAdmin = false,
 }: {
   userEmail:   string
   children:    React.ReactNode
-  restaurants?: Restaurant[]
   // Solo l'account padre vede la tab "Utenti". È una scelta di interfaccia,
   // NON una misura di sicurezza: la protezione vera sta nella pagina e in
   // ogni server action (vedi app/admin/users/).
   isSuperAdmin?: boolean
 }) {
   const pathname = usePathname()
-  const [popover, setPopover] = useState<'restaurants' | 'account' | null>(null)
+  const [popover, setPopover] = useState<'account' | null>(null)
   const dockRef  = useRef<HTMLDivElement>(null)
   const itemRefs = useRef<Record<string, HTMLElement | null>>({})
   const [pill, setPill] = useState<{ left: number; width: number } | null>(null)
@@ -76,7 +72,7 @@ export default function AdminShell({
 
   const items: DockItem[] = [
     { key: 'dashboard',   label: 'Dashboard', icon: 'home', href: '/admin', active: pathname === '/admin' },
-    { key: 'restaurants', label: 'Ristoranti', icon: 'book', active: pathname.startsWith('/admin/restaurants'), popover: 'restaurants' },
+    { key: 'restaurants', label: 'Ristoranti', icon: 'book', href: '/admin/restaurants', active: pathname.startsWith('/admin/restaurants') },
     { key: 'telegram',    label: 'Telegram',  icon: 'send', href: '/admin/telegram', active: pathname.startsWith('/admin/telegram') },
     ...(isSuperAdmin
       ? [{ key: 'users', label: 'Utenti', icon: 'users' as const, href: '/admin/users', active: pathname.startsWith('/admin/users') }]
@@ -109,25 +105,6 @@ export default function AdminShell({
 
       {/* ── Dock ──────────────────────────────────────────────────────── */}
       <div className="lito-dock-wrap">
-        {popover === 'restaurants' && (
-          <div className="lito-dock-pop" role="dialog" aria-label="Ristoranti">
-            <Link href="/admin/restaurants" className="lito-dock-pop-row font-medium">
-              Tutti i ristoranti
-            </Link>
-            {restaurants.length > 0 && <div className="lito-dock-pop-sep" />}
-            <div className="max-h-[45vh] overflow-y-auto">
-              {restaurants.map(r => (
-                <Link
-                  key={r.id}
-                  href={`/admin/restaurants/${r.id}`}
-                  className={`lito-dock-pop-row ${pathname.startsWith(`/admin/restaurants/${r.id}`) ? 'is-current' : ''}`}
-                >
-                  <span className="truncate">{r.name}</span>
-                </Link>
-              ))}
-            </div>
-          </div>
-        )}
         {popover === 'account' && (
           <div className="lito-dock-pop lito-dock-pop-right" role="dialog" aria-label="Account">
             <div className="px-3 pt-1 pb-2 text-[11px] text-gray-500 truncate">{userEmail}</div>
