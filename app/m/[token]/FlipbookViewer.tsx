@@ -135,6 +135,9 @@ interface Props {
 // ═══════════════════════════════════════════════════════════════════════════════
 // COMPONENT
 // ═══════════════════════════════════════════════════════════════════════════════
+// Inclinazione prospettica del libro (0 = disattivata). Prova in anteprima.
+const BOOK_TILT_DEG = 7
+
 // Solo decorazione: spessore delle pagine a destra (ancora da leggere) e a
 // sinistra (già lette), in proporzione alla pagina corrente. Nessun effetto
 // sulla logica di sfoglio.
@@ -1729,6 +1732,13 @@ export default function FlipbookViewer({
               width:      dims?.w ?? 0,
               height:     dims?.h ?? 0,
               visibility: dims ? 'visible' : 'hidden',
+              // Libro appoggiato sul tavolo: lieve inclinazione prospettica con
+              // perno sul bordo INFERIORE, così gli angoli in basso (gli unici
+              // da cui si sfoglia) restano dove turn.js li cerca.
+              ...(BOOK_TILT_DEG > 0 ? {
+                transform:       `perspective(${Math.round((dims?.h ?? 600) * 2.4)}px) rotateX(${BOOK_TILT_DEG}deg)`,
+                transformOrigin: '50% 100%',
+              } : {}),
             }}
           >
             {/* Solo decorazione (effetto libro): spessore delle pagine e ombra,
