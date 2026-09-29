@@ -501,6 +501,36 @@ export default function FlipbookViewer({
       if (e.pointerType === 'mouse') endSwipe(e.clientX, e.clientY)
     }
 
+    // ── Navigazione disegnata nella pagina (canvas) ──────────────────────────
+    // Stesso aspetto degli hint sovrapposti: font/size/peso/colore del tema,
+    // opacità 0.6, 12px dal basso, 8px dai lati, maiuscolo con tracking 0.2em.
+    let navTotal = 0
+    const navOpt   = PAGINATION_OPTIONS[mn?.navigation.style ?? 'prec_succ']
+    const navSizePx = (mn?.navigation.size ?? 0.625) * 16
+    function drawSpaced(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, align: 'left' | 'right', spacing: number) {
+      const widths = Array.from(text).map(ch => ctx.measureText(ch).width)
+      const total  = widths.reduce((a, b) => a + b, 0) + spacing * Math.max(0, text.length - 1)
+      let cx = align === 'left' ? x : x - total
+      ctx.textAlign = 'left'
+      Array.from(text).forEach((ch, i) => { ctx.fillText(ch, cx, y); cx += widths[i] + spacing })
+    }
+    function drawPageNav(ctx: CanvasRenderingContext2D, turnPage: number) {
+      if (!dims || navTotal <= 0) return
+      const k  = cw / dims.w
+      const px = navSizePx * k
+      ctx.save()
+      ctx.globalAlpha  = 0.6
+      ctx.fillStyle    = theme.navColor
+      ctx.font         = `${pagNavWeight} ${px}px ${pagNavFont}`
+      ctx.textBaseline = 'bottom'
+      const y = ch - 12 * k
+      if (navOpt.prev && turnPage > 1)        drawSpaced(ctx, navOpt.prev.toUpperCase(), 8 * k, y, 'left', 0.2 * px)
+      if (navOpt.next && turnPage < navTotal) drawSpaced(ctx, navOpt.next.toUpperCase(), cw - 8 * k, y, 'right', 0.2 * px)
+      ctx.textAlign = 'center'
+      ctx.fillText(`${turnPage}/${navTotal}`, cw / 2, y)
+      ctx.restore()
+    }
+
     async function renderPageToCanvas(pageNum: number): Promise<void> {
       if (cancelled) return
       const pdfPage = pdfPageObjects[pageNum - 1]
@@ -521,6 +551,9 @@ export default function FlipbookViewer({
       try {
         await task.promise
         if (cancelled) return
+        // Prec / numero / Succ disegnati DENTRO la pagina: girano con la carta
+        // e compaiono nell'area scoperta durante lo sfoglio, come i piatti.
+        drawPageNav(ctx, pdfToTurnRef.current.get(pageNum) ?? pageNum)
         // Pre-computa data URL per il background "revealed area" di turn.js.
         // Fatto qui una volta — mai chiamato di nuovo durante la navigazione.
         pageDataUrls.set(pageNum, canvas.toDataURL('image/png'))
@@ -1391,6 +1424,11 @@ export default function FlipbookViewer({
         adVideoMap.forEach(vid => { try { vid.load() } catch (_) {} })
         if (cancelled) return
 
+        // Totale pagine del libro (ads incluse) per la navigazione disegnata.
+        navTotal = pages.length
+        try { await (document as any).fonts?.load(`${pagNavWeight} ${navSizePx}px ${pagNavFont}`) } catch (_) {}
+        if (cancelled) return
+
         // ── FASE 2.5: render tutte le pagine in parallelo ────────────────────
         // Ogni canvas viene dipinto una volta sola e non viene mai più toccato.
         await Promise.all(
@@ -1654,7 +1692,7 @@ export default function FlipbookViewer({
       try { if (el && window.$?.fn?.turn) window.$(el).turn('destroy') } catch (_) {}
       if (el) el.innerHTML = ''
     }
-  }, [pdfUrl, dims?.w, dims?.h]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [pdfUrl, dims?.w, dims?.h, mn?.navigation.style, theme.navColor, pagNavFont, pagNavSize, pagNavWeight]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Callbacks ────────────────────────────────────────────────────────────────
 
@@ -1673,6 +1711,9 @@ export default function FlipbookViewer({
   const atFirst = currentPage <= 1
   const atLast  = totalPages > 0 && currentPage >= totalPages
   const pagOpt  = PAGINATION_OPTIONS[mn?.navigation.style ?? 'prec_succ']
+  // Sulle pagine del menu la navigazione è disegnata nella pagina stessa
+  // (drawPageNav): gli hint sovrapposti restano solo sulle pagine Ad.
+  const onPdfPage = Array.from(pdfToTurnRef.current.values()).includes(currentPage)
 
   // ═══════════════════════════════════════════════════════════════════════════
   // RENDER
@@ -1780,7 +1821,7 @@ export default function FlipbookViewer({
 
             {/* ── Hint angolari — driven by theme.paginationStyle.
                  pointer-events-none: i click devono raggiungere gli angoli turn.js. */}
-            {pagesReady && pagOpt.prev && (
+            {pagesReady && !onPdfPage && pagOpt.prev && (
               <span
                 className="pointer-events-none absolute bottom-3 left-2 z-50 uppercase tracking-[0.2em] select-none"
                 style={{
@@ -1795,7 +1836,7 @@ export default function FlipbookViewer({
                 {pagOpt.prev}
               </span>
             )}
-            {pagesReady && pagOpt.next && (
+            {pagesReady && !onPdfPage && pagOpt.next && (
               <span
                 className="pointer-events-none absolute bottom-3 right-2 z-50 uppercase tracking-[0.2em] select-none"
                 style={{
@@ -1815,7 +1856,7 @@ export default function FlipbookViewer({
                  CATEGORICO: pointer-events-none e nessun handler — non deve mai
                  intercettare un tap, i click devono raggiungere i piatti e gli
                  angoli di turn.js sottostanti. ── */}
-            {pagesReady && totalPages > 0 && (
+            {pagesReady && !onPdfPage && totalPages > 0 && (
               <span
                 aria-hidden="true"
                 className="pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 z-50 tabular-nums select-none"
