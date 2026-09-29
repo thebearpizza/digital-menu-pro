@@ -508,6 +508,36 @@ export default function FlipbookViewer({
       if (e.pointerType === 'mouse') endSwipe(e.clientX, e.clientY)
     }
 
+    // ── Navigazione disegnata nella pagina (canvas) ──────────────────────────
+    // Stesso aspetto degli hint sovrapposti: font/size/peso/colore del tema,
+    // opacità 0.6, 12px dal basso, 8px dai lati, maiuscolo con tracking 0.2em.
+    let navTotal = 0
+    const navOpt   = PAGINATION_OPTIONS[mn?.navigation.style ?? 'prec_succ']
+    const navSizePx = (mn?.navigation.size ?? 0.625) * 16
+    function drawSpaced(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, align: 'left' | 'right', spacing: number) {
+      const widths = Array.from(text).map(ch => ctx.measureText(ch).width)
+      const total  = widths.reduce((a, b) => a + b, 0) + spacing * Math.max(0, text.length - 1)
+      let cx = align === 'left' ? x : x - total
+      ctx.textAlign = 'left'
+      Array.from(text).forEach((ch, i) => { ctx.fillText(ch, cx, y); cx += widths[i] + spacing })
+    }
+    function drawPageNav(ctx: CanvasRenderingContext2D, turnPage: number) {
+      if (!dims || navTotal <= 0) return
+      const k  = cw / dims.w
+      const px = navSizePx * k
+      ctx.save()
+      ctx.globalAlpha  = 0.6
+      ctx.fillStyle    = theme.navColor
+      ctx.font         = `${pagNavWeight} ${px}px ${pagNavFont}`
+      ctx.textBaseline = 'bottom'
+      const y = ch - 12 * k
+      if (navOpt.prev && turnPage > 1)        drawSpaced(ctx, navOpt.prev.toUpperCase(), 8 * k, y, 'left', 0.2 * px)
+      if (navOpt.next && turnPage < navTotal) drawSpaced(ctx, navOpt.next.toUpperCase(), cw - 8 * k, y, 'right', 0.2 * px)
+      ctx.textAlign = 'center'
+      ctx.fillText(`${turnPage}/${navTotal}`, cw / 2, y)
+      ctx.restore()
+    }
+
     async function renderPageToCanvas(pageNum: number): Promise<void> {
       if (cancelled) return
       const pdfPage = pdfPageObjects[pageNum - 1]
@@ -528,6 +558,9 @@ export default function FlipbookViewer({
       try {
         await task.promise
         if (cancelled) return
+        // Prec / numero / Succ disegnati DENTRO la pagina: girano con la carta
+        // e compaiono nell'area scoperta durante lo sfoglio, come i piatti.
+        drawPageNav(ctx, pdfToTurnRef.current.get(pageNum) ?? pageNum)
         // Pre-computa data URL per il background "revealed area" di turn.js.
         // Fatto qui una volta — mai chiamato di nuovo durante la navigazione.
         pageDataUrls.set(pageNum, canvas.toDataURL('image/png'))
@@ -1068,6 +1101,8 @@ export default function FlipbookViewer({
           }
         }
 
+        navTotal = pages.length
+
         // Mapping bidirezionale PDF page ↔ turn.js page (identity senza ads).
         const pdfToTurn = new Map<number, number>()
         const turnToPdf = new Map<number, number>()
@@ -1081,7 +1116,104 @@ export default function FlipbookViewer({
         // Prec/Succ (absolute bottom-3 = 12px + testo 10px + buffer = ~28px).
         // Px fissi (non %) sono immuni al ricalcolo turn.js durante il clone.
         const AD_SAFE_PX = 28
-        const buildAdPageDOM = (config: AdConfig): { el: HTMLElement; video?: HTMLVideoElement; canvas?: HTMLCanvasElement; kbImageUrl?: string } => {
+        // Titolo/prezzo della pagina Ad: sopra la navigazione (che sta in basso
+        // sopra la foto, non più in una striscia separata).
+        const AD_TITLE_BOTTOM = 46
+        // Zona in basso riservata allo sfoglio dagli angoli (tap/drag → turn.js).
+        const AD_CORNER_ZONE = 44
+        // Navigazione nello snapshot dell'Ad (reveal durante il trascinamento).
+        const drawAdNav = (ctx: CanvasRenderingContext2D, w: number, h: number, turnPage: number) => {
+          if (navTotal <= 0) return
+          ctx.save()
+          ctx.globalAlpha = 0.78
+          ctx.fillStyle = '#fff'
+          ctx.font = `${pagNavWeight} ${navSizePx}px ${pagNavFont}`
+          ctx.textBaseline = 'bottom'
+          if (navOpt.prev && turnPage > 1)        drawSpaced(ctx, navOpt.prev.toUpperCase(), 8, h - 12, 'left', 0.2 * navSizePx)
+          if (navOpt.next && turnPage < navTotal) drawSpaced(ctx, navOpt.next.toUpperCase(), w - 8, h - 12, 'right', 0.2 * navSizePx)
+          ctx.textAlign = 'center'
+          ctx.fillText(`${turnPage}/${navTotal}`, w / 2, h - 12)
+          ctx.restore()
+        }
+
+        // Ridisegna nello snapshot i testi REALI del blocco titolo (nome,
+        // descrizione, prezzo): il blocco viene impaginato fuori schermo alle
+        // dimensioni della pagina e ogni carattere è ridisegnato nella sua
+        // posizione esatta, con font/colore/maiuscole/spaziatura veri. Così la
+        // pagina scoperta durante il trascinamento coincide con quella finale.
+        const drawDomText = async (ctx: CanvasRenderingContext2D, src: HTMLElement, w: number, h: number) => {
+          const holder = document.createElement('div')
+          holder.style.cssText = `position:fixed;left:-30000px;top:0;width:${w}px;height:${h}px;pointer-events:none;`
+          const clone = src.cloneNode(true) as HTMLElement
+          ;[clone, ...Array.from(clone.querySelectorAll<HTMLElement>('*'))].forEach(e => { e.style.visibility = 'visible'; e.style.animation = 'none' })
+          holder.appendChild(clone)
+          document.body.appendChild(holder)
+          try {
+            // Carica esplicitamente i font usati dal blocco (il fallback
+            // falserebbe metriche e posizioni).
+            const fontsToLoad = new Set<string>()
+            ;[clone, ...Array.from(clone.querySelectorAll<HTMLElement>('*'))].forEach(e => {
+              const cs = getComputedStyle(e)
+              fontsToLoad.add(`${cs.fontStyle} ${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`)
+            })
+            try { await Promise.all(Array.from(fontsToLoad).map(f => (document as any).fonts?.load(f))) } catch (_) {}
+            try { await (document as any).fonts?.ready } catch (_) {}
+            const hr = holder.getBoundingClientRect()
+            const walker = document.createTreeWalker(clone, NodeFilter.SHOW_TEXT)
+            const range = document.createRange()
+            for (let node = walker.nextNode() as Text | null; node; node = walker.nextNode() as Text | null) {
+              const elp = node.parentElement
+              if (!elp) continue
+              const cs = getComputedStyle(elp)
+              let alpha = 1
+              for (let e: HTMLElement | null = elp; e && e !== holder; e = e.parentElement) alpha *= parseFloat(getComputedStyle(e).opacity || '1')
+              ctx.save()
+              ctx.globalAlpha = alpha
+              ctx.fillStyle = cs.color
+              ctx.font = `${cs.fontStyle} ${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`
+              ctx.textBaseline = 'alphabetic'
+              const upper = cs.textTransform === 'uppercase'
+              const strike = (cs.textDecorationLine || (cs as any).textDecoration || '').includes('line-through')
+              for (let i = 0; i < node.data.length; i++) {
+                const ch = node.data[i]
+                if (!ch.trim()) continue
+                range.setStart(node, i); range.setEnd(node, i + 1)
+                const r = range.getClientRects()[0]
+                if (!r) continue
+                const glyph = upper ? ch.toUpperCase() : ch
+                const m = ctx.measureText(glyph)
+                const asc = (m as any).fontBoundingBoxAscent ?? parseFloat(cs.fontSize) * 0.8
+                const x = r.left - hr.left, y = r.top - hr.top + asc
+                ctx.fillText(glyph, x, y)
+                if (strike) ctx.fillRect(x, r.top - hr.top + r.height / 2, r.width, Math.max(1, parseFloat(cs.fontSize) / 14))
+              }
+              ctx.restore()
+            }
+          } finally {
+            holder.remove()
+          }
+        }
+        // Snapshot completo della pagina Ad alla risoluzione dello schermo.
+        const composeAdSnapshot = async (paintMedia: (ctx: CanvasRenderingContext2D, w: number, h: number) => void, title: HTMLElement | undefined, nav: HTMLElement | undefined, turnPage: number): Promise<string> => {
+          const w = dims!.w, h = dims!.h
+          const sc = document.createElement('canvas')
+          sc.width = Math.round(w * dpr); sc.height = Math.round(h * dpr)
+          const ctx = sc.getContext('2d')!
+          ctx.scale(dpr, dpr)
+          paintMedia(ctx, w, h)
+          // Overlay gradient (come .ad-overlay)
+          const g = ctx.createLinearGradient(0, h, 0, 0)
+          g.addColorStop(0, 'rgba(0,0,0,0.88)')
+          g.addColorStop(0.45, 'rgba(0,0,0,0.30)')
+          g.addColorStop(1, 'rgba(0,0,0,0.10)')
+          ctx.fillStyle = g; ctx.fillRect(0, 0, w, h)
+          if (title) { try { await drawDomText(ctx, title, w, h) } catch (_) {} }
+          // Navigazione: copiata dalla fascia reale (stesse posizioni al pixel).
+          if (nav) { try { await drawDomText(ctx, nav, w, h) } catch (_) { drawAdNav(ctx, w, h, turnPage) } }
+          else drawAdNav(ctx, w, h, turnPage)
+          return sc.toDataURL('image/jpeg', 0.9)
+        }
+        const buildAdPageDOM = (config: AdConfig, turnPage: number): { el: HTMLElement; video?: HTMLVideoElement; canvas?: HTMLCanvasElement; kbImageUrl?: string; title?: HTMLElement; nav?: HTMLElement } => {
           const container = document.createElement('div')
           container.style.cssText = 'width:100%;height:100%;display:flex;flex-direction:column;'
 
@@ -1093,7 +1225,7 @@ export default function FlipbookViewer({
           // massimizza lo spazio video lasciando i tasti navigazione visibili.
           const main = document.createElement('div')
           main.className = 'ad-root'
-          main.style.setProperty('height', `calc(100% - ${AD_SAFE_PX}px)`, 'important')
+          main.style.setProperty('height', '100%', 'important')
 
           let videoEl: HTMLVideoElement | undefined
           let canvasEl: HTMLCanvasElement | undefined
@@ -1126,9 +1258,9 @@ export default function FlipbookViewer({
             // Inizialmente display:'block' (default canvas) → copre il video.
             // Viene nascosto con display:'none' in crossfadeToVideo dopo il turned.
             canvasEl = document.createElement('canvas')
-            canvasEl.width  = dims!.w
-            // Altezza = solo la zona video (esclusa la safe area).
-            canvasEl.height = dims!.h - AD_SAFE_PX
+            // Risoluzione reale dello schermo (dpr): niente primo frame sfocato.
+            canvasEl.width  = Math.round(dims!.w * dpr)
+            canvasEl.height = Math.round(dims!.h * dpr)
             canvasEl.style.cssText =
               'position:absolute;inset:0;width:100%;height:100%;z-index:10;'
             const ctx0 = canvasEl.getContext('2d')
@@ -1229,23 +1361,55 @@ export default function FlipbookViewer({
           if (titleBlock.childElementCount > 0) main.appendChild(titleBlock)
 
           // Click apre la card del piatto collegato
+          const inCornerZone = (clientY: number) => {
+            const r = main.getBoundingClientRect()
+            return clientY > r.bottom - AD_CORNER_ZONE * (r.height / (dims?.h || r.height))
+          }
           main.addEventListener('click', (e) => {
+            if (inCornerZone(e.clientY)) return  // zona angoli: la gestisce turn.js
             e.stopPropagation()
             if (!config.dishId) return
             const dish = dishesRef.current.find(d => d.id === config.dishId)
             if (dish) setModalStack([dish])
           })
           // Blocca swipe su turn.js dentro la zona ad
-          main.addEventListener('touchend', (e) => { e.stopPropagation() }, { passive: false })
+          // SOLO per i tap: un trascinamento deve arrivare a turn.js, altrimenti
+          // la piega resta bloccata a metà (turn.js non riceve mai il rilascio).
+          let adTouchX = 0, adTouchY = 0
+          main.addEventListener('touchstart', (e) => {
+            const t = e.touches[0]; if (t) { adTouchX = t.clientX; adTouchY = t.clientY }
+          }, { passive: true })
+          main.addEventListener('touchend', (e) => {
+            const t = e.changedTouches[0]
+            const moved = t ? Math.hypot(t.clientX - adTouchX, t.clientY - adTouchY) > 10 : true
+            if (moved || (t && inCornerZone(t.clientY))) return
+            e.stopPropagation()
+          }, { passive: false })
 
           // Safe area — altezza px FISSA, immune al ricalcolo percentuale di turn.js
           const safe = document.createElement('div')
           safe.className = 'ad-safe-area'
           safe.style.setProperty('height', `${AD_SAFE_PX}px`, 'important')
+          // Navigazione dentro la pagina Ad, SOPRA la foto (in basso, sulla
+          // sfumatura scura): gira con la carta e non taglia più la pagina.
+          safe.style.cssText += 'position:absolute;left:0;right:0;bottom:0;z-index:20;'
+          container.style.position = 'relative'
+          const navSpan = (text: string, pos: string, spaced: boolean) => {
+            const sp = document.createElement('span')
+            sp.textContent = text
+            sp.style.cssText =
+              `position:absolute;bottom:12px;${pos}white-space:nowrap;pointer-events:none;` +
+              `color:#fff;opacity:0.78;font-family:${pagNavFont};font-size:${pagNavSize};` +
+              `font-weight:${pagNavWeight};` + (spaced ? 'text-transform:uppercase;letter-spacing:0.2em;' : 'font-variant-numeric:tabular-nums;')
+            safe.appendChild(sp)
+          }
+          if (navOpt.prev && turnPage > 1)        navSpan(navOpt.prev, 'left:8px;', true)
+          if (navOpt.next && turnPage < navTotal) navSpan(navOpt.next, 'right:8px;', true)
+          if (navTotal > 0) navSpan(`${turnPage}/${navTotal}`, 'left:50%;transform:translateX(-50%);', false)
 
           container.appendChild(main)
           container.appendChild(safe)
-          return { el: container, video: videoEl, canvas: canvasEl, kbImageUrl: kbImageUrlResult }
+          return { el: container, video: videoEl, canvas: canvasEl, kbImageUrl: kbImageUrlResult, title: titleBlock.childElementCount > 0 ? titleBlock : undefined, nav: safe }
         }
 
         // ── FASE 2: div + canvas nel DOM ─────────────────────────────────────
@@ -1261,7 +1425,7 @@ export default function FlipbookViewer({
             `backface-visibility:hidden;-webkit-backface-visibility:hidden;`
 
           if (page.type === 'ad') {
-            const { el: adEl, video, canvas, kbImageUrl } = buildAdPageDOM(page.config)
+            const { el: adEl, video, canvas, kbImageUrl, title: adTitle, nav: adNav } = buildAdPageDOM(page.config, domIdx + 1)
             pageDiv.appendChild(adEl)
             const turnPage = domIdx + 1  // 1-based turn page
             if (video) adVideoMap.set(turnPage, video)
@@ -1281,7 +1445,6 @@ export default function FlipbookViewer({
                 // off-screen ma RENDERIZZATO (opacity:0, non display:none) che
                 // decodifica liberamente, da cui catturiamo il frame.
                 const snapUrl = page.config.mediaUrl
-                const snapName = page.config.dishName?.trim() || page.config.categoryTarget?.trim() || ''
                 const tmp = document.createElement('video')
                 tmp.crossOrigin = 'anonymous'
                 tmp.muted = true; tmp.playsInline = true; tmp.preload = 'auto'
@@ -1301,29 +1464,20 @@ export default function FlipbookViewer({
                   try {
                     const vw = tmp.videoWidth, vh = tmp.videoHeight
                     if (!vw || !vh) return
-                    const w = dims!.w, h = dims!.h - AD_SAFE_PX
-                    const sc = document.createElement('canvas'); sc.width = w; sc.height = h
-                    const ctx = sc.getContext('2d'); if (!ctx) return
+                    const w = dims!.w, h = dims!.h
                     const s = Math.max(w / vw, h / vh)
-                    ctx.drawImage(tmp, (w - vw * s) / 2, (h - vh * s) / 2, vw * s, vh * s)
-                    // Overlay gradient + titolo (coerente con .ad-overlay / .ad-title-block)
-                    const g = ctx.createLinearGradient(0, h, 0, 0)
-                    g.addColorStop(0, 'rgba(0,0,0,0.88)')
-                    g.addColorStop(0.45, 'rgba(0,0,0,0.30)')
-                    g.addColorStop(1, 'rgba(0,0,0,0.10)')
-                    ctx.fillStyle = g; ctx.fillRect(0, 0, w, h)
-                    if (snapName) {
-                      const size = Math.round(Math.min(32, w * 0.062))
-                      ctx.font = `300 ${size}px ${theme.fontSerif}`
-                      ctx.fillStyle = '#fff'
-                      ctx.fillText(snapName, 20, h - 28)
-                    }
-                    adCanvasDataUrls.set(turnPage, sc.toDataURL('image/jpeg', 0.9))
-                    // Dipingi anche il canvas on-page (stesse dimensioni di sc) così,
-                    // a piega conclusa e prima del play del video, mostra il primo
-                    // frame invece del fill #111 (niente flash nero).
+                    // Frame congelato ora (il video temporaneo viene poi rimosso).
+                    const frame = document.createElement('canvas')
+                    frame.width = Math.round(w * dpr); frame.height = Math.round(h * dpr)
+                    const fctx = frame.getContext('2d'); if (!fctx) return
+                    fctx.scale(dpr, dpr)
+                    fctx.drawImage(tmp, (w - vw * s) / 2, (h - vh * s) / 2, vw * s, vh * s)
+                    // Canvas on-page: primo frame invece del fill #111 (niente flash nero).
                     const onCtx = canvas.getContext('2d')
-                    if (onCtx) onCtx.drawImage(tmp, (w - vw * s) / 2, (h - vh * s) / 2, vw * s, vh * s)
+                    if (onCtx) onCtx.drawImage(frame, 0, 0)
+                    composeAdSnapshot((c, ww, hh) => c.drawImage(frame, 0, 0, ww, hh), adTitle, adNav, turnPage)
+                      .then(url => { if (!cancelled) adCanvasDataUrls.set(turnPage, url) })
+                      .catch(() => {})
                   } catch (_) { /* CORS/tainted: resta il fallback backup/black */ }
                   cleanup()
                 }
@@ -1350,31 +1504,16 @@ export default function FlipbookViewer({
                     const el = new Image(); el.crossOrigin = 'anonymous'
                     el.onload = () => res(el); el.onerror = rej; el.src = kbImageUrl
                   })
-                  const w = dims!.w, h = dims!.h - AD_SAFE_PX
-                  const sc = document.createElement('canvas'); sc.width = w; sc.height = h
-                  const ctx = sc.getContext('2d')
-                  if (!ctx || cancelled) return
-                  // Cover scaling + 10% overflow (matching ad-kb-img inset:-5% a scale(1))
-                  const ks = Math.max(w / img.naturalWidth, h / img.naturalHeight) * 1.1
-                  ctx.drawImage(img,
-                    (w - img.naturalWidth  * ks) / 2,
-                    (h - img.naturalHeight * ks) / 2,
-                    img.naturalWidth * ks, img.naturalHeight * ks)
-                  // Overlay gradient (matching .ad-overlay CSS)
-                  const g = ctx.createLinearGradient(0, h, 0, 0)
-                  g.addColorStop(0, 'rgba(0,0,0,0.88)')
-                  g.addColorStop(0.45, 'rgba(0,0,0,0.30)')
-                  g.addColorStop(1, 'rgba(0,0,0,0.10)')
-                  ctx.fillStyle = g; ctx.fillRect(0, 0, w, h)
-                  // Testo titolo (matching .ad-title-block + .ad-dish-name)
-                  const name = page.config.dishName?.trim() || page.config.categoryTarget?.trim() || ''
-                  if (name) {
-                    const size = Math.round(Math.min(32, w * 0.062))
-                    ctx.font = `300 ${size}px ${theme.fontSerif}`
-                    ctx.fillStyle = '#fff'
-                    ctx.fillText(name, 20, h - 28)
-                  }
-                  if (!cancelled) adCanvasDataUrls.set(turnPage, sc.toDataURL('image/jpeg', 0.9))
+                  if (cancelled) return
+                  const url = await composeAdSnapshot((ctx, w, h) => {
+                    // Cover scaling + 10% overflow (matching ad-kb-img inset:-5% a scale(1))
+                    const ks = Math.max(w / img.naturalWidth, h / img.naturalHeight) * 1.1
+                    ctx.drawImage(img,
+                      (w - img.naturalWidth  * ks) / 2,
+                      (h - img.naturalHeight * ks) / 2,
+                      img.naturalWidth * ks, img.naturalHeight * ks)
+                  }, adTitle, adNav, turnPage)
+                  if (!cancelled) adCanvasDataUrls.set(turnPage, url)
                 } catch (_) { /* CORS failure: keep kbImageUrl fallback */ }
               })()
             }
@@ -1396,6 +1535,11 @@ export default function FlipbookViewer({
         // prima che l'utente raggiunga quelle pagine. Su iOS best-effort
         // (il browser richiede interazione utente prima di bufferare).
         adVideoMap.forEach(vid => { try { vid.load() } catch (_) {} })
+        if (cancelled) return
+
+        // Totale pagine del libro (ads incluse) per la navigazione disegnata.
+        navTotal = pages.length
+        try { await (document as any).fonts?.load(`${pagNavWeight} ${navSizePx}px ${pagNavFont}`) } catch (_) {}
         if (cancelled) return
 
         // ── FASE 2.5: render tutte le pagine in parallelo ────────────────────
@@ -1462,7 +1606,7 @@ export default function FlipbookViewer({
             window.$(wrap).css({
               backgroundImage:    `url("${src}")`,
               backgroundSize:     !isAdSrc ? '100% 100%'
-                                : isDataUrl ? `100% calc(100% - ${AD_SAFE_PX}px)`
+                                : isDataUrl ? '100% 100%'
                                 : 'cover',
               backgroundRepeat:   'no-repeat',
               backgroundPosition: isAdSrc && !isDataUrl ? 'center' : '0 0',
@@ -1661,7 +1805,7 @@ export default function FlipbookViewer({
       try { if (el && window.$?.fn?.turn) window.$(el).turn('destroy') } catch (_) {}
       if (el) el.innerHTML = ''
     }
-  }, [pdfUrl, dims?.w, dims?.h]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [pdfUrl, dims?.w, dims?.h, mn?.navigation.style, theme.navColor, pagNavFont, pagNavSize, pagNavWeight]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Callbacks ────────────────────────────────────────────────────────────────
 
@@ -1792,58 +1936,9 @@ export default function FlipbookViewer({
               </div>
             )}
 
-            {/* ── Hint angolari — driven by theme.paginationStyle.
-                 pointer-events-none: i click devono raggiungere gli angoli turn.js. */}
-            {pagesReady && pagOpt.prev && (
-              <span
-                className="pointer-events-none absolute bottom-3 left-2 z-50 uppercase tracking-[0.2em] select-none"
-                style={{
-                  color:      theme.navColor,
-                  opacity:    atFirst ? 0 : 0.6,
-                  transition: 'opacity 0.25s ease',
-                  fontFamily: pagNavFont,
-                  fontSize:   pagNavSize,
-                  fontWeight: pagNavWeight,
-                }}
-              >
-                {pagOpt.prev}
-              </span>
-            )}
-            {pagesReady && pagOpt.next && (
-              <span
-                className="pointer-events-none absolute bottom-3 right-2 z-50 uppercase tracking-[0.2em] select-none"
-                style={{
-                  color:      theme.navColor,
-                  opacity:    atLast ? 0 : 0.6,
-                  transition: 'opacity 0.25s ease',
-                  fontFamily: pagNavFont,
-                  fontSize:   pagNavSize,
-                  fontWeight: pagNavWeight,
-                }}
-              >
-                {pagOpt.next}
-              </span>
-            )}
-
-            {/* ── Numero pagina — centrato tra prec. e succ., SOLO TESTO.
-                 CATEGORICO: pointer-events-none e nessun handler — non deve mai
-                 intercettare un tap, i click devono raggiungere i piatti e gli
-                 angoli di turn.js sottostanti. ── */}
-            {pagesReady && totalPages > 0 && (
-              <span
-                aria-hidden="true"
-                className="pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 z-50 tabular-nums select-none"
-                style={{
-                  color:      theme.navColor,
-                  opacity:    0.6,
-                  fontFamily: pagNavFont,
-                  fontSize:   pagNavSize,
-                  fontWeight: pagNavWeight,
-                }}
-              >
-                {currentPage}/{totalPages}
-              </span>
-            )}
+            {/* Navigazione (prec / numero / succ): disegnata DENTRO ogni pagina
+                 — canvas per il menu (drawPageNav), fascia inferiore per le Ad —
+                 così gira con la carta. */}
 
           </div>
         </div>
