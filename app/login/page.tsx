@@ -42,50 +42,48 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center p-4" style={{ background: 'radial-gradient(120% 90% at 32% 22%, #f8f1e2, #e9dcc2 60%, #d9c7a6)' }}>
-      <div className="flex flex-col items-center mb-6" aria-label="Lito">
+    <div className="login-page min-h-screen flex flex-col items-center justify-center px-5 py-10">
+      <div className="flex flex-col items-center mb-7" aria-label="Lito">
         <LitoMark className="w-24 h-24 sm:w-28 sm:h-28" writeStartMs={250} writeMs={2400} />
-        <div className="login-wordmark mt-1 text-[11px] uppercase text-stone-500">Lito</div>
+        <div className="login-wordmark mt-1 text-[11px] uppercase">Lito</div>
       </div>
-      <div ref={cardRef} className="w-full max-w-sm bg-white border border-gray-200 shadow-sm p-8">
-        <div className="mb-7">
-          <h1 className="text-xl font-semibold text-gray-900">Accedi al gestionale</h1>
-        </div>
+      <div ref={cardRef} className="login-card w-full max-w-sm px-7 py-8 sm:px-8">
+        <h1 className="login-title mb-6">Accedi al gestionale</h1>
 
         {error && (
-          <div className="mb-4 px-3 py-2 bg-red-50 border border-red-200 text-red-600 text-sm">
+          <div className="login-error mb-4 px-3 py-2 text-sm">
             {error}
           </div>
         )}
 
         <form onSubmit={handleLogin} className="space-y-4">
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Nome utente</label>
+            <label className="login-label block mb-1.5">Nome utente</label>
             <input
               type="text" value={identifier} onChange={e => setIdentifier(e.target.value)}
               required autoComplete="username" autoCapitalize="none" spellCheck={false}
-              className="w-full px-3 py-2 border border-gray-300 text-sm text-gray-900 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+              className="login-input w-full px-3.5 py-2.5 text-sm"
             />
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Password</label>
+            <label className="login-label block mb-1.5">Password</label>
             <input
               type="password" value={password} onChange={e => setPassword(e.target.value)}
               required autoComplete="current-password"
-              className="w-full px-3 py-2 border border-gray-300 text-sm text-gray-900 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+              className="login-input w-full px-3.5 py-2.5 text-sm"
             />
           </div>
-          <div className="pt-1">
+          <div className="pt-2">
             <button
               type="submit" disabled={!!loading}
-              className="w-full bg-blue-600 text-white text-sm font-medium py-2 hover:bg-blue-700 disabled:opacity-50 transition-colors flex items-center justify-center"
+              className="login-button w-full py-2.5 text-sm flex items-center justify-center"
             >
-              {loading === 'login' ? <Spinner color="#fff" /> : 'Accedi'}
+              {loading === 'login' ? <Spinner color="#3a2a08" /> : 'Accedi'}
             </button>
           </div>
         </form>
 
-        <p className="mt-5 text-[11px] text-gray-400 text-center">
+        <p className="login-note mt-6 text-[11px] text-center">
           L&apos;accesso è riservato. Per ottenere un account contatta l&apos;amministratore.
         </p>
       </div>

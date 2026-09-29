@@ -149,8 +149,16 @@ export default function LitoMark({
         <path d={L_PATH} fill={`url(#${id('gold')})`} />
       </g>
       <g mask={`url(#${id('reveal-mask')})`}>
-        <path d={L_PATH} fill="#000" filter={`url(#${id('shadow')})`} />
-        <path d={L_PATH} fill={`url(#${id('gold')})`} filter={`url(#${id('bevel')})`} />
+        {/* Rettangolo trasparente: Safari ritaglia i filtri al riquadro dell'elemento,
+            così l'ombra sotto la L non viene tagliata. */}
+        <g filter={`url(#${id('shadow')})`}>
+          <rect x="-5" y="-5" width="60" height="60" fill="none" />
+          <path d={L_PATH} fill="#000" />
+        </g>
+        <g filter={`url(#${id('bevel')})`}>
+          <rect x="-5" y="-5" width="60" height="60" fill="none" />
+          <path d={L_PATH} fill={`url(#${id('gold')})`} />
+        </g>
       </g>
       <g className="lm-sheen" mask={`url(#${id('glyph')})`}>
         <rect x="-20" y="0" width="20" height="50" fill={`url(#${id('sheen')})`}>
