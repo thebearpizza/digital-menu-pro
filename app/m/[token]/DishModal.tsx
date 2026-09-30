@@ -211,15 +211,40 @@ export default function DishModal({ activeDish, allDishes, isNested, onClose, on
 
   // ── Touch swipe ────────────────────────────────────────────────────────────
 
+  // Tolleranza: si cambia piatto solo con un gesto chiaramente orizzontale.
+  // Se il dito si muove prima in verticale (lettura/scroll del testo) o il
+  // contenuto è scorso, il gesto è uno scroll e non sfoglia mai.
+  const SWIPE_MIN_PX = 80     // spostamento orizzontale minimo
+  const SWIPE_RATIO  = 2      // |dx| deve superare di 2× |dy|
+  const touchStartY  = useRef(0)
+  const touchScroll0 = useRef(0)
+  const touchAxis    = useRef<'x' | 'y' | null>(null)
   function onTouchStart(e: React.TouchEvent) {
-    touchStartX.current = e.touches[0].clientX
+    touchStartX.current  = e.touches[0].clientX
+    touchStartY.current  = e.touches[0].clientY
+    touchScroll0.current = scrollRef.current?.scrollTop ?? 0
+    touchAxis.current    = null
+  }
+  function onTouchMove(e: React.TouchEvent) {
+    if (touchStartX.current === null || touchAxis.current) return
+    const dx = Math.abs(e.touches[0].clientX - touchStartX.current)
+    const dy = Math.abs(e.touches[0].clientY - touchStartY.current)
+    if (dx < 10 && dy < 10) return
+    // Asse deciso dai primi 10px: il verticale vince in caso di dubbio.
+    touchAxis.current = dx > dy * 1.5 ? 'x' : 'y'
   }
   function onTouchEnd(e: React.TouchEvent) {
     if (isNested || touchStartX.current === null) return
-    const delta = e.changedTouches[0].clientX - touchStartX.current
+    const dx = e.changedTouches[0].clientX - touchStartX.current
+    const dy = e.changedTouches[0].clientY - touchStartY.current
+    const scrolled = Math.abs((scrollRef.current?.scrollTop ?? 0) - touchScroll0.current) > 4
+    const axis = touchAxis.current
     touchStartX.current = null
-    if      (delta < -50) goTo(idx + 1, 'right')
-    else if (delta >  50) goTo(idx - 1, 'left')
+    touchAxis.current   = null
+    if (axis !== 'x' || scrolled) return
+    if (Math.abs(dx) < SWIPE_MIN_PX || Math.abs(dx) < Math.abs(dy) * SWIPE_RATIO) return
+    if (dx < 0) goTo(idx + 1, 'right')
+    else        goTo(idx - 1, 'left')
   }
 
   // ── Mouse drag ─────────────────────────────────────────────────────────────
@@ -232,8 +257,8 @@ export default function DishModal({ activeDish, allDishes, isNested, onClose, on
     const delta = e.clientX - mouseStartX.current
     mouseStartX.current = null
     if (Math.abs(delta) < 10) return
-    if      (delta < -50) goTo(idx + 1, 'right')
-    else if (delta >  50) goTo(idx - 1, 'left')
+    if      (delta < -SWIPE_MIN_PX) goTo(idx + 1, 'right')
+    else if (delta >  SWIPE_MIN_PX) goTo(idx - 1, 'left')
   }
 
   // ── Animation ─────────────────────────────────────────────────────────────
@@ -295,6 +320,7 @@ export default function DishModal({ activeDish, allDishes, isNested, onClose, on
           maxHeight:    '88dvh',
         }}
         onTouchStart={onTouchStart}
+        onTouchMove={onTouchMove}
         onTouchEnd={onTouchEnd}
         onMouseDown={onMouseDown}
         onMouseUp={onMouseUp}
