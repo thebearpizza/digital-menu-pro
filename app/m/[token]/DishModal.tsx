@@ -214,8 +214,8 @@ export default function DishModal({ activeDish, allDishes, isNested, onClose, on
   // Tolleranza: si cambia piatto solo con un gesto chiaramente orizzontale.
   // Se il dito si muove prima in verticale (lettura/scroll del testo) o il
   // contenuto è scorso, il gesto è uno scroll e non sfoglia mai.
-  const SWIPE_MIN_PX = 80     // spostamento orizzontale minimo
-  const SWIPE_RATIO  = 2      // |dx| deve superare di 2× |dy|
+  const SWIPE_MIN_PX = 40     // spostamento orizzontale minimo
+  const SWIPE_RATIO  = 1.2    // |dx| deve superare |dy|
   const touchStartY  = useRef(0)
   const touchScroll0 = useRef(0)
   const touchAxis    = useRef<'x' | 'y' | null>(null)
@@ -231,7 +231,7 @@ export default function DishModal({ activeDish, allDishes, isNested, onClose, on
     const dy = Math.abs(e.touches[0].clientY - touchStartY.current)
     if (dx < 10 && dy < 10) return
     // Asse deciso dai primi 10px: il verticale vince in caso di dubbio.
-    touchAxis.current = dx > dy * 1.5 ? 'x' : 'y'
+    touchAxis.current = dx > dy ? 'x' : 'y'
   }
   function onTouchEnd(e: React.TouchEvent) {
     if (isNested || touchStartX.current === null) return
