@@ -1306,7 +1306,7 @@ function EditorSidebar({ target, theme, setters, previewMode, activeMenuId, onCl
           <ColorRow label="Colore testo" value={c.backLink.color}
             onChange={v => setters.setCardBackLink({ color: v })} />
           <FontSizeSlider label="Dimensione testo" value={c.backLink.size}
-            min={0.55} max={1} step={0.025} previewFont="inherit"
+            min={0.6} max={1.25} step={0.025} previewFont="inherit"
             onChange={v => setters.setCardBackLink({ size: v })} />
           <div>
             <div className="flex justify-between items-center mb-1">

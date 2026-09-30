@@ -361,7 +361,7 @@ export const DEFAULT_THEME: RestaurantTheme = {
     allergens:   { style: 'text', color: '#c9a96e', bgColor: '#181208', display: 'full', separator: ', ', size: 0.85, labelColor: '#c9a96e' },
     pairing:     { labelColor: '#c9a96e', productColor: '#8a8a8a' },
     closeButton: { color: '#555555', position: 'top-right', shape: 'none', show: true, size: 1.25 },
-    backLink:    { color: '#c9a96e', size: 0.6875, shade: 85 },
+    backLink:    { color: '#c9a96e', size: 0.8125, shade: 85 },
   },
   customFonts: {},
   ads: [],

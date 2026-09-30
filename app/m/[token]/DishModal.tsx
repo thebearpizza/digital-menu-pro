@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { formatAllergens } from '@/lib/allergens'
 import { useAllergenCatalog } from '@/components/AllergenCatalog'
 import { fontStack, formatPrice, cardBorderRadius, cardNavColors, readableOn, darkenHex } from '@/lib/theme'
@@ -102,7 +102,27 @@ export default function DishModal({ activeDish, allDishes, isNested, onClose, on
   const BACK_LINK  = card?.backLink
   const SHADE      = Math.max(0, Math.min(100, BACK_LINK?.shade ?? 85)) / 100 * 0.88
   const LINK_COLOR = readableOn(BACK_LINK?.color ?? ACCENT, darkenHex(CARD_BG, SHADE * 0.66))
-  const LINK_SIZE  = BACK_LINK?.size ?? 0.6875
+  const LINK_SIZE  = BACK_LINK?.size ?? 0.8125
+  // Pagine strette / lingue lunghe: i tasti restano su una riga, rimpiccioliti
+  // solo quanto basta per starci.
+  const linkRowRef = useRef<HTMLDivElement>(null)
+  const hasBack = !!onBack
+  const [linkFit, setLinkFit] = useState(1)
+  useLayoutEffect(() => {
+    const row = linkRowRef.current
+    if (!row) return
+    const fit = () => {
+      row.style.setProperty('--link-fit', '1')
+      const over = row.scrollWidth / Math.max(1, row.clientWidth)
+      const f = over > 1 ? Math.max(0.6, 1 / over - 0.01) : 1
+      row.style.setProperty('--link-fit', String(f))
+      setLinkFit(f)
+    }
+    fit()
+    const ro = new ResizeObserver(fit)
+    ro.observe(row)
+    return () => ro.disconnect()
+  }, [asPage, hasBack, lang, LINK_SIZE])
 
   const isMobilePreview = useIsMobilePreview()
 
@@ -285,18 +305,18 @@ export default function DishModal({ activeDish, allDishes, isNested, onClose, on
         {asPage && SHADE > 0 && (
           <div
             className="absolute top-0 left-0 right-0 pointer-events-none"
-            style={{ height: 96, zIndex: 5, background: `linear-gradient(to bottom, rgba(0,0,0,${SHADE}) 0%, rgba(0,0,0,${SHADE * 0.34}) 45%, rgba(0,0,0,0) 100%)` }}
+            style={{ height: 108, zIndex: 5, background: `linear-gradient(to bottom, rgba(0,0,0,${SHADE}) 0%, rgba(0,0,0,${SHADE * 0.34}) 45%, rgba(0,0,0,0) 100%)` }}
             aria-hidden
           />
         )}
         {asPage && (
-          <div className="relative shrink-0 flex items-center justify-between" style={{ height: 44, padding: '0 16px', zIndex: 6 }}>
+          <div ref={linkRowRef} className="relative shrink-0 flex items-center justify-between" style={{ height: 52, padding: '0 18px', gap: 14, zIndex: 6, ['--link-fit' as string]: linkFit }}>
             {onBack ? (
-              <button onClick={onBack} className="dish-page-link select-none" style={{ color: LINK_COLOR, fontSize: `${LINK_SIZE}rem`, fontFamily: FONT_SANS }}>
+              <button onClick={onBack} className="dish-page-link select-none" style={{ color: LINK_COLOR, fontSize: `calc(${LINK_SIZE}rem * var(--link-fit, 1))`, fontFamily: FONT_SANS }}>
                 ‹ {uiText('dishBack', lang)}
               </button>
             ) : null}
-            <button onClick={onClose} aria-label={uiText('dishToMenu', lang)} className="dish-page-link select-none" style={{ color: LINK_COLOR, fontSize: `${LINK_SIZE}rem`, fontFamily: FONT_SANS }}>
+            <button onClick={onClose} aria-label={uiText('dishToMenu', lang)} className="dish-page-link select-none" style={{ color: LINK_COLOR, fontSize: `calc(${LINK_SIZE}rem * var(--link-fit, 1))`, fontFamily: FONT_SANS }}>
               {onBack ? '' : '‹ '}{uiText('dishToMenu', lang)}
             </button>
           </div>
