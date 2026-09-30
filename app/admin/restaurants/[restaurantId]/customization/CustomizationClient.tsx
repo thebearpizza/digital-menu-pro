@@ -542,7 +542,7 @@ function Toggle({ checked, onChange, disabled = false }: { checked: boolean; onC
 const MOBILE_TARGETS: Record<'landing' | 'menu' | 'card' | 'hint', string[]> = {
   landing: ['landing-bg','landing-logo','landing-title','landing-desc','landing-buttons','landing-socials'],
   menu:    ['category-title','dish-title','dish-description','dish-price','allergens','background-layout','sticky-categories'],
-  card:    ['card-style','card-category','dish-title','dish-description','dish-price','allergens','card-pairing'],
+  card:    ['card-style','card-back','card-category','dish-title','dish-description','dish-price','allergens','card-pairing'],
   hint:    ['menu-hint'],
 }
 const MOBILE_LABELS: Record<string, string> = {
@@ -554,6 +554,7 @@ const MOBILE_LABELS: Record<string, string> = {
   'category-title':   'Categoria', 'background-layout':'Layout',
   'sticky-categories':'Barra',     'card-style':       'Stile Card',
   'card-category':    'Categoria', 'card-pairing':     'Abbinam.',
+  'card-back':        'Torna al menu',
   'menu-hint':        'Pop-up',
 }
 
@@ -571,7 +572,8 @@ const EDITOR_TARGETS: Record<string, { title: string; hint: string }> = {
   'dish-price':        { title: 'Prezzo',             hint: 'Font, colore, formato, valuta, posizione' },
   'category-title':    { title: 'Titolo Categoria',   hint: 'Font, colore, dimensione, allineamento' },
   'allergens':         { title: 'Allergeni',          hint: 'Stile, formato, separatore, colori' },
-  'card-style':        { title: 'Stile Card',         hint: 'Sfondo card, bordi, pulsante chiudi, accento' },
+  'card-style':        { title: 'Stile Card',         hint: 'Sfondo, accento, allineamento, layout, angoli foto' },
+  'card-back':         { title: 'Torna al menu',      hint: 'Colore e dimensione del testo, intensità della sfumatura in alto' },
   'card-category':     { title: 'Categoria (Card)',   hint: 'Colore e dimensione dell\'etichetta categoria nella card' },
   'card-pairing':      { title: 'Abbinamento',        hint: 'Colori dell\'etichetta e del prodotto consigliato' },
   'sticky-categories': { title: 'Barra Categorie',    hint: 'Stile, colori, font della barra categorie' },
@@ -607,7 +609,7 @@ interface SidebarSetters {
   setCardDesc:       (p: Partial<CardTheme['description']>) => void
   setCardPrice:      (p: Partial<CardTheme['price']>) => void
   setCardAllergens:  (p: Partial<CardTheme['allergens']>) => void
-  setCardClose:      (p: Partial<CardTheme['closeButton']>) => void
+  setCardBackLink:   (p: Partial<CardTheme['backLink']>) => void
   setCardCategory:   (p: Partial<CardTheme['category']>) => void
   setCardPairing:    (p: Partial<CardTheme['pairing']>) => void
   handleBgUpload:     (f: File) => void
@@ -1295,6 +1297,29 @@ function EditorSidebar({ target, theme, setters, previewMode, activeMenuId, onCl
         </div>
       )
 
+      case 'card-back': return (
+        <div className="space-y-4">
+          <p className="text-[11px] text-gray-400 leading-snug">
+            &ldquo;Torna al menu&rdquo; (e &ldquo;Indietro&rdquo; dagli abbinamenti) in cima alla card, su una sfumatura scura che scende dall&rsquo;alto.
+            Il colore resta il più vicino possibile a quello scelto, schiarito in automatico quanto basta per leggersi sempre.
+          </p>
+          <ColorRow label="Colore testo" value={c.backLink.color}
+            onChange={v => setters.setCardBackLink({ color: v })} />
+          <FontSizeSlider label="Dimensione testo" value={c.backLink.size}
+            min={0.6} max={1.25} step={0.025} previewFont="inherit"
+            onChange={v => setters.setCardBackLink({ size: v })} />
+          <div>
+            <div className="flex justify-between items-center mb-1">
+              <label className="text-xs text-gray-600">Intensità sfumatura</label>
+              <span className="text-[10px] font-mono text-gray-400">{Math.round(c.backLink.shade)}%</span>
+            </div>
+            <input type="range" min={0} max={100} step={5} value={c.backLink.shade}
+              onChange={e => setters.setCardBackLink({ shade: Number(e.target.value) })}
+              className="w-full accent-gray-900" />
+          </div>
+        </div>
+      )
+
       case 'card-pairing': return (
         <div className="space-y-4">
           <p className="text-[11px] text-gray-400 leading-snug">
@@ -1326,40 +1351,11 @@ function EditorSidebar({ target, theme, setters, previewMode, activeMenuId, onCl
               value={c.layout} onChange={v => setters.setC({ layout: v })} />
           </div>
           <div>
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Angoli card</p>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Angoli foto</p>
             <PillGroup
               options={[{ label:'Netti', value:'none' },{ label:'Arrotondati', value:'sm' },{ label:'Morbidi', value:'md' }]}
               value={c.borderRadius} onChange={v => setters.setC({ borderRadius: v })} />
           </div>
-          <label className="flex items-center gap-2 cursor-pointer select-none">
-            <Toggle checked={c.closeButton.show}
-              onChange={v => setters.setCardClose({ show: v })} />
-            <span className="text-xs text-gray-600">Mostra pulsante chiudi (×)</span>
-          </label>
-          {!c.closeButton.show && (
-            <p className="text-[11px] text-gray-400 leading-snug">
-              La card si chiude comunque toccando fuori dalla card.
-            </p>
-          )}
-          {c.closeButton.show && (<>
-            <FontSizeSlider label="Dimensione chiudi" value={c.closeButton.size}
-              min={0.8} max={3} step={0.05} previewFont="inherit"
-              onChange={v => setters.setCardClose({ size: v })} />
-            <div>
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Pulsante chiudi</p>
-              <PillGroup
-                options={[{ label:'Nessuno', value:'none' },{ label:'Cerchio', value:'circle' },{ label:'Quadrato', value:'square' }]}
-                value={c.closeButton.shape} onChange={v => setters.setCardClose({ shape: v })} />
-            </div>
-            <div>
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Posizione chiudi</p>
-              <PillGroup
-                options={[{ label:'Alto dx', value:'top-right' },{ label:'Alto sx', value:'top-left' }]}
-                value={c.closeButton.position} onChange={v => setters.setCardClose({ position: v })} />
-            </div>
-            <ColorRow label="Colore chiudi" value={c.closeButton.color}
-              onChange={v => setters.setCardClose({ color: v })} />
-          </>)}
         </div>
       )
 
@@ -2161,8 +2157,8 @@ export default function CustomizationClient({
   function setCardAllergens(patch: Partial<CardTheme['allergens']>) {
     setSaved(false); setTheme(t => ({ ...t, card: { ...t.card, allergens: { ...t.card.allergens, ...patch } } }))
   }
-  function setCardClose(patch: Partial<CardTheme['closeButton']>) {
-    setSaved(false); setTheme(t => ({ ...t, card: { ...t.card, closeButton: { ...t.card.closeButton, ...patch } } }))
+  function setCardBackLink(patch: Partial<CardTheme['backLink']>) {
+    setSaved(false); setTheme(t => ({ ...t, card: { ...t.card, backLink: { ...t.card.backLink, ...patch } } }))
   }
   function setCardCategory(patch: Partial<CardTheme['category']>) {
     setSaved(false); setTheme(t => ({ ...t, card: { ...t.card, category: { ...t.card.category, ...patch } } }))
@@ -2435,7 +2431,7 @@ export default function CustomizationClient({
   const setters: SidebarSetters = {
     setLBg, setLLogo, setLTitle, setLDesc, setLBu, setLPos, setL,
     setMDishes, setMDescs, setMPrices, setMCats, setMLayout, setMDivider, setMBg, setMPageBg, setMNav, setMSticky, setMHint, setMAllergens, setM,
-    setC, setCardTitle, setCardDesc, setCardPrice, setCardAllergens, setCardClose, setCardCategory, setCardPairing,
+    setC, setCardTitle, setCardDesc, setCardPrice, setCardAllergens, setCardBackLink, setCardCategory, setCardPairing,
     handleBgUpload, handleVideoUpload, handleMenuBgUpload, handleMenuPageBgUpload, handlePosterUpload, handleLogoUpload, handleFontUpload,
     bgUploading, vidUploading, menuBgUploading, pageBgUploading, posterUploading, logoUploading, fontUploading,
   }

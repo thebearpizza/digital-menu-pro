@@ -613,3 +613,102 @@ html.lito-admin body {
       rgba(0, 0, 0, 0.07) 100%),
     linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(0, 0, 0, 0) 20%, rgba(0, 0, 0, 0) 85%, rgba(0, 0, 0, 0.035));
 }
+
+/* ── Scheda piatto come pagina del libro ── */
+.fv-dish-page {
+  position: absolute;
+  inset: 0;
+  z-index: 60;
+  overflow: hidden;
+  border-radius: 1px 3px 3px 1px;
+}
+.fv-page-flap {
+  position: absolute;
+  inset: 0;
+  z-index: 61;
+  pointer-events: none;
+  background-size: 100% 100%;
+  transform-origin: left center;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  box-shadow: 0 0 24px rgba(0, 0, 0, 0.25);
+}
+.fv-page-flap::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent 30%, rgba(0, 0, 0, 0.35));
+  opacity: 0;
+  animation: inherit;
+  animation-name: fv-flap-shade;
+}
+.fv-page-flap.is-in  { animation: fv-flap-in 1s cubic-bezier(0.45, 0.05, 0.3, 1) forwards; }
+.fv-page-flap.is-out { animation: fv-flap-out 0.6s cubic-bezier(0.3, 0, 0.55, 1) forwards; }
+@keyframes fv-flap-in  { from { transform: perspective(1800px) rotateY(0deg); } to { transform: perspective(1800px) rotateY(-180deg); } }
+@keyframes fv-flap-out { from { transform: perspective(1800px) rotateY(-180deg); } to { transform: perspective(1800px) rotateY(0deg); } }
+@keyframes fv-flap-shade { 0% { opacity: 0; } 45% { opacity: 1; } 55%, 100% { opacity: 0; } }
+
+/* Abbinamento / indietro dentro la scheda-pagina: girata rigida come la pagina del libro */
+.fv-dish-leaf {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  transform-origin: left center;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+.fv-dish-leaf.is-back { z-index: 2; animation: fv-flap-out 0.6s cubic-bezier(0.3, 0, 0.55, 1) both; }
+.fv-dish-leaf-copy {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  transform-origin: left center;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+.fv-dish-leaf-copy.is-away { z-index: 2; box-shadow: 0 0 24px rgba(0, 0, 0, 0.25); animation: fv-flap-in 1s cubic-bezier(0.45, 0.05, 0.3, 1) forwards; }
+/* La copia è una fotografia statica della scheda: niente animazioni interne
+   (altrimenti il contenuto rifà la dissolvenza e lampeggia). Idem per la scheda
+   che rientra con "indietro". */
+.fv-dish-leaf-copy *, .fv-dish-leaf.is-back [data-dish-scroll] { animation: none !important; }
+.fv-dish-leaf-copy.is-under { z-index: 0; }
+
+/* Indicatore "scorri": c'è altro sotto (allergeni, abbinamento) */
+.dish-more-hint {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 46px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding-bottom: 2px;
+  pointer-events: none;
+}
+.dish-more-hint span {
+  font-size: 26px;
+  line-height: 1;
+  animation: dish-more-bob 1.6s ease-in-out infinite;
+}
+@keyframes dish-more-bob {
+  0%, 100% { transform: translateY(0); opacity: 0.55; }
+  50% { transform: translateY(5px); opacity: 1; }
+}
+
+/* "Torna al menu" / "Indietro" nel bordo superiore della scheda-pagina */
+.dish-page-link {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  line-height: 1;
+  padding: 12px 0;
+  white-space: nowrap;
+  flex-shrink: 0;
+  background: none;
+  border: 0;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
+  transition: opacity 0.15s ease;
+}
+.dish-page-link:hover { opacity: 0.65; }

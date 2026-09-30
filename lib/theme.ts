@@ -114,6 +114,10 @@ export interface CardTheme {
   // show: false nasconde del tutto la X (la card si chiude comunque con tap
   // sul backdrop o Esc). size: dimensione del glifo × in rem.
   closeButton: { color: string; position: 'top-right' | 'top-left'; shape: 'none' | 'circle' | 'square'; show: boolean; size: number }
+  // Scheda come pagina del libro: "Torna al menu" / "Indietro" su una sfumatura
+  // scura che scende dall'alto. color: tinta scelta (schiarita in automatico
+  // quanto basta per leggersi); size: rem; shade: intensità sfumatura 0–100.
+  backLink:    { color: string; size: number; shade: number }
 }
 
 // ── Landing sub-theme ─────────────────────────────────────────────────────────
@@ -357,6 +361,7 @@ export const DEFAULT_THEME: RestaurantTheme = {
     allergens:   { style: 'text', color: '#c9a96e', bgColor: '#181208', display: 'full', separator: ', ', size: 0.85, labelColor: '#c9a96e' },
     pairing:     { labelColor: '#c9a96e', productColor: '#8a8a8a' },
     closeButton: { color: '#555555', position: 'top-right', shape: 'none', show: true, size: 1.25 },
+    backLink:    { color: '#c9a96e', size: 0.8125, shade: 85 },
   },
   customFonts: {},
   ads: [],
@@ -535,6 +540,7 @@ function parseNested(r: Record<string, unknown>): RestaurantTheme {
   const caa = sub(ca.allergens)
   const cpr = sub(ca.pairing)
   const cab = sub(ca.closeButton)
+  const cbl = sub(ca.backLink)
 
   const parsedMenu = parseMenuTheme(r.menu, d.menu)
 
@@ -639,6 +645,12 @@ function parseNested(r: Record<string, unknown>): RestaurantTheme {
         shape:    one(cab.shape, ['none','circle','square'] as const, d.card.closeButton.shape),
         show:     cab.show !== false,
         size:     num(cab.size, d.card.closeButton.size),
+      },
+      backLink: {
+        // Back-compat: prima era l'accento della card.
+        color: str(cbl.color, str(ca.accent, str(m.accent, d.card.backLink.color))),
+        size:  num(cbl.size, d.card.backLink.size),
+        shade: num(cbl.shade, d.card.backLink.shade),
       },
     },
     customFonts: strRecord(r.customFonts),
@@ -967,6 +979,30 @@ function relativeLuminance(color: string): number {
 // Neutral grayscale colors for prev/next nav and the page counter in the dish
 // card, picked to keep enough contrast against the card background while
 // staying within the same gray "tone" used by the rest of the card chrome.
+// Mescola `hex` verso il nero (amount 0–1).
+export function darkenHex(hex: string, amount: number): string {
+  const h = hex.replace('#', '')
+  if (!isHex6(h)) return hex
+  return '#' + [0, 2, 4].map(i => Math.round(parseInt(h.slice(i, i + 2), 16) * (1 - amount)).toString(16).padStart(2, '0')).join('')
+}
+
+// Colore leggibile di `fg` sopra `bg`: stessa tinta, scurita (sfondo chiaro) o
+// schiarita (sfondo scuro) quanto basta per raggiungere il contrasto minimo WCAG.
+// Colori non esadecimali: restituiti invariati.
+export function readableOn(fg: string, bg: string, minRatio = 4.5): string {
+  const f = fg.replace('#', ''), b = bg.replace('#', '')
+  if (!isHex6(f) || !isHex6(b)) return fg
+  const lb = relativeLuminance('#' + b)
+  const ratio = (c: string) => { const l = relativeLuminance(c); return (Math.max(l, lb) + 0.05) / (Math.min(l, lb) + 0.05) }
+  const toward = lb > 0.4 ? 0 : 255
+  const ch = (i: number) => parseInt(f.slice(i, i + 2), 16)
+  let out = '#' + f
+  for (let t = 0; t <= 1.0001 && ratio(out) < minRatio; t += 0.05) {
+    out = '#' + [0, 2, 4].map(i => Math.round(ch(i) + (toward - ch(i)) * t).toString(16).padStart(2, '0')).join('')
+  }
+  return out
+}
+
 export function cardNavColors(bgColor: string): { active: string; disabled: string; counter: string; divider: string } {
   const dark = relativeLuminance(bgColor) < 0.4
   return dark

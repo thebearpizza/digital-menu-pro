@@ -732,8 +732,20 @@ export function MenuPDFDocument({ restaurant, menu, theme: themeProp, registered
         ? <View style={st.dishStack}><Text style={[st.dishPrice, st.stackPrice]}>{priceStr}</Text>{stackNameEl}</View>
         : <View style={st.dishStack}>{stackNameEl}<Text style={[st.dishPrice, st.stackPriceBelow]}>{priceStr}</Text></View>
     }
-    if (pos === 'left')  return <View style={st.dishRow}><Text style={priceLift ? [st.dishPrice, priceLift] : st.dishPrice}>{priceStr}{nameStrut}</Text>{nameEl}</View>
-    return <View style={st.dishRow}>{nameEl}{priceEl}</View>  // 'right' (default)
+    // Nome centrato: il blocco nome+prezzo centrato insieme sposterebbe il nome
+    // fuori asse (tanto più quanto è lungo il prezzo). Una copia INVISIBILE del
+    // prezzo sul lato opposto bilancia i due lati: il nome cade esattamente
+    // sull'asse della pagina, allineato a descrizione e allergeni.
+    const centered = (st.dishRow as { justifyContent?: string }).justifyContent === 'center'
+    const ghostStyle = { color: 'rgba(0,0,0,0)' }
+    if (pos === 'left') {
+      const leftPrice = <Text style={priceLift ? [st.dishPrice, priceLift, centered ? { marginRight: 8 } : {}] : [st.dishPrice, centered ? { marginRight: 8 } : {}]}>{priceStr}{nameStrut}{centered ? priceStrut : null}</Text>
+      const ghost = centered ? <Text style={[st.dishPrice, ghostStyle]}>{priceStr}{nameStrut}</Text> : null
+      return <View style={st.dishRow}>{leftPrice}{nameEl}{ghost}</View>
+    }
+    // priceStrut bilancia lo spazio invisibile in coda al nome (misurato: centro esatto).
+    const ghost = centered ? <Text style={[st.dishPrice, ghostStyle, { marginRight: 8 }]}>{priceStrut}{nameStrut}{priceStr}</Text> : null
+    return <View style={st.dishRow}>{ghost}{nameEl}{priceEl}</View>  // 'right' (default)
   }
 
   // Divider element — its shape genuinely changes per type.

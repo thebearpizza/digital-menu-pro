@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, useCallback } from 'react'
 import DishModal, { DishData } from './DishModal'
 import { useIsMobilePreview } from './EditHandle'
 import { fontStack, hexToRgb, toOpaqueColor, PAGINATION_OPTIONS, menuBackgroundCss } from '@/lib/theme'
@@ -137,6 +137,9 @@ interface Props {
 // ═══════════════════════════════════════════════════════════════════════════════
 // Inclinazione prospettica del libro (0 = disattivata). Prova in anteprima.
 const BOOK_TILT_DEG = 14
+// Scheda piatto come pagina del libro (una pagina si gira e la scopre).
+// false = scheda a comparsa classica.
+const DISH_AS_PAGE = true
 
 // Solo decorazione: spessore delle pagine a destra (ancora da leggere) e a
 // sinistra (già lette), in proporzione alla pagina corrente. Nessun effetto
@@ -247,6 +250,9 @@ export default function FlipbookViewer({
   // Mapping PDF page → turn.js page (ricostruito al caricamento del PDF).
   // Quando non ci sono ads è identità (N→N). Usato per remappare le categorie.
   const pdfToTurnRef = useRef(new Map<number, number>())
+  // Piatto → pagina PDF in cui compare (dal text layer): per tornare sulla
+  // pagina dell'ultimo piatto visto quando si chiude la scheda.
+  const dishPdfPageRef = useRef(new Map<string, number>())
 
   // Categorie rimappate a numeri di pagina turn.js (che includono le pagine Ad).
   // Vuoto finché il PDF non è caricato: fino ad allora usa le categorie raw.
@@ -269,6 +275,88 @@ export default function FlipbookViewer({
   const onDishOpenRef = useRef(onDishOpen)
   useEffect(() => { onDishOpenRef.current = onDishOpen }, [onDishOpen])
   const [modalStack, setModalStack] = useState<DishData[]>([])
+  // Immagine della pagina corrente (per la pagina che si gira sopra la scheda).
+  const pageSnapRef = useRef<(turnPage: number) => string | undefined>(() => undefined)
+  const [dishFlap, setDishFlap] = useState<{ src?: string; phase: 'prep' | 'in' | 'out' } | null>(null)
+  // Apertura: la pagina corrente "si gira" e scopre la scheda sotto.
+  // 'prep': la scheda resta nascosta finché l'immagine della pagina non è
+  // decodificata — altrimenti per un istante si vede la scheda (flash).
+  useLayoutEffect(() => {
+    if (!DISH_AS_PAGE) return
+    if (modalStack.length > 0 && !dishFlap) {
+      const src = pageSnapRef.current(currentPage)
+      const go = () => setDishFlap(f => (f && f.phase === 'prep' ? { ...f, phase: 'in' } : f))
+      setDishFlap({ src, phase: src ? 'prep' : 'in' })
+      if (src) {
+        const im = new Image()
+        im.src = src
+        im.decode().then(() => requestAnimationFrame(go), go)
+        setTimeout(go, 400)
+      }
+    }
+    if (modalStack.length === 0 && dishFlap) setDishFlap(null)
+    if (modalStack.length === 0) { levelDishRef.current = []; lastSeenDishRef.current = null; setLeafDir(null) }
+  }, [modalStack.length]) // eslint-disable-line react-hooks/exhaustive-deps
+  // Piatto effettivamente mostrato a ogni livello della pila (sfogliando
+  // prec./succ. cambia) e ultimo piatto visto in assoluto.
+  const levelDishRef = useRef<DishData[]>([])
+  const lastSeenDishRef = useRef<DishData | null>(null)
+  // Salto di pagina fatto da noi alla chiusura: non deve chiudere di colpo la scheda.
+  const skipAutoCloseRef = useRef(false)
+  const dishPageElRef = useRef<HTMLDivElement>(null)
+  const [leafDir, setLeafDir] = useState<'fwd' | 'back' | null>(null)
+  // Cambio pagina (tab categoria, swipe…) con la scheda aperta: chiudila.
+  useEffect(() => {
+    if (!DISH_AS_PAGE) return
+    if (skipAutoCloseRef.current) { skipAutoCloseRef.current = false; return }
+    setModalStack(s => (s.length ? [] : s))
+    setDishFlap(null)
+  }, [currentPage])
+  // Chiusura: si torna alla pagina del menu dell'ultimo piatto visto; la
+  // pagina si rigira coprendo la scheda, poi la scheda sparisce.
+  const closeDishPage = () => {
+    if (!DISH_AS_PAGE) { setModalStack([]); return }
+    let target = currentPage
+    for (const d of [lastSeenDishRef.current, levelDishRef.current[0]]) {
+      const pdfP = d ? dishPdfPageRef.current.get(d.id) : undefined
+      const tp = pdfP !== undefined ? pdfToTurnRef.current.get(pdfP) : undefined
+      if (tp) { target = tp; break }
+    }
+    if (target !== currentPage && bookRef.current && window.$) {
+      skipAutoCloseRef.current = true
+      try { window.$(bookRef.current).turn('page', target) } catch (_) { skipAutoCloseRef.current = false }
+    }
+    setDishFlap({ src: pageSnapRef.current(target), phase: 'out' })
+    setTimeout(() => { setModalStack([]); setDishFlap(null); skipAutoCloseRef.current = false }, 640)
+  }
+  // Abbinamento / indietro: la scheda si gira come una pagina rigida.
+  // Avanti: una copia statica della scheda attuale si gira via e scopre la nuova.
+  // Indietro: la scheda precedente si rigira sopra quella dell'abbinamento.
+  const turnDishLeaf = (dir: 'fwd' | 'back', change: () => void) => {
+    const host = dishPageElRef.current
+    const leaf = host?.querySelector<HTMLElement>('.fv-dish-leaf')
+    if (host && leaf) {
+      const copy = leaf.cloneNode(true) as HTMLElement
+      copy.className = dir === 'fwd' ? 'fv-dish-leaf-copy is-away' : 'fv-dish-leaf-copy is-under'
+      copy.removeAttribute('style')
+      host.appendChild(copy)
+      const src = leaf.querySelector<HTMLElement>('[data-dish-scroll]')
+      const dst = copy.querySelector<HTMLElement>('[data-dish-scroll]')
+      if (src && dst) dst.scrollTop = src.scrollTop
+      setTimeout(() => copy.remove(), dir === 'fwd' ? 1050 : 680)
+    }
+    setLeafDir(dir)
+    change()
+  }
+  const openPairing = (dish: DishData) => turnDishLeaf('fwd', () => setModalStack(st => {
+    // Il livello corrente torna al piatto che si stava guardando (non a quello aperto per primo).
+    const shown = levelDishRef.current[st.length - 1] ?? st[st.length - 1]
+    return [...st.slice(0, -1), shown, dish]
+  }))
+  const backFromPairing = () => turnDishLeaf('back', () => setModalStack(st => {
+    levelDishRef.current.length = st.length - 1
+    return st.slice(0, -1)
+  }))
 
   // Sincronizza activeCatIdx quando currentPage cambia (sfoglio manuale)
   // o quando le categorie cambiano (cambio menu o caricamento ads).
@@ -1046,6 +1134,10 @@ export default function FlipbookViewer({
       pageDiv.style.position = 'relative'
       pageDiv.style.overflow = 'hidden'
       pageDiv.appendChild(layer)
+      layer.querySelectorAll<HTMLElement>('[data-dish-id]').forEach(sp => {
+        const id = sp.dataset.dishId
+        if (id && !dishPdfPageRef.current.has(id)) dishPdfPageRef.current.set(id, pageNum)
+      })
     }
 
     ;(async () => {
@@ -1110,6 +1202,11 @@ export default function FlipbookViewer({
           if (p.type === 'pdf') { pdfToTurn.set(p.pdfPage, i + 1); turnToPdf.set(i + 1, p.pdfPage) }
         })
         pdfToTurnRef.current = pdfToTurn
+        dishPdfPageRef.current = new Map()
+        pageSnapRef.current = (tp: number) => {
+          const pdfP = turnToPdf.get(tp)
+          return pdfP !== undefined ? pageDataUrls.get(pdfP) : adCanvasDataUrls.get(tp)
+        }
 
         // ── Helper: costruisce il DOM di una pagina Ad ───────────────────────
         // Safe area fissa in px — spazio minimo per rendere visibili i tasti
@@ -1904,6 +2001,46 @@ export default function FlipbookViewer({
             {pagesReady && <div className="fv-book-curve" aria-hidden />}
             {pagesReady && <div className="fv-book-spine" aria-hidden />}
 
+            {/* Scheda piatto come pagina del libro */}
+            {DISH_AS_PAGE && modalStack.length > 0 && (
+              <>
+                <div
+                  className="fv-dish-page"
+                  ref={dishPageElRef}
+                  style={dishFlap?.phase === 'prep' ? { visibility: 'hidden' } : undefined}
+                >
+                  <div
+                    key={modalStack.length}
+                    className={`fv-dish-leaf${leafDir === 'back' ? ' is-back' : ''}`}
+                  >
+                    <DishModal
+                      asPage
+                      activeDish={modalStack[modalStack.length - 1]}
+                      allDishes={dishesRef.current}
+                      isNested={modalStack.length > 1}
+                      onClose={closeDishPage}
+                      onBack={modalStack.length > 1 ? backFromPairing : undefined}
+                      onOpenDish={openPairing}
+                      onDishChange={(d) => {
+                        levelDishRef.current[modalStack.length - 1] = d
+                        lastSeenDishRef.current = d
+                      }}
+                      theme={themeProp}
+                      lang={lang}
+                      pairingPool={pairingPool}
+                    />
+                  </div>
+                </div>
+                {dishFlap?.src && (
+                  <div
+                    className={`fv-page-flap is-${dishFlap.phase}`}
+                    style={{ backgroundImage: `url("${dishFlap.src}")` }}
+                    aria-hidden
+                  />
+                )}
+              </>
+            )}
+
             {/* Overlay caricamento */}
             {loadPhase === 'loading' && dims && (
               <div
@@ -2076,7 +2213,7 @@ export default function FlipbookViewer({
 
       {/* Dish modal — rendered outside the flipbook DOM to avoid z-index conflicts.
           modalStack[last] = currently visible dish; closing pops the stack. */}
-      {modalStack.length > 0 && (
+      {!DISH_AS_PAGE && modalStack.length > 0 && (
         <DishModal
           activeDish={modalStack[modalStack.length - 1]}
           allDishes={dishesRef.current}

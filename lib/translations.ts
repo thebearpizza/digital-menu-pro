@@ -107,6 +107,8 @@ const UI = {
   loading:      { it: 'Caricamento…',            en: 'Loading…',               fr: 'Chargement…',            de: 'Wird geladen…',          es: 'Cargando…' },
   preparing:    { it: 'Preparazione menu…',      en: 'Preparing menu…',        fr: 'Préparation du menu…',   de: 'Menü wird vorbereitet…', es: 'Preparando el menú…' },
   backToMenu:   { it: '← Menù',                  en: '← Menu',                 fr: '← Menu',                 de: '← Menü',                 es: '← Menú' },
+  dishToMenu:   { it: 'Torna al menu',           en: 'Back to menu',           fr: 'Retour au menu',         de: 'Zurück zum Menü',        es: 'Volver al menú' },
+  dishBack:     { it: 'Indietro',                en: 'Back',                   fr: 'Retour',                 de: 'Zurück',                 es: 'Atrás' },
   browseMenu:   { it: 'Sfoglia il menu',         en: 'Browse the menu',        fr: 'Feuilleter le menu',     de: 'Menü durchblättern',     es: 'Hojear el menú' },
 } satisfies Record<string, Record<Lang, string>>
 

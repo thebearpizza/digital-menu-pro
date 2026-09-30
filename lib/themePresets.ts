@@ -148,6 +148,7 @@ export function applyBaseAccent(theme: RestaurantTheme, accent: string): Restaur
   t.card.price.color          = accent
   t.card.category.color       = accent
   t.card.pairing.labelColor   = accent
+  t.card.backLink.color       = accent
   t.card.allergens.color      = accent
   t.card.allergens.labelColor = accent
   t.card.allergens.bgColor    = allergenBg
