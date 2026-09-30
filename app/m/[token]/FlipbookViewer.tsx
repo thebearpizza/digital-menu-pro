@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, useCallback } from 'react'
 import DishModal, { DishData } from './DishModal'
 import { useIsMobilePreview } from './EditHandle'
 import { fontStack, hexToRgb, toOpaqueColor, PAGINATION_OPTIONS, menuBackgroundCss } from '@/lib/theme'
@@ -277,11 +277,23 @@ export default function FlipbookViewer({
   const [modalStack, setModalStack] = useState<DishData[]>([])
   // Immagine della pagina corrente (per la pagina che si gira sopra la scheda).
   const pageSnapRef = useRef<(turnPage: number) => string | undefined>(() => undefined)
-  const [dishFlap, setDishFlap] = useState<{ src?: string; phase: 'in' | 'out' } | null>(null)
+  const [dishFlap, setDishFlap] = useState<{ src?: string; phase: 'prep' | 'in' | 'out' } | null>(null)
   // Apertura: la pagina corrente "si gira" e scopre la scheda sotto.
-  useEffect(() => {
+  // 'prep': la scheda resta nascosta finché l'immagine della pagina non è
+  // decodificata — altrimenti per un istante si vede la scheda (flash).
+  useLayoutEffect(() => {
     if (!DISH_AS_PAGE) return
-    if (modalStack.length > 0 && !dishFlap) setDishFlap({ src: pageSnapRef.current(currentPage), phase: 'in' })
+    if (modalStack.length > 0 && !dishFlap) {
+      const src = pageSnapRef.current(currentPage)
+      const go = () => setDishFlap(f => (f && f.phase === 'prep' ? { ...f, phase: 'in' } : f))
+      setDishFlap({ src, phase: src ? 'prep' : 'in' })
+      if (src) {
+        const im = new Image()
+        im.src = src
+        im.decode().then(() => requestAnimationFrame(go), go)
+        setTimeout(go, 400)
+      }
+    }
     if (modalStack.length === 0 && dishFlap) setDishFlap(null)
     if (modalStack.length === 0) { levelDishRef.current = []; lastSeenDishRef.current = null; setLeafDir(null) }
   }, [modalStack.length]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -315,7 +327,7 @@ export default function FlipbookViewer({
       try { window.$(bookRef.current).turn('page', target) } catch (_) { skipAutoCloseRef.current = false }
     }
     setDishFlap({ src: pageSnapRef.current(target), phase: 'out' })
-    setTimeout(() => { setModalStack([]); setDishFlap(null); skipAutoCloseRef.current = false }, 620)
+    setTimeout(() => { setModalStack([]); setDishFlap(null); skipAutoCloseRef.current = false }, 640)
   }
   // Abbinamento / indietro: la scheda si gira come una pagina rigida.
   // Avanti: una copia statica della scheda attuale si gira via e scopre la nuova.
@@ -331,7 +343,7 @@ export default function FlipbookViewer({
       const src = leaf.querySelector<HTMLElement>('[data-dish-scroll]')
       const dst = copy.querySelector<HTMLElement>('[data-dish-scroll]')
       if (src && dst) dst.scrollTop = src.scrollTop
-      setTimeout(() => copy.remove(), 720)
+      setTimeout(() => copy.remove(), dir === 'fwd' ? 1050 : 680)
     }
     setLeafDir(dir)
     change()
@@ -1992,7 +2004,11 @@ export default function FlipbookViewer({
             {/* Scheda piatto come pagina del libro */}
             {DISH_AS_PAGE && modalStack.length > 0 && (
               <>
-                <div className="fv-dish-page" ref={dishPageElRef}>
+                <div
+                  className="fv-dish-page"
+                  ref={dishPageElRef}
+                  style={dishFlap?.phase === 'prep' ? { visibility: 'hidden' } : undefined}
+                >
                   <div
                     key={modalStack.length}
                     className={`fv-dish-leaf${leafDir === 'back' ? ' is-back' : ''}`}

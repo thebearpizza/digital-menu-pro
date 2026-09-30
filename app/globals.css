@@ -621,9 +621,7 @@ html.lito-admin body {
   z-index: 60;
   overflow: hidden;
   border-radius: 1px 3px 3px 1px;
-  animation: fv-dish-in 0.35s ease both;
 }
-@keyframes fv-dish-in { from { opacity: 0.6; } to { opacity: 1; } }
 .fv-page-flap {
   position: absolute;
   inset: 0;
@@ -644,7 +642,7 @@ html.lito-admin body {
   animation: inherit;
   animation-name: fv-flap-shade;
 }
-.fv-page-flap.is-in  { animation: fv-flap-in 0.7s cubic-bezier(0.45, 0.05, 0.3, 1) forwards; }
+.fv-page-flap.is-in  { animation: fv-flap-in 1s cubic-bezier(0.45, 0.05, 0.3, 1) forwards; }
 .fv-page-flap.is-out { animation: fv-flap-out 0.6s cubic-bezier(0.3, 0, 0.55, 1) forwards; }
 @keyframes fv-flap-in  { from { transform: perspective(1800px) rotateY(0deg); } to { transform: perspective(1800px) rotateY(-180deg); } }
 @keyframes fv-flap-out { from { transform: perspective(1800px) rotateY(-180deg); } to { transform: perspective(1800px) rotateY(0deg); } }
@@ -668,7 +666,11 @@ html.lito-admin body {
   backface-visibility: hidden;
   -webkit-backface-visibility: hidden;
 }
-.fv-dish-leaf-copy.is-away { z-index: 2; box-shadow: 0 0 24px rgba(0, 0, 0, 0.25); animation: fv-flap-in 0.7s cubic-bezier(0.45, 0.05, 0.3, 1) forwards; }
+.fv-dish-leaf-copy.is-away { z-index: 2; box-shadow: 0 0 24px rgba(0, 0, 0, 0.25); animation: fv-flap-in 1s cubic-bezier(0.45, 0.05, 0.3, 1) forwards; }
+/* La copia è una fotografia statica della scheda: niente animazioni interne
+   (altrimenti il contenuto rifà la dissolvenza e lampeggia). Idem per la scheda
+   che rientra con "indietro". */
+.fv-dish-leaf-copy *, .fv-dish-leaf.is-back [data-dish-scroll] { animation: none !important; }
 .fv-dish-leaf-copy.is-under { z-index: 0; }
 
 /* Indicatore "scorri": c'è altro sotto (allergeni, abbinamento) */
@@ -693,3 +695,14 @@ html.lito-admin body {
   0%, 100% { transform: translateY(0); opacity: 0.55; }
   50% { transform: translateY(5px); opacity: 1; }
 }
+
+/* "Torna al menu" / "Indietro" nel bordo superiore della scheda-pagina */
+.dish-page-link {
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  padding: 8px 0;
+  background: none;
+  transition: opacity 0.15s ease;
+}
+.dish-page-link:hover { opacity: 0.65; }

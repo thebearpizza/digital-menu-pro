@@ -271,13 +271,28 @@ export default function DishModal({ activeDish, allDishes, isNested, onClose, on
         onMouseDown={onMouseDown}
         onMouseUp={onMouseUp}
       >
+        {/* Come pagina del libro: in alto, nel bordo sopra la foto, "Torna al
+            menu" (al posto della X) ed eventualmente "Indietro" dall'abbinamento. */}
+        {asPage && (
+          <div className="shrink-0 flex items-center justify-between" style={{ height: 44, padding: '0 16px' }}>
+            {onBack ? (
+              <button onClick={onBack} className="dish-page-link select-none" style={{ color: ACCENT, fontFamily: FONT_SANS }}>
+                ‹ {uiText('dishBack', lang)}
+              </button>
+            ) : null}
+            <button onClick={onClose} aria-label={uiText('dishToMenu', lang)} className="dish-page-link select-none" style={{ color: ACCENT, fontFamily: FONT_SANS }}>
+              {onBack ? '' : '‹ '}{uiText('dishToMenu', lang)}
+            </button>
+          </div>
+        )}
+
         {/* Drag handle */}
-        <div className="flex justify-center shrink-0 pt-3 pb-1">
+        {!asPage && <div className="flex justify-center shrink-0 pt-3 pb-1">
           <div style={{ width: 36, height: 3, borderRadius: 2, background: `${ACCENT}50` }} />
-        </div>
+        </div>}
 
         {/* Header row: back button (nested) or empty, close button */}
-        <div className={`absolute top-3 left-0 right-0 flex items-center ${CLOSE_POS === 'top-left' ? 'flex-row-reverse' : ''} justify-between px-4 z-10`}>
+        {!asPage && <div className={`absolute top-3 left-0 right-0 flex items-center ${CLOSE_POS === 'top-left' ? 'flex-row-reverse' : ''} justify-between px-4 z-10`}>
           {onBack ? (
             <button
               onClick={onBack}
@@ -302,7 +317,7 @@ export default function DishModal({ activeDish, allDishes, isNested, onClose, on
           ) : (
             <span />
           )}
-        </div>
+        </div>}
 
 
         {/* Hero image — 3:2 (photo-top layout only). Prima era 16:9
@@ -314,7 +329,10 @@ export default function DishModal({ activeDish, allDishes, isNested, onClose, on
             nuova non è scaricata. Con la key l'elemento è nuovo a ogni piatto:
             mai immagini vecchie (le adiacenti sono precaricate → istantanee). */}
         {CARD_LAYOUT === 'photo-top' && dish.image_url && (
-          <div className="shrink-0 w-full aspect-[3/2] overflow-hidden" style={{ background: '#1a1a1a' }}>
+          <div
+            className={asPage ? 'shrink-0 aspect-[3/2] overflow-hidden' : 'shrink-0 w-full aspect-[3/2] overflow-hidden'}
+            style={asPage ? { background: '#1a1a1a', margin: '0 16px', borderRadius: 2 } : { background: '#1a1a1a' }}
+          >
             <img
               key={dish.id}
               src={dish.image_url}
