@@ -649,3 +649,47 @@ html.lito-admin body {
 @keyframes fv-flap-in  { from { transform: perspective(1800px) rotateY(0deg); } to { transform: perspective(1800px) rotateY(-180deg); } }
 @keyframes fv-flap-out { from { transform: perspective(1800px) rotateY(-180deg); } to { transform: perspective(1800px) rotateY(0deg); } }
 @keyframes fv-flap-shade { 0% { opacity: 0; } 45% { opacity: 1; } 55%, 100% { opacity: 0; } }
+
+/* Abbinamento / indietro dentro la scheda-pagina: girata rigida come la pagina del libro */
+.fv-dish-leaf {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  transform-origin: left center;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+.fv-dish-leaf.is-back { z-index: 2; animation: fv-flap-out 0.6s cubic-bezier(0.3, 0, 0.55, 1) both; }
+.fv-dish-leaf-copy {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  transform-origin: left center;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+.fv-dish-leaf-copy.is-away { z-index: 2; box-shadow: 0 0 24px rgba(0, 0, 0, 0.25); animation: fv-flap-in 0.7s cubic-bezier(0.45, 0.05, 0.3, 1) forwards; }
+.fv-dish-leaf-copy.is-under { z-index: 0; }
+
+/* Indicatore "scorri": c'è altro sotto (allergeni, abbinamento) */
+.dish-more-hint {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 46px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding-bottom: 2px;
+  pointer-events: none;
+}
+.dish-more-hint span {
+  font-size: 26px;
+  line-height: 1;
+  animation: dish-more-bob 1.6s ease-in-out infinite;
+}
+@keyframes dish-more-bob {
+  0%, 100% { transform: translateY(0); opacity: 0.55; }
+  50% { transform: translateY(5px); opacity: 1; }
+}

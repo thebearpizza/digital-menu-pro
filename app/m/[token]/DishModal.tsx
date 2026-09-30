@@ -41,11 +41,13 @@ interface Props {
   pairingPool?: DishData[]
   /** Mostra la scheda come PAGINA del libro (riempie il foglio, senza backdrop). */
   asPage?: boolean
+  /** Notifica il piatto effettivamente mostrato (cambia sfogliando prec./succ.). */
+  onDishChange?: (dish: DishData) => void
 }
 
 // ── Component ──────────────────────────────────────────────────────────────────
 
-export default function DishModal({ activeDish, allDishes, isNested, onClose, onBack, onOpenDish, editMode = false, theme, lang = 'it', pairingPool, asPage = false }: Props) {
+export default function DishModal({ activeDish, allDishes, isNested, onClose, onBack, onOpenDish, editMode = false, theme, lang = 'it', pairingPool, asPage = false, onDishChange }: Props) {
   const allergenCatalog = useAllergenCatalog()
   const mn   = theme?.menu
   const card = theme?.card
@@ -123,12 +125,28 @@ export default function DishModal({ activeDish, allDishes, isNested, onClose, on
 
   // Pop-in entrance for the card + backdrop, played once when the modal mounts.
   useEffect(() => {
+    if (asPage) return  // come pagina del libro l'ingresso è la pagina che si gira
     const anims = animateCardIn(cardRef.current, backdropRef.current)
     return () => { anims.forEach(a => a.revert()) }
-  }, [])
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const total = allDishes.length
   const dish  = idx >= 0 ? (allDishes[idx] ?? activeDish) : activeDish
+
+  useEffect(() => { onDishChange?.(dish) }, [dish.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Indicatore "c'è altro sotto" (allergeni, abbinamento…) finché non si scorre in fondo.
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const [moreBelow, setMoreBelow] = useState(false)
+  const checkMore = () => {
+    const el = scrollRef.current
+    setMoreBelow(!!el && el.scrollHeight - el.scrollTop - el.clientHeight > 8)
+  }
+  useEffect(() => {
+    checkMore()
+    const t = setTimeout(checkMore, 400)  // dopo l'animazione / il caricamento foto
+    return () => clearTimeout(t)
+  }, [contentKey]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // When activeDish changes (new modal pushed onto stack), reset to that dish
   useEffect(() => {
@@ -312,8 +330,12 @@ export default function DishModal({ activeDish, allDishes, isNested, onClose, on
             touch-action:pan-y: browser handles vertical scroll natively;
             horizontal gestures pass through to the card's swipe handlers.
             Scrollbar completely hidden on all engines. */}
+        <div className="relative flex-1 min-h-0 flex flex-col">
         <div
           key={contentKey}
+          ref={scrollRef}
+          data-dish-scroll
+          onScroll={checkMore}
           className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden overscroll-contain [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]"
           style={{ ...animStyle, padding: '20px 24px 4px', touchAction: 'pan-y' }}
         >
@@ -466,6 +488,12 @@ export default function DishModal({ activeDish, allDishes, isNested, onClose, on
               </button>
             </EditHandle>
           )}
+        </div>
+        {moreBelow && (
+          <div className="dish-more-hint" style={{ background: `linear-gradient(to bottom, transparent, ${CARD_BG})` }} aria-hidden>
+            <span style={{ color: ACCENT }}>⌄</span>
+          </div>
+        )}
         </div>
 
         {/* Navigation bar — hidden in nested mode */}
