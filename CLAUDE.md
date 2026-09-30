@@ -2,9 +2,20 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-# Digital Menu Pro
+# Lito (ex Digital Menu Pro)
 
-App Next.js per gestione menu digitali di ristoranti con QR code. Admin panel per ristoratori + menu pubblico esposto via QR code.
+App Next.js per gestione menu digitali di ristoranti con QR code. Admin panel per ristoratori + menu pubblico esposto via QR code. Il prodotto si chiama **Lito** (logo: L corsiva dorata scritta a pennino, `components/LitoMark.tsx`); il repo e il progetto Vercel mantengono il nome `digital-menu-pro`.
+
+L'utente scrive in italiano: rispondere in italiano, in modo chiaro e non tecnico.
+
+## Modo di lavorare (concordato con l'utente)
+
+- **Mai toccare `main` direttamente.** Ogni modifica va su un branch di anteprima nuovo creato da `main` aggiornato (`git fetch origin main && git checkout -B preview/<nome> origin/main`), poi push e link dell'anteprima Vercel all'utente.
+- **Merge su `main` solo quando l'utente scrive "merge"**: si apre una PR (GitHub MCP `create_pull_request`) e la si unisce (`merge_pull_request`, metodo merge). Poi si verifica che parta il deploy di produzione.
+- Link anteprima: Vercel MCP `list_deployments` con `projectId: prj_b8WrdpZ6p9k0vasfGiZiT3iwKyaM`, `teamId: team_Cs7hzXgCmjtavJpTfK8vNEoz`, `branch: <branch>`; il campo `url` è l'anteprima (se `BUILDING`, dirlo).
+- **Non rompere le funzionalità esistenti**: modifiche minime e mirate. Se un tentativo rompe tutto, si butta il branch e si riparte da `main` rifacendo solo le modifiche richieste.
+- **La Personalizzazione deve restare allineata**: ogni elemento nuovo del menu cliente/card va reso configurabile in `CustomizationClient.tsx` (voci `MOBILE_TARGETS`, `MOBILE_LABELS`, `EDITOR_TARGETS`, `case` dell'editor, setter), con default e back-compat in `lib/theme.ts` (`DEFAULT_THEME` + `parseTheme`); le opzioni diventate inutili vanno tolte dall'editor.
+- La cancellazione di branch remoti è bloccata dal proxy git: dire all'utente di eliminarli a mano dalla pagina Branches di GitHub.
 
 ## Vincoli inviolabili
 
@@ -117,6 +128,18 @@ Dato `restaurants.qr_public_token`, il server:
 
 Flipbook è sfogliabile pagina per pagina; DishModal mostra allergeni/descrizione. PDF generato lato server via `@react-pdf/renderer`.
 
+Il flipbook (`FlipbookViewer.tsx`) usa turn.js + jQuery (`/public/turn.min.js`, `/public/jquery.min.js`) e pdf.js da cdnjs. Decisioni prese con l'utente (non cambiarle senza richiesta):
+- **Libro inclinato** `BOOK_TILT_DEG = 14` con spessore pagine / curva / costa decorativi; navigazione dentro la pagina (`drawPageNav`); pagine pubblicitarie a tutta pagina con sfumatura e navigazione in basso.
+- **Scheda piatto come pagina del libro** (`DISH_AS_PAGE = true`, `DishModal asPage`): la pagina corrente si gira con uno **sfoglio "rigido" CSS** (`.fv-page-flap`, snapshot della pagina) e scopre la scheda. **NON usare un mini-libro turn.js per la scheda: ha rotto tutto ed è stato scartato.**
+  - Apertura senza flash: la scheda resta nascosta (`phase 'prep'`) finché lo snapshot non è decodificato; girata di apertura 1s.
+  - Chiusura: torna alla pagina del menu dell'**ultimo piatto visto** (mappa piatto→pagina PDF dal text layer, `dishPdfPageRef`), la pagina si rigira sopra.
+  - Abbinamento: la scheda corrente (copia statica) si gira via e scopre l'abbinamento; "Indietro" torna alla scheda da cui è stato aperto (non al primo piatto).
+  - In alto: sfumatura scura dall'alto (come le pubblicitarie) con testo chiaro "‹ Torna al menu" / "‹ Indietro" (niente X, niente contorni); colore = `card.backLink.color` schiarito con `readableOn()` quanto basta per il contrasto; auto-fit su una riga.
+  - Foto incorniciata (margine, angoli = `card.borderRadius` → "Angoli foto" in Personalizzazione); indicatore "scorri" (⌄) finché sotto c'è altro.
+  - Swipe tra piatti: asse deciso dai primi 10px; se il gesto parte in verticale o il testo scorre non cambia mai piatto; swipe orizzontale da 40px.
+- PDF (`MenuPDFDocument.tsx`): prezzi allineati alla baseline del nome (strut + lift ottico); con nome centrato un prezzo "fantasma" trasparente sul lato opposto tiene il nome sull'asse della pagina.
+- Anteprima dal gestionale (dock "Anteprima"): mostra la L **intera e ferma** (`LitoMark progress={1}`) e naviga solo dopo averla disegnata (Safari smette di ridisegnare durante la navigazione).
+
 ### Customization / Theming (`app/admin/.../customization/`)
 
 Pannello per ristoratore:
@@ -127,6 +150,8 @@ Pannello per ristoratore:
 - Layout PDF (classic 1 categoria/pagina, compact denser)
 
 Salvato in `restaurants.theme_config` (JSONB). Preview live aggiornato in real-time.
+
+Il tema reale è strutturato (`RestaurantTheme` in `lib/theme.ts`: `landing`, `menu`, `menuThemes`, `card`, `ads`, `customFonts`); `parseTheme` applica default e back-compat. L'anteprima "Card" è un iframe di `/m/[token]?preview=1` che mostra la scheda-pagina reale (`PublicMenuView.tsx`, `cardPreviewOpen`). `card.closeButton` resta nello schema solo per la vecchia scheda a comparsa (non più usata nel menu pubblico).
 
 ### Excel import/export (`app/admin/.../menus/[menuId]/ExcelImportExport.tsx`)
 
@@ -146,7 +171,9 @@ Riconosce piatti uguali tra menu diversi (stesso nome + categoria). Se l'utente 
 - `telegram_links(chat_id, user_id)` — link admin ↔ Telegram chat
 - `telegram_pairing_codes(code, user_id, expires_at)`
 
-`allergens` è un array di int (ID allergen standard). `theme_config` è JSONB con chiavi: accent, pageBg, navBg, textPrimary, textMuted, fontSerif, fontSans, borderRadius, pdfLayout, bgImage, bgImageOpacity.
+`allergens` è un array di int (ID allergen standard); nomi/numeri personalizzabili per account nella tabella `allergen_overrides`. `theme_config` è JSONB con la struttura `RestaurantTheme` (vedi sopra).
+
+Supabase project id: `spwyryxoqsiahfwnpaoo`.
 
 ## Deployment e infra
 
@@ -154,10 +181,18 @@ Riconosce piatti uguali tra menu diversi (stesso nome + categoria). Se l'utente 
 - **Preview deployments**: Vercel genera preview URL (protezione auth di default per security)
 - **QR code**: Sempre punta a production URL — mai a preview
 - **Supabase**: Progetto remoto connesso via env vars. RLS policies attive in prod.
-- **Telegram**: Webhook live, test con curl da GitHub Codespaces (constraint: Claude Code container non ha accesso HTTP esterno)
+- **Telegram**: Webhook live, test con curl da GitHub Codespaces
+
+### Ambiente cloud di Claude Code
+- Rete: accesso "Personalizzato" con `*.vercel.app`, `spwyryxoqsiahfwnpaoo.supabase.co`, `cdnjs.cloudflare.com`, `fonts.googleapis.com`, `fonts.gstatic.com` + elenco predefinito. Tutto passa da un proxy che ri-firma l'HTTPS.
+- **Browser**: MCP `chrome-devtools` (`.mcp.json`) con il Chromium preinstallato, headless, `--no-sandbox`, `--acceptInsecureCerts` (certificato del proxy). In alternativa Playwright installato globalmente (percorso da `npm root -g`, opzione `ignoreHTTPSErrors: true`).
+- Le anteprime Vercel sono protette da login Vercel: senza bypass il browser vede la pagina di accesso; la produzione è libera. Il gestionale richiede login Supabase (serve un account di test, mai credenziali personali).
+- Test locali del menu senza database: pagina temporanea `app/splash-test/page.tsx` che monta `FlipbookViewer`/`DishModal` con dati finti (PDF di prova generato con `pdf-lib` in `public/`), `npx next dev -p 3100` con env Supabase fittizie, pdf.js servito da `pdfjs-dist` locale intercettando cdnjs. **Rimuovere sempre** la pagina, i file di prova in `public/` e `.next/types/app/splash-test` prima del commit.
+- Fermare i dev server con `ps aux | grep -E "next" | grep -v grep | awk '{print $2}' | xargs -r kill` (NON `pkill -f "next dev"`: uccide la shell).
+- Verifiche prima del push: `npx tsc --noEmit` e `npx eslint <file>`.
 
 ## Git workflow
 
 - **`main`** — production-ready, auto-deploy Vercel
-- **`claude/digital-menu-flipbook-pFdFt`** — feature branch attivo; merge su `main` dopo review
+- **`preview/<nome>`** — un branch per ogni giro di modifiche, creato da `main` aggiornato; merge via PR solo su richiesta (vedi "Modo di lavorare")
 - **Backup branches** — `backup/main-pre-cleanup-2026-05-19`, `backup/custom-flipbook-*` (old attempts)
