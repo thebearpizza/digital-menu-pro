@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { formatAllergens } from '@/lib/allergens'
 import { useAllergenCatalog } from '@/components/AllergenCatalog'
-import { fontStack, formatPrice, cardBorderRadius, cardNavColors } from '@/lib/theme'
+import { fontStack, formatPrice, cardBorderRadius, cardNavColors, readableOn } from '@/lib/theme'
 import type { CardTheme, RestaurantTheme } from '@/lib/theme'
 import { EditHandle, sendEdit, useIsMobilePreview } from './EditHandle'
 import { animateCardIn } from '@/lib/animations'
@@ -95,6 +95,8 @@ export default function DishModal({ activeDish, allDishes, isNested, onClose, on
   // Prev/next + page-counter colors, kept within the same neutral gray tone
   // but boosted for legibility against the active card background.
   const NAV_COLORS = cardNavColors(CARD_BG)
+  // "Torna al menu" / "Indietro": tinta dell'accento, ma sempre leggibile sullo sfondo della card.
+  const LINK_COLOR = readableOn(ACCENT, CARD_BG)
 
   const isMobilePreview = useIsMobilePreview()
 
@@ -276,11 +278,11 @@ export default function DishModal({ activeDish, allDishes, isNested, onClose, on
         {asPage && (
           <div className="shrink-0 flex items-center justify-between" style={{ height: 44, padding: '0 16px' }}>
             {onBack ? (
-              <button onClick={onBack} className="dish-page-link select-none" style={{ color: ACCENT, fontFamily: FONT_SANS }}>
+              <button onClick={onBack} className="dish-page-link select-none" style={{ color: LINK_COLOR, borderColor: `${LINK_COLOR}55`, background: `${LINK_COLOR}0f`, fontFamily: FONT_SANS }}>
                 ‹ {uiText('dishBack', lang)}
               </button>
             ) : null}
-            <button onClick={onClose} aria-label={uiText('dishToMenu', lang)} className="dish-page-link select-none" style={{ color: ACCENT, fontFamily: FONT_SANS }}>
+            <button onClick={onClose} aria-label={uiText('dishToMenu', lang)} className="dish-page-link select-none" style={{ color: LINK_COLOR, borderColor: `${LINK_COLOR}55`, background: `${LINK_COLOR}0f`, fontFamily: FONT_SANS }}>
               {onBack ? '' : '‹ '}{uiText('dishToMenu', lang)}
             </button>
           </div>

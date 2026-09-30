@@ -967,6 +967,23 @@ function relativeLuminance(color: string): number {
 // Neutral grayscale colors for prev/next nav and the page counter in the dish
 // card, picked to keep enough contrast against the card background while
 // staying within the same gray "tone" used by the rest of the card chrome.
+// Colore leggibile di `fg` sopra `bg`: stessa tinta, scurita (sfondo chiaro) o
+// schiarita (sfondo scuro) quanto basta per raggiungere il contrasto minimo WCAG.
+// Colori non esadecimali: restituiti invariati.
+export function readableOn(fg: string, bg: string, minRatio = 4.5): string {
+  const f = fg.replace('#', ''), b = bg.replace('#', '')
+  if (!isHex6(f) || !isHex6(b)) return fg
+  const lb = relativeLuminance('#' + b)
+  const ratio = (c: string) => { const l = relativeLuminance(c); return (Math.max(l, lb) + 0.05) / (Math.min(l, lb) + 0.05) }
+  const toward = lb > 0.4 ? 0 : 255
+  const ch = (i: number) => parseInt(f.slice(i, i + 2), 16)
+  let out = '#' + f
+  for (let t = 0; t <= 1.0001 && ratio(out) < minRatio; t += 0.05) {
+    out = '#' + [0, 2, 4].map(i => Math.round(ch(i) + (toward - ch(i)) * t).toString(16).padStart(2, '0')).join('')
+  }
+  return out
+}
+
 export function cardNavColors(bgColor: string): { active: string; disabled: string; counter: string; divider: string } {
   const dark = relativeLuminance(bgColor) < 0.4
   return dark
