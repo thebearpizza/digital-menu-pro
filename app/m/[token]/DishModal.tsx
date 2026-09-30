@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { formatAllergens } from '@/lib/allergens'
 import { useAllergenCatalog } from '@/components/AllergenCatalog'
-import { fontStack, formatPrice, cardBorderRadius, cardNavColors, readableOn } from '@/lib/theme'
+import { fontStack, formatPrice, cardBorderRadius, cardNavColors, readableOn, darkenHex } from '@/lib/theme'
 import type { CardTheme, RestaurantTheme } from '@/lib/theme'
 import { EditHandle, sendEdit, useIsMobilePreview } from './EditHandle'
 import { animateCardIn } from '@/lib/animations'
@@ -95,8 +95,14 @@ export default function DishModal({ activeDish, allDishes, isNested, onClose, on
   // Prev/next + page-counter colors, kept within the same neutral gray tone
   // but boosted for legibility against the active card background.
   const NAV_COLORS = cardNavColors(CARD_BG)
-  // "Torna al menu" / "Indietro": tinta dell'accento, ma sempre leggibile sullo sfondo della card.
-  const LINK_COLOR = readableOn(ACCENT, CARD_BG)
+  // "Torna al menu" / "Indietro" (scheda come pagina): testo chiaro su una
+  // sfumatura scura che scende dall'alto, come nelle pagine pubblicitarie.
+  // Il colore resta quello scelto, schiarito solo quanto basta per leggersi
+  // sopra lo sfondo effettivo (card scurita dalla sfumatura all'altezza del testo).
+  const BACK_LINK  = card?.backLink
+  const SHADE      = Math.max(0, Math.min(100, BACK_LINK?.shade ?? 85)) / 100 * 0.88
+  const LINK_COLOR = readableOn(BACK_LINK?.color ?? ACCENT, darkenHex(CARD_BG, SHADE * 0.66))
+  const LINK_SIZE  = BACK_LINK?.size ?? 0.6875
 
   const isMobilePreview = useIsMobilePreview()
 
@@ -274,15 +280,23 @@ export default function DishModal({ activeDish, allDishes, isNested, onClose, on
         onMouseUp={onMouseUp}
       >
         {/* Come pagina del libro: in alto, nel bordo sopra la foto, "Torna al
-            menu" (al posto della X) ed eventualmente "Indietro" dall'abbinamento. */}
+            menu" (al posto della X) ed eventualmente "Indietro" dall'abbinamento,
+            su una sfumatura scura che scende dall'alto. */}
+        {asPage && SHADE > 0 && (
+          <div
+            className="absolute top-0 left-0 right-0 pointer-events-none"
+            style={{ height: 96, zIndex: 5, background: `linear-gradient(to bottom, rgba(0,0,0,${SHADE}) 0%, rgba(0,0,0,${SHADE * 0.34}) 45%, rgba(0,0,0,0) 100%)` }}
+            aria-hidden
+          />
+        )}
         {asPage && (
-          <div className="shrink-0 flex items-center justify-between" style={{ height: 44, padding: '0 16px' }}>
+          <div className="relative shrink-0 flex items-center justify-between" style={{ height: 44, padding: '0 16px', zIndex: 6 }}>
             {onBack ? (
-              <button onClick={onBack} className="dish-page-link select-none" style={{ color: LINK_COLOR, borderColor: `${LINK_COLOR}55`, background: `${LINK_COLOR}0f`, fontFamily: FONT_SANS }}>
+              <button onClick={onBack} className="dish-page-link select-none" style={{ color: LINK_COLOR, fontSize: `${LINK_SIZE}rem`, fontFamily: FONT_SANS }}>
                 ‹ {uiText('dishBack', lang)}
               </button>
             ) : null}
-            <button onClick={onClose} aria-label={uiText('dishToMenu', lang)} className="dish-page-link select-none" style={{ color: LINK_COLOR, borderColor: `${LINK_COLOR}55`, background: `${LINK_COLOR}0f`, fontFamily: FONT_SANS }}>
+            <button onClick={onClose} aria-label={uiText('dishToMenu', lang)} className="dish-page-link select-none" style={{ color: LINK_COLOR, fontSize: `${LINK_SIZE}rem`, fontFamily: FONT_SANS }}>
               {onBack ? '' : '‹ '}{uiText('dishToMenu', lang)}
             </button>
           </div>
@@ -333,7 +347,7 @@ export default function DishModal({ activeDish, allDishes, isNested, onClose, on
         {CARD_LAYOUT === 'photo-top' && dish.image_url && (
           <div
             className={asPage ? 'shrink-0 aspect-[3/2] overflow-hidden' : 'shrink-0 w-full aspect-[3/2] overflow-hidden'}
-            style={asPage ? { background: '#1a1a1a', margin: '0 16px', borderRadius: 2 } : { background: '#1a1a1a' }}
+            style={asPage ? { background: '#1a1a1a', margin: '0 16px', borderRadius: CARD_RADIUS } : { background: '#1a1a1a' }}
           >
             <img
               key={dish.id}
@@ -402,7 +416,7 @@ export default function DishModal({ activeDish, allDishes, isNested, onClose, on
                 </div>
               </div>
               {dish.image_url && (
-                <div className="shrink-0 w-20 h-20 rounded overflow-hidden" style={{ background: '#1a1a1a' }}>
+                <div className="shrink-0 w-20 h-20 rounded overflow-hidden" style={asPage ? { background: '#1a1a1a', borderRadius: CARD_RADIUS } : { background: '#1a1a1a' }}>
                   <img key={dish.id} src={dish.image_url} alt={dish.name} className="w-full h-full object-cover" draggable={false} />
                 </div>
               )}

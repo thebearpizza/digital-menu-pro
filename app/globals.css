@@ -700,12 +700,13 @@ html.lito-admin body {
 .dish-page-link {
   font-size: 11px;
   font-weight: 600;
-  letter-spacing: 0.16em;
+  letter-spacing: 0.18em;
   text-transform: uppercase;
   line-height: 1;
-  padding: 7px 12px;
-  border: 1px solid;
-  border-radius: 999px;
+  padding: 8px 0;
+  background: none;
+  border: 0;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
   transition: opacity 0.15s ease;
 }
 .dish-page-link:hover { opacity: 0.65; }

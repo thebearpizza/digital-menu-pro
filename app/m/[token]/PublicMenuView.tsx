@@ -228,6 +228,9 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
   const [editMode,        setEditMode]        = useState(false)
   const [showDummyData,   setShowDummyData]   = useState(false)
   const [cardPreviewOpen, setCardPreviewOpen] = useState(false)
+  // Abbinamenti aperti dall'anteprima card (per vedere anche "Indietro").
+  const [cardPreviewStack, setCardPreviewStack] = useState<DishData[]>([])
+  useEffect(() => { if (!cardPreviewOpen) setCardPreviewStack([]) }, [cardPreviewOpen])
   // hintForced: tab "Pop-up" dell'admin → tieni il pop-up visibile per la
   // modifica anche se disattivato/già chiuso, indipendentemente da showHint.
   const [hintForced,      setHintForced]      = useState(false)
@@ -1047,18 +1050,37 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
       {diagMode && <DiagOverlay />}
 
       {/* ── CARD PREVIEW — DishModal aperta dall'admin in tab Card ───────── */}
+      {/* Come nel menu pubblico: la card è una pagina del libro (stesso
+          formato pagina, sullo sfondo del menu), con "Torna al menu" in alto. */}
       {cardPreviewOpen && (
-        <div className="absolute inset-0" style={{ zIndex: 500 }}>
-          <DishModal
-            activeDish={cardPreviewDish}
-            allDishes={cardPreviewAllDishes}
-            onClose={() => setCardPreviewOpen(false)}
-            onOpenDish={() => {}}
-            editMode={editMode}
-            theme={effectiveTheme}
-            lang={lang}
-            pairingPool={allDishesFlat.length ? pairingPool : undefined}
-          />
+        <div
+          className="absolute inset-0 flex items-center justify-center"
+          style={{ zIndex: 500, padding: '56px 12px', ...menuBackgroundCss(effectiveTheme.menu.background) }}
+        >
+          <div
+            className="relative overflow-hidden"
+            style={{
+              aspectRatio: '210 / 297',
+              width: 'min(100%, calc((100dvh - 112px) * 210 / 297))',
+              borderRadius: '1px 3px 3px 1px',
+              boxShadow: '2px 2px 0 #e9e3d7, 4px 4px 0 #ded7c9, 6px 6px 0 #d3cbbb, 0 18px 40px rgba(0,0,0,0.45)',
+            }}
+          >
+            <DishModal
+              key={cardPreviewStack.length}
+              asPage
+              activeDish={cardPreviewStack[cardPreviewStack.length - 1] ?? cardPreviewDish}
+              allDishes={cardPreviewAllDishes}
+              isNested={cardPreviewStack.length > 0}
+              onClose={() => setCardPreviewOpen(false)}
+              onBack={cardPreviewStack.length > 0 ? () => setCardPreviewStack(st => st.slice(0, -1)) : undefined}
+              onOpenDish={d => setCardPreviewStack(st => [...st, d])}
+              editMode={editMode}
+              theme={effectiveTheme}
+              lang={lang}
+              pairingPool={allDishesFlat.length ? pairingPool : undefined}
+            />
+          </div>
         </div>
       )}
     </div>
