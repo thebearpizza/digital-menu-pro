@@ -89,7 +89,7 @@ export default function AdminShell({
     const href = e.currentTarget.href
     setPopover(null)
     setOpeningPreview(true)
-    requestAnimationFrame(() => requestAnimationFrame(() => { window.location.href = href }))
+    requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(() => { window.location.href = href }, 60)))
   }
   useEffect(() => {
     // Tornando indietro (cache del browser) la pagina viene ripristinata così com'era.
@@ -156,8 +156,10 @@ export default function AdminShell({
       </main>
 
       {openingPreview && (
-        <div className="lito-nav-loading" role="status" aria-label="Apertura anteprima">
-          <LitoMark loop className="w-20 h-20" />
+        // L intera e ferma, senza dissolvenza: Safari smette di ridisegnare
+        // appena parte la navigazione, un'animazione resterebbe al primo fotogramma.
+        <div className="lito-nav-loading" style={{ animation: 'none' }} role="status" aria-label="Apertura anteprima">
+          <LitoMark progress={1} className="w-20 h-20" />
         </div>
       )}
 
