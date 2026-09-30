@@ -9,7 +9,8 @@
         "--headless",
         "--isolated",
         "--viewport=390x844",
-        "--chromeArg=--no-sandbox"
+        "--chromeArg=--no-sandbox",
+        "--acceptInsecureCerts"
       ]
     }
   }
