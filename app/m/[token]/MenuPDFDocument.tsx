@@ -723,11 +723,18 @@ export function MenuPDFDocument({ restaurant, menu, theme: themeProp, registered
     const lift  = 0.35 * Math.abs(nSize - pSize)
     const priceLift = pSize < nSize ? { position: 'relative' as const, top: -lift } : null
     const nameLift  = nSize < pSize ? { position: 'relative' as const, top: -lift } : null
-    const nameEl  = <Text style={nameLift ? [st.dishName, nameLift] : st.dishName}>{dish.name}{priceStr ? priceStrut : null}</Text>
+    // Mai a capo DENTRO una parola del nome: su Safari una parola come
+    // "(analcolica)" o "33cl" può arrivare divisa in più pezzi e il PDF andava
+    // a capo tra un pezzo e l'altro ("( / ANALCOLICA)", "33 / CL"). Penalità
+    // massima = a capo solo tra parole; le parole più larghe della riga si
+    // spezzano comunque (ripiego del motore).
+    // hyphenationPenalty è letto dal layout di react-pdf ma manca nei suoi tipi.
+    const NO_SPLIT = { hyphenationPenalty: 10000 } as Record<string, number>
+    const nameEl  = <Text {...NO_SPLIT} style={nameLift ? [st.dishName, nameLift] : st.dishName}>{dish.name}{priceStr ? priceStrut : null}</Text>
     const priceEl = priceStr ? <Text style={priceLift ? [st.dishPrice, priceLift] : st.dishPrice}>{nameStrut}{priceStr}</Text> : null
     if (!priceEl) return <View style={st.dishRow}>{nameEl}</View>
     if (pos === 'above' || pos === 'below') {
-      const stackNameEl = <Text style={[st.dishName, st.stackName]}>{dish.name}</Text>
+      const stackNameEl = <Text {...NO_SPLIT} style={[st.dishName, st.stackName]}>{dish.name}</Text>
       return pos === 'above'
         ? <View style={st.dishStack}><Text style={[st.dishPrice, st.stackPrice]}>{priceStr}</Text>{stackNameEl}</View>
         : <View style={st.dishStack}>{stackNameEl}<Text style={[st.dishPrice, st.stackPriceBelow]}>{priceStr}</Text></View>
@@ -746,7 +753,7 @@ export function MenuPDFDocument({ restaurant, menu, theme: themeProp, registered
       const rowW   = 595.28 - 2 * (compact ? 44 : 54) - (isBoxed ? 2 * (compact ? 7 : 10) + 2 : 0)
       const priceW = (priceStr ?? '').length * pSize * 0.5
       const maxW   = Math.max(rowW - 2 * (priceW + 8) - 8, 40)
-      const cappedName = <Text style={[st.dishName, { maxWidth: maxW, textAlign: 'center' }, nameLift ?? {}]}>{dish.name}{priceStrut}</Text>
+      const cappedName = <Text {...NO_SPLIT} style={[st.dishName, { maxWidth: maxW, textAlign: 'center' }, nameLift ?? {}]}>{dish.name}{priceStrut}</Text>
       if (pos === 'left') {
         return <View style={st.dishRow}>
           <Text style={priceLift ? [st.dishPrice, priceLift, { marginRight: 8 }] : [st.dishPrice, { marginRight: 8 }]}>{priceStr}{nameStrut}{priceStrut}</Text>
