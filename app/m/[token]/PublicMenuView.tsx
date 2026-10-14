@@ -403,8 +403,8 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
   )
 
   // ── Pre-generazione di tutti i menu ────────────────────────────────────────
-  // Parte subito (durante l'animazione d'apertura): al tap su un menu il PDF è
-  // già pronto. Il primo menu tiene aperto lo splash ([data-app-loading]); gli
+  // Parte subito all'apertura: al tap su un menu il PDF è
+  // già pronto. Il primo menu viene generato per primo; gli
   // altri continuano in sottofondo.
   const [prefetchingFirst, setPrefetchingFirst] = useState(true)
   useEffect(() => {
