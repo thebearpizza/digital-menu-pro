@@ -738,6 +738,28 @@ export function MenuPDFDocument({ restaurant, menu, theme: themeProp, registered
     // sull'asse della pagina, allineato a descrizione e allergeni.
     const centered = (st.dishRow as { justifyContent?: string }).justifyContent === 'center'
     const ghostStyle = { color: 'rgba(0,0,0,0)' }
+    // Nome lungo centrato: react-pdf misura il nome sulla larghezza dell'intera
+    // riga, così va a capo troppo tardi e la prima riga finisce SOTTO il prezzo.
+    // Un tetto (maxWidth) pari allo spazio tra prezzo e prezzo fantasma lo fa
+    // andare a capo in tempo; i nomi più corti del tetto restano invariati.
+    if (centered && !isGrid) {
+      const rowW   = 595.28 - 2 * (compact ? 44 : 54) - (isBoxed ? 2 * (compact ? 7 : 10) + 2 : 0)
+      const priceW = (priceStr ?? '').length * pSize * 0.5
+      const maxW   = Math.max(rowW - 2 * (priceW + 8) - 8, 40)
+      const cappedName = <Text style={[st.dishName, { maxWidth: maxW, textAlign: 'center' }, nameLift ?? {}]}>{dish.name}{priceStrut}</Text>
+      if (pos === 'left') {
+        return <View style={st.dishRow}>
+          <Text style={priceLift ? [st.dishPrice, priceLift, { marginRight: 8 }] : [st.dishPrice, { marginRight: 8 }]}>{priceStr}{nameStrut}{priceStrut}</Text>
+          {cappedName}
+          <Text style={[st.dishPrice, ghostStyle]}>{priceStr}{nameStrut}</Text>
+        </View>
+      }
+      return <View style={st.dishRow}>
+        <Text style={[st.dishPrice, ghostStyle, { marginRight: 8 }]}>{priceStrut}{nameStrut}{priceStr}</Text>
+        {cappedName}
+        {priceEl}
+      </View>
+    }
     if (pos === 'left') {
       const leftPrice = <Text style={priceLift ? [st.dishPrice, priceLift, centered ? { marginRight: 8 } : {}] : [st.dishPrice, centered ? { marginRight: 8 } : {}]}>{priceStr}{nameStrut}{centered ? priceStrut : null}</Text>
       const ghost = centered ? <Text style={[st.dishPrice, ghostStyle]}>{priceStr}{nameStrut}</Text> : null
