@@ -16,8 +16,8 @@ import { groupByCategory } from './MenuPDFDocument'
 import type { RestaurantTheme } from '@/lib/theme'
 
 // Same CDN as FlipbookViewer — script deduplication prevents double-loading.
-const PDFJS_CDN    = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js'
-const PDFJS_WORKER = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'
+const PDFJS_CDN    = '/vendor/pdfjs/3.11.174/pdf.min.js'
+const PDFJS_WORKER = '/vendor/pdfjs/3.11.174/pdf.worker.min.js'
 
 // Module-level dedup set (shared intent with FlipbookViewer's _loaded)
 const _loaded = new Set<string>()

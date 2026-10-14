@@ -540,7 +540,7 @@ function Toggle({ checked, onChange, disabled = false }: { checked: boolean; onC
 // ── Mobile chip bar config ────────────────────────────────────────────────────
 
 const MOBILE_TARGETS: Record<'landing' | 'menu' | 'card' | 'hint', string[]> = {
-  landing: ['landing-bg','landing-logo','landing-title','landing-desc','landing-buttons','landing-socials'],
+  landing: ['landing-bg','landing-logo','landing-title','landing-desc','landing-buttons','landing-socials','landing-legal'],
   menu:    ['category-title','dish-title','dish-description','dish-price','allergens','background-layout','sticky-categories'],
   card:    ['card-style','card-back','card-category','dish-title','dish-description','dish-price','allergens','card-pairing'],
   hint:    ['menu-hint'],
@@ -549,6 +549,7 @@ const MOBILE_LABELS: Record<string, string> = {
   'landing-bg':       'Sfondo',    'landing-logo':     'Logo',
   'landing-title':    'Nome',      'landing-desc':     'Slogan',
   'landing-buttons':  'Bottoni',   'landing-socials':  'Social',
+  'landing-legal':    'Dati legali',
   'dish-title':       'Titolo',    'dish-description': 'Descr.',
   'dish-price':       'Prezzo',    'allergens':        'Allergeni',
   'category-title':   'Categoria', 'background-layout':'Layout',
@@ -567,6 +568,7 @@ const EDITOR_TARGETS: Record<string, { title: string; hint: string }> = {
   'landing-desc':      { title: 'Slogan',             hint: 'Testo, font, colore, dimensione' },
   'landing-buttons':   { title: 'Bottoni Menu',       hint: 'Disposizione, larghezza, posizione, colori, font' },
   'landing-socials':   { title: 'Social & Accento',   hint: 'Colore accento, icone social, dimensione' },
+  'landing-legal':     { title: 'Dati legali',        hint: 'Ragione sociale, P.IVA e link Privacy in fondo alla landing' },
   'dish-title':        { title: 'Titolo Piatto',      hint: 'Font, colore, dimensione, allineamento' },
   'dish-description':  { title: 'Descrizione Piatto', hint: 'Font, colore, dimensione, allineamento' },
   'dish-price':        { title: 'Prezzo',             hint: 'Font, colore, formato, valuta, posizione' },
@@ -1040,6 +1042,17 @@ function EditorSidebar({ target, theme, setters, previewMode, activeMenuId, onCl
               onChange={v => setters.setL({ socials: { ...l.socials, style: v } })} />
           </div>
           <PositionRow pos={l.positions.socials} onChange={p => setters.setLPos('socials', p)} />
+        </div>
+      )
+
+      case 'landing-legal': return (
+        <div className="space-y-4">
+          <p className="text-[11px] text-gray-500">Ragione sociale e partita IVA si inseriscono in Informazioni → Dati legali.</p>
+          <ColorRow label="Colore testo" value={l.legal.color || l.title.color}
+            onChange={v => setters.setL({ legal: { ...l.legal, color: v } })} />
+          <FontSizeSlider label="Dimensione testo" value={l.legal.size}
+            min={0.45} max={0.9} step={0.025} previewFont="inherit"
+            onChange={v => setters.setL({ legal: { ...l.legal, size: v } })} />
         </div>
       )
 

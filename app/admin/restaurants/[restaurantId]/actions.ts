@@ -21,6 +21,10 @@ export async function updateRestaurant(restaurantId: string, data: {
   website_url?: string | null
   tripadvisor_url?: string | null
   google_maps_url?: string | null
+  legal_name?: string | null
+  vat_number?: string | null
+  legal_address?: string | null
+  privacy_email?: string | null
   visibility?: Record<string, boolean> | null
 }) {
   const supabase = await createClient()

@@ -269,7 +269,7 @@ function PdfBook({ pdfUrl, dims, items, onDishClick, onPageChange }: PdfBookProp
     if (!el) return
 
     const PDFJS_VER = '3.11.174'
-    const PDFJS_CDN = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${PDFJS_VER}`
+    const PDFJS_CDN = `/vendor/pdfjs/${PDFJS_VER}`
 
     Promise.all([
       requireScript(`${PDFJS_CDN}/pdf.min.js`),
