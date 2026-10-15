@@ -156,14 +156,19 @@ export async function duplicateMenu(restaurantId: string, menuId: string) {
   if (dishes?.length) {
     const { error: dishErr } = await supabase.from('dishes').insert(
       dishes.map(d => ({
+        // Niente chiave `id`: anche `id: undefined` finisce nelle colonne
+        // dell'insert multiplo e arriva NULL invece del default gen_random_uuid().
         ...d,
-        id: undefined,
         restaurant_id: restaurantId,
         menu_id: newMenu!.id,
         master_dish_id: null,
       }))
     )
-    if (dishErr) throw new Error(`Menu copiato ma piatti non duplicati: ${dishErr.message}`)
+    if (dishErr) {
+      // Niente menu "(Copia)" vuoti rimasti a metà.
+      await supabase.from('menus').delete().eq('id', newMenu!.id)
+      throw new Error(`Duplicazione non riuscita: ${dishErr.message}`)
+    }
   }
 
   revalidate(restaurantId)
