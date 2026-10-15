@@ -45,7 +45,13 @@ export function ensurePdfFont(Font: FontLike, family: string): boolean {
       { src: urls.r,          fontWeight: 400 },
       { src: urls.b ?? urls.r, fontWeight: 700 },
     ]
-    if (urls.i) fonts.push({ src: urls.i, fontWeight: 400, fontStyle: 'italic' })
+    // Corsivo sempre risolvibile (anche grassetto+corsivo, es. <strong><em>):
+    // senza, un testo in corsivo fa fallire tutta la generazione del PDF.
+    // Se la famiglia non ha un file corsivo si usa il regolare.
+    fonts.push(
+      { src: urls.i ?? urls.r,         fontWeight: 400, fontStyle: 'italic' },
+      { src: urls.i ?? urls.b ?? urls.r, fontWeight: 700, fontStyle: 'italic' },
+    )
     Font.register({ family, fonts })
     registered.add(family)
     return true
@@ -65,7 +71,12 @@ export function ensureCustomPdfFont(Font: FontLike, family: string, url: string)
   if (unavailable.has(family)) return false
 
   try {
-    Font.register({ family, fonts: [{ src: url, fontWeight: 400 }, { src: url, fontWeight: 700 }] })
+    // Un solo file per tutte le varianti: corsivo e grassetto+corsivo inclusi,
+    // altrimenti un <em> nelle pagine di testo blocca la generazione del menu.
+    Font.register({ family, fonts: [
+      { src: url, fontWeight: 400 }, { src: url, fontWeight: 700 },
+      { src: url, fontWeight: 400, fontStyle: 'italic' }, { src: url, fontWeight: 700, fontStyle: 'italic' },
+    ] })
     registered.add(family)
     return true
   } catch {
