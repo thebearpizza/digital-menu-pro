@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useEditor, EditorContent } from '@tiptap/react'
 import type { Editor } from '@tiptap/react'
 import { StarterKit } from '@tiptap/starter-kit'
@@ -10,7 +10,7 @@ import { TextAlign } from '@tiptap/extension-text-align'
 import { updateMenuExtraPages } from '../actions'
 import type { MenuExtraPages, EmbeddedPageContent } from '../menuExtraPages'
 import { Spinner } from '@/components/ui/Spinner'
-import { SERIF_FONTS, SANS_FONTS, DISPLAY_FONTS, googleFontsUrl, customFontFaceCss } from '@/lib/theme'
+import { SERIF_FONTS, SANS_FONTS, DISPLAY_FONTS, googleFontsUrl, customFontFaceCss, readableOn } from '@/lib/theme'
 
 // ── Font catalogue ────────────────────────────────────────────────────────────
 
@@ -254,13 +254,39 @@ function RichToolbar({ editor, page, fonts, onChange }: ToolbarProps) {
 
 // ── Single page editor ────────────────────────────────────────────────────────
 
+// Il foglio dell'editor riproduce la pagina A4 del PDF del menu: stesse
+// proporzioni, stessi margini (MenuPDFDocument → page padding), stesse
+// dimensioni del testo in punti scalate alla larghezza del riquadro. Così si
+// vede subito dove va a capo il testo e dove finisce la pagina.
+export interface PaperSpec { bg: string; compact: boolean }
+const DEFAULT_PAPER: PaperSpec = { bg: '#ffffff', compact: false }
+const A4_W = 595.28, A4_H = 841.89
+
 interface PageEditorProps {
   page:     EmbeddedPageContent
   fonts:    FontOption[]
   onChange: (page: EmbeddedPageContent) => void
+  paper:    PaperSpec
 }
 
-function PageEditor({ page, fonts, onChange }: PageEditorProps) {
+function PageEditor({ page, fonts, onChange, paper }: PageEditorProps) {
+  const sheetRef = useRef<HTMLDivElement>(null)
+  const [scale, setScale] = useState(1)
+  useEffect(() => {
+    const el = sheetRef.current
+    if (!el) return
+    const update = () => setScale(el.clientWidth / A4_W)
+    update()
+    const ro = new ResizeObserver(update)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+  // Margini della pagina PDF (MenuPDFDocument, stile `page`).
+  const padTop    = paper.compact ? 38 : 52
+  const padBottom = paper.compact ? 64 : 56
+  const padSide   = paper.compact ? 44 : 54
+  // Stesso limite del PDF (EmbeddedTextBlock).
+  const ptSize    = Math.max(8, Math.min(36, page.fontSize))
   const currentFont = fonts.find(f => f.value === page.font) ?? fonts[0]
 
   const editor = useEditor({
@@ -285,17 +311,31 @@ function PageEditor({ page, fonts, onChange }: PageEditorProps) {
   return (
     <div className="mt-3 flex flex-col gap-2">
       <RichToolbar editor={editor} page={page} fonts={fonts} onChange={onChange} />
-      <div
-        className="dmp-rte border border-gray-200 bg-white cursor-text"
-        style={{
-          fontFamily: currentFont?.css,
-          fontSize:   `${page.fontSize}px`,
-          color:      page.color,
-          lineHeight: page.lineHeight,
-        }}
-        onClick={() => editor?.commands.focus()}
-      >
-        <EditorContent editor={editor} />
+      <div className="mx-auto w-full max-w-[520px]">
+        <div
+          ref={sheetRef}
+          className="dmp-rte dmp-rte-page relative border border-gray-300 shadow-md cursor-text"
+          style={{
+            aspectRatio: `${A4_W} / ${A4_H}`,
+            background:  paper.bg,
+            fontFamily:  currentFont?.css,
+            fontSize:    `${ptSize * scale}px`,
+            color:       readableOn(page.color, paper.bg),
+            lineHeight:  page.lineHeight,
+            ['--pdf-s' as string]: scale,
+            ['--pdf-pad' as string]: `${padTop * scale}px ${padSide * scale}px ${padBottom * scale}px`,
+          }}
+          onClick={() => editor?.commands.focus()}
+        >
+          {/* Fine dell'area utile della pagina: oltre questa linea il testo
+              passa alla pagina successiva del menu. */}
+          <div aria-hidden className="pointer-events-none absolute inset-x-0 border-t border-dashed border-red-300"
+            style={{ top: `${(A4_H - padBottom) * scale}px` }}>
+            <span className="absolute right-1 -top-4 text-[9px] uppercase tracking-wider text-red-400">fine pagina</span>
+          </div>
+          <EditorContent editor={editor} />
+        </div>
+        <p className="mt-1 text-[11px] text-gray-400 text-center">Anteprima della pagina del menu: il testo oltre la linea rossa va alla pagina successiva.</p>
       </div>
     </div>
   )
@@ -310,9 +350,10 @@ interface SectionProps {
   onChangePage: (p: EmbeddedPageContent) => void
   isOpen:       boolean
   setIsOpen:    (v: boolean) => void
+  paper:        PaperSpec
 }
 
-function Section({ label, page, fonts, onChangePage, isOpen, setIsOpen }: SectionProps) {
+function Section({ label, page, fonts, onChangePage, isOpen, setIsOpen, paper }: SectionProps) {
   return (
     <div className="border border-gray-200 mb-3">
       <button
@@ -368,7 +409,7 @@ function Section({ label, page, fonts, onChangePage, isOpen, setIsOpen }: Sectio
           </div>
 
           {page.enabled && (
-            <PageEditor page={page} fonts={fonts} onChange={onChangePage} />
+            <PageEditor page={page} fonts={fonts} onChange={onChangePage} paper={paper} />
           )}
         </div>
       )}
@@ -383,9 +424,10 @@ interface Props {
   menuId:       string
   initialPages: MenuExtraPages
   customFonts?: Record<string, string>
+  paper?:       PaperSpec
 }
 
-export default function TextPagesPanel({ restaurantId, menuId, initialPages, customFonts }: Props) {
+export default function TextPagesPanel({ restaurantId, menuId, initialPages, customFonts, paper = DEFAULT_PAPER }: Props) {
   const [pages,    setPages]    = useState<MenuExtraPages>(initialPages)
   const [saving,   setSaving]   = useState(false)
   const [saved,    setSaved]    = useState(true)
@@ -477,6 +519,7 @@ export default function TextPagesPanel({ restaurantId, menuId, initialPages, cus
         onChangePage={updateInfo}
         isOpen={infoOpen}
         setIsOpen={setInfoOpen}
+        paper={paper}
       />
       <Section
         label="Pagina allergeni"
@@ -485,6 +528,7 @@ export default function TextPagesPanel({ restaurantId, menuId, initialPages, cus
         onChangePage={updateAllergen}
         isOpen={algOpen}
         setIsOpen={setAlgOpen}
+        paper={paper}
       />
     </div>
   )

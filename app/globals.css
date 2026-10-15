@@ -712,3 +712,18 @@ html.lito-admin body {
   transition: opacity 0.15s ease;
 }
 .dish-page-link:hover { opacity: 0.65; }
+
+/* Editor pagine di testo come foglio A4 del PDF (TextPagesPanel → dmp-rte-page).
+   Spaziature identiche a EmbeddedTextBlock (MenuPDFDocument): nessun margine
+   sopra, sotto h1/h2/h3/p 6/5/4/3 pt; paragrafo vuoto = 0.45 della riga. */
+.dmp-rte-page .ProseMirror { min-height: 100%; padding: var(--pdf-pad); }
+/* Il PDF non inventa grassetto/corsivo: se il font non ha quei file, il testo
+   esce regolare. L'editor fa lo stesso invece di simularli. */
+.dmp-rte-page { font-synthesis: none; }
+.dmp-rte-page .ProseMirror > * + * { margin-top: 0; }
+.dmp-rte-page .ProseMirror h1 { font-size: 2.2em;  font-weight: 700; margin: 0 0 calc(6px * var(--pdf-s)); }
+.dmp-rte-page .ProseMirror h2 { font-size: 1.6em;  font-weight: 700; margin: 0 0 calc(5px * var(--pdf-s)); }
+.dmp-rte-page .ProseMirror h3 { font-size: 1.25em; font-weight: 700; margin: 0 0 calc(4px * var(--pdf-s)); }
+.dmp-rte-page .ProseMirror p  { margin: 0 0 calc(3px * var(--pdf-s)); }
+.dmp-rte-page .ProseMirror :is(p, h1, h2, h3):has(> br.ProseMirror-trailingBreak:only-child) { font-size: 0.45em; }
+.dmp-rte-page .ProseMirror p.is-editor-empty:first-child { font-size: 1em; }
