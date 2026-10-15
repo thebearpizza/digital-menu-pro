@@ -5,7 +5,7 @@ import DishList from './DishList'
 import TextPagesPanel from './TextPagesPanel'
 import DownloadPDFButton from './DownloadPDFButton'
 import { defaultExtraPages } from '../menuExtraPages'
-import { parseTheme } from '@/lib/theme'
+import { parseTheme, resolveMenuTheme } from '@/lib/theme'
 import type { MenuExtraPages } from '../menuExtraPages'
 
 export default async function MenuDishesPage({
@@ -119,6 +119,10 @@ export default async function MenuDishesPage({
         menuId={params.menuId}
         initialPages={extraPages}
         customFonts={theme.customFonts}
+        paper={{
+          bg:      resolveMenuTheme(theme, params.menuId).pageBackground.color,
+          compact: resolveMenuTheme(theme, params.menuId).pdfLayout === 'compact',
+        }}
       />
     </div>
   )
