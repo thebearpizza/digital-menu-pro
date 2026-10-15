@@ -262,14 +262,74 @@ export interface PaperSpec { bg: string; compact: boolean }
 const DEFAULT_PAPER: PaperSpec = { bg: '#ffffff', compact: false }
 const A4_W = 595.28, A4_H = 841.89
 
+
+// ── Controllo reale "entra in una pagina?" ───────────────────────────────────
+// Genera in sottofondo la pagina con lo stesso motore del PDF del menu e conta
+// le pagine con pdf.js. Restituisce null se il controllo non è riuscito.
+type FitResult = { pages: number; overflow: string } | null
+let _pdfjsLoading: Promise<any> | null = null
+function loadPdfJs(): Promise<any> {
+  if (_pdfjsLoading) return _pdfjsLoading
+  _pdfjsLoading = new Promise((resolve, reject) => {
+    const w = window as any
+    if (w.pdfjsLib) { resolve(w.pdfjsLib); return }
+    const sc = document.createElement('script')
+    sc.src = '/vendor/pdfjs/3.11.174/pdf.min.js'
+    sc.onload = () => {
+      w.pdfjsLib.GlobalWorkerOptions.workerSrc = '/vendor/pdfjs/3.11.174/pdf.worker.min.js'
+      resolve(w.pdfjsLib)
+    }
+    sc.onerror = () => { _pdfjsLoading = null; reject(new Error('pdf.js')) }
+    document.head.appendChild(sc)
+  })
+  return _pdfjsLoading
+}
+async function checkPageFit(page: EmbeddedPageContent, paper: PaperSpec, customFonts: Record<string, string>): Promise<FitResult> {
+  try {
+    const [{ createElement }, rp, { TextPageCheckDocument }, { registerThemeFonts }, lib] = await Promise.all([
+      import('react'), import('@react-pdf/renderer'), import('@/app/m/[token]/MenuPDFDocument'), import('@/lib/pdfFonts'), loadPdfJs(),
+    ])
+    const registered = registerThemeFonts(rp.Font as any, [page.font], customFonts)
+    const blob = await rp.pdf(createElement(TextPageCheckDocument, { page, bg: paper.bg, compact: paper.compact, registered }) as any).toBlob()
+    const url = URL.createObjectURL(blob)
+    try {
+      const doc = await lib.getDocument(url).promise
+      const pages = doc.numPages as number
+      let overflow = ''
+      if (pages > 1) {
+        const tc = await (await doc.getPage(2)).getTextContent()
+        overflow = tc.items.map((i: any) => i.str).join(' ').replace(/\s+/g, ' ').trim()
+      }
+      return { pages, overflow }
+    } finally { URL.revokeObjectURL(url) }
+  } catch (e) {
+    console.error('checkPageFit', e)
+    return null
+  }
+}
+
 interface PageEditorProps {
   page:     EmbeddedPageContent
   fonts:    FontOption[]
   onChange: (page: EmbeddedPageContent) => void
   paper:    PaperSpec
+  customFonts: Record<string, string>
 }
 
-function PageEditor({ page, fonts, onChange, paper }: PageEditorProps) {
+function PageEditor({ page, fonts, onChange, paper, customFonts }: PageEditorProps) {
+  // Controllo con il vero motore del PDF, ritardato mentre si scrive.
+  const [fit, setFit] = useState<FitResult | 'checking'>('checking')
+  const fitRun = useRef(0)
+  useEffect(() => {
+    const run = ++fitRun.current
+    setFit('checking')
+    const t = setTimeout(async () => {
+      const r = await checkPageFit(page, paper, customFonts)
+      if (run === fitRun.current) setFit(r)
+    }, 700)
+    return () => clearTimeout(t)
+  }, [page.body, page.font, page.fontSize, page.lineHeight, page.bold, page.italic, page.align, paper.bg, paper.compact]) // eslint-disable-line react-hooks/exhaustive-deps
+
   const sheetRef = useRef<HTMLDivElement>(null)
   const [scale, setScale] = useState(1)
   useEffect(() => {
@@ -335,7 +395,17 @@ function PageEditor({ page, fonts, onChange, paper }: PageEditorProps) {
           </div>
           <EditorContent editor={editor} />
         </div>
-        <p className="mt-1 text-[11px] text-gray-400 text-center">Anteprima della pagina del menu: il testo oltre la linea rossa va alla pagina successiva.</p>
+        {fit === 'checking' ? (
+          <p className="mt-2 text-[11px] text-gray-400 text-center">Controllo dell&apos;impaginazione…</p>
+        ) : fit === null ? (
+          <p className="mt-2 text-[11px] text-gray-400 text-center">Anteprima indicativa: il testo oltre la linea rossa va alla pagina successiva.</p>
+        ) : fit.pages <= 1 ? (
+          <p className="mt-2 text-[11px] text-green-700 text-center">✓ Nel menu il testo entra in una pagina.</p>
+        ) : (
+          <p className="mt-2 text-[11px] text-red-600 text-center">
+            Nel menu il testo occupa {fit.pages} pagine. Va alla pagina successiva: «{fit.overflow.length > 140 ? fit.overflow.slice(0, 140) + '…' : fit.overflow}»
+          </p>
+        )}
       </div>
     </div>
   )
@@ -351,9 +421,10 @@ interface SectionProps {
   isOpen:       boolean
   setIsOpen:    (v: boolean) => void
   paper:        PaperSpec
+  customFonts:  Record<string, string>
 }
 
-function Section({ label, page, fonts, onChangePage, isOpen, setIsOpen, paper }: SectionProps) {
+function Section({ label, page, fonts, onChangePage, isOpen, setIsOpen, paper, customFonts }: SectionProps) {
   return (
     <div className="border border-gray-200 mb-3">
       <button
@@ -409,7 +480,7 @@ function Section({ label, page, fonts, onChangePage, isOpen, setIsOpen, paper }:
           </div>
 
           {page.enabled && (
-            <PageEditor page={page} fonts={fonts} onChange={onChangePage} paper={paper} />
+            <PageEditor page={page} fonts={fonts} onChange={onChangePage} paper={paper} customFonts={customFonts} />
           )}
         </div>
       )}
@@ -520,6 +591,7 @@ export default function TextPagesPanel({ restaurantId, menuId, initialPages, cus
         isOpen={infoOpen}
         setIsOpen={setInfoOpen}
         paper={paper}
+        customFonts={customFonts ?? {}}
       />
       <Section
         label="Pagina allergeni"
@@ -529,6 +601,7 @@ export default function TextPagesPanel({ restaurantId, menuId, initialPages, cus
         isOpen={algOpen}
         setIsOpen={setAlgOpen}
         paper={paper}
+        customFonts={customFonts ?? {}}
       />
     </div>
   )
