@@ -633,6 +633,30 @@ function EmbeddedTextBlock({
   return <>{blocks}</>
 }
 
+// Documento di controllo per l'editor delle pagine di testo (TextPagesPanel):
+// UNA pagina di testo impaginata esattamente come nel menu (stessi margini del
+// layout, stesso blocco). Il numero di pagine risultante dice con certezza se
+// il testo entra in una pagina — l'anteprima HTML dell'editor non basta,
+// perché Safari arrotonda l'altezza delle righe.
+export function TextPageCheckDocument({ page, bg, compact, registered }: {
+  page: EmbeddedPageContent; bg: string; compact: boolean; registered: Set<string>
+}) {
+  return (
+    <Document>
+      <Page size="A4" wrap style={{
+        backgroundColor:   bg,
+        paddingTop:        compact ? 38 : 52,
+        paddingBottom:     compact ? 64 : 56,
+        paddingHorizontal: compact ? 44 : 54,
+      }}>
+        <View>
+          <EmbeddedTextBlock page={page} bg={bg} registered={registered} />
+        </View>
+      </Page>
+    </Document>
+  )
+}
+
 // ── Dish menu ─────────────────────────────────────────────────────────────────
 
 export function MenuPDFDocument({ restaurant, menu, theme: themeProp, registeredFonts, contLabelMap }: Props) {
