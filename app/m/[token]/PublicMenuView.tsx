@@ -5,6 +5,7 @@
 // toggled via opacity so the background video never needs to re-initialize.
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { usePathname } from 'next/navigation'
 import { useState, useEffect, useRef, useMemo, useCallback, type CSSProperties } from 'react'
 import FlipbookViewer  from './FlipbookViewer'
 import { useAllergenCatalog } from '@/components/AllergenCatalog'
@@ -48,6 +49,8 @@ export interface Restaurant {
   instagram_url: string | null; facebook_url: string | null
   website_url: string | null; tripadvisor_url: string | null
   google_maps_url: string | null
+  legal_name?: string | null
+  vat_number?: string | null
   visibility: Record<string, boolean> | null
   theme: RestaurantTheme
   hintTranslations?: HintTranslations
@@ -892,10 +895,10 @@ export default function PublicMenuView({ restaurant, menus, banners, defaultMenu
           </div>
         </div>
 
-        {/* Footer label */}
-        <p className="absolute bottom-6 text-[8px] uppercase tracking-[0.35em]" style={{ color: l.title.color + '44' }}>
-          menu digitale
-        </p>
+        {/* Footer: riga legale (ragione sociale · P.IVA · Privacy) o etichetta */}
+        <EditHandle target="landing-legal" editMode={editMode}>
+          <LegalFooter restaurant={displayRestaurant} liveLanding={l} editMode={editMode} />
+        </EditHandle>
         <div className="absolute bottom-0 inset-x-0 h-px"
           style={{ background: `linear-gradient(90deg,transparent,${l.accent}55,transparent)` }} />
 
@@ -1147,6 +1150,34 @@ function SocialBar({ restaurant, editMode = false, liveLanding }: {
           <span style={{ fontSize: `${t.socials.size}rem`, lineHeight: 1, display: 'flex' }}><Icon /></span>
         </a>
       ))}
+    </div>
+  )
+}
+
+// Riga legale in fondo alla landing: ragione sociale e partita IVA (art. 35
+// DPR 633/72) + link all'informativa privacy. Senza dati legali (o con
+// visibilità "legal" spenta) resta la vecchia etichetta "menu digitale".
+function LegalFooter({ restaurant, liveLanding, editMode = false }: {
+  restaurant: Restaurant; liveLanding: RestaurantTheme['landing']; editMode?: boolean
+}) {
+  const lg    = liveLanding.legal
+  const color = lg.color || liveLanding.title.color + '66'
+  const show  = restaurant.visibility?.legal !== false
+  const parts = show
+    ? [restaurant.legal_name?.trim(), restaurant.vat_number?.trim() ? `P.IVA ${restaurant.vat_number.trim()}` : '']
+        .filter(Boolean) as string[]
+    : []
+  const pathname    = usePathname()
+  const privacyHref = `${(pathname ?? '').replace(/\/$/, '')}/privacy`
+  return (
+    <div className="absolute bottom-4 inset-x-0 px-4 flex flex-col items-center gap-1 text-center"
+      style={{ color, fontSize: `${lg.size}rem`, lineHeight: 1.4 }}>
+      {parts.length > 0 && <p className="tracking-[0.12em] uppercase">{parts.join(' · ')}</p>}
+      <p className="flex items-center gap-2 tracking-[0.3em] uppercase">
+        <span>menu digitale</span>
+        <span aria-hidden>·</span>
+        <a href={editMode ? undefined : privacyHref} className="underline underline-offset-2">Privacy</a>
+      </p>
     </div>
   )
 }

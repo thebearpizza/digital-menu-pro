@@ -128,7 +128,7 @@ Dato `restaurants.qr_public_token`, il server:
 
 Flipbook è sfogliabile pagina per pagina; DishModal mostra allergeni/descrizione. PDF generato lato server via `@react-pdf/renderer`.
 
-Il flipbook (`FlipbookViewer.tsx`) usa turn.js + jQuery (`/public/turn.min.js`, `/public/jquery.min.js`) e pdf.js da cdnjs. Decisioni prese con l'utente (non cambiarle senza richiesta):
+Il flipbook (`FlipbookViewer.tsx`) usa turn.js + jQuery (`/public/turn.min.js`, `/public/jquery.min.js`) e pdf.js servito in locale da `public/vendor/pdfjs/3.11.174/` (niente CDN esterni: privacy). I Google Fonts passano dal proxy `app/api/gfonts` (`googleFontsUrl`, `lib/pdfFonts.ts`), mai direttamente da Google. Decisioni prese con l'utente (non cambiarle senza richiesta):
 - **Libro inclinato** `BOOK_TILT_DEG = 14` con spessore pagine / curva / costa decorativi; navigazione dentro la pagina (`drawPageNav`); pagine pubblicitarie a tutta pagina con sfumatura e navigazione in basso.
 - **Scheda piatto come pagina del libro** (`DISH_AS_PAGE = true`, `DishModal asPage`): la pagina corrente si gira con uno **sfoglio "rigido" CSS** (`.fv-page-flap`, snapshot della pagina) e scopre la scheda. **NON usare un mini-libro turn.js per la scheda: ha rotto tutto ed è stato scartato.**
   - Apertura senza flash: la scheda resta nascosta (`phase 'prep'`) finché lo snapshot non è decodificato; girata di apertura 1s.
@@ -187,7 +187,7 @@ Supabase project id: `spwyryxoqsiahfwnpaoo`.
 - Rete: accesso "Personalizzato" con `*.vercel.app`, `spwyryxoqsiahfwnpaoo.supabase.co`, `cdnjs.cloudflare.com`, `fonts.googleapis.com`, `fonts.gstatic.com` + elenco predefinito. Tutto passa da un proxy che ri-firma l'HTTPS.
 - **Browser**: MCP `chrome-devtools` (`.mcp.json`) con il Chromium preinstallato, headless, `--no-sandbox`, `--acceptInsecureCerts` (certificato del proxy). In alternativa Playwright installato globalmente (percorso da `npm root -g`, opzione `ignoreHTTPSErrors: true`).
 - Le anteprime Vercel sono protette da login Vercel: senza bypass il browser vede la pagina di accesso; la produzione è libera. Il gestionale richiede login Supabase (serve un account di test, mai credenziali personali).
-- Test locali del menu senza database: pagina temporanea `app/splash-test/page.tsx` che monta `FlipbookViewer`/`DishModal` con dati finti (PDF di prova generato con `pdf-lib` in `public/`), `npx next dev -p 3100` con env Supabase fittizie, pdf.js servito da `pdfjs-dist` locale intercettando cdnjs. **Rimuovere sempre** la pagina, i file di prova in `public/` e `.next/types/app/splash-test` prima del commit.
+- Test locali del menu senza database: pagina temporanea `app/splash-test/page.tsx` che monta `FlipbookViewer`/`DishModal` con dati finti (PDF di prova generato con `pdf-lib` in `public/`), `npx next dev -p 3100` con env Supabase fittizie. **Rimuovere sempre** la pagina, i file di prova in `public/` e `.next/types/app/splash-test` prima del commit.
 - Fermare i dev server con `ps aux | grep -E "next" | grep -v grep | awk '{print $2}' | xargs -r kill` (NON `pkill -f "next dev"`: uccide la shell).
 - Verifiche prima del push: `npx tsc --noEmit` e `npx eslint <file>`.
 

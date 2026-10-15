@@ -91,8 +91,8 @@ declare global { interface Window { $: any; jQuery: any; pdfjsLib: any } }
 // evitare ri-render infiniti nell'effect che dipende da [currentPage, categories].
 const EMPTY_CATEGORIES: Array<{ label: string; targetPage: number }> = []
 
-const PDFJS_SRC    = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js'
-const PDFJS_WORKER = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'
+const PDFJS_SRC    = '/vendor/pdfjs/3.11.174/pdf.min.js'
+const PDFJS_WORKER = '/vendor/pdfjs/3.11.174/pdf.worker.min.js'
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // VIEWPORT SIZING

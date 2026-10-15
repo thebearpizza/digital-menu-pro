@@ -171,6 +171,9 @@ export interface LandingTheme {
     threeD:      boolean
   }
   socials: { color: string; size: number; style: 'minimal' | 'circle' | 'box' | 'outline' }
+  // Riga legale in fondo alla landing (ragione sociale · P.IVA · Privacy).
+  // color vuoto = colore del titolo attenuato; size in rem.
+  legal: { color: string; size: number }
   // Linee decorative orizzontali sopra il nome e sotto lo slogan (visibili solo
   // quando non c'è un logo). show=false le nasconde; color vuoto = usa accent.
   dividers: { show: boolean; color: string }
@@ -303,6 +306,7 @@ export const DEFAULT_THEME: RestaurantTheme = {
       layout: 'column', width: 100, showBrowsePrefix: true, threeD: false,
     },
     socials: { color: '#c9a96e', size: 1.25, style: 'minimal' },
+    legal: { color: '', size: 0.5625 },
     dividers: { show: true, color: '' },
     positions: {
       logo: { x: 0, y: 0 }, title: { x: 0, y: 0 }, description: { x: 0, y: 0 },
@@ -531,6 +535,7 @@ function parseNested(r: Record<string, unknown>): RestaurantTheme {
   const ld  = sub(l.description)
   const bu  = sub(l.buttons)
   const ls  = sub(l.socials)
+  const lg  = sub(l.legal)
   const ml  = sub(m.layout)
   const ca  = sub(r.card)
   const cac = sub(ca.category)
@@ -581,6 +586,11 @@ function parseNested(r: Record<string, unknown>): RestaurantTheme {
         color: str(ls.color, d.landing.socials.color),
         size:  num(ls.size, d.landing.socials.size),
         style: one(ls.style, ['minimal','circle','box','outline'] as const, d.landing.socials.style),
+      },
+      // Assente nei temi salvati prima dell'introduzione → default.
+      legal: {
+        color: str(lg.color, d.landing.legal.color),
+        size:  num(lg.size, d.landing.legal.size),
       },
       dividers: {
         // Assente nei temi salvati prima dell'introduzione → default visibile.
@@ -718,6 +728,7 @@ export function migrateFlat(r: Record<string, unknown>): RestaurantTheme {
         layout: 'column', width: 100, showBrowsePrefix: true, threeD: false,
       },
       socials: { color: accent, size: 1.25, style: 'minimal' },
+      legal: { color: '', size: 0.5625 },
       dividers: { show: true, color: '' },
       positions: {
         logo: { x: 0, y: 0 }, title: { x: 0, y: 0 }, description: { x: 0, y: 0 },
@@ -799,7 +810,8 @@ export function googleFontsUrl(fonts: string[]): string {
     .join('&')
   // display=block: meglio un breve istante di testo invisibile che un flash
   // del font di fallback seguito dallo "scatto" al font corretto (FOUT).
-  return `https://fonts.googleapis.com/css2?${families}&display=block`
+  // Servito dal nostro dominio (proxy app/api/gfonts): il browser non contatta Google.
+  return `/api/gfonts/css2?${families}&display=block`
 }
 
 // Splits a (possibly multi-line) text into per-line { text, size } pairs.

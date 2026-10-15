@@ -16,6 +16,7 @@ interface Visibility {
   website:     boolean
   tripadvisor: boolean
   google_maps: boolean
+  legal:       boolean
 }
 
 interface Restaurant {
@@ -28,13 +29,17 @@ interface Restaurant {
   website_url:     string | null
   tripadvisor_url: string | null
   google_maps_url: string | null
+  legal_name:      string | null
+  vat_number:      string | null
+  legal_address:   string | null
+  privacy_email:   string | null
   visibility:      Visibility | null
 }
 
 const DEFAULT_VISIBILITY: Visibility = {
   name: true, description: true, logo: true,
   instagram: true, facebook: true, website: true,
-  tripadvisor: true, google_maps: true,
+  tripadvisor: true, google_maps: true, legal: true,
 }
 
 function parseVisibility(raw: any): Visibility {
@@ -55,6 +60,10 @@ export default function RestaurantForm({ restaurant }: Props) {
   const [website,    setWebsite]    = useState(restaurant.website_url ?? '')
   const [tripadvisor, setTripadvisor] = useState(restaurant.tripadvisor_url ?? '')
   const [googlemaps, setGooglemaps] = useState(restaurant.google_maps_url ?? '')
+  const [legalName, setLegalName] = useState(restaurant.legal_name ?? '')
+  const [vatNumber, setVatNumber] = useState(restaurant.vat_number ?? '')
+  const [legalAddr, setLegalAddr] = useState(restaurant.legal_address ?? '')
+  const [privacyEmail, setPrivacyEmail] = useState(restaurant.privacy_email ?? '')
   const [vis,        setVis]        = useState<Visibility>(parseVisibility(restaurant.visibility))
   const [uploading,  setUploading]  = useState(false)
   const [saving,     setSaving]     = useState(false)
@@ -97,6 +106,10 @@ export default function RestaurantForm({ restaurant }: Props) {
         website_url:     website   || null,
         tripadvisor_url: tripadvisor || null,
         google_maps_url: googlemaps  || null,
+        legal_name:      legalName.trim()    || null,
+        vat_number:      vatNumber.trim()    || null,
+        legal_address:   legalAddr.trim()    || null,
+        privacy_email:   privacyEmail.trim() || null,
         visibility:      vis as unknown as Record<string, boolean>,
       })
       setSaved(true)
@@ -181,6 +194,31 @@ export default function RestaurantForm({ restaurant }: Props) {
               </div>
               <input
                 type="url" value={value} onChange={e => set(e.target.value)} placeholder={placeholder}
+                className="w-full px-3 py-2 border border-gray-300 text-xs focus:outline-none focus:border-blue-500"
+              />
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Dati legali: P.IVA in fondo alla landing + informativa privacy */}
+      <div>
+        <div className="flex items-center gap-1 mb-1">
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Dati legali</p>
+          <VisibilityToggle isVisible={vis.legal} onToggle={() => toggleVis('legal')} />
+        </div>
+        <p className="text-[11px] text-gray-400 mb-3">Ragione sociale e partita IVA compaiono in piccolo in fondo al menu; sede ed email servono all&apos;informativa privacy.</p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {([
+            { label: 'Ragione sociale', value: legalName,    set: setLegalName,    placeholder: 'Es. The Bear SRLS', type: 'text' },
+            { label: 'Partita IVA',     value: vatNumber,    set: setVatNumber,    placeholder: 'Es. 17942041009',   type: 'text' },
+            { label: 'Sede legale',     value: legalAddr,    set: setLegalAddr,    placeholder: 'Via…, CAP Città',   type: 'text' },
+            { label: 'Email privacy',   value: privacyEmail, set: setPrivacyEmail, placeholder: 'privacy@…',         type: 'email' },
+          ] as const).map(({ label, value, set, placeholder, type }) => (
+            <div key={label}>
+              <label className="block text-xs text-gray-500 mb-1">{label}</label>
+              <input
+                type={type} value={value} onChange={e => set(e.target.value)} placeholder={placeholder}
                 className="w-full px-3 py-2 border border-gray-300 text-xs focus:outline-none focus:border-blue-500"
               />
             </div>

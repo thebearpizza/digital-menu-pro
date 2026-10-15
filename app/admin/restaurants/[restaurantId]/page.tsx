@@ -12,7 +12,7 @@ export default async function RestaurantInfoPage({
 
   const { data: restaurant } = await supabase
     .from('restaurants')
-    .select('id, name, description, logo_url, qr_public_token, instagram_url, facebook_url, website_url, tripadvisor_url, google_maps_url, visibility')
+    .select('id, name, description, logo_url, qr_public_token, instagram_url, facebook_url, website_url, tripadvisor_url, google_maps_url, visibility, legal_name, vat_number, legal_address, privacy_email')
     .eq('id', params.restaurantId)
     .single()
 

@@ -29,7 +29,7 @@ export default async function PublicMenuPage({
 
   const { data: restaurant } = await supabase
     .from('restaurants')
-    .select('id, owner_id, name, description, logo_url, instagram_url, facebook_url, website_url, tripadvisor_url, google_maps_url, visibility, theme_config, hint_translations')
+    .select('id, owner_id, name, description, logo_url, instagram_url, facebook_url, website_url, tripadvisor_url, google_maps_url, visibility, theme_config, hint_translations, legal_name, vat_number')
     .eq('qr_public_token', params.token)
     .eq('is_active', true)
     .single()
@@ -183,8 +183,6 @@ export default async function PublicMenuPage({
 
   return (
     <>
-      <link rel="preconnect" href="https://fonts.googleapis.com" />
-      <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
       {fontsHref && <link rel="stylesheet" href={fontsHref} data-theme-fonts="1" />}
       {customCss && <style data-custom-fonts="1" dangerouslySetInnerHTML={{ __html: customCss }} />}
       <style dangerouslySetInnerHTML={{ __html: themeRootCssVars(theme, defaultMenuId) }} />
@@ -199,6 +197,8 @@ export default async function PublicMenuPage({
           website_url:      restaurant.website_url as string | null,
           tripadvisor_url:  restaurant.tripadvisor_url as string | null,
           google_maps_url:  restaurant.google_maps_url as string | null,
+          legal_name:       ((restaurant as any).legal_name ?? null) as string | null,
+          vat_number:       ((restaurant as any).vat_number ?? null) as string | null,
           visibility:       (restaurant.visibility ?? null) as Record<string, boolean> | null,
           theme,
           hintTranslations: ((restaurant as any).hint_translations ?? {}) as Record<string, any>,

@@ -4,7 +4,8 @@
 // built-in Helvetica/Times.
 //
 // • TTF URLs come from lib/pdfFontUrls.ts (static per-weight files on
-//   fonts.gstatic.com, which serves them with open CORS).
+//   fonts.gstatic.com), fetched through our own /api/gfonts/file proxy so the
+//   visitor's browser never contacts Google.
 // • Registration is idempotent and cached per family for the session, so the
 //   live preview can regenerate the PDF on every slider move without re-fetching.
 // • Every step is defensive: a missing family or a failed register never throws,
@@ -31,8 +32,11 @@ export function ensurePdfFont(Font: FontLike, family: string): boolean {
   if (registered.has(family)) return true
   if (unavailable.has(family)) return false
 
-  const urls = PDF_FONT_URLS[family]
-  if (!urls) { unavailable.add(family); return false }
+  const raw = PDF_FONT_URLS[family]
+  if (!raw) { unavailable.add(family); return false }
+  // File serviti dal nostro dominio (proxy app/api/gfonts): niente IP a Google.
+  const local = (u?: string) => u?.replace('https://fonts.gstatic.com/', '/api/gfonts/file/')
+  const urls = { r: local(raw.r)!, b: local(raw.b), i: local(raw.i) }
 
   try {
     // Always provide both weights the PDF asks for (400 + 700) so resolution
