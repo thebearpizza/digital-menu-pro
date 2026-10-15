@@ -11,8 +11,8 @@
 import { TARGET_LANGS, type TargetLang } from './translations'
 
 const MODEL_CHAIN = Array.from(new Set([
-  process.env.GEMINI_MODEL ?? 'gemini-2.5-flash',
-  'gemini-2.0-flash',
+  process.env.GEMINI_MODEL ?? 'gemini-3.8-flash',
+  'gemini-2.5-flash',
   'gemini-2.5-flash-lite',
 ]))
 
