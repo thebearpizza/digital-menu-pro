@@ -10,7 +10,7 @@
 // telegram_pending e l'utente risponde "sì" per procedere.
 //
 // Env: GEMINI_API_KEY (chiave gratuita da aistudio.google.com/apikey),
-// GEMINI_MODEL opzionale (default gemini-2.5-flash).
+// GEMINI_MODEL opzionale (default gemini-3.8-flash; ripiego 2.5-flash e 2.5-flash-lite).
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { SupabaseClient } from '@supabase/supabase-js'
@@ -18,8 +18,8 @@ import { SupabaseClient } from '@supabase/supabase-js'
 // Catena di modelli: se il primo è sovraccarico (503) o a corto di quota (429)
 // si passa al successivo. Tutti nel free tier di AI Studio.
 const MODEL_CHAIN = Array.from(new Set([
-  process.env.GEMINI_MODEL ?? 'gemini-2.5-flash',
-  'gemini-2.0-flash',
+  process.env.GEMINI_MODEL ?? 'gemini-3.8-flash',
+  'gemini-2.5-flash',
   'gemini-2.5-flash-lite',
 ]))
 
