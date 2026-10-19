@@ -534,6 +534,51 @@ export async function reorderDishes(
   )
   const failed = results.find(r => r.error)
   if (failed?.error) throw new Error(failed.error.message)
+
+  // Stesso ordine nei duplicati: negli ALTRI menu, dentro la categoria con lo
+  // stesso nome, i piatti con lo stesso nome seguono l'ordine appena dato qui.
+  // Si scambiano solo le loro posizioni: gli altri piatti di quella categoria
+  // restano dove sono. Best effort: un errore qui non annulla il riordino.
+  try {
+    const key = (v: string | null) => (v ?? '').trim().toLowerCase()
+    const { data: all } = await supabase
+      .from('dishes').select('id, menu_id, name, category, sort_order').eq('restaurant_id', restaurantId)
+    const rank = new Map<string, Map<string, number>>()   // categoria → nome → posizione
+    dishIds.forEach((id, i) => {
+      const d = (all ?? []).find(x => x.id === id)
+      if (!d) return
+      const c = key(d.category)
+      if (!rank.has(c)) rank.set(c, new Map())
+      const r = rank.get(c)!
+      if (!r.has(key(d.name))) r.set(key(d.name), i)
+    })
+    const groups = new Map<string, NonNullable<typeof all>>()
+    for (const d of all ?? []) {
+      if (d.menu_id === menuId) continue
+      const r = rank.get(key(d.category))
+      if (!r || !r.has(key(d.name))) continue
+      const g = `${d.menu_id}|${key(d.category)}`
+      if (!groups.has(g)) groups.set(g, [])
+      groups.get(g)!.push(d)
+    }
+    const updates: PromiseLike<unknown>[] = []
+    const touched = new Set<string>()
+    for (const twins of Array.from(groups.values())) {
+      if (twins.length < 2) continue
+      const r = rank.get(key(twins[0].category))!
+      const slots  = twins.map(t => t.sort_order ?? 0).sort((a, b) => a - b)
+      const sorted = [...twins].sort((a, b) => r.get(key(a.name))! - r.get(key(b.name))!)
+      sorted.forEach((t, i) => {
+        if ((t.sort_order ?? 0) !== slots[i]) {
+          updates.push(supabase.from('dishes').update({ sort_order: slots[i] }).eq('id', t.id))
+          touched.add(t.menu_id)
+        }
+      })
+    }
+    await Promise.all(updates)
+    Array.from(touched).forEach(m => revalidate(restaurantId, m))
+  } catch (e: any) { console.error('reorder twins failed', e?.message) }
+
   revalidate(restaurantId, menuId)
 }
 
