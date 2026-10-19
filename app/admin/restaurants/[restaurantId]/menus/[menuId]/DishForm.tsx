@@ -561,10 +561,21 @@ export default function DishForm({
         : await createDish(restaurantId, menuId, payload)
 
       // Copy into extra menus when creating (fire all in parallel)
-      if (!dish && extraMenuIds.size > 0) {
-        await Promise.all(
-          Array.from(extraMenuIds).map(mId => createDish(restaurantId, mId, payload))
-        )
+      const copies = (!dish && extraMenuIds.size > 0)
+        ? await Promise.all(Array.from(extraMenuIds).map(mId => createDish(restaurantId, mId, payload)))
+        : []
+
+      // Traduzioni in sottofondo: il salvataggio non le aspetta (Gemini impiega
+      // secondi). keepalive: la richiesta parte anche se si chiude il modulo.
+      const toTranslate = dish
+        ? ((saved as { retranslate?: boolean }).retranslate ? [dish.id] : [])
+        : [(saved as { id: string }).id, ...copies.map(c => c.id)]
+      if (toTranslate.length) {
+        fetch('/api/dishes/translate', {
+          method: 'POST', keepalive: true,
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ dishIds: toTranslate }),
+        }).catch(() => {})
       }
 
       onSaved(saved as unknown as Dish, !dish, new Set(dirtyRef.current))
