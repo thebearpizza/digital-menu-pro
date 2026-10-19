@@ -82,33 +82,6 @@ export async function detectAllergens(name: string, description: string): Promis
   throw new Error('Gemini non disponibile.')
 }
 
-/**
- * Rigenera le traduzioni automatiche di nome+descrizione di un piatto,
- * preservando gli override manuali. Ritorna null se il traduttore non è
- * configurato. Best effort: i chiamanti avvolgono in try/catch — un errore
- * di traduzione non deve mai bloccare il salvataggio del piatto.
- */
-async function autoDishTranslations(
-  name: string, description: string | null, existing?: DishTranslations | null,
-): Promise<DishTranslations | null> {
-  if (!translateEnabled()) return null
-  const items = [{ id: 'name', text: name }]
-  if (description?.trim()) items.push({ id: 'desc', text: description })
-  const res = await translateItems(items)
-  const tr: DishTranslations = JSON.parse(JSON.stringify(existing ?? {}))
-  for (const lang of TARGET_LANGS) {
-    const entry = tr[lang] ?? (tr[lang] = {})
-    const n = res['name']?.[lang]
-    if (n && !entry.manual?.name) entry.name = n
-    if (!entry.manual?.description) {
-      const d = res['desc']?.[lang]
-      if (d) entry.description = d
-      else if (!description?.trim()) delete entry.description
-    }
-  }
-  return tr
-}
-
 async function verifyOwnership(supabase: any, restaurantId: string) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) throw new Error('Non autenticato')
@@ -169,12 +142,9 @@ export async function createDish(
 
   if (error) throw new Error(error.message)
 
-  // Pre-genera le traduzioni (en/fr/de/es) — il menu pubblico non traduce mai
-  // al volo. Best effort: se fallisce, ensureMenuTranslations recupera dopo.
-  try {
-    const tr = await autoDishTranslations(data.name, data.description || null)
-    if (tr) await supabase.from('dishes').update({ translations: tr }).eq('id', dish.id)
-  } catch (e: any) { console.error('createDish translate failed', e?.message) }
+  // Traduzioni (en/fr/de/es): NON qui — Gemini impiega secondi e il salvataggio
+  // aspetterebbe. Il client chiama /api/dishes/translate subito dopo, in
+  // sottofondo; se fallisce, ensureMenuTranslations recupera dopo.
 
   revalidate(restaurantId, menuId)
   return dish
@@ -228,16 +198,11 @@ export async function updateDish(
   // rigenerale (gli override manuali restano). Best effort, mai bloccante.
   const baseChanged = old &&
     (old.name !== data.name || (old.description ?? '') !== (data.description || ''))
-  if (baseChanged) {
-    try {
-      const tr = await autoDishTranslations(
-        data.name, data.description || null, old.translations as DishTranslations | null)
-      if (tr) await supabase.from('dishes').update({ translations: tr }).eq('id', dishId)
-    } catch (e: any) { console.error('updateDish translate failed', e?.message) }
-  }
+  // Nome/descrizione cambiati → traduzioni da rigenerare: le fa il client in
+  // sottofondo (/api/dishes/translate), senza far aspettare il salvataggio.
 
   revalidate(restaurantId, menuId)
-  return dish
+  return { ...dish, retranslate: !!baseChanged }
 }
 
 export async function deleteDish(restaurantId: string, menuId: string, dishId: string) {
@@ -569,6 +534,51 @@ export async function reorderDishes(
   )
   const failed = results.find(r => r.error)
   if (failed?.error) throw new Error(failed.error.message)
+
+  // Stesso ordine nei duplicati: negli ALTRI menu, dentro la categoria con lo
+  // stesso nome, i piatti con lo stesso nome seguono l'ordine appena dato qui.
+  // Si scambiano solo le loro posizioni: gli altri piatti di quella categoria
+  // restano dove sono. Best effort: un errore qui non annulla il riordino.
+  try {
+    const key = (v: string | null) => (v ?? '').trim().toLowerCase()
+    const { data: all } = await supabase
+      .from('dishes').select('id, menu_id, name, category, sort_order').eq('restaurant_id', restaurantId)
+    const rank = new Map<string, Map<string, number>>()   // categoria → nome → posizione
+    dishIds.forEach((id, i) => {
+      const d = (all ?? []).find(x => x.id === id)
+      if (!d) return
+      const c = key(d.category)
+      if (!rank.has(c)) rank.set(c, new Map())
+      const r = rank.get(c)!
+      if (!r.has(key(d.name))) r.set(key(d.name), i)
+    })
+    const groups = new Map<string, NonNullable<typeof all>>()
+    for (const d of all ?? []) {
+      if (d.menu_id === menuId) continue
+      const r = rank.get(key(d.category))
+      if (!r || !r.has(key(d.name))) continue
+      const g = `${d.menu_id}|${key(d.category)}`
+      if (!groups.has(g)) groups.set(g, [])
+      groups.get(g)!.push(d)
+    }
+    const updates: PromiseLike<unknown>[] = []
+    const touched = new Set<string>()
+    for (const twins of Array.from(groups.values())) {
+      if (twins.length < 2) continue
+      const r = rank.get(key(twins[0].category))!
+      const slots  = twins.map(t => t.sort_order ?? 0).sort((a, b) => a - b)
+      const sorted = [...twins].sort((a, b) => r.get(key(a.name))! - r.get(key(b.name))!)
+      sorted.forEach((t, i) => {
+        if ((t.sort_order ?? 0) !== slots[i]) {
+          updates.push(supabase.from('dishes').update({ sort_order: slots[i] }).eq('id', t.id))
+          touched.add(t.menu_id)
+        }
+      })
+    }
+    await Promise.all(updates)
+    Array.from(touched).forEach(m => revalidate(restaurantId, m))
+  } catch (e: any) { console.error('reorder twins failed', e?.message) }
+
   revalidate(restaurantId, menuId)
 }
 
@@ -807,10 +817,30 @@ export async function toggleDishActive(
 ) {
   const supabase = await createClient()
   await verifyOwnership(supabase, restaurantId)
-  const { error } = await supabase
-    .from('dishes').update({ is_active: active }).eq('id', dishId)
+  const { data: src, error } = await supabase
+    .from('dishes').update({ is_active: active }).eq('id', dishId).select('name').single()
   if (error) throw new Error(error.message)
+
+  // Stesso piatto negli ALTRI menu del ristorante (stesso nome, come la
+  // sincronizzazione dei "gemelli"): attivazione/disattivazione allineata.
+  // ilike senza jolly: % _ \ nel nome vanno presi alla lettera.
+  const exact = (src?.name ?? '').replace(/[\\%_]/g, (c: string) => `\\${c}`)
+  let syncedMenus: string[] = []
+  if (exact) {
+    const { data: twins } = await supabase
+      .from('dishes')
+      .update({ is_active: active })
+      .eq('restaurant_id', restaurantId)
+      .neq('menu_id', menuId)
+      .neq('is_active', active)
+      .ilike('name', exact)
+      .select('menu_id')
+    syncedMenus = Array.from(new Set((twins ?? []).map(t => t.menu_id as string)))
+    for (const m of syncedMenus) revalidate(restaurantId, m)
+  }
+
   revalidate(restaurantId, menuId)
+  return { syncedMenus: syncedMenus.length }
 }
 
 export async function toggleCategoryActive(
