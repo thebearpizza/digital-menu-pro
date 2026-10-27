@@ -287,7 +287,7 @@ export default function CurlMenu({ data: base, style: initialStyle, preview = fa
             sheet(rightRect(), fwd ? index + 3 : index + 1, 'left', 1),
           ])
         : only([sheet(rightRect(), fwd ? index + 1 : index, 'left', 1)])
-      return { statics, moving, shadow }
+      return { statics, moving, shadow, through: styleRef.current.effects.showThrough }
     }
 
     // ── Barra dei comandi e istruzioni (stile scritto direttamente durante i gesti)

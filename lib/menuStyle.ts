@@ -176,6 +176,34 @@ export const ORNAMENTS = [
 export type Ornament = typeof ORNAMENTS[number]
 export type Divider = 'none' | 'line' | 'short' | 'dots' | 'ornament'
 
+/** Superfici della carta (generate in app/prova/[token]/paper.ts). */
+export const PAPER_TEXTURES = ['none', 'grain', 'cotton', 'laid', 'watercolor', 'parchment', 'linen', 'recycled', 'kraft'] as const
+export type PaperTextureKind = typeof PAPER_TEXTURES[number]
+export const TEXTURE_LABEL: Record<PaperTextureKind, string> = {
+  none: 'Liscia', grain: 'Grana fine', cotton: 'Cotone', laid: 'Vergata', watercolor: 'Acquerello',
+  parchment: 'Pergamena', linen: 'Lino', recycled: 'Riciclata', kraft: 'Kraft',
+}
+
+/** Carte pronte: colore, superficie e luce studiati insieme. Su carte scure o
+ *  colorate anche i colori del testo, per restare leggibili. */
+export interface PaperStyle {
+  name: string; desc: string
+  paper: string; texture: PaperTextureKind; textureStrength: number; light: number
+  ink?: string; soft?: string; accent?: string
+}
+export const PAPER_STYLES: PaperStyle[] = [
+  { name: 'Avorio liscio', desc: 'Pulita, appena granulosa', paper: '#fbf8f2', texture: 'grain', textureStrength: 0.35, light: 1 },
+  { name: 'Cotone', desc: 'Morbida, con fibre lunghe', paper: '#fbf9f4', texture: 'cotton', textureStrength: 0.55, light: 0.9 },
+  { name: 'Vergata', desc: 'Righe e filoni della carta a mano', paper: '#f7f1e4', texture: 'laid', textureStrength: 0.5, light: 1 },
+  { name: 'Acquerello', desc: 'Rilievo a grana grossa', paper: '#fcfaf6', texture: 'watercolor', textureStrength: 0.5, light: 0.85 },
+  { name: 'Lino', desc: 'Trama di tessuto', paper: '#f5f0e6', texture: 'linen', textureStrength: 0.45, light: 0.9 },
+  { name: 'Pergamena', desc: 'Calda, a chiazze', paper: '#f0e4cb', texture: 'parchment', textureStrength: 0.65, light: 1, ink: '#2e2014', soft: '#6a5640', accent: '#8a5a2b' },
+  { name: 'Riciclata', desc: 'Grigio caldo, macchioline', paper: '#eeeae1', texture: 'recycled', textureStrength: 0.55, light: 0.6, ink: '#24221f', soft: '#5e5951' },
+  { name: 'Kraft', desc: 'Avana, fibre fitte', paper: '#c8a57a', texture: 'kraft', textureStrength: 0.55, light: 0.7, ink: '#24170c', soft: '#4a3522', accent: '#5b3415' },
+  { name: 'Ardesia', desc: 'Grigio scuro, grana', paper: '#26292c', texture: 'grain', textureStrength: 0.45, light: 0.8, ink: '#eef0f2', soft: '#a9b0b8', accent: '#c9a96e' },
+  { name: 'Nera cotone', desc: 'Nero caldo, morbida', paper: '#161412', texture: 'cotton', textureStrength: 0.6, light: 0.8, ink: '#efe8dc', soft: '#b3a999', accent: '#c4a46b' },
+]
+
 /** Sfondo delle pagine (immagine caricata dal ristoratore). */
 export interface PageBackground {
   url:     string | null
@@ -188,7 +216,7 @@ export interface MenuStyle {
   version: 2
   page: {
     paper: string; ink: string; soft: string; accent: string
-    texture: 'none' | 'grain' | 'linen'
+    texture: PaperTextureKind
     textureStrength: number   // 0 – 1
     light: number             // luce al centro e bordi più scuri: 0 – 1
     margin: number            // margine laterale (px): 12 – 64
@@ -250,7 +278,9 @@ export interface MenuStyle {
     showMore: boolean         // "Altro in …"
   }
   chrome: { tint: 'light' | 'dark'; peek: boolean; hints: boolean }
-  effects: { shadow: number; speed: number }   // ombre dello sfoglio 0 – 1.6, velocità 0.6 – 1.6
+  // Ombre dello sfoglio 0 – 1.6, velocità 0.6 – 1.6, testo che traspare dal
+  // retro della pagina che gira 0 – 0.4.
+  effects: { shadow: number; speed: number; showThrough: number }
   customFonts: CustomFont[]
 }
 
@@ -288,7 +318,7 @@ export const DEFAULT_STYLE: MenuStyle = {
   textPages: { title: T(SERIF, 25, 500, 'ink'), body: T(SERIF, 16.5, 400, 'ink'), lineHeight: 1, paraGap: 6 },
   card: { photo: 'square', photoWidth: 84, radius: 14, titleSize: 34, glass: 0.5, showCategory: true, showSummary: true, showMore: true },
   chrome: { tint: 'light', peek: true, hints: true },
-  effects: { shadow: 1, speed: 1 },
+  effects: { shadow: 1, speed: 1, showThrough: 0.03 },
   customFonts: [],
 }
 
@@ -360,7 +390,7 @@ export function parseStyle(raw: unknown): MenuStyle {
     version: 2,
     page: {
       paper: hex(pg.paper, d.page.paper), ink: hex(pg.ink, d.page.ink), soft: hex(pg.soft, d.page.soft), accent: hex(pg.accent, d.page.accent),
-      texture: pick(pg.texture, ['none', 'grain', 'linen'] as const, d.page.texture),
+      texture: pick(pg.texture, PAPER_TEXTURES, d.page.texture),
       textureStrength: num(pg.textureStrength, 0, 1, d.page.textureStrength),
       light: num(pg.light, 0, 1, d.page.light),
       margin: num(pg.margin, 12, 64, d.page.margin),
@@ -440,7 +470,10 @@ export function parseStyle(raw: unknown): MenuStyle {
       showMore: bool(cd.showMore, d.card.showMore),
     },
     chrome: { tint: pick(ch.tint, ['light', 'dark'] as const, d.chrome.tint), peek: bool(ch.peek, d.chrome.peek), hints: bool(ch.hints, d.chrome.hints) },
-    effects: { shadow: num(ef.shadow, 0, 1.6, d.effects.shadow), speed: num(ef.speed, 0.6, 1.6, d.effects.speed) },
+    effects: {
+      shadow: num(ef.shadow, 0, 1.6, d.effects.shadow), speed: num(ef.speed, 0.6, 1.6, d.effects.speed),
+      showThrough: num(ef.showThrough, 0, 0.4, d.effects.showThrough),
+    },
     customFonts,
   }
 }

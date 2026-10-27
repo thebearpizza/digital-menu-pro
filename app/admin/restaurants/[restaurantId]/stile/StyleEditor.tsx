@@ -19,11 +19,12 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react'
 import {
-  CUSTOM_PREFIX, DEFAULT_STYLE, FONTS, FONT_CATS, ORNAMENTS, WEIGHTS, customWeights, fontInfo, fontLabel, fontStack, mix,
+  CUSTOM_PREFIX, DEFAULT_STYLE, FONTS, FONT_CATS, ORNAMENTS, PAPER_STYLES, PAPER_TEXTURES, TEXTURE_LABEL, WEIGHTS, customWeights, fontInfo, fontLabel, fontStack, mix,
   parseStyle, registerCustomFonts, resolveFace,
   type ColorRef, type CustomFont, type FontCat, type MenuStyle, type Ornament, type TextStyle, type Weight,
 } from '@/lib/menuStyle'
 import { drawOrnament, type PickTarget } from '@/app/prova/[token]/typeset'
+import { paintPaper } from '@/app/prova/[token]/paper'
 import { loadCustomFonts } from '@/app/prova/[token]/fonts'
 import { createClient } from '@/lib/supabase/client'
 import { compressImageFile } from '@/lib/imageCompress'
@@ -341,6 +342,30 @@ export default function StyleEditor({ restaurantId, token, menus }: Props) {
         </div>
       )
       case 'paper': return (<>
+        <FieldShell label="Carte pronte" hint="Colore, superficie e luce studiati insieme; sulle carte scure o colorate cambiano anche i colori del testo.">
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+            {PAPER_STYLES.map(p => {
+              const on = p.paper === st.page.paper && p.texture === st.page.texture
+              return (
+                <button key={p.name} type="button" aria-pressed={on}
+                  onClick={() => edit(s => {
+                    Object.assign(s.page, { paper: p.paper, texture: p.texture, textureStrength: p.textureStrength, light: p.light })
+                    if (p.ink) s.page.ink = p.ink
+                    if (p.soft) s.page.soft = p.soft
+                    if (p.accent) s.page.accent = p.accent
+                    // Tornando a una carta chiara da una scura, il testo torna scuro.
+                    if (!p.ink && lum(s.page.ink) > 0.6) Object.assign(s.page, { ink: DEFAULT_STYLE.page.ink, soft: DEFAULT_STYLE.page.soft, accent: DEFAULT_STYLE.page.accent })
+                  })}
+                  className={`text-left border p-1.5 transition ${on ? 'border-blue-600 ring-1 ring-blue-600' : 'border-gray-200 hover:border-gray-400'}`}
+                  style={{ borderRadius: 14 }}>
+                  <PaperSwatch paper={p.paper} texture={p.texture} strength={p.textureStrength} light={p.light} ink={p.ink ?? '#1d1915'} />
+                  <div className="text-[11px] font-medium text-gray-800 mt-1.5 px-0.5">{p.name}</div>
+                  <div className="text-[10px] text-gray-400 leading-tight px-0.5">{p.desc}</div>
+                </button>
+              )
+            })}
+          </div>
+        </FieldShell>
         <div className="flex flex-wrap gap-2">
           {PALETTES.map(p => {
             const on = p.paper === st.page.paper && p.ink === st.page.ink && p.accent === st.page.accent
@@ -364,7 +389,7 @@ export default function StyleEditor({ restaurantId, token, menus }: Props) {
         <BackgroundField restaurantId={restaurantId} value={st.page.background} paper={st.page.paper}
           onChange={v => edit(s => { Object.assign(s.page.background, v) })} />
         <Choice label="Superficie della carta" value={st.page.texture} onChange={v => edit(s => { s.page.texture = v })}
-          options={[{ value: 'none', label: 'Liscia' }, { value: 'grain', label: 'Grana' }, { value: 'linen', label: 'Lino' }]} />
+          options={PAPER_TEXTURES.map(t => ({ value: t, label: TEXTURE_LABEL[t] }))} />
         {st.page.texture !== 'none' && (
           <Slider label="Intensità della superficie" value={st.page.textureStrength} min={0} max={1} step={0.05} format={pct} onChange={v => edit(s => { s.page.textureStrength = v })} />
         )}
@@ -491,16 +516,38 @@ export default function StyleEditor({ restaurantId, token, menus }: Props) {
       </>)
       case 'effects': return (<>
         <Slider label="Ombre della pagina che gira" value={st.effects.shadow} min={0} max={1.6} step={0.05} format={pct} onChange={v => edit(s => { s.effects.shadow = v })} />
+        <Slider label="Testo che traspare girando la pagina" hint="Sul retro del foglio che gira si intravede il testo a specchio, come nella carta vera."
+          value={st.effects.showThrough} min={0} max={0.4} step={0.01} format={v => (v === 0 ? 'Niente' : `${Math.round((v / 0.4) * 100)}%`)}
+          onChange={v => edit(s => { s.effects.showThrough = v })} />
         <Slider label="Velocità dello sfoglio" value={st.effects.speed} min={0.6} max={1.6} step={0.05} format={v => (v < 0.85 ? 'Lenta' : v > 1.2 ? 'Rapida' : 'Normale')} onChange={v => edit(s => { s.effects.speed = v })} />
       </>)
     }
   }
 
   return (
-    <div className="pb-24">
+    <div>
+      {/* Salvataggio: in alto e sempre visibile (in basso c'è la dock del gestionale). */}
+      <div className="sticky top-3 z-30 mb-4 mx-4 sm:mx-0 border border-gray-200 bg-white/90 backdrop-blur shadow-sm" style={{ borderRadius: 18 }}>
+        <div className="flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2">
+          <span className={`text-sm truncate ${message ? (message.ok ? 'text-green-700' : 'text-red-600') : dirty ? 'text-amber-700' : 'text-gray-500'}`}>
+            {message?.text ?? (dirty ? 'Modifiche non salvate' : 'Tutto salvato')}
+          </span>
+          <div className="flex-1" />
+          <button type="button" onClick={() => replaceAll(DEFAULT_STYLE)} className="hidden sm:inline text-sm text-gray-500 hover:text-gray-800 px-3 py-2">
+            Stile base
+          </button>
+          <button type="button" onClick={() => setStyle(saved)} disabled={!dirty} className="text-sm text-gray-600 hover:text-gray-900 px-3 py-2 disabled:opacity-40">
+            Annulla
+          </button>
+          <button type="button" onClick={askSave} disabled={!dirty || saving}
+            className="text-sm font-medium bg-blue-600 text-white px-4 py-2 disabled:opacity-40 hover:bg-blue-700">
+            {saving ? 'Salvataggio…' : 'Salva'}
+          </button>
+        </div>
+      </div>
       <div className="flex flex-col lg:flex-row gap-6 lg:items-start">
         {/* Anteprima */}
-        <div className="lg:order-2 lg:sticky lg:top-4 shrink-0 flex flex-col items-center gap-3">
+        <div className="lg:order-2 lg:sticky lg:top-20 shrink-0 flex flex-col items-center gap-3">
           <PhoneFrame>
             {menuId && (
               <iframe ref={frameRef} title="Anteprima del menu" src={`/prova/${token}?menu=${menuId}&preview=1`}
@@ -522,7 +569,7 @@ export default function StyleEditor({ restaurantId, token, menus }: Props) {
         <div className="flex-1 min-w-0 space-y-2 px-4 sm:px-0">
           {PANELS.map(p => (
             <section key={p.id} ref={el => { if (el) panelRefs.current.set(p.id, el); else panelRefs.current.delete(p.id) }}
-              className={`rounded-xl border bg-white transition-shadow duration-300 scroll-mt-4 ${flash === p.id ? 'ring-2 ring-blue-500 border-blue-500' : 'border-gray-200'}`}>
+              className={`rounded-xl border bg-white transition-shadow duration-300 scroll-mt-20 ${flash === p.id ? 'ring-2 ring-blue-500 border-blue-500' : 'border-gray-200'}`}>
               <button type="button" onClick={() => setOpen(o => (o === p.id ? null : p.id))} aria-expanded={open === p.id}
                 className="w-full flex items-center gap-3 text-left px-4 sm:px-5 py-3.5">
                 <span className="flex-1 min-w-0">
@@ -536,26 +583,6 @@ export default function StyleEditor({ restaurantId, token, menus }: Props) {
               {open === p.id && <div className="px-4 sm:px-5 pb-5 pt-4 space-y-4 border-t border-gray-100">{body(p.id)}</div>}
             </section>
           ))}
-        </div>
-      </div>
-
-      {/* Salvataggio */}
-      <div className="fixed bottom-0 inset-x-0 z-30 border-t border-gray-200 bg-white/90 backdrop-blur">
-        <div className="max-w-5xl mx-auto flex items-center gap-3 px-4 sm:px-6 py-3">
-          <span className={`text-sm ${message ? (message.ok ? 'text-green-700' : 'text-red-600') : 'text-gray-500'}`}>
-            {message?.text ?? (dirty ? 'Modifiche non salvate' : 'Tutto salvato')}
-          </span>
-          <div className="flex-1" />
-          <button type="button" onClick={() => replaceAll(DEFAULT_STYLE)} className="text-sm text-gray-500 hover:text-gray-800 px-3 py-2">
-            Stile base
-          </button>
-          <button type="button" onClick={() => setStyle(saved)} disabled={!dirty} className="text-sm text-gray-600 hover:text-gray-900 px-3 py-2 disabled:opacity-40">
-            Annulla
-          </button>
-          <button type="button" onClick={askSave} disabled={!dirty || saving}
-            className="text-sm font-medium rounded-lg bg-blue-600 text-white px-4 py-2 disabled:opacity-40 hover:bg-blue-700">
-            {saving ? 'Salvataggio…' : 'Salva'}
-          </button>
         </div>
       </div>
 
@@ -1099,4 +1126,42 @@ function ApplySheet({ menus, current, saving, onCancel, onSave }: {
       </div>
     </div>
   )
+}
+
+// ── Campione di carta (superficie vera, come nel menu) ──────────────────────
+
+const lum = (hex: string) => {
+  const n = parseInt(hex.slice(1), 16)
+  return (0.2126 * ((n >> 16) & 255) + 0.7152 * ((n >> 8) & 255) + 0.0722 * (n & 255)) / 255
+}
+
+function PaperSwatch({ paper, texture, strength, light, ink }: {
+  paper: string; texture: MenuStyle['page']['texture']; strength: number; light: number; ink: string
+}) {
+  const ref = useRef<HTMLCanvasElement>(null)
+  useEffect(() => {
+    const cv = ref.current
+    if (!cv) return
+    const W = cv.clientWidth || 120, H = 72
+    const dpr = window.devicePixelRatio || 1
+    cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr)
+    const c = cv.getContext('2d')
+    if (!c) return
+    c.setTransform(dpr, 0, 0, dpr, 0, 0)
+    c.fillStyle = paper; c.fillRect(0, 0, W, H)
+    const dark = lum(paper) < 0.45
+    const g = c.createRadialGradient(W * 0.5, H * 0.42, 0, W * 0.5, H * 0.42, Math.hypot(W, H) * 0.62)
+    g.addColorStop(0, dark ? `rgba(255,255,255,${0.06 * light})` : `rgba(255,255,255,${0.55 * light})`)
+    g.addColorStop(1, dark ? `rgba(0,0,0,${0.22 * light})` : `rgba(150,130,100,${0.12 * light})`)
+    c.fillStyle = g; c.fillRect(0, 0, W, H)
+    paintPaper(c, texture, strength, W, H)
+    c.fillStyle = ink
+    c.font = '500 15px "Cormorant Garamond", Georgia, serif'
+    c.fillText('Antipasti', 10, 30)
+    c.globalAlpha = 0.65
+    c.font = 'italic 400 11px "Cormorant Garamond", Georgia, serif'
+    c.fillText('burrata, alici, limone', 10, 48)
+    c.globalAlpha = 1
+  }, [paper, texture, strength, light, ink])
+  return <canvas ref={ref} aria-hidden className="block w-full" style={{ height: 72, borderRadius: 10 }} />
 }

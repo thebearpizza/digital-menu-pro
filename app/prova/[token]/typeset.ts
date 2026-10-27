@@ -2,6 +2,7 @@ import {
   DEFAULT_STYLE, cssFont, fontStack, formatPrice, mix, resolveColor, styleFaces,
   type MenuStyle, type Ornament, type TextStyle,
 } from '@/lib/menuStyle'
+import { paintPaper } from './paper'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Impaginazione del menu (prototipo "pageCurl").
@@ -468,8 +469,7 @@ export function layoutMenu(ctx: Ctx, data: MenuData, vp: Viewport, style: MenuSt
       : null
   }
 
-  // ── Superficie della carta: rumore fisso, generato una volta.
-  const texture = st.page.texture === 'none' ? null : makeTexture(st.page.texture)
+  // ── Testatina e numeri di pagina
   const RUN_TEXT = tx(RUN, st.runningHead.content === 'restaurant' ? data.restaurantName
     : st.runningHead.content === 'menu' ? data.menuName
     : `${data.restaurantName} · ${data.menuName}`)
@@ -501,10 +501,7 @@ export function layoutMenu(ctx: Ctx, data: MenuData, vp: Viewport, style: MenuSt
       c.fillStyle = g
       c.fillRect(0, 0, w, h)
     }
-    if (texture && st.page.textureStrength > 0) {
-      const pat = c.createPattern(texture, 'repeat')
-      if (pat) { c.globalAlpha = 0.125 * st.page.textureStrength; c.fillStyle = pat; c.fillRect(0, 0, w, h); c.globalAlpha = 1 }
-    }
+    paintPaper(c, st.page.texture, st.page.textureStrength, w, h)
     // Sfondo scelto dal ristoratore, sopra la carta e sotto il testo.
     const BG = st.page.background
     const bgOn = BG.pages === 'all' || (BG.pages === 'first' ? index === 0 : index > 0)
@@ -843,31 +840,3 @@ function luminance(hex: string): number {
   return (0.2126 * ((n >> 16) & 255) + 0.7152 * ((n >> 8) & 255) + 0.0722 * (n & 255)) / 255
 }
 
-const _tex: Partial<Record<'grain' | 'linen', HTMLCanvasElement>> = {}
-/** Superficie della carta: grana (rumore fine) o lino (trama di fili). */
-function makeTexture(kind: 'grain' | 'linen'): HTMLCanvasElement | null {
-  if (_tex[kind]) return _tex[kind]!
-  if (typeof document === 'undefined') return null
-  const N = 160
-  const g = document.createElement('canvas')
-  g.width = g.height = N
-  const c = g.getContext('2d')
-  if (!c) return null
-  const img = c.createImageData(N, N)
-  let seed = 7
-  const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647 }
-  // Lino: fili orizzontali e verticali di spessore irregolare.
-  const rows = Array.from({ length: N }, () => rnd() * 2 - 1)
-  const cols = Array.from({ length: N }, () => rnd() * 2 - 1)
-  for (let i = 0, p = 0; i < img.data.length; i += 4, p++) {
-    const x = p % N, yy = (p / N) | 0
-    const v = kind === 'grain'
-      ? 110 + rnd() * 120
-      : 170 + rows[yy] * 38 + cols[x] * 38 + (rnd() - 0.5) * 30
-    img.data[i] = img.data[i + 1] = img.data[i + 2] = Math.max(0, Math.min(255, v))
-    img.data[i + 3] = 255
-  }
-  c.putImageData(img, 0, 0)
-  _tex[kind] = g
-  return g
-}

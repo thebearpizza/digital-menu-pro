@@ -120,6 +120,7 @@ precision highp float;
 uniform sampler2D uTex;
 uniform sampler2D uBack;
 uniform float uHasBack;   // il retro del foglio ha una pagina vera (doppia pagina)
+uniform float uThrough;   // quanto il testo del fronte traspare dal retro (0 – 0.4)
 uniform vec2  uPage;
 uniform float uCurl;
 uniform float uShadow;    // intensità delle ombre (0 = nessuna piega)
@@ -173,10 +174,12 @@ void main() {
     float spec = pow(clamp(dot(N, Hh), 0.0, 1.0), 40.0) * 0.10 * smoothstep(0.0, 0.25, 1.0 - N.z);
     col = tex.rgb * shade + spec;
   } else {
-    // Retro: pagina vera (doppia pagina) o carta con un filo di trasparenza.
-    vec3 back = uHasBack > 0.5
-      ? texture2D(uBack, vec2(1.0 - vUV.x, vUV.y)).rgb
-      : mix(uPaper, tex.rgb, 0.03);
+    // Retro: pagina vera (doppia pagina) o carta. Il testo del fronte
+    // traspare a specchio, come nella carta vera: scurisce il retro dove sul
+    // fronte c'è inchiostro (quanto, lo sceglie il ristoratore).
+    vec3 base = uHasBack > 0.5 ? texture2D(uBack, vec2(1.0 - vUV.x, vUV.y)).rgb : uPaper;
+    vec3 ink = clamp(tex.rgb / max(uPaper, vec3(0.04)), 0.0, 1.5);
+    vec3 back = base * mix(vec3(1.0), ink, uThrough);
     vec3 Nb = -N;
     float diff = clamp(dot(Nb, L), 0.0, 1.0) / flatDiff;
     float shade = mix(0.72, 1.0, clamp(diff, 0.0, 1.04));
@@ -225,6 +228,8 @@ export interface Scene {
   statics: Sheet[]
   moving:  (Sheet & { curl: CurlParams | null }) | null
   shadow:  number
+  /** Testo che traspare dal retro del foglio che gira (0 – 0.4). */
+  through?: number
 }
 
 export class CurlRenderer {
@@ -246,7 +251,7 @@ export class CurlRenderer {
     this.paper = hexToRgb(paperHex)
     this.prog = link(gl, VS, FS)
     for (const n of ['uScreen', 'uOrigin', 'uPage', 'uCurl', 'uAxis', 'uDir', 'uR', 'uPersp', 'uTex', 'uBack', 'uHasBack',
-      'uShadow', 'uKind', 'uSheetO', 'uSheetS', 'uGutter', 'uGutterK', 'uPaper']) {
+      'uShadow', 'uThrough', 'uKind', 'uSheetO', 'uSheetS', 'uGutter', 'uGutterK', 'uPaper']) {
       this.u[n] = gl.getUniformLocation(this.prog, n)
     }
     this.buf = gl.createBuffer()!
@@ -324,6 +329,7 @@ export class CurlRenderer {
     const c = m?.curl ?? null
     const shadow = c ? Math.max(0, Math.min(1.6, scene.shadow)) : 0
     gl.uniform1f(this.u.uShadow, shadow)
+    gl.uniform1f(this.u.uThrough, Math.max(0, Math.min(0.4, scene.through ?? 0.03)))
     gl.uniform2f(this.u.uAxis, c ? c.axis.x : this.sw * 10, c ? c.axis.y : 0)
     gl.uniform2f(this.u.uDir, c ? c.dir.x : 1, c ? c.dir.y : 0)
     gl.uniform1f(this.u.uR, c ? c.R : 1)
