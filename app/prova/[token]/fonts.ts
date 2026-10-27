@@ -26,18 +26,21 @@ export function loadFontCss(href: string = FONTS_CSS): Promise<void> {
 // ── Caratteri caricati e sfondo delle pagine ─────────────────────────────────
 
 const customLoaded = new Map<string, Promise<void>>()
-/** Registra (una volta per file) i caratteri caricati dal ristoratore. */
+/** Registra (una volta per file) le facce dei caratteri caricati dal
+ *  ristoratore: ogni file con il suo spessore e corsivo. */
 export function loadCustomFonts(fonts: CustomFont[]): Promise<void> {
-  return Promise.all(fonts.map(f => {
-    const key = `${f.id}|${f.url}`
+  return Promise.all(fonts.flatMap(f => f.faces.map(x => {
+    const key = `${f.id}|${x.url}|${x.weight}|${x.italic}`
     let p = customLoaded.get(key)
     if (!p) {
-      const face = new FontFace(customFamily(f.id), `url("${f.url}")`, { display: 'block' })
+      const face = new FontFace(customFamily(f.id), `url("${x.url}")`, {
+        display: 'block', weight: String(x.weight), style: x.italic ? 'italic' : 'normal',
+      })
       p = face.load().then(ff => { document.fonts.add(ff) }).catch(() => undefined)
       customLoaded.set(key, p)
     }
     return p
-  })).then(() => undefined)
+  }))).then(() => undefined)
 }
 
 const images = new Map<string, Promise<HTMLImageElement | null>>()

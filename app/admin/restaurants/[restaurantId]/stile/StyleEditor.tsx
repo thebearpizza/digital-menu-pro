@@ -19,14 +19,15 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react'
 import {
-  CUSTOM_PREFIX, DEFAULT_STYLE, FONTS, FONT_CATS, ORNAMENTS, fontInfo, fontLabel, fontStack, mix, parseStyle,
-  registerCustomFonts, resolveFace,
+  CUSTOM_PREFIX, DEFAULT_STYLE, FONTS, FONT_CATS, ORNAMENTS, WEIGHTS, customWeights, fontInfo, fontLabel, fontStack, mix,
+  parseStyle, registerCustomFonts, resolveFace,
   type ColorRef, type CustomFont, type FontCat, type MenuStyle, type Ornament, type TextStyle, type Weight,
 } from '@/lib/menuStyle'
 import { drawOrnament, type PickTarget } from '@/app/prova/[token]/typeset'
 import { loadCustomFonts } from '@/app/prova/[token]/fonts'
 import { createClient } from '@/lib/supabase/client'
 import { compressImageFile } from '@/lib/imageCompress'
+import { readFontFileInfo } from '@/lib/fontFileInfo'
 import { saveMenuStyles } from './actions'
 
 type PanelId =
@@ -375,9 +376,7 @@ export default function StyleEditor({ restaurantId, token, menus }: Props) {
       </>)
       case 'fonts': return (
         <FontsManager restaurantId={restaurantId} fonts={st.customFonts}
-          onAdd={f => edit(s => { s.customFonts.push(f) })}
-          onChange={(id, patch) => edit(s => { Object.assign(s.customFonts.find(f => f.id === id)!, patch) })}
-          onRemove={id => edit(s => { s.customFonts = s.customFonts.filter(f => f.id !== id) })}
+          onSet={list => edit(s => { s.customFonts = list })}
           used={id => JSON.stringify(st).includes(`"${CUSTOM_PREFIX}${id}"`)} />
       )
       case 'head': return (<>
@@ -644,7 +643,10 @@ function FieldShell({ label, hint, children }: { label: string; hint?: string; c
   )
 }
 
-const WEIGHT_LABEL: Record<number, string> = { 400: 'Normale', 500: 'Medio', 600: 'Semigrassetto', 700: 'Grassetto' }
+const WEIGHT_LABEL: Record<number, string> = {
+  100: 'Sottilissimo', 200: 'Extra sottile', 300: 'Sottile', 400: 'Normale', 500: 'Medio',
+  600: 'Semigrassetto', 700: 'Grassetto', 800: 'Extra grassetto', 900: 'Nero',
+}
 
 /** Stile completo di un testo: carattere, grandezza, spessore, corsivo,
  *  colore, maiuscolo, spaziatura. Solo facce che esistono davvero. */
@@ -701,7 +703,7 @@ function FontPicker({ value, custom, onChange }: { value: string; custom: Custom
   const [open, setOpen] = useState(false)
   const [cat, setCat] = useState<FontCat | 'all' | 'custom'>('all')
   const [q, setQ] = useState('')
-  const mine = custom.map(f => ({ name: CUSTOM_PREFIX + f.id, label: f.name, cat: f.cat, w: [400], i: [] as number[] }))
+  const mine = custom.map(f => ({ name: CUSTOM_PREFIX + f.id, label: f.name, cat: f.cat, ...customWeights(f) }))
   const list = (cat === 'custom' ? mine : [...mine, ...FONTS.map(f => ({ ...f, label: f.name }))])
     .filter(f => (cat === 'all' || cat === 'custom' || f.cat === cat) && (!q || f.label.toLowerCase().includes(q.toLowerCase())))
   return (
@@ -726,8 +728,8 @@ function FontPicker({ value, custom, onChange }: { value: string; custom: Custom
             {list.map(f => (
               <button key={f.name} type="button" onClick={() => { onChange(f.name); setOpen(false) }}
                 className={`text-left px-2.5 py-1.5 transition ${f.name === value ? 'bg-blue-50 ring-1 ring-blue-500' : 'hover:bg-gray-50'}`} style={{ borderRadius: 10 }}>
-                <span className="block truncate text-[17px] leading-tight text-gray-900" style={{ fontFamily: fontStack(f.name), fontWeight: f.w[0] }}>{f.label}</span>
-                <span className="block text-[10px] text-gray-400">{f.name.startsWith(CUSTOM_PREFIX) ? 'Caricato da te' : `${f.w.length > 1 ? `${f.w.length} spessori` : '1 spessore'}${f.i.length ? ' · corsivo' : ''}`}</span>
+                <span className="block truncate text-[17px] leading-tight text-gray-900" style={{ fontFamily: fontStack(f.name), fontWeight: f.w.includes(400) ? 400 : f.w[0] }}>{f.label}</span>
+                <span className="block text-[10px] text-gray-400">{f.name.startsWith(CUSTOM_PREFIX) ? 'Tuo · ' : ''}{f.w.length > 1 ? `${f.w.length} spessori` : '1 spessore'}{f.i.length ? ' · corsivo' : ''}</span>
               </button>
             ))}
             {!list.length && <p className="col-span-2 text-xs text-gray-400 p-2">Nessun carattere trovato.</p>}
@@ -939,62 +941,113 @@ function BackgroundField({ restaurantId, value, paper, onChange }: {
   )
 }
 
-function FontsManager({ restaurantId, fonts, onAdd, onChange, onRemove, used }: {
+function FontsManager({ restaurantId, fonts, onSet, used }: {
   restaurantId: string
   fonts:        CustomFont[]
-  onAdd:        (f: CustomFont) => void
-  onChange:     (id: string, patch: Partial<CustomFont>) => void
-  onRemove:     (id: string) => void
+  onSet:        (list: CustomFont[]) => void
   used:         (id: string) => boolean
 }) {
   const fileRef = useRef<HTMLInputElement>(null)
-  const [busy, setBusy] = useState(false)
+  // Famiglia a cui aggiungere i prossimi file (null = la riconosce da sola).
+  const target = useRef<string | null>(null)
+  const [busy, setBusy] = useState<string | null>(null)
   const [err, setErr] = useState<string | null>(null)
-  const upload = async (file: File) => {
-    const ext = (file.name.split('.').pop() || '').toLowerCase()
-    if (!FONT_EXT.includes(ext)) { setErr('Formati accettati: .ttf, .otf, .woff, .woff2'); return }
-    if (file.size > MAX_FONT_BYTES) { setErr('File troppo grande (massimo 4 MB).'); return }
-    setBusy(true); setErr(null)
-    try {
-      const url = await uploadAsset(restaurantId, 'menu-fonts', file, ext)
-      const id = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
-      const name = file.name.replace(/\.[^.]+$/, '').replace(/[-_]+/g, ' ').trim().slice(0, 40) || 'Carattere'
-      onAdd({ id, name, url, cat: 'serif' })
-    } catch { setErr('Caricamento non riuscito, riprova.') }
-    setBusy(false)
+  const newId = () => `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
+
+  /** Carica più file insieme: ogni file finisce nella sua famiglia (letta dal
+   *  file stesso), con il suo spessore e corsivo. */
+  const upload = async (files: File[]) => {
+    const list: CustomFont[] = structuredClone(fonts)
+    const bad: string[] = []
+    setErr(null)
+    for (let k = 0; k < files.length; k++) {
+      const file = files[k]
+      const ext = (file.name.split('.').pop() || '').toLowerCase()
+      if (!FONT_EXT.includes(ext) || file.size > MAX_FONT_BYTES) { bad.push(file.name); continue }
+      setBusy(`Caricamento ${k + 1} di ${files.length}…`)
+      try {
+        const info = await readFontFileInfo(file)
+        const url = await uploadAsset(restaurantId, 'menu-fonts', file, ext)
+        const fam = (target.current && list.find(f => f.id === target.current))
+          || list.find(f => f.name.toLowerCase() === info.family.toLowerCase())
+        const face = { url, weight: info.weight, italic: info.italic }
+        if (fam) {
+          // Stesso spessore e corsivo già presente: il file nuovo lo sostituisce.
+          fam.faces = [...fam.faces.filter(x => !(x.weight === face.weight && x.italic === face.italic)), face]
+        } else {
+          list.push({ id: newId(), name: info.family.slice(0, 40), cat: 'serif', faces: [face] })
+        }
+      } catch { bad.push(file.name) }
+    }
+    for (const f of list) f.faces.sort((x, y) => x.weight - y.weight || Number(x.italic) - Number(y.italic))
+    onSet(list)
+    target.current = null
+    setBusy(null)
+    if (bad.length) setErr(`Non caricati: ${bad.join(', ')} (formati .ttf, .otf, .woff, .woff2; massimo 4 MB).`)
   }
+  const pick = (familyId: string | null) => { target.current = familyId; fileRef.current?.click() }
+  const patch = (id: string, fn: (f: CustomFont) => void) => {
+    const list: CustomFont[] = structuredClone(fonts)
+    const f = list.find(x => x.id === id)
+    if (f) fn(f)
+    onSet(list.filter(x => x.faces.length > 0))
+  }
+
   return (
     <div className="space-y-3">
       <p className="text-[11px] text-gray-400">
-        Carica il file di un carattere (.ttf, .otf, .woff, .woff2): poi lo trovi in ogni testo, sotto &quot;I tuoi&quot;.
-        Un file è un solo stile (per esempio il normale): per il corsivo o il grassetto carica il file apposito.
-        Usa solo caratteri che hai il diritto di usare.
+        Carica i file del tuo carattere (.ttf, .otf, .woff, .woff2): puoi selezionarli tutti insieme. I file della stessa
+        famiglia (sottile, normale, grassetto, corsivo…) diventano un solo carattere: lo trovi in ogni testo sotto
+        &quot;I tuoi&quot; e scegli spessore e corsivo come per gli altri. Usa solo caratteri che hai il diritto di usare.
       </p>
       {fonts.map(f => (
         <div key={f.id} className="border border-gray-200 p-3 space-y-2" style={{ borderRadius: 12 }}>
-          <div className="text-[22px] leading-tight text-gray-900 truncate" style={{ fontFamily: fontStack(CUSTOM_PREFIX + f.id) }}>
-            {f.name} — Antipasti 12,50
-          </div>
           <div className="flex flex-wrap items-center gap-2">
-            <input value={f.name} onChange={e => onChange(f.id, { name: e.target.value.slice(0, 40) })} aria-label="Nome del carattere"
-              className="flex-1 min-w-[140px] text-sm border border-gray-200 px-2 py-1 outline-none focus:border-gray-400" />
-            <select value={f.cat} onChange={e => onChange(f.id, { cat: e.target.value as FontCat })} aria-label="Tipo"
+            <input value={f.name} onChange={e => patch(f.id, x => { x.name = e.target.value.slice(0, 40) })} aria-label="Nome del carattere"
+              className="flex-1 min-w-[140px] text-sm font-medium border border-gray-200 px-2 py-1 outline-none focus:border-gray-400" />
+            <select value={f.cat} onChange={e => patch(f.id, x => { x.cat = e.target.value as FontCat })} aria-label="Tipo"
               className="text-sm border border-gray-200 px-2 py-1 bg-white">
               {FONT_CATS.map(c => <option key={c.cat} value={c.cat}>{c.label}</option>)}
             </select>
             <button type="button" className="px-2 py-1 text-xs text-gray-500 hover:text-red-600"
-              onClick={() => { if (!used(f.id) || window.confirm('Questo carattere è usato: quei testi torneranno al carattere base. Toglierlo?')) onRemove(f.id) }}>
-              Togli
+              onClick={() => {
+                if (!used(f.id) || window.confirm('Questo carattere è usato: quei testi torneranno al carattere base. Toglierlo?')) onSet(fonts.filter(x => x.id !== f.id))
+              }}>
+              Togli tutto
             </button>
           </div>
+          <ul className="divide-y divide-gray-100">
+            {f.faces.map((x, i) => (
+              <li key={x.url} className="flex flex-wrap items-center gap-2 py-1.5">
+                <span className="flex-1 min-w-[150px] truncate text-[20px] leading-tight text-gray-900"
+                  style={{ fontFamily: fontStack(CUSTOM_PREFIX + f.id), fontWeight: x.weight, fontStyle: x.italic ? 'italic' : 'normal' }}>
+                  {f.name} {WEIGHT_LABEL[x.weight]}{x.italic ? ' corsivo' : ''}
+                </span>
+                <select value={x.weight} aria-label="Spessore" className="text-xs border border-gray-200 px-1.5 py-1 bg-white"
+                  onChange={e => patch(f.id, ff => { ff.faces[i].weight = Number(e.target.value) })}>
+                  {WEIGHTS.map(w => <option key={w} value={w}>{WEIGHT_LABEL[w]} ({w})</option>)}
+                </select>
+                <label className="flex items-center gap-1 text-xs text-gray-600 cursor-pointer">
+                  <input type="checkbox" checked={x.italic} className="accent-blue-600"
+                    onChange={e => patch(f.id, ff => { ff.faces[i].italic = e.target.checked })} />
+                  Corsivo
+                </label>
+                <button type="button" aria-label="Togli questo file" className="px-1.5 text-gray-400 hover:text-red-600"
+                  onClick={() => patch(f.id, ff => { ff.faces.splice(i, 1) })}>×</button>
+              </li>
+            ))}
+          </ul>
+          <button type="button" onClick={() => pick(f.id)} disabled={!!busy} className="text-xs text-blue-700 hover:underline disabled:opacity-50">
+            + Aggiungi file a {f.name}
+          </button>
         </div>
       ))}
-      <button type="button" onClick={() => fileRef.current?.click()} disabled={busy}
+      <button type="button" onClick={() => pick(null)} disabled={!!busy}
         className="border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:border-gray-500 disabled:opacity-50">
-        {busy ? 'Caricamento…' : '+ Carica un carattere'}
+        {busy ?? '+ Carica i file di un carattere'}
       </button>
-      <input ref={fileRef} type="file" accept=".ttf,.otf,.woff,.woff2" className="hidden"
-        onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) upload(f) }} />
+      <input ref={fileRef} type="file" multiple accept=".ttf,.otf,.woff,.woff2" className="hidden"
+        onChange={e => { const fs = Array.from(e.target.files ?? []); e.target.value = ''; if (fs.length) upload(fs); else target.current = null }} />
       {err && <p className="text-[11px] text-red-600">{err}</p>}
     </div>
   )

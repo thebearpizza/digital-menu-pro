@@ -106,20 +106,29 @@ const FALLBACK: Record<FontCat, string> = {
 }
 
 // ── Caratteri caricati dal ristoratore ───────────────────────────────────────
-// Un file = un carattere (una sola faccia, tonda e normale). Nello stile il
-// carattere si chiama "custom:<id>"; nel browser la famiglia è "lito-<id>"
-// (nessun conflitto con i nomi del catalogo). Il nome scelto dal ristoratore
-// serve solo da etichetta.
+// Una famiglia con le sue facce: un file per ogni spessore/corsivo (Aurel
+// Light, Aurel Bold Italic…). Nello stile il carattere si chiama
+// "custom:<id>"; nel browser la famiglia è "lito-<id>" (nessun conflitto con
+// i nomi del catalogo). Il nome scelto dal ristoratore serve da etichetta.
 
-export interface CustomFont { id: string; name: string; url: string; cat: FontCat }
+export interface CustomFace { url: string; weight: number; italic: boolean }
+export interface CustomFont { id: string; name: string; cat: FontCat; faces: CustomFace[] }
 export const CUSTOM_PREFIX = 'custom:'
 export const isCustomFont = (name: string) => name.startsWith(CUSTOM_PREFIX)
 export const customFamily = (id: string) => `lito-${id}`
 // Registro dei caratteri caricati incontrati (parseStyle li registra): serve
 // a fontInfo/fontStack, che non ricevono lo stile.
 const CUSTOM = new Map<string, MenuFont & { label: string }>()
+/** Spessori in tondo (w) e in corsivo (i) di una famiglia caricata. */
+export function customWeights(f: CustomFont): { w: number[]; i: number[] } {
+  const uniq = (xs: number[]) => Array.from(new Set(xs)).sort((a, b) => a - b)
+  const w = uniq(f.faces.filter(x => !x.italic).map(x => x.weight))
+  const i = uniq(f.faces.filter(x => x.italic).map(x => x.weight))
+  // Solo corsivi: il "tondo" usa gli stessi file (resta sempre almeno uno spessore).
+  return { w: w.length ? w : i.length ? i : [400], i }
+}
 function registerCustom(f: CustomFont) {
-  CUSTOM.set(CUSTOM_PREFIX + f.id, { name: CUSTOM_PREFIX + f.id, label: f.name, cat: f.cat, w: [400], i: [] })
+  CUSTOM.set(CUSTOM_PREFIX + f.id, { name: CUSTOM_PREFIX + f.id, label: f.name, cat: f.cat, ...customWeights(f) })
 }
 /** Registra i caratteri caricati (fontInfo/fontStack/fontLabel li riconoscono). */
 export const registerCustomFonts = (list: CustomFont[]) => list.forEach(registerCustom)
@@ -146,7 +155,10 @@ export function resolveFace(name: string, weight: number, italic: boolean): { we
 /** Colore: uno dei colori della carta ('ink' testo, 'soft' testo secondario,
  *  'accent') oppure un colore libero #rrggbb. */
 export type ColorRef = 'ink' | 'soft' | 'accent' | string
-export type Weight = 400 | 500 | 600 | 700
+/** Spessori: 400–700 nel catalogo; i caratteri caricati possono avere anche
+ *  100–300 (sottili) e 800–900 (nerissimi). */
+export type Weight = 100 | 200 | 300 | 400 | 500 | 600 | 700 | 800 | 900
+export const WEIGHTS: Weight[] = [100, 200, 300, 400, 500, 600, 700, 800, 900]
 
 export interface TextStyle {
   font:     string
@@ -299,7 +311,7 @@ function text(v: unknown, d: TextStyle, custom: Set<string>): TextStyle {
   return {
     font,
     size:     num(r.size, 6, 80, d.size),
-    weight:   ([400, 500, 600, 700] as const).includes(r.weight as Weight) ? (r.weight as Weight) : d.weight,
+    weight:   WEIGHTS.includes(r.weight as Weight) ? (r.weight as Weight) : d.weight,
     italic:   bool(r.italic, d.italic),
     color:    colorRef(r.color, d.color),
     upper:    bool(r.upper, d.upper),
@@ -315,15 +327,29 @@ export function parseStyle(raw: unknown): MenuStyle {
   const al = obj(r.allergens), pn = obj(r.pageNumber), tp = obj(r.textPages), cd = obj(r.card), ch = obj(r.chrome), ef = obj(r.effects)
   const bg = obj(pg.background)
   // Caratteri caricati: prima si leggono (e si registrano), poi i testi che li usano.
+  const isUrl = (u: unknown): u is string => typeof u === 'string' && /^https:\/\//.test(u)
   const customFonts: CustomFont[] = (Array.isArray(r.customFonts) ? r.customFonts : [])
     .map(obj)
-    .filter(f => typeof f.id === 'string' && /^[a-z0-9-]{1,40}$/i.test(f.id) && typeof f.url === 'string' && /^https:\/\//.test(f.url))
+    .filter(f => typeof f.id === 'string' && /^[a-z0-9-]{1,40}$/i.test(f.id))
+    .map(f => {
+      // Prima versione: un solo file (url) = faccia normale.
+      const rawFaces = Array.isArray(f.faces) ? f.faces.map(obj) : isUrl(f.url) ? [{ url: f.url, weight: 400, italic: false }] : []
+      const faces: CustomFace[] = rawFaces
+        .filter(x => isUrl(x.url))
+        .slice(0, 18)
+        .map(x => ({
+          url: x.url as string,
+          weight: WEIGHTS.includes(x.weight as Weight) ? (x.weight as number) : 400,
+          italic: bool(x.italic, false),
+        }))
+      return {
+        id: f.id as string, faces,
+        name: typeof f.name === 'string' && f.name.trim() ? f.name.trim().slice(0, 40) : 'Carattere',
+        cat: pick(f.cat, ['serif', 'sans', 'script'] as const, 'serif'),
+      }
+    })
+    .filter(f => f.faces.length > 0)
     .slice(0, 30)
-    .map(f => ({
-      id: f.id as string, url: f.url as string,
-      name: typeof f.name === 'string' && f.name.trim() ? f.name.trim().slice(0, 40) : 'Carattere',
-      cat: pick(f.cat, ['serif', 'sans', 'script'] as const, 'serif'),
-    }))
   customFonts.forEach(registerCustom)
   const custom = new Set(customFonts.map(f => CUSTOM_PREFIX + f.id))
   const tx = (v: unknown, dd: TextStyle) => text(v, dd, custom)
