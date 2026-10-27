@@ -23,8 +23,8 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { PAPER, SERIF, SANS, type Dish } from './typeset'
-import { GlassButton } from './Glass'
+import { SERIF, SANS, type Dish } from './typeset'
+import { GlassButton, glassSheet } from './Glass'
 import { t } from './i18n'
 import type { Lang } from '@/lib/translations'
 
@@ -32,8 +32,9 @@ const EXPAND = 96          // px di scorrimento per passare da staccata a tutto 
 const CLOSE_PULL = 110     // px di trascinamento oltre la cima per chiudere
 const DIM = 0.22           // scurimento della pagina sotto durante lo "Scivola"
 
-const CARD    = '#fffdf9'
-const SECTION = '#f3eee5'
+const CARD    = '#fffdf9'                     // colore pieno (sotto le barre di Safari)
+const SECTION = 'rgba(120,96,60,0.07)'        // velatura della parte bassa, sopra il vetro
+const TILE    = 'rgba(255,255,255,0.42)'      // riquadri chiari appoggiati sul vetro
 const INK     = '#1d1915'
 const SOFT    = '#6a6157'
 const ACCENT  = '#9a8462'
@@ -95,7 +96,7 @@ export default function DishCard({ dish: first, lang, sequence, siblings, onClos
   const cardRef     = useRef<HTMLDivElement>(null)
   const barRef      = useRef<HTMLDivElement>(null)
   const probeRef    = useRef<HTMLDivElement>(null)
-  const pages = useRef(new Map<string, { root: HTMLDivElement; scroller: HTMLDivElement; dim: HTMLDivElement }>())
+  const pages = useRef(new Map<string, { root: HTMLDivElement; scroller: HTMLDivElement; dim: HTMLDivElement; veil: HTMLDivElement }>())
 
   const [initial] = useState<Entry>(() => entryFor(first))
   const stack = useRef<Entry[]>([initial])
@@ -186,6 +187,9 @@ export default function DishCard({ dish: first, lang, sequence, siblings, onClos
       el.root.style.borderRadius = lift ? `${((30 * lift) / scale).toFixed(2)}px` : ''
       el.root.style.boxShadow = lift ? `0 0 34px rgba(20,14,8,${(0.30 * lift).toFixed(3)})` : ''
       el.dim.style.opacity = dim.toFixed(3)
+      // La lastra che scorre si fa più piena mentre si muove: la pagina sotto
+      // non traspare in mezzo al testo.
+      el.veil.style.opacity = (0.75 * lift).toFixed(3)
     })
   }, [])
 
@@ -306,7 +310,8 @@ export default function DishCard({ dish: first, lang, sequence, siblings, onClos
     if (map.get(key)?.root === el) return
     const scroller = el.querySelector<HTMLDivElement>('[data-scroller]')!
     const dim = el.querySelector<HTMLDivElement>('[data-dim]')!
-    map.set(key, { root: el, scroller, dim })
+    const veil = el.querySelector<HTMLDivElement>('[data-veil]')!
+    map.set(key, { root: el, scroller, dim, veil })
     const entry = [...stack.current, st.current.trans?.dest].find(e => e?.key === key)
     if (entry?.scroll) scroller.scrollTop = entry.scroll
     apply()
@@ -504,12 +509,12 @@ export default function DishCard({ dish: first, lang, sequence, siblings, onClos
       <div ref={probeRef} aria-hidden className="pointer-events-none fixed inset-0 invisible"
         style={{ padding: 'env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)' }} />
       {/* Fondo: scurisce il menu; un tocco fuori dalla scheda la chiude. */}
-      <div ref={backdropRef} className="absolute inset-0" style={{ background: 'rgba(24,18,12,0.42)', opacity: 0 }}
+      <div ref={backdropRef} className="absolute inset-0" style={{ background: 'rgba(24,18,12,0.12)', opacity: 0 }}
         onClick={() => close()} />
 
       <div ref={cardRef} role="dialog" aria-modal="true" aria-label={layers[layers.length - 1].dish.name}
         className="absolute top-0 overflow-hidden select-none"
-        style={{ height: '100%', background: CARD, transformOrigin: '50% 0', willChange: 'transform', transform: 'translate3d(0,120vh,0)', WebkitUserSelect: 'none' }}>
+        style={{ height: '100%', background: 'transparent', transformOrigin: '50% 0', willChange: 'transform', transform: 'translate3d(0,120vh,0)', WebkitUserSelect: 'none' }}>
 
         {layers.map(l => (
           <Page key={l.key} layer={l} lang={lang} siblings={siblings} onLink={link} register={register} />
@@ -542,7 +547,10 @@ function Page({ layer, lang, siblings, onLink, register }: {
   const others = siblings(dish).filter(d => d.id !== dish.id)
   const pairing = dish.pairing
   return (
-    <div ref={ref} className="absolute inset-0 overflow-hidden" style={{ background: CARD }}>
+    // Ogni pagina è una lastra di vetro: sfoca il menu dietro e, nello
+    // "Scivola", anche la pagina che sta sotto (i testi non si sovrappongono).
+    <div ref={ref} className="absolute inset-0 overflow-hidden" style={glassSheet()}>
+      <div data-veil aria-hidden className="absolute inset-0 pointer-events-none" style={{ background: CARD, opacity: 0 }} />
       <div data-scroller className="absolute inset-0 overflow-y-auto"
         style={{ overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch', touchAction: 'pan-y' }}>
         <div style={{ minHeight: `calc(100% + ${EXPAND}px)`, display: 'flex', flexDirection: 'column' }}>
@@ -561,7 +569,7 @@ function Page({ layer, lang, siblings, onLink, register }: {
                 <Block title={pairing.label || t('pairing', lang)}>
                   <button type="button" onClick={() => onLink(pairing.dish)}
                     className="w-full flex items-center text-left active:opacity-60 transition-opacity"
-                    style={{ gap: 14, background: CARD, borderRadius: 16, padding: 12, border: `1px solid ${LINE}` }}>
+                    style={{ gap: 14, background: TILE, borderRadius: 16, padding: 12, border: `1px solid ${LINE}` }}>
                     <Thumb dish={pairing.dish} size={56} />
                     <span className="flex-1 min-w-0">
                       <span className="block truncate" style={{ fontFamily: SERIF, fontWeight: 600, fontSize: 19, color: INK }}>{pairing.dish.name}</span>
@@ -621,10 +629,10 @@ function Header({ dish, lang }: { dish: Dish; lang: Lang }) {
   const [ready] = useState(() => !!dish.image && readyImages.has(dish.image))
   const [loaded, setLoaded] = useState(ready)
   return (
-    <header className="mx-auto w-full text-center" style={{ maxWidth: 560, padding: '64px 24px 30px', background: CARD }}>
+    <header className="mx-auto w-full text-center" style={{ maxWidth: 560, padding: '64px 24px 30px' }}>
       {dish.image && (
         <div className="mx-auto" style={{ width: 'min(84%, 360px)', marginBottom: 28 }}>
-          <div style={{ position: 'relative', aspectRatio: '1 / 1', borderRadius: 14, overflow: 'hidden', background: SECTION, boxShadow: '0 18px 40px rgba(40,28,14,0.20), 0 2px 6px rgba(40,28,14,0.10)' }}>
+          <div style={{ position: 'relative', aspectRatio: '1 / 1', borderRadius: 14, overflow: 'hidden', background: TILE, boxShadow: '0 18px 40px rgba(40,28,14,0.20), 0 2px 6px rgba(40,28,14,0.10)' }}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={dish.image} alt="" draggable={false} onLoad={() => { readyImages.add(dish.image!); setLoaded(true) }}
               ref={el => { if (el?.complete && el.naturalWidth && !loaded) setLoaded(true) }}
@@ -670,7 +678,7 @@ function Block({ title, children }: { title: string; children: React.ReactNode }
 
 function Thumb({ dish, size }: { dish: Dish; size: number }) {
   return (
-    <span className="block shrink-0 overflow-hidden" style={{ width: size, height: size, borderRadius: size > 80 ? 12 : 10, background: PAPER, boxShadow: `inset 0 0 0 1px ${LINE}` }}>
+    <span className="block shrink-0 overflow-hidden" style={{ width: size, height: size, borderRadius: size > 80 ? 12 : 10, background: TILE, boxShadow: `inset 0 0 0 1px ${LINE}` }}>
       {dish.image
         // eslint-disable-next-line @next/next/no-img-element
         ? <img src={dish.image} alt="" loading="lazy" draggable={false} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />

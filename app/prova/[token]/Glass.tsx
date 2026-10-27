@@ -21,12 +21,12 @@ const GLASS_INK = '#1d1915'
 export function glassSurface(strength: 'light' | 'panel' = 'light'): React.CSSProperties {
   const panel = strength === 'panel'
   const filter = panel
-    ? 'blur(16px) saturate(1.5) brightness(1.08)'
-    : 'blur(5px) saturate(1.5) brightness(1.1) contrast(1.04)'
+    ? 'blur(12px) saturate(1.5) brightness(1.08)'
+    : 'blur(2.5px) saturate(1.5) brightness(1.1) contrast(1.04)'
   return {
     background: panel
-      ? 'linear-gradient(180deg, rgba(255,255,255,0.58), rgba(250,247,241,0.44))'
-      : 'linear-gradient(180deg, rgba(255,255,255,0.26), rgba(255,255,255,0.10))',
+      ? 'linear-gradient(180deg, rgba(255,255,255,0.42), rgba(250,247,241,0.28))'
+      : 'linear-gradient(180deg, rgba(255,255,255,0.14), rgba(255,255,255,0.03))',
     backdropFilter: filter,
     WebkitBackdropFilter: filter,
     boxShadow: [
@@ -38,6 +38,20 @@ export function glassSurface(strength: 'light' | 'panel' = 'light'): React.CSSPr
       '0 0 0 0.5px rgba(0,0,0,0.08)',
       panel ? '0 18px 50px rgba(20,14,8,0.22)' : '0 8px 22px rgba(20,14,8,0.16), 0 1px 3px rgba(20,14,8,0.10)',
     ].join(', '),
+  }
+}
+
+/**
+ * Vetro per superfici grandi con testo da leggere (pagine della scheda
+ * prodotto): sfocatura media (dietro si intuiscono le righe del menu) con un
+ * velo chiaro e caldo che tiene il testo leggibile.
+ */
+export function glassSheet(): React.CSSProperties {
+  const filter = 'blur(16px) saturate(1.4) brightness(1.12)'
+  return {
+    background: 'linear-gradient(180deg, rgba(255,253,249,0.56), rgba(252,249,243,0.46))',
+    backdropFilter: filter,
+    WebkitBackdropFilter: filter,
   }
 }
 
