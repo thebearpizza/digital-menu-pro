@@ -6,8 +6,9 @@
 //   • al centro le categorie: quella della pagina aperta è evidenziata
 //     (l'indicatore scivola), un tocco porta alla sua pagina;
 //   • a destra la bandierina → scelta della lingua.
-// Spariscono appena si gira pagina; un tocco su uno spazio vuoto del foglio li
-// fa riapparire.
+// La barra è nascosta sotto il bordo dello schermo: si apre scorrendo verso
+// l'alto (segue il dito, il gesto lo gestisce CurlMenu tramite `barRef`), si
+// chiude scorrendo verso il basso, girando pagina o toccando il foglio.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { forwardRef, useLayoutEffect, useRef, useState } from 'react'
@@ -18,12 +19,15 @@ import { t, type MenuChoice } from './i18n'
 import { SANS } from './typeset'
 
 const INK = '#1d1915'
-const BAR_H = 42
+export const BAR_H = 42
+/** Spostamento della barra nascosta (px oltre all'area sicura in basso). */
+export const BAR_HIDE = BAR_H + 22
 const BOTTOM = 'calc(env(safe-area-inset-bottom) + 8px)'
 const MENU_BOTTOM = `calc(env(safe-area-inset-bottom) + ${8 + BAR_H + 10}px)`
 
 interface Props {
   shown:      boolean
+  barRef:     React.RefObject<HTMLDivElement>
   lang:       Lang
   onLang:     (l: Lang) => void
   menus:      MenuChoice[]
@@ -34,7 +38,7 @@ interface Props {
   onJump:     (page: number) => void
 }
 
-export default function Chrome({ shown, lang, onLang, menus, menuId, onMenu, categories, active, onJump }: Props) {
+export default function Chrome({ shown, barRef, lang, onLang, menus, menuId, onMenu, categories, active, onJump }: Props) {
   const [open, setOpen] = useState<null | 'menu' | 'lang'>(null)
   const hide = !shown && !open
   // I pannelli si aprono sopra il loro tasto (allineati al suo bordo esterno).
@@ -49,14 +53,16 @@ export default function Chrome({ shown, lang, onLang, menus, menuId, onMenu, cat
 
   return (
     <>
-      <div className="fixed left-0 right-0 flex items-center justify-center"
+      <div ref={barRef} className="fixed left-0 right-0 flex items-center justify-center"
         style={{
           bottom: BOTTOM, zIndex: 40, gap: 8,
           padding: '0 max(12px, env(safe-area-inset-right)) 0 max(12px, env(safe-area-inset-left))',
-          opacity: hide ? 0 : 1,
-          transform: hide ? 'translate3d(0, 14px, 0)' : 'none',
+          // Solo spostamento, niente opacità: su un contenitore spegnerebbe la
+          // sfocatura del vetro dei tasti (che comparirebbe di scatto).
+          transform: hide ? `translate3d(0, calc(${BAR_HIDE}px + env(safe-area-inset-bottom)), 0)` : 'translate3d(0, 0, 0)',
           pointerEvents: 'none',
-          transition: 'opacity 260ms ease, transform 320ms ease',
+          transition: 'transform 420ms cubic-bezier(0.2, 0.9, 0.25, 1)',
+          willChange: 'transform',
         }}>
         {menus.length > 1 && (
           <Slot hide={hide} ref={menuRef}>
@@ -148,10 +154,12 @@ function CategoryBar({ categories, active, onJump, hide }: {
   )
 }
 
+// Contenitore flex: la bandierina (inline-block) non scivola sulla linea di
+// base del testo e il suo bordo sottile non viene ritagliato.
 function Flag({ lang }: { lang: Lang }) {
   return (
-    <span className="block overflow-hidden" style={{ width: 22, height: 15, borderRadius: 3.5, boxShadow: '0 0 0 0.5px rgba(0,0,0,0.18)' }}>
-      <FlagIcon lang={lang} className="w-full h-full" />
+    <span className="flex items-center justify-center" style={{ width: 24, height: 18 }}>
+      <FlagIcon lang={lang} className="!block w-[22px] h-[15px]" />
     </span>
   )
 }

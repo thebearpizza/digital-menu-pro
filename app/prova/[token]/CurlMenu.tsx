@@ -14,16 +14,19 @@
 // del dito); F è il punto dove quel bordo deve trovarsi.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { forwardRef, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { CurlRenderer, constrain, solveCurl, type Rect, type Scene, type Sheet, type Vec } from './curl'
 import { useRouter } from 'next/navigation'
-import { layoutMenu, FONT_FACES, PAPER, type Dish, type Layout, type MenuData, type Insets } from './typeset'
+import { layoutMenu, FONT_FACES, PAPER, SANS, type Dish, type Layout, type MenuData, type Insets } from './typeset'
 import { isLang, type Lang } from '@/lib/translations'
 import DishCard from './DishCard'
-import Chrome from './Chrome'
-import { localize, type I18nData, type MenuChoice } from './i18n'
+import Chrome, { BAR_HIDE } from './Chrome'
+import { localize, t, type I18nData, type MenuChoice } from './i18n'
+import { GlassSheen, glassSurface } from './Glass'
 
 const LANG_KEY = 'dmp-menu-lang'   // stessa chiave del menu pubblico: la lingua scelta vale ovunque
+const HINT_KEY = 'lito-swipe-hint'  // istruzioni dei gesti già viste: non tornano più
+const BAR_TRAVEL = 72               // px di gesto per aprire/chiudere del tutto la barra
 
 interface Props {
   /** Menu in italiano (lingua base). */
@@ -42,8 +45,9 @@ type Drag = {
   pointerId: number
   start:     Vec
   last:      Vec
-  samples:   { x: number; t: number }[]
-  mode:      'undecided' | 'forward' | 'back' | 'none'
+  samples:   { x: number; y: number; t: number }[]
+  /** bar = scorrimento verticale che apre/chiude la barra dei comandi. */
+  mode:      'undecided' | 'forward' | 'back' | 'bar' | 'none'
   startedAt: number
 }
 
@@ -84,9 +88,23 @@ export default function CurlMenu({ data: base, i18n, menus, menuId, token }: Pro
   const dataRef = useRef(data)
   dataRef.current = data
 
-  // Comandi (Menu, lingua, categorie): visibili all'apertura, spariscono
-  // girando pagina, riappaiono toccando uno spazio vuoto della pagina.
-  const [chrome, setChrome] = useState(true)
+  // Barra dei comandi (Menu, categorie, lingua): nascosta; si apre scorrendo
+  // verso l'alto e segue il dito; si chiude scorrendo in giù, girando pagina o
+  // toccando il foglio. Durante il gesto lo stile si scrive direttamente.
+  const [chrome, setChrome] = useState(false)
+  const chromeOpen = useRef(false)
+  const barRef = useRef<HTMLDivElement>(null)
+  // Istruzioni dei gesti sulla prima pagina: svaniscono durante il primo
+  // swipe (di qualunque tipo) e, a gesto compiuto, non tornano più.
+  const [hint, setHint] = useState(false)
+  const hintRef = useRef<HTMLDivElement>(null)
+  const hintDone = useRef(true)
+  useEffect(() => {
+    let seen = false
+    try { seen = localStorage.getItem(HINT_KEY) === '1' } catch { /* memoria non disponibile */ }
+    hintDone.current = seen
+    if (!seen) setHint(true)
+  }, [])
   const [pageInfo, setPageInfo] = useState<PageInfo>({ index: 0, spread: false, starts: [] })
   const apiRef = useRef<{ refresh: () => void; jump: (page: number) => void } | null>(null)
   const anchorRef = useRef<string | null>(null)   // primo piatto visto: resta lì cambiando lingua
@@ -252,10 +270,54 @@ export default function CurlMenu({ data: base, i18n, menus, menuId, token }: Pro
       return { statics, moving, shadow }
     }
 
+    // ── Barra dei comandi e istruzioni (stile scritto direttamente durante i gesti)
+    const barHide = () => BAR_HIDE + insets().bottom
+    const setBar = (p: number) => {
+      const el = barRef.current
+      if (!el) return
+      el.style.transition = 'none'
+      el.style.transform = `translate3d(0, ${((1 - p) * barHide()).toFixed(1)}px, 0)`
+    }
+    const settleBar = (open: boolean) => {
+      const el = barRef.current
+      if (el) {
+        el.style.transition = 'transform 420ms cubic-bezier(0.2, 0.9, 0.25, 1)'
+        el.style.transform = open ? 'translate3d(0, 0, 0)' : `translate3d(0, ${barHide()}px, 0)`
+      }
+      chromeOpen.current = open
+      setChrome(open)
+    }
+    /** f = 0 istruzioni piene → 1 sparite (segue il gesto). */
+    const fadeHint = (f: number) => {
+      const el = hintRef.current
+      if (!el || hintDone.current) return
+      el.style.transition = 'none'
+      el.style.opacity = (1 - Math.max(0, Math.min(1, f))).toFixed(3)
+    }
+    const restoreHint = () => {
+      const el = hintRef.current
+      if (!el || hintDone.current) return
+      el.style.transition = 'opacity 260ms ease'
+      el.style.opacity = '1'
+    }
+    const finishHint = () => {
+      if (hintDone.current) return
+      hintDone.current = true
+      try { localStorage.setItem(HINT_KEY, '1') } catch { /* memoria non disponibile */ }
+      const el = hintRef.current
+      if (el) { el.style.transition = 'opacity 260ms ease'; el.style.opacity = '0' }
+      window.setTimeout(() => setHint(false), 300)
+    }
+
     // ── Disegno
     const draw = () => {
       raf = 0
       if (!layout) return
+      // Il primo giro di pagina fa svanire le istruzioni insieme al foglio.
+      if (!hintDone.current && index === 0 && !peeking) {
+        if (turn?.kind === 'forward') fadeHint(((turn.P0.x - turn.F.x) / (2 * pageW)) * 4)
+        else if (!turn) restoreHint()
+      }
       if (renderer) {
         const scene = buildScene()
         if (scene) renderer.render(scene)
@@ -326,6 +388,7 @@ export default function CurlMenu({ data: base, i18n, menus, menuId, token }: Pro
       if (!anim) return
       const { turn: t, commit } = anim
       if (commit) index += (t.kind === 'forward' ? 1 : -1) * step()
+      if (index !== 0) finishHint()
       anim = null; turn = null
       draw(); prune(); warm(); report()
     }
@@ -416,26 +479,38 @@ export default function CurlMenu({ data: base, i18n, menus, menuId, token }: Pro
       skipAnim()
       canvas.setPointerCapture(e.pointerId)
       const p = pos(e)
-      drag = { pointerId: e.pointerId, start: p, last: p, samples: [{ x: p.x, t: e.timeStamp }], mode: 'undecided', startedAt: e.timeStamp }
+      drag = { pointerId: e.pointerId, start: p, last: p, samples: [{ x: p.x, y: p.y, t: e.timeStamp }], mode: 'undecided', startedAt: e.timeStamp }
     }
 
     const onMove = (e: PointerEvent) => {
       if (!drag || e.pointerId !== drag.pointerId) return
       const p = pos(e)
       drag.last = p
-      drag.samples.push({ x: p.x, t: e.timeStamp })
+      drag.samples.push({ x: p.x, y: p.y, t: e.timeStamp })
       if (drag.samples.length > 6) drag.samples.shift()
       if (drag.mode === 'undecided') {
         const dx = p.x - drag.start.x, dy = p.y - drag.start.y
         if (Math.hypot(dx, dy) < 8) return
-        if (Math.abs(dy) > Math.abs(dx) * 1.4) { drag.mode = 'none'; return }
+        if (Math.abs(dy) > Math.abs(dx) * 1.4) {
+          // Verticale: in su apre la barra, in giù la chiude.
+          drag.mode = (dy < 0) !== chromeOpen.current ? 'bar' : 'none'
+          drag.start = { x: p.x, y: p.y }
+          return
+        }
         if (dx < 0 && canForward()) drag.mode = 'forward'
         else if (dx > 0 && canBack()) drag.mode = 'back'
         else { drag.mode = 'none'; return }
-        setChrome(false)   // si legge: i comandi si tolgono di mezzo
+        if (chromeOpen.current) settleBar(false)   // si legge: i comandi si tolgono di mezzo
         // Il gesto riparte da qui (x E y): nessun salto, nessuna piega storta
         // nei primi fotogrammi.
         drag.start = { x: p.x, y: p.y }
+      }
+      if (drag.mode === 'bar') {
+        const dy = p.y - drag.start.y
+        const prog = chromeOpen.current ? 1 - Math.max(0, Math.min(1, dy / BAR_TRAVEL)) : Math.max(0, Math.min(1, -dy / BAR_TRAVEL))
+        setBar(prog)
+        if (!chromeOpen.current) fadeHint(prog)
+        return
       }
       if (drag.mode === 'none') return
       turn = turnFromDrag(drag, p)
@@ -464,7 +539,20 @@ export default function CurlMenu({ data: base, i18n, menus, menuId, token }: Pro
         if (dish) {
           if (dish.image) { const im = new Image(); im.src = dish.image }
           setCard(dish)
-        } else setChrome(c => !c)   // spazio vuoto: mostra/nasconde i comandi
+        } else if (chromeOpen.current) settleBar(false)   // spazio vuoto: chiude i comandi
+        peekIdle()
+        return
+      }
+      if (d.mode === 'bar') {
+        // Rilascio: si apre/chiude secondo la strada fatta e la velocità.
+        const s = d.samples, a = s[0], b = s[s.length - 1]
+        const vy = b.t > a.t ? (b.y - a.y) / (b.t - a.t) : 0     // px/ms, negativo = in su
+        const dy = d.last.y - d.start.y
+        const prog = chromeOpen.current ? 1 - Math.max(0, Math.min(1, dy / BAR_TRAVEL)) : Math.max(0, Math.min(1, -dy / BAR_TRAVEL))
+        const open = vy < -0.3 || (prog > 0.45 && vy < 0.3)
+        settleBar(open)
+        if (open) finishHint()
+        else restoreHint()
         peekIdle()
         return
       }
@@ -479,7 +567,9 @@ export default function CurlMenu({ data: base, i18n, menus, menuId, token }: Pro
 
     const onCancel = (e: PointerEvent) => {
       if (!drag || e.pointerId !== drag.pointerId) return
+      const d = drag
       drag = null
+      if (d.mode === 'bar') { settleBar(chromeOpen.current); restoreHint() }
       if (turn) animate(turn, false)
       else peekIdle()
     }
@@ -487,8 +577,10 @@ export default function CurlMenu({ data: base, i18n, menus, menuId, token }: Pro
     const onKey = (e: KeyboardEvent) => {
       if (anim || drag || cardOpen.current) return
       cancelPeek()
-      if ((e.key === 'ArrowRight' || e.key === ' ') && canForward()) { setChrome(false); turnBy('forward', H * 0.7) }
-      else if (e.key === 'ArrowLeft' && canBack()) { setChrome(false); turnBy('back', H * 0.7) }
+      if ((e.key === 'ArrowRight' || e.key === ' ') && canForward()) { settleBar(false); turnBy('forward', H * 0.7) }
+      else if (e.key === 'ArrowLeft' && canBack()) { settleBar(false); turnBy('back', H * 0.7) }
+      else if (e.key === 'ArrowUp') { settleBar(true); finishHint() }
+      else if (e.key === 'ArrowDown') settleBar(false)
     }
 
     // ── Contesto WebGL perso (es. app in background su iOS): si ricrea tutto.
@@ -591,11 +683,50 @@ export default function CurlMenu({ data: base, i18n, menus, menuId, token }: Pro
         )}
       </div>
       {status !== 'loading' && (
-        <Chrome shown={chrome} lang={lang} onLang={setLang} menus={menus} menuId={menuId}
+        <Chrome shown={chrome} barRef={barRef} lang={lang} onLang={setLang} menus={menus} menuId={menuId}
           onMenu={id => router.replace(`/prova/${token}?menu=${id}`)}
           categories={pageInfo.starts} active={activeCategory} onJump={p => apiRef.current?.jump(p)} />
       )}
+      {hint && status !== 'loading' && pageInfo.index === 0 && (
+        <SwipeHint ref={hintRef} up={t('swipeUp', lang)} side={t('swipeSide', lang)} />
+      )}
       {card && <DishCard key={card.id} dish={card} lang={lang} sequence={sequence} siblings={siblings} onClosed={onClosed} />}
+    </div>
+  )
+}
+
+// ── Istruzioni dei gesti (solo prima pagina, finché non si fa il primo swipe) ──
+
+const SwipeHint = forwardRef<HTMLDivElement, { up: string; side: string }>(function SwipeHint({ up, side }, ref) {
+  // L'opacità sta sulla capsula stessa (un antenato semitrasparente spegnerebbe
+  // la sfocatura del vetro); entra con una dissolvenza, poi la guida il gesto.
+  const [shown, setShown] = useState(false)
+  useEffect(() => { const tm = window.setTimeout(() => setShown(true), 500); return () => clearTimeout(tm) }, [])
+  return (
+    <div className="fixed left-0 right-0 flex justify-center pointer-events-none"
+      style={{ bottom: 'calc(env(safe-area-inset-bottom) + 12px)', zIndex: 39, padding: '0 16px' }}>
+      <style>{`
+        @keyframes lito-hint-up { 0%, 100% { transform: translate3d(0, 3px, 0); opacity: .55 } 50% { transform: translate3d(0, -4px, 0); opacity: 1 } }
+        @keyframes lito-hint-side { 0%, 100% { transform: translate3d(3px, 0, 0); opacity: .55 } 50% { transform: translate3d(-4px, 0, 0); opacity: 1 } }
+      `}</style>
+      <div ref={ref} className="relative flex flex-col items-center"
+        style={{ ...glassSurface(), borderRadius: 22, padding: '10px 18px 11px', gap: 5, maxWidth: 360, opacity: shown ? 1 : 0, transition: 'opacity 700ms ease' }}>
+        <GlassSheen />
+        <HintRow anim="lito-hint-up" icon={<path d="M2 9l6-6 6 6" />} text={up} />
+        <HintRow anim="lito-hint-side" icon={<path d="M10 2L4 8l6 6" />} text={side} soft />
+      </div>
+    </div>
+  )
+})
+
+function HintRow({ anim, icon, text, soft }: { anim: string; icon: React.ReactNode; text: string; soft?: boolean }) {
+  return (
+    <div className="relative flex items-center" style={{ gap: 9 }}>
+      <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden className="shrink-0"
+        style={{ animation: `${anim} 1.6s ease-in-out infinite`, fill: 'none', stroke: '#1d1915', strokeWidth: 1.9, strokeLinecap: 'round', strokeLinejoin: 'round' }}>
+        {icon}
+      </svg>
+      <span style={{ fontFamily: SANS, fontSize: 13, fontWeight: soft ? 500 : 600, letterSpacing: '0.01em', color: soft ? 'rgba(29,25,21,0.6)' : '#1d1915' }}>{text}</span>
     </div>
   )
 }

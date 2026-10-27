@@ -36,6 +36,8 @@ const UI = {
   moreIn:      { it: 'Altro in',                en: 'More in',             fr: 'Aussi dans',         de: 'Mehr in',                es: 'Más en' },
   close:       { it: 'Chiudi',                  en: 'Close',               fr: 'Fermer',             de: 'Schließen',              es: 'Cerrar' },
   back:        { it: 'Indietro',                en: 'Back',                fr: 'Retour',             de: 'Zurück',                 es: 'Atrás' },
+  swipeUp:     { it: 'Scorri in su: categorie, menu e lingua', en: 'Swipe up: categories, menus and language', fr: 'Glissez vers le haut : catégories, menus et langue', de: 'Nach oben wischen: Kategorien, Menüs und Sprache', es: 'Desliza hacia arriba: categorías, menús e idioma' },
+  swipeSide:   { it: 'Scorri di lato per sfogliare', en: 'Swipe sideways to turn pages', fr: 'Glissez sur le côté pour tourner les pages', de: 'Zur Seite wischen zum Blättern', es: 'Desliza hacia un lado para pasar página' },
   cont:        { it: 'segue',                   en: 'continued',           fr: 'suite',              de: 'Fortsetzung',            es: 'continúa' },
 } satisfies Record<string, Record<Lang, string>>
 
