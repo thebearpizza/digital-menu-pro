@@ -14,7 +14,7 @@
 // del dito); F è il punto dove quel bordo deve trovarsi.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { CurlRenderer, constrain, solveCurl, type Rect, type Scene, type Sheet, type Vec } from './curl'
 import { layoutMenu, FONT_FACES, PAPER, type Dish, type Layout, type MenuData, type Insets } from './typeset'
 import DishCard from './DishCard'
@@ -50,7 +50,6 @@ type Anim = {
 export default function CurlMenu({ data }: { data: MenuData }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const probeRef  = useRef<HTMLDivElement>(null)
-  const stageRef  = useRef<HTMLDivElement>(null)
   const [status, setStatus] = useState<'loading' | 'ready' | 'nogl'>('loading')
   // Scheda del piatto aperta (il tocco su un piatto la apre).
   const [card, setCard] = useState<Dish | null>(null)
@@ -61,6 +60,10 @@ export default function CurlMenu({ data }: { data: MenuData }) {
     const canvas = canvasRef.current!
     const probe  = probeRef.current!
     let disposed = false
+    // Sotto le barre di Safari si vede lo sfondo della pagina: color carta.
+    const html = document.documentElement
+    const prevBg = html.style.backgroundColor
+    html.style.backgroundColor = PAPER
 
     // ── Font: prima il foglio di stile (dichiara le facce), POI la richiesta
     // delle facce: chiesta prima, document.fonts.load risponde "pronto" a vuoto.
@@ -423,6 +426,7 @@ export default function CurlMenu({ data }: { data: MenuData }) {
     window.addEventListener('keydown', onKey)
     return () => {
       disposed = true
+      html.style.backgroundColor = prevBg
       cancelAnimationFrame(raf)
       clearTimeout(warmTimer); clearTimeout(resizeTimer)
       canvas.removeEventListener('pointerdown', onDown)
@@ -439,18 +443,13 @@ export default function CurlMenu({ data }: { data: MenuData }) {
 
   // Piatti della stessa categoria del menu (per "Altro in …" nella scheda).
   const siblings = useCallback((d: Dish) => data.categories.find(c => c.dishes.some(x => x.id === d.id))?.dishes ?? [], [data])
-  // Con la scheda aperta il menu dietro arretra appena (come i fogli di iOS).
-  const onPresence = useCallback((o: number) => {
-    const el = stageRef.current
-    if (!el) return
-    el.style.transform = o > 0.001 ? `scale(${(1 - 0.04 * o).toFixed(4)})` : ''
-    el.style.borderRadius = o > 0.001 ? `${(14 * o).toFixed(1)}px` : ''
-  }, [])
-  const onClosed = useCallback(() => { onPresence(0); setCard(null) }, [onPresence])
+  // Tutti i piatti in ordine di menu (swipe precedente/successivo nella scheda).
+  const sequence = useMemo(() => data.categories.flatMap(c => c.dishes), [data])
+  const onClosed = useCallback(() => setCard(null), [])
 
   return (
-    <div className="fixed inset-0 overflow-hidden" style={{ background: '#16120e', overscrollBehavior: 'none' }}>
-      <div ref={stageRef} className="absolute inset-0 overflow-hidden" style={{ background: PAPER, transformOrigin: '50% 50%' }}>
+    <div className="fixed inset-0 overflow-hidden" style={{ background: PAPER, overscrollBehavior: 'none' }}>
+      <div className="absolute inset-0 overflow-hidden">
         {/* Sonda invisibile: legge le aree sicure (notch, barra home) in px. */}
         <div ref={probeRef} aria-hidden className="pointer-events-none fixed inset-0 invisible"
           style={{ padding: 'env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)' }} />
@@ -466,7 +465,7 @@ export default function CurlMenu({ data }: { data: MenuData }) {
           </div>
         )}
       </div>
-      {card && <DishCard key={card.id} dish={card} siblings={siblings} onClosed={onClosed} onPresence={onPresence} />}
+      {card && <DishCard key={card.id} dish={card} sequence={sequence} siblings={siblings} onClosed={onClosed} />}
     </div>
   )
 }

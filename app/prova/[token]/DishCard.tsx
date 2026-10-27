@@ -2,25 +2,32 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // Scheda del piatto, come la scheda di un libro nell'app Libri.
 //
-//  • Si apre salendo dal basso: una scheda quasi a tutto schermo (staccata dai
-//    bordi, angoli tondi), con il menu che si scurisce dietro.
-//  • Scorrendo per leggere, nei primi EXPAND px la scheda si allarga fino a
-//    tutto schermo; tornando su si rimpicciolisce alla misura iniziale.
-//  • Arrivati in cima, tirando ancora verso il basso la scheda segue il dito e,
-//    lasciata oltre la soglia (o con un gesto deciso), si chiude.
+//  • Si apre salendo dal basso: una scheda quasi a tutto schermo (staccata ai
+//    lati e in alto, prosegue sotto il fondo dello schermo), il menu si scurisce.
+//  • Scorrendo verso il basso la scheda si allarga fino a tutto schermo;
+//    scorrendo verso l'alto si rimpicciolisce subito, ovunque si sia nel testo
+//    (come le barre di Safari): un solo movimento, nessun doppio passaggio.
+//  • In cima, tirando ancora verso il basso la scheda segue il dito e, lasciata
+//    oltre la soglia (o con un gesto deciso), si chiude.
+//  • Swipe orizzontale: piatto precedente/successivo del menu, con l'effetto
+//    "Scivola" di Libri (la pagina sopra scorre con angoli tondi e ombra, quella
+//    sotto è scurita).
+//  • Abbinamento e "Altro in …" aprono una nuova scheda sopra (cronologia):
+//    la freccia a sinistra torna alla scheda da cui si è arrivati; dalla prima
+//    scheda torna al menu. La X a destra chiude sempre.
 //
-// La scheda è sempre grande quanto lo schermo: la misura "staccata" si ottiene
+// La scheda è sempre larga quanto lo schermo: la misura "staccata" si ottiene
 // con transform (scala + spostamento), così lo scorrimento resta nativo e il
-// testo non viene mai reimpaginato mentre la scheda cambia misura.
-// Tutte le animazioni scrivono lo stile direttamente (niente render React a
-// ogni fotogramma).
+// testo non viene mai reimpaginato mentre la scheda cambia misura. Le
+// animazioni scrivono lo stile direttamente (niente render React per fotogramma).
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { PAPER, SERIF, SANS, type Dish } from './typeset'
 
-const EXPAND = 96          // px di scorrimento per arrivare a tutto schermo
+const EXPAND = 96          // px di scorrimento per passare da staccata a tutto schermo
 const CLOSE_PULL = 110     // px di trascinamento oltre la cima per chiudere
+const DIM = 0.22           // scurimento della pagina sotto durante lo "Scivola"
 
 const CARD    = '#fffdf9'
 const SECTION = '#f3eee5'
@@ -35,146 +42,306 @@ const price = (p: number | null) => (p === null || isNaN(p) ? '' : `${priceFmt.f
 const clamp01 = (x: number) => Math.max(0, Math.min(1, x))
 const smooth = (x: number) => { const t = clamp01(x); return t * t * (3 - 2 * t) }
 const easeOutQuint = (x: number) => 1 - Math.pow(1 - x, 5)
-const easeInOut = (x: number) => (x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2)
+const easeOutCubic = (x: number) => 1 - Math.pow(1 - x, 3)
 const easeOutQuad = (x: number) => 1 - (1 - x) * (1 - x)
+const easeInOut = (x: number) => (x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2)
+
+/** Una pagina della scheda (un piatto). key univoca anche se il piatto si ripete. */
+interface Layer { key: string; dish: Dish }
+/** Voce della cronologia: dove era arrivato lo scorrimento e quanto era allargata. */
+interface Entry extends Layer { scroll: number; q: number }
+
+type TransKind = 'next' | 'prev' | 'push' | 'pop' | 'rubber'
+interface Trans {
+  kind:   TransKind
+  top:    string          // pagina che scorre (sopra)
+  under:  string | null   // pagina scoperta/coperta (sotto)
+  r:      number          // 0 = partenza, 1 = arrivo
+  qFrom:  number
+  qTo:    number
+  dest:   Entry | null
+  offset: number          // solo 'rubber': spostamento elastico (px della scheda)
+}
+interface Tween { from: number; to: number; t0: number; dur: number; ease: (x: number) => number; set: (v: number) => void; done?: () => void }
+
+let keySeq = 0
+const entryFor = (dish: Dish): Entry => ({ key: `p${++keySeq}`, dish, scroll: 0, q: 0 })
 
 interface Props {
-  dish:      Dish | null
-  /** Altri piatti della stessa categoria (per "Altri piatti"). */
-  siblings:  (d: Dish) => Dish[]
-  onClosed:  () => void
-  /** Chiamata a ogni fotogramma con 0..1 (presenza della scheda): il menu dietro si scurisce/arretra. */
-  onPresence?: (o: number) => void
+  dish:     Dish
+  /** Tutti i piatti del menu in ordine (swipe precedente/successivo). */
+  sequence: Dish[]
+  /** Altri piatti della stessa categoria (per "Altro in …"). */
+  siblings: (d: Dish) => Dish[]
+  onClosed: () => void
 }
 
-export default function DishCard({ dish: initial, siblings, onClosed, onPresence }: Props) {
+export default function DishCard({ dish: first, sequence, siblings, onClosed }: Props) {
   const backdropRef = useRef<HTMLDivElement>(null)
   const cardRef     = useRef<HTMLDivElement>(null)
-  const scrollRef   = useRef<HTMLDivElement>(null)
-  const closeRef    = useRef<HTMLButtonElement>(null)
-  const contentRef  = useRef<HTMLDivElement>(null)
+  const barRef      = useRef<HTMLDivElement>(null)
   const probeRef    = useRef<HTMLDivElement>(null)
+  const pages = useRef(new Map<string, { root: HTMLDivElement; scroller: HTMLDivElement; dim: HTMLDivElement }>())
 
-  const [dish, setDish] = useState<Dish | null>(initial)
+  const [initial] = useState<Entry>(() => entryFor(first))
+  const stack = useRef<Entry[]>([initial])
+  const [layers, setLayers] = useState<Layer[]>([initial])
 
-  // Stato dell'animazione (fuori da React).
+  // Stato delle animazioni (fuori da React).
   const st = useRef({
-    o: 0,            // presenza 0..1 (apertura/chiusura)
-    pull: 0,         // trascinamento verso il basso oltre la cima (px)
+    o: 0,              // presenza 0..1 (apertura/chiusura)
+    pull: 0,           // trascinamento verso il basso oltre la cima (px)
+    q: 0,              // allargamento 0 staccata → 1 tutto schermo
+    lastTop: 0,        // ultimo scrollTop visto (per la direzione)
     closing: false,
     raf: 0,
-    tween: null as null | { key: 'o' | 'pull'; from: number; to: number; t0: number; dur: number; ease: (x: number) => number; done?: () => void },
+    tweens: new Map<string, Tween>(),
+    trans: null as Trans | null,
+    geo: { scale: 1, cardW: 1 },
   })
 
-  // ── Geometria: applica o, pull e lo scorrimento allo stile.
+  // Solo ref: identità stabile, utilizzabili da tutti i callback.
+  const current = useCallback(() => stack.current[stack.current.length - 1], [])
+  const activeScroller = useCallback(() => pages.current.get(current().key)?.scroller ?? null, [current])
+
+  // ── Geometria: applica presenza, allargamento, trascinamento e pagine allo stile.
   const apply = useCallback(() => {
-    const card = cardRef.current, sc = scrollRef.current, bd = backdropRef.current, x = closeRef.current, probe = probeRef.current
-    if (!card || !sc || !bd || !x || !probe) return
+    const card = cardRef.current, bd = backdropRef.current, bar = barRef.current, probe = probeRef.current
+    if (!card || !bd || !bar || !probe) return
+    const s = st.current
     const W = window.innerWidth, H = window.innerHeight
     const cs = getComputedStyle(probe)
     const safeTop = parseFloat(cs.paddingTop) || 0
     const wide = W >= 700
-    const s = st.current
-    const p = smooth(Math.max(0, sc.scrollTop) / EXPAND)          // 0 staccata → 1 tutto schermo
+    const p = smooth(s.q)
     const cardW = wide ? Math.min(760, W - 64) : W
-    const safeBottom = parseFloat(cs.paddingBottom) || 0
-    // Staccata: stesso margine ai lati e in basso, sotto la barra di stato in alto.
-    const gapB = Math.max(10, safeBottom * 0.5)
-    const s0 = wide ? 1 : Math.min((W - 20) / W, (H - safeTop - 10 - gapB) / H)
-    const top0 = wide ? safeTop + 36 : H - gapB - H * s0
+    const s0 = wide ? 1 : (W - 20) / W
+    const top0 = safeTop + (wide ? 36 : 10)
     const scale = s0 + (1 - s0) * p
     const top = top0 * (1 - p)
-    const r = (wide ? 22 : 30) * (1 - p) + (wide ? 22 * p : 0)
-    // Entrata/uscita dal basso + trascinamento per chiudere.
+    // La scheda staccata prosegue oltre il fondo dello schermo (nessuno stacco
+    // in basso); il contenuto ha in fondo lo stesso margine, così a tutto
+    // schermo l'ultima riga resta visibile.
+    const extra = Math.ceil(Math.max(0, (H - top0) / s0 - H)) + 24
+    const r = wide ? 22 : 30 * (1 - p)
     const enter = (1 - s.o) * (H + 40)
-    const y = top + enter + s.pull
     card.style.width = `${cardW}px`
     card.style.left = `${(W - cardW) / 2}px`
-    card.style.transform = `translate3d(0, ${y.toFixed(2)}px, 0) scale(${scale.toFixed(5)})`
-    card.style.borderRadius = `${(r / scale).toFixed(2)}px`
-    // Ombra della scheda solo da staccata (a tutto schermo non serve).
+    card.style.height = `${H + extra}px`
+    card.style.setProperty('--extra', `${extra}px`)
+    card.style.transform = `translate3d(0, ${(top + enter + s.pull).toFixed(2)}px, 0) scale(${scale.toFixed(5)})`
+    card.style.borderRadius = `${(r / scale).toFixed(2)}px ${(r / scale).toFixed(2)}px 0 0`
     card.style.boxShadow = `0 -2px 30px rgba(20,14,8,${(0.16 * (1 - p)).toFixed(3)})`
-    // Il tasto chiudi scende sotto la barra di stato quando la scheda tocca il bordo.
-    x.style.transform = `translate3d(0, ${(safeTop * p).toFixed(2)}px, 0)`
+    s.geo = { scale, cardW }
+    // I tasti scendono sotto la barra di stato quando la scheda tocca il bordo.
+    bar.style.transform = `translate3d(0, ${(safeTop * p).toFixed(2)}px, 0)`
     const fade = 1 - Math.min(1, s.pull / (CLOSE_PULL * 2.2))
     bd.style.opacity = (s.o * fade).toFixed(3)
-    onPresence?.(s.o * fade)
-  }, [onPresence])
+
+    // Pagine: "Scivola".
+    const t = s.trans
+    pages.current.forEach((el, key) => {
+      let tx = 0, dim = 0
+      const moving = !!t && key === t.top
+      if (t && moving) {
+        tx = t.kind === 'next' ? -t.r * cardW
+          : t.kind === 'prev' ? -(1 - t.r) * cardW
+          : t.kind === 'push' ? (1 - t.r) * cardW
+          : t.kind === 'pop' ? t.r * cardW
+          : t.offset
+      } else if (t && key === t.under) {
+        dim = t.kind === 'next' || t.kind === 'pop' ? (1 - t.r) * DIM : t.r * DIM
+      }
+      el.root.style.transform = tx ? `translate3d(${tx.toFixed(2)}px, 0, 0)` : ''
+      el.root.style.borderRadius = moving && t.kind !== 'rubber' ? `${(30 / scale).toFixed(2)}px` : ''
+      el.root.style.boxShadow = moving && t.kind !== 'rubber' ? '0 0 34px rgba(20,14,8,0.30)' : ''
+      el.dim.style.opacity = dim.toFixed(3)
+    })
+  }, [])
 
   const loop = useCallback(() => {
     const s = st.current
     s.raf = 0
-    const tw = s.tween
-    if (tw) {
-      const k = Math.min(1, (performance.now() - tw.t0) / tw.dur)
-      s[tw.key] = tw.from + (tw.to - tw.from) * tw.ease(k)
-      if (k >= 1) { s.tween = null; apply(); tw.done?.(); return }
-      s.raf = requestAnimationFrame(loop)
-    }
+    const now = performance.now()
+    const finished: Tween[] = []
+    s.tweens.forEach((tw, name) => {
+      const k = Math.min(1, (now - tw.t0) / tw.dur)
+      tw.set(tw.from + (tw.to - tw.from) * tw.ease(k))
+      if (k >= 1) { s.tweens.delete(name); finished.push(tw) }
+    })
     apply()
+    for (const tw of finished) tw.done?.()
+    if (s.tweens.size && !s.raf) s.raf = requestAnimationFrame(loop)
   }, [apply])
 
-  const tweenTo = useCallback((key: 'o' | 'pull', to: number, dur: number, ease: (x: number) => number, done?: () => void) => {
+  const schedule = useCallback(() => {
     const s = st.current
-    s.tween = { key, from: s[key], to, t0: performance.now(), dur, ease, done }
     if (!s.raf) s.raf = requestAnimationFrame(loop)
   }, [loop])
+
+  const tween = useCallback((name: string, from: number, to: number, dur: number, ease: (x: number) => number, set: (v: number) => void, done?: () => void) => {
+    st.current.tweens.set(name, { from, to, t0: performance.now(), dur, ease, set, done })
+    schedule()
+  }, [schedule])
 
   const close = useCallback((velocity = 0) => {
     const s = st.current
     if (s.closing) return
     s.closing = true
-    // La scheda prosegue verso il basso: "o" scende, "pull" resta dov'è. Dopo
-    // un gesto deciso parte già veloce; dal tasto accelera e frena.
+    // Dopo un gesto deciso parte già veloce; dal tasto accelera e frena.
     const flick = Math.abs(velocity) > 0.3
     const dur = flick ? Math.max(200, 320 - Math.min(120, Math.abs(velocity) * 90)) : 380
-    tweenTo('o', 0, dur, flick ? easeOutQuad : easeInOut, () => onClosed())
-  }, [onClosed, tweenTo])
+    tween('o', s.o, 0, dur, flick ? easeOutQuad : easeInOut, v => { s.o = v }, () => onClosed())
+  }, [onClosed, tween])
 
-  // ── Apertura
-  useLayoutEffect(() => {
-    apply()
-    tweenTo('o', 1, 520, easeOutQuint)
+  // ── Cambi di pagina
+  const startTrans = useCallback((kind: Exclude<TransKind, 'rubber'>, dest: Entry) => {
     const s = st.current
-    return () => { cancelAnimationFrame(s.raf); s.raf = 0 }
-  }, [apply, tweenTo])
+    const cur = current()
+    const sc = activeScroller()
+    cur.scroll = sc?.scrollTop ?? 0
+    cur.q = s.q
+    const topKey = kind === 'next' || kind === 'pop' ? cur.key : dest.key
+    const underKey = topKey === cur.key ? dest.key : cur.key
+    s.trans = { kind, top: topKey, under: underKey, r: 0, qFrom: s.q, qTo: dest.q, dest, offset: 0 }
+    const byKey = (k: string): Layer => (k === cur.key ? cur : dest)
+    setLayers([byKey(underKey), byKey(topKey)])   // sotto prima, sopra dopo
+  }, [activeScroller, current])
 
-  // ── Gesti: scorrimento (allarga), trascinamento in cima (chiude), tastiera, rotella.
+  const finishTrans = useCallback((commit: boolean) => {
+    const s = st.current
+    const t = s.trans
+    if (!t) return
+    s.trans = null
+    if (commit && t.dest) {
+      if (t.kind === 'push') stack.current.push(t.dest)
+      else if (t.kind === 'pop') stack.current.pop()
+      else stack.current[stack.current.length - 1] = t.dest
+      s.q = t.qTo
+    } else {
+      s.q = t.qFrom
+    }
+    const cur = current()
+    setLayers([cur])
+    const sc = pages.current.get(cur.key)?.scroller
+    s.lastTop = sc ? Math.max(0, sc.scrollTop) : 0
+    apply()
+  }, [apply, current])
+
+  const setR = useCallback((v: number) => {
+    const t = st.current.trans
+    if (!t) return
+    t.r = v
+    st.current.q = t.qFrom + (t.qTo - t.qFrom) * v
+  }, [])
+
+  const runTrans = useCallback((to: 0 | 1, dur: number, ease: (x: number) => number) => {
+    const t = st.current.trans
+    if (!t) return
+    tween('r', t.r, to, dur, ease, setR, () => finishTrans(to === 1))
+  }, [finishTrans, setR, tween])
+
+  const back = useCallback(() => {
+    const s = st.current
+    if (s.trans || s.closing) return
+    if (stack.current.length > 1) {
+      startTrans('pop', stack.current[stack.current.length - 2])
+      runTrans(1, 440, easeOutQuint)
+    } else close()
+  }, [close, runTrans, startTrans])
+
+  const link = useCallback((d: Dish) => {
+    const s = st.current
+    if (s.trans || s.closing || d.id === current().dish.id) return
+    if (d.image) { const im = new Image(); im.src = d.image }
+    startTrans('push', entryFor(d))
+    runTrans(1, 460, easeOutQuint)
+  }, [current, runTrans, startTrans])
+
+  const neighbour = useCallback((dir: 1 | -1): Dish | null => {
+    const i = sequence.findIndex(d => d.id === current().dish.id)
+    return i < 0 ? null : sequence[i + dir] ?? null
+  }, [current, sequence])
+
+  // Pagine: registrazione degli elementi (ripristina lo scorrimento tornando indietro).
+  const register = useCallback((key: string, el: HTMLDivElement | null) => {
+    const map = pages.current
+    if (!el) { map.delete(key); return }
+    if (map.get(key)?.root === el) return
+    const scroller = el.querySelector<HTMLDivElement>('[data-scroller]')!
+    const dim = el.querySelector<HTMLDivElement>('[data-dim]')!
+    map.set(key, { root: el, scroller, dim })
+    const entry = [...stack.current, st.current.trans?.dest].find(e => e?.key === key)
+    if (entry?.scroll) scroller.scrollTop = entry.scroll
+    apply()
+  }, [apply])
+
+  // ── Apertura (e colore sotto la barra di Safari uguale alla scheda)
+  useLayoutEffect(() => {
+    const s = st.current
+    const html = document.documentElement
+    const prevBg = html.style.backgroundColor
+    html.style.backgroundColor = CARD
+    apply()
+    tween('o', 0, 1, 520, easeOutQuint, v => { s.o = v })
+    return () => {
+      cancelAnimationFrame(s.raf); s.raf = 0
+      s.tweens.clear()
+      html.style.backgroundColor = prevBg
+    }
+  }, [apply, tween])
+
+  useLayoutEffect(() => { apply() }, [layers, apply])
+
+  // ── Gesti
   useEffect(() => {
-    const sc = scrollRef.current!
+    const card = cardRef.current!
     const s = st.current
     let touch: null | { x0: number; y0: number; armed: boolean; pulling: boolean; last: { y: number; t: number }[]; bounceClose: boolean } = null
+    let sw: null | { id: number; x0: number; y0: number; mode: 'undecided' | 'h' | 'v'; samples: { x: number; t: number }[] } = null
 
-    const onScroll = () => {
-      // iOS: rimbalzo oltre la cima durante un gesto iniziato più in basso.
+    // Scorrimento: la direzione allarga/rimpicciolisce (mai oltre quanto
+    // permette la distanza dalla cima: in cima la scheda è sempre staccata).
+    const onScroll = (e: Event) => {
+      const sc = activeScroller()
+      if (!sc || e.target !== sc) return
       if (touch && sc.scrollTop < -CLOSE_PULL * 0.6) touch.bounceClose = true
-      if (!s.raf) s.raf = requestAnimationFrame(loop)
+      if (s.trans) return
+      const max = Math.max(0, sc.scrollHeight - sc.clientHeight)
+      const top = Math.max(0, Math.min(max, sc.scrollTop))   // ignora i rimbalzi
+      const d = top - s.lastTop
+      s.lastTop = top
+      s.q = Math.min(clamp01(s.q + d / EXPAND), top / EXPAND)
+      schedule()
     }
-    const onStart = (e: TouchEvent) => {
-      if (s.closing || e.touches.length > 1) return
-      const y = e.touches[0].clientY
-      touch = { x0: e.touches[0].clientX, y0: y, armed: sc.scrollTop <= 0, pulling: false, last: [{ y, t: e.timeStamp }], bounceClose: false }
-      if (s.tween?.key === 'pull') s.tween = null
+
+    // ── Trascinamento verso il basso dalla cima: chiusura.
+    const onTouchStart = (e: TouchEvent) => {
+      if (s.closing || s.trans || e.touches.length > 1) return
+      const sc = activeScroller()
+      const t0 = e.touches[0]
+      touch = { x0: t0.clientX, y0: t0.clientY, armed: !!sc && sc.scrollTop <= 0, pulling: false, last: [{ y: t0.clientY, t: e.timeStamp }], bounceClose: false }
+      s.tweens.delete('pull')
     }
-    const onMove = (e: TouchEvent) => {
+    const onTouchMove = (e: TouchEvent) => {
       if (!touch || s.closing) return
-      const y = e.touches[0].clientY
-      touch.last.push({ y, t: e.timeStamp }); if (touch.last.length > 5) touch.last.shift()
-      const dy = y - touch.y0
+      const t0 = e.touches[0]
+      touch.last.push({ y: t0.clientY, t: e.timeStamp }); if (touch.last.length > 5) touch.last.shift()
+      const dy = t0.clientY - touch.y0
       if (!touch.pulling) {
-        if (!touch.armed || sc.scrollTop > 0) return
-        if (dy < 0) { touch.armed = false; return }      // verso l'alto: scorrimento normale
+        const sc = activeScroller()
+        if (!touch.armed || !sc || sc.scrollTop > 0 || sw?.mode === 'h') return
+        if (dy < 0) { touch.armed = false; return }       // verso l'alto: scorrimento normale
         if (dy < 4) return
-        // Gesto orizzontale (es. "Altri piatti"): non è una chiusura.
-        if (Math.abs(e.touches[0].clientX - touch.x0) > dy) { touch.armed = false; return }
+        if (Math.abs(t0.clientX - touch.x0) > dy) { touch.armed = false; return }   // gesto orizzontale
         touch.pulling = true
-        touch.y0 = y
+        touch.y0 = t0.clientY
       }
       if (e.cancelable) e.preventDefault()
-      s.pull = Math.max(0, y - touch.y0)
-      if (!s.raf) s.raf = requestAnimationFrame(loop)
+      s.pull = Math.max(0, t0.clientY - touch.y0)
+      schedule()
     }
-    const onEnd = () => {
+    const onTouchEnd = () => {
       if (!touch) return
       const t = touch
       touch = null
@@ -183,61 +350,117 @@ export default function DishCard({ dish: initial, siblings, onClosed, onPresence
       const a = t.last[0], b = t.last[t.last.length - 1]
       const v = b.t > a.t ? (b.y - a.y) / (b.t - a.t) : 0       // px/ms, positivo = in giù
       if ((s.pull > CLOSE_PULL && v > -0.1) || v > 0.65) close(v)
-      else tweenTo('pull', 0, 340, easeOutQuint)
+      else tween('pull', s.pull, 0, 340, easeOutQuint, x => { s.pull = x })
     }
+
+    // ── Swipe orizzontale: piatto precedente/successivo.
+    const onPointerDown = (e: PointerEvent) => {
+      if (s.closing || s.trans || sw) return
+      if (e.pointerType === 'mouse' && e.button !== 0) return
+      if ((e.target as Element).closest('[data-noswipe]')) return
+      sw = { id: e.pointerId, x0: e.clientX, y0: e.clientY, mode: 'undecided', samples: [{ x: e.clientX, t: e.timeStamp }] }
+    }
+    const onPointerMove = (e: PointerEvent) => {
+      if (!sw || e.pointerId !== sw.id) return
+      sw.samples.push({ x: e.clientX, t: e.timeStamp }); if (sw.samples.length > 5) sw.samples.shift()
+      if (sw.mode === 'undecided') {
+        const dx = e.clientX - sw.x0, dy = e.clientY - sw.y0
+        if (Math.hypot(dx, dy) < 10) return
+        if (touch?.pulling || s.trans || Math.abs(dx) < Math.abs(dy) * 1.2) { sw.mode = 'v'; return }
+        sw.mode = 'h'
+        sw.x0 = e.clientX   // si parte da qui: nessun salto
+        try { card.setPointerCapture(e.pointerId) } catch { /* già rilasciato */ }
+        const next = dx < 0 ? neighbour(1) : neighbour(-1)
+        if (next) {
+          if (next.image) { const im = new Image(); im.src = next.image }
+          startTrans(dx < 0 ? 'next' : 'prev', entryFor(next))
+        } else {
+          const cur = current()
+          s.trans = { kind: 'rubber', top: cur.key, under: null, r: 0, qFrom: s.q, qTo: s.q, dest: null, offset: 0 }
+        }
+      }
+      if (sw.mode !== 'h' || !s.trans) return
+      const t = s.trans
+      const dx = e.clientX - sw.x0
+      const w = s.geo.cardW * s.geo.scale
+      if (t.kind === 'rubber') t.offset = (dx * 0.28) / s.geo.scale
+      else setR(clamp01(t.kind === 'next' ? -dx / w : dx / w))
+      schedule()
+    }
+    const endSwipe = (e: PointerEvent, cancelled: boolean) => {
+      if (!sw || e.pointerId !== sw.id) return
+      const g = sw
+      sw = null
+      if (g.mode !== 'h' || !s.trans) return
+      // Il tocco che chiude lo swipe non deve "cliccare" un pulsante sotto il dito.
+      const stop = (ev: Event) => { ev.stopPropagation(); ev.preventDefault() }
+      card.addEventListener('click', stop, { capture: true, once: true })
+      window.setTimeout(() => card.removeEventListener('click', stop, { capture: true }), 350)
+      const t = s.trans
+      if (t.kind === 'rubber') {
+        tween('r', t.offset, 0, 320, easeOutQuint, v => { t.offset = v }, () => { if (s.trans === t) { s.trans = null; apply() } })
+        return
+      }
+      const a = g.samples[0], b = g.samples[g.samples.length - 1]
+      const v = b.t > a.t ? (b.x - a.x) / (b.t - a.t) : 0
+      const vd = t.kind === 'next' ? -v : v                     // velocità verso l'arrivo
+      const commit = !cancelled && ((t.r > 0.35 && vd > -0.2) || (vd > 0.35 && t.r > 0.02))
+      const rest = commit ? 1 - t.r : t.r
+      const dur = Math.max(150, Math.min(380, rest * 440) / (1 + Math.min(1.5, Math.abs(v) * 0.6)))
+      runTrans(commit ? 1 : 0, dur, easeOutCubic)
+    }
+    const onPointerUp = (e: PointerEvent) => endSwipe(e, false)
+    const onPointerCancel = (e: PointerEvent) => endSwipe(e, true)
+
     // Rotella/trackpad: in cima, una spinta decisa verso l'alto chiude.
     let wheelAcc = 0, wheelTimer = 0
     const onWheel = (e: WheelEvent) => {
-      if (sc.scrollTop > 0 || e.deltaY >= 0) { wheelAcc = 0; return }
+      const sc = activeScroller()
+      if (!sc || sc.scrollTop > 0 || e.deltaY >= 0) { wheelAcc = 0; return }
       wheelAcc += -e.deltaY
       clearTimeout(wheelTimer); wheelTimer = window.setTimeout(() => { wheelAcc = 0 }, 220)
       if (wheelAcc > 160) close()
     }
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') close() }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { close(); return }
+      if ((e.key === 'ArrowRight' || e.key === 'ArrowLeft') && !s.trans && !s.closing) {
+        const fwd = e.key === 'ArrowRight'
+        const next = neighbour(fwd ? 1 : -1)
+        if (!next) return
+        startTrans(fwd ? 'next' : 'prev', entryFor(next))
+        runTrans(1, 420, easeOutCubic)
+      }
+    }
     const onResize = () => apply()
 
-    sc.addEventListener('scroll', onScroll, { passive: true })
-    sc.addEventListener('touchstart', onStart, { passive: true })
-    sc.addEventListener('touchmove', onMove, { passive: false })
-    sc.addEventListener('touchend', onEnd)
-    sc.addEventListener('touchcancel', onEnd)
-    sc.addEventListener('wheel', onWheel, { passive: true })
+    card.addEventListener('scroll', onScroll, { capture: true, passive: true })
+    card.addEventListener('touchstart', onTouchStart, { passive: true })
+    card.addEventListener('touchmove', onTouchMove, { passive: false })
+    card.addEventListener('touchend', onTouchEnd)
+    card.addEventListener('touchcancel', onTouchEnd)
+    card.addEventListener('pointerdown', onPointerDown)
+    card.addEventListener('pointermove', onPointerMove)
+    card.addEventListener('pointerup', onPointerUp)
+    card.addEventListener('pointercancel', onPointerCancel)
+    card.addEventListener('wheel', onWheel, { passive: true })
     window.addEventListener('keydown', onKey)
     window.addEventListener('resize', onResize)
     return () => {
       clearTimeout(wheelTimer)
-      sc.removeEventListener('scroll', onScroll)
-      sc.removeEventListener('touchstart', onStart)
-      sc.removeEventListener('touchmove', onMove)
-      sc.removeEventListener('touchend', onEnd)
-      sc.removeEventListener('touchcancel', onEnd)
-      sc.removeEventListener('wheel', onWheel)
+      card.removeEventListener('scroll', onScroll, { capture: true })
+      card.removeEventListener('touchstart', onTouchStart)
+      card.removeEventListener('touchmove', onTouchMove)
+      card.removeEventListener('touchend', onTouchEnd)
+      card.removeEventListener('touchcancel', onTouchEnd)
+      card.removeEventListener('pointerdown', onPointerDown)
+      card.removeEventListener('pointermove', onPointerMove)
+      card.removeEventListener('pointerup', onPointerUp)
+      card.removeEventListener('pointercancel', onPointerCancel)
+      card.removeEventListener('wheel', onWheel)
       window.removeEventListener('keydown', onKey)
       window.removeEventListener('resize', onResize)
     }
-  }, [apply, close, loop, tweenTo])
-
-  // ── Passaggio a un altro piatto (abbinamento, "Altri piatti"): dissolvenza
-  // del contenuto e ritorno morbido in cima (la scheda torna alla misura iniziale).
-  const goTo = useCallback((d: Dish) => {
-    const c = contentRef.current, sc = scrollRef.current
-    if (!c || !sc) return
-    if (d.image) { const im = new Image(); im.src = d.image }
-    c.style.transition = 'opacity 140ms ease'
-    c.style.opacity = '0'
-    window.setTimeout(() => {
-      setDish(d)
-      requestAnimationFrame(() => {
-        sc.scrollTo({ top: 0, behavior: 'smooth' })
-        c.style.transition = 'opacity 260ms ease'
-        c.style.opacity = '1'
-      })
-    }, 150)
-  }, [])
-
-  if (!dish) return null
-  const others = siblings(dish).filter(d => d.id !== dish.id)
-  const pairing = dish.pairing
+  }, [activeScroller, apply, close, current, neighbour, runTrans, schedule, setR, startTrans, tween])
 
   return (
     <div className="fixed inset-0 z-50">
@@ -247,95 +470,121 @@ export default function DishCard({ dish: initial, siblings, onClosed, onPresence
       <div ref={backdropRef} className="absolute inset-0" style={{ background: 'rgba(24,18,12,0.42)', opacity: 0 }}
         onClick={() => close()} />
 
-      <div ref={cardRef} role="dialog" aria-modal="true" aria-label={dish.name}
-        className="absolute top-0 overflow-hidden"
-        style={{ height: '100%', background: CARD, transformOrigin: '50% 0', willChange: 'transform', transform: 'translate3d(0,120vh,0)' }}>
+      <div ref={cardRef} role="dialog" aria-modal="true" aria-label={layers[layers.length - 1].dish.name}
+        className="absolute top-0 overflow-hidden select-none"
+        style={{ height: '100%', background: CARD, transformOrigin: '50% 0', willChange: 'transform', transform: 'translate3d(0,120vh,0)', WebkitUserSelect: 'none' }}>
 
-        <div ref={scrollRef} className="absolute inset-0 overflow-y-auto"
-          style={{ overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch' }}>
-          <div ref={contentRef} style={{ minHeight: `calc(100% + ${EXPAND}px)`, display: 'flex', flexDirection: 'column' }}>
-            <Header key={dish.id} dish={dish} />
-            <section style={{ background: SECTION, flex: 1, paddingBottom: 'calc(env(safe-area-inset-bottom) + 40px)' }}>
-              <div className="mx-auto" style={{ maxWidth: 560, padding: '30px 24px 0' }}>
-                {dish.description && (
-                  <Block title="Descrizione">
-                    <p style={{ fontFamily: SERIF, fontStyle: 'italic', fontSize: 20, lineHeight: 1.45, color: INK, whiteSpace: 'pre-line' }}>
-                      {dish.description}
-                    </p>
-                  </Block>
-                )}
+        {layers.map(l => (
+          <Page key={l.key} layer={l} siblings={siblings} onLink={link} register={register} />
+        ))}
 
-                {pairing && (
-                  <Block title={pairing.label || 'Abbinamento consigliato'}>
-                    <button type="button" onClick={() => goTo(pairing.dish)}
-                      className="w-full flex items-center text-left active:opacity-60 transition-opacity"
-                      style={{ gap: 14, background: CARD, borderRadius: 16, padding: 12, border: `1px solid ${LINE}` }}>
-                      <Thumb dish={pairing.dish} size={56} />
-                      <span className="flex-1 min-w-0">
-                        <span className="block truncate" style={{ fontFamily: SERIF, fontWeight: 600, fontSize: 19, color: INK }}>{pairing.dish.name}</span>
-                        <span className="block" style={{ fontFamily: SANS, fontSize: 12, color: SOFT, marginTop: 2 }}>
-                          {[pairing.dish.category, price(pairing.dish.price)].filter(Boolean).join(' · ')}
-                        </span>
-                      </span>
-                      <Chevron />
-                    </button>
-                  </Block>
-                )}
-
-                {dish.allergens.length > 0 && (
-                  <Block title="Allergeni">
-                    <ul style={{ display: 'grid', gap: 10 }}>
-                      {dish.allergens.map(a => (
-                        <li key={a.n} className="flex items-center" style={{ gap: 12 }}>
-                          <span className="inline-flex items-center justify-center shrink-0"
-                            style={{ width: 26, height: 26, borderRadius: 13, border: `1px solid ${ACCENT}`, color: ACCENT, fontFamily: SANS, fontSize: 11, fontWeight: 600 }}>
-                            {a.n}
-                          </span>
-                          <span style={{ fontFamily: SANS, fontSize: 15, color: INK }}>{a.name}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </Block>
-                )}
-
-                {others.length > 0 && (
-                  <Block title={`Altro in ${dish.category}`}>
-                    <div className="flex overflow-x-auto" style={{ gap: 12, margin: '0 -24px', padding: '2px 24px 6px', scrollSnapType: 'x mandatory', overscrollBehaviorX: 'contain' }}>
-                      {others.map(o => (
-                        <button key={o.id} type="button" onClick={() => goTo(o)}
-                          className="shrink-0 text-left active:opacity-60 transition-opacity"
-                          style={{ width: 132, scrollSnapAlign: 'start' }}>
-                          <Thumb dish={o} size={132} />
-                          <span className="block" style={{ fontFamily: SERIF, fontWeight: 600, fontSize: 16, lineHeight: 1.2, color: INK, marginTop: 8 }}>{o.name}</span>
-                          {o.price !== null && <span className="block" style={{ fontFamily: SANS, fontSize: 12, color: SOFT, marginTop: 2 }}>{price(o.price)}</span>}
-                        </button>
-                      ))}
-                    </div>
-                  </Block>
-                )}
-              </div>
-            </section>
-          </div>
+        <div ref={barRef} className="absolute left-0 right-0 top-0 flex justify-between pointer-events-none" style={{ padding: 14, zIndex: 5 }}>
+          <RoundButton label="Indietro" onClick={back}>
+            <svg width="10" height="16" viewBox="0 0 10 16" aria-hidden><path d="M8 1.5L1.8 8 8 14.5" fill="none" stroke={INK} strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" /></svg>
+          </RoundButton>
+          <RoundButton label="Chiudi" onClick={() => close()}>
+            <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden><path d="M1.5 1.5l9 9M10.5 1.5l-9 9" stroke={INK} strokeWidth="1.7" strokeLinecap="round" /></svg>
+          </RoundButton>
         </div>
-
-        <button ref={closeRef} type="button" aria-label="Chiudi" onClick={() => close()}
-          className="absolute flex items-center justify-center active:scale-95 transition-transform"
-          style={{ top: 14, left: 14, width: 34, height: 34, borderRadius: 17, background: 'rgba(253,251,247,0.78)', boxShadow: `0 0 0 1px ${LINE}, 0 2px 8px rgba(0,0,0,0.08)`, backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)' }}>
-          <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden><path d="M1.5 1.5l9 9M10.5 1.5l-9 9" stroke={INK} strokeWidth="1.7" strokeLinecap="round" /></svg>
-        </button>
       </div>
     </div>
   )
 }
 
-// ── Parti della scheda ───────────────────────────────────────────────────────
+// ── Pagina della scheda ──────────────────────────────────────────────────────
+
+function Page({ layer, siblings, onLink, register }: {
+  layer:    Layer
+  siblings: (d: Dish) => Dish[]
+  onLink:   (d: Dish) => void
+  register: (key: string, el: HTMLDivElement | null) => void
+}) {
+  const { dish } = layer
+  const ref = useCallback((el: HTMLDivElement | null) => register(layer.key, el), [layer.key, register])
+  const others = siblings(dish).filter(d => d.id !== dish.id)
+  const pairing = dish.pairing
+  return (
+    <div ref={ref} className="absolute inset-0 overflow-hidden" style={{ background: CARD }}>
+      <div data-scroller className="absolute inset-0 overflow-y-auto"
+        style={{ overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch', touchAction: 'pan-y' }}>
+        <div style={{ minHeight: `calc(100% + ${EXPAND}px)`, display: 'flex', flexDirection: 'column' }}>
+          <Header dish={dish} />
+          <section style={{ background: SECTION, flex: 1, paddingBottom: 'calc(env(safe-area-inset-bottom) + 40px + var(--extra, 0px))' }}>
+            <div className="mx-auto" style={{ maxWidth: 560, padding: '30px 24px 0' }}>
+              {dish.description && (
+                <Block title="Descrizione">
+                  <p style={{ fontFamily: SERIF, fontStyle: 'italic', fontSize: 20, lineHeight: 1.45, color: INK, whiteSpace: 'pre-line' }}>
+                    {dish.description}
+                  </p>
+                </Block>
+              )}
+
+              {pairing && (
+                <Block title={pairing.label || 'Abbinamento consigliato'}>
+                  <button type="button" onClick={() => onLink(pairing.dish)}
+                    className="w-full flex items-center text-left active:opacity-60 transition-opacity"
+                    style={{ gap: 14, background: CARD, borderRadius: 16, padding: 12, border: `1px solid ${LINE}` }}>
+                    <Thumb dish={pairing.dish} size={56} />
+                    <span className="flex-1 min-w-0">
+                      <span className="block truncate" style={{ fontFamily: SERIF, fontWeight: 600, fontSize: 19, color: INK }}>{pairing.dish.name}</span>
+                      <span className="block" style={{ fontFamily: SANS, fontSize: 12, color: SOFT, marginTop: 2 }}>
+                        {[pairing.dish.category, price(pairing.dish.price)].filter(Boolean).join(' · ')}
+                      </span>
+                    </span>
+                    <Chevron />
+                  </button>
+                </Block>
+              )}
+
+              {dish.allergens.length > 0 && (
+                <Block title="Allergeni">
+                  <ul style={{ display: 'grid', gap: 10 }}>
+                    {dish.allergens.map(a => (
+                      <li key={a.n} className="flex items-center" style={{ gap: 12 }}>
+                        <span className="inline-flex items-center justify-center shrink-0"
+                          style={{ width: 26, height: 26, borderRadius: 13, border: `1px solid ${ACCENT}`, color: ACCENT, fontFamily: SANS, fontSize: 11, fontWeight: 600 }}>
+                          {a.n}
+                        </span>
+                        <span style={{ fontFamily: SANS, fontSize: 15, color: INK }}>{a.name}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </Block>
+              )}
+
+              {others.length > 0 && (
+                <Block title={`Altro in ${dish.category}`}>
+                  {/* data-noswipe: qui lo scorrimento orizzontale è della fila, non cambia piatto. */}
+                  <div data-noswipe className="flex overflow-x-auto"
+                    style={{ gap: 12, margin: '0 -24px', padding: '2px 24px 6px', scrollSnapType: 'x mandatory', overscrollBehaviorX: 'contain' }}>
+                    {others.map(o => (
+                      <button key={o.id} type="button" onClick={() => onLink(o)}
+                        className="shrink-0 text-left active:opacity-60 transition-opacity"
+                        style={{ width: 132, scrollSnapAlign: 'start' }}>
+                        <Thumb dish={o} size={132} />
+                        <span className="block" style={{ fontFamily: SERIF, fontWeight: 600, fontSize: 16, lineHeight: 1.2, color: INK, marginTop: 8 }}>{o.name}</span>
+                        {o.price !== null && <span className="block" style={{ fontFamily: SANS, fontSize: 12, color: SOFT, marginTop: 2 }}>{price(o.price)}</span>}
+                      </button>
+                    ))}
+                  </div>
+                </Block>
+              )}
+            </div>
+          </section>
+        </div>
+      </div>
+      {/* Scurimento della pagina quando un'altra le scorre sopra. */}
+      <div data-dim aria-hidden className="absolute inset-0 pointer-events-none" style={{ background: '#000', opacity: 0 }} />
+    </div>
+  )
+}
 
 function Header({ dish }: { dish: Dish }) {
   const [loaded, setLoaded] = useState(false)
   return (
     <header className="mx-auto w-full text-center" style={{ maxWidth: 560, padding: '64px 24px 30px', background: CARD }}>
       {dish.image && (
-        <div className="mx-auto" style={{ width: 'min(74%, 320px)', marginBottom: 28 }}>
+        <div className="mx-auto" style={{ width: 'min(84%, 360px)', marginBottom: 28 }}>
           <div style={{ position: 'relative', aspectRatio: '1 / 1', borderRadius: 14, overflow: 'hidden', background: SECTION, boxShadow: '0 18px 40px rgba(40,28,14,0.20), 0 2px 6px rgba(40,28,14,0.10)' }}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={dish.image} alt="" draggable={false} onLoad={() => setLoaded(true)}
@@ -377,6 +626,16 @@ function Block({ title, children }: { title: string; children: React.ReactNode }
       <h3 style={{ fontFamily: SANS, fontSize: 10.5, fontWeight: 600, letterSpacing: '0.24em', textTransform: 'uppercase', color: ACCENT, marginBottom: 12 }}>{title}</h3>
       {children}
     </div>
+  )
+}
+
+function RoundButton({ label, onClick, children }: { label: string; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button type="button" aria-label={label} onClick={onClick}
+      className="pointer-events-auto flex items-center justify-center active:scale-95 transition-transform"
+      style={{ width: 34, height: 34, borderRadius: 17, background: 'rgba(253,251,247,0.78)', boxShadow: `0 0 0 1px ${LINE}, 0 2px 8px rgba(0,0,0,0.08)`, backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)' }}>
+      {children}
+    </button>
   )
 }
 
