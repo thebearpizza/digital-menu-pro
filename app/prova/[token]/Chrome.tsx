@@ -19,6 +19,7 @@ import { t, type MenuChoice } from './i18n'
 import { SANS } from './typeset'
 
 const INK = '#1d1915'
+const SELECTED = '#6e5838'   // oro scuro del menu: categoria aperta
 export const BAR_H = 42
 /** Spostamento della barra nascosta (px oltre all'area sicura in basso). */
 export const BAR_HIDE = BAR_H + 22
@@ -133,18 +134,22 @@ function CategoryBar({ categories, active, onJump, hide }: {
         <div className="relative flex items-center h-full" style={{ padding: '0 5px', width: 'max-content' }}>
           {ind && (
             <span aria-hidden className="absolute"
+              // Selettore come la barra di iOS 26: capsula appena tinta (oro
+              // del menu) con filo di luce, non una pillola bianca piena.
               style={{ top: 5, bottom: 5, left: ind.left, width: ind.width, borderRadius: 16,
-                background: 'linear-gradient(180deg, rgba(255,255,255,0.92), rgba(255,255,255,0.72))',
-                boxShadow: '0 2px 6px rgba(20,14,8,0.14), inset 0 0 0 1px rgba(255,255,255,0.9), inset 0 -3px 5px -3px rgba(40,28,14,0.10)',
+                background: 'rgba(154,124,80,0.14)',
+                boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.55), inset 0 0 0 0.5px rgba(120,92,52,0.12)',
                 transition: `left 420ms ${SPRING}, width 420ms ${SPRING}` }} />
           )}
           {categories.map((c, i) => (
             <button key={c.index} ref={el => { chipRefs.current[i] = el }} type="button"
               aria-current={i === active ? 'true' : undefined}
               onClick={() => onJump(c.page)}
-              className="relative shrink-0 whitespace-nowrap"
-              style={{ height: 32, padding: '0 13px', borderRadius: 16, fontFamily: SANS, fontSize: 13, fontWeight: i === active ? 600 : 500,
-                letterSpacing: '0.01em', color: i === active ? INK : 'rgba(29,25,21,0.62)', transition: 'color 200ms ease',
+              className="relative shrink-0 whitespace-nowrap overflow-hidden text-ellipsis"
+              // Stesso spessore per tutte (l'indicatore non cambia misura
+              // cambiando selezione); nomi lunghi con i puntini.
+              style={{ height: 32, maxWidth: 176, padding: '0 13px', borderRadius: 16, fontFamily: SANS, fontSize: 13, fontWeight: 600,
+                letterSpacing: '0.01em', color: i === active ? SELECTED : 'rgba(29,25,21,0.66)', transition: 'color 250ms ease',
                 WebkitTapHighlightColor: 'transparent' }}>
               {c.name}
             </button>

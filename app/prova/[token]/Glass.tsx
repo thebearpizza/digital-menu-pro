@@ -20,25 +20,39 @@ const GLASS_INK = '#1d1915'
  */
 export function glassSurface(strength: 'light' | 'panel' = 'light'): React.CSSProperties {
   const panel = strength === 'panel'
+  // Come il "Liquid Glass" chiaro di iOS 26: poco velo, sfocatura che ravviva i
+  // colori di ciò che sta sotto, filo di luce sul bordo alto, contorno
+  // sottilissimo e ombra morbida (sulla carta chiara un vetro troppo bianco e
+  // lucido sembra plastica).
   const filter = panel
-    ? 'blur(12px) saturate(1.5) brightness(1.08)'
-    : 'blur(2.5px) saturate(1.5) brightness(1.1) contrast(1.04)'
+    ? 'blur(14px) saturate(1.7) brightness(1.06)'
+    : 'blur(10px) saturate(1.8) brightness(1.04)'
   return {
     background: panel
-      ? 'linear-gradient(180deg, rgba(255,255,255,0.42), rgba(250,247,241,0.28))'
-      : 'linear-gradient(180deg, rgba(255,255,255,0.14), rgba(255,255,255,0.03))',
+      ? 'linear-gradient(180deg, rgba(255,255,255,0.46), rgba(250,247,241,0.34))'
+      : 'linear-gradient(180deg, rgba(255,255,255,0.24), rgba(255,255,255,0.12))',
     backdropFilter: filter,
     WebkitBackdropFilter: filter,
     boxShadow: [
-      'inset 0 0 0 1px rgba(255,255,255,0.55)',              // bordo di luce
-      'inset 1.5px 2px 1.5px -1px rgba(255,255,255,1)',       // spigolo illuminato in alto a sinistra
-      'inset -1.5px -2px 1.5px -1px rgba(255,255,255,0.6)',   // riflesso in basso a destra
-      'inset 0 10px 14px -10px rgba(255,255,255,0.75)',       // spessore: luce che entra dall'alto
-      'inset 0 -10px 14px -10px rgba(40,28,14,0.10)',         // spessore: ombra del vetro in basso
-      '0 0 0 0.5px rgba(0,0,0,0.08)',
-      panel ? '0 18px 50px rgba(20,14,8,0.22)' : '0 8px 22px rgba(20,14,8,0.16), 0 1px 3px rgba(20,14,8,0.10)',
+      'inset 0 1px 0 rgba(255,255,255,0.85)',          // filo di luce in alto
+      'inset 0 0 0 0.5px rgba(255,255,255,0.5)',       // bordo del vetro
+      'inset 0 -1px 0 rgba(40,28,14,0.04)',            // spessore in basso
+      '0 0 0 0.5px rgba(40,28,14,0.09)',               // contorno (stacca dalla carta)
+      panel ? '0 18px 50px rgba(20,14,8,0.20)' : '0 6px 18px rgba(40,28,14,0.10), 0 1px 3px rgba(40,28,14,0.08)',
     ].join(', '),
   }
+}
+
+/** Riflesso della superficie (da mettere come primo figlio): luce morbida
+ *  dall'alto che sfuma a metà, appena un ritorno sul fondo. */
+export function GlassSheen() {
+  return (
+    <span aria-hidden className="pointer-events-none absolute inset-0"
+      style={{
+        borderRadius: 'inherit',
+        background: 'linear-gradient(180deg, rgba(255,255,255,0.38) 0%, rgba(255,255,255,0.06) 48%, rgba(255,255,255,0) 62%, rgba(255,255,255,0.10) 100%)',
+      }} />
+  )
 }
 
 /**
@@ -54,21 +68,6 @@ export function glassSheet(): React.CSSProperties {
     backdropFilter: filter,
     WebkitBackdropFilter: filter,
   }
-}
-
-/** Riflessi della superficie (da mettere come primo figlio): una luce curva in
- *  alto a sinistra e una più tenue che ritorna dal bordo in basso. */
-export function GlassSheen() {
-  return (
-    <span aria-hidden className="pointer-events-none absolute inset-0"
-      style={{
-        borderRadius: 'inherit',
-        background: [
-          'radial-gradient(90% 60% at 30% 0%, rgba(255,255,255,0.70) 0%, rgba(255,255,255,0.18) 45%, rgba(255,255,255,0) 70%)',
-          'radial-gradient(70% 45% at 70% 108%, rgba(255,255,255,0.40) 0%, rgba(255,255,255,0) 70%)',
-        ].join(', '),
-      }} />
-  )
 }
 
 interface ButtonProps {
