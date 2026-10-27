@@ -33,6 +33,8 @@ type Turn = {
   kind:  'forward' | 'back'
   P0:    Vec
   F:     Vec
+  /** 1 = rotolo pieno; verso 0 nell'ultimo tratto dell'animazione. */
+  flatten?: number
 }
 
 type Anim = {
@@ -176,7 +178,7 @@ export default function CurlMenu({ data }: { data: MenuData }) {
       }
 
       const fwd = turn.kind === 'forward'
-      const curl = solveCurl(turn.P0, turn.F, pageW)
+      const curl = solveCurl(turn.P0, turn.F, pageW, turn.flatten ?? 1)
       const prog = Math.max(0, Math.min(1, (turn.P0.x - turn.F.x) / (2 * pageW)))
       const shadow = Math.min(1, prog * 7, (1 - prog) * 7)
       // Il foglio che si muove: la destra che gira (avanti) o la sinistra che
@@ -261,6 +263,10 @@ export default function CurlMenu({ data }: { data: MenuData }) {
         y: anim.from.y + (anim.to.y - anim.from.y) * e - Math.sin(Math.PI * e) * anim.arc,
       }
       anim.turn.F = constrain(anim.turn.P0, raw, spineX, H)
+      // Ultimo 30% del percorso: il rotolo si distende fino a sparire, e con
+      // lui le sue ombre → la pagina si posa senza scatti.
+      const rest = 1 - e
+      anim.turn.flatten = rest >= 0.3 ? 1 : (rest / 0.3) * (rest / 0.3) * (3 - 2 * (rest / 0.3))
       turn = anim.turn
       if (k < 1) { draw(); requestAnimationFrame(tick); return }
       finish()

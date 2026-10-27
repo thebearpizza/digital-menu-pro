@@ -29,8 +29,9 @@ export interface CurlParams {
 /**
  * Piega che porta il punto P0 del foglio sotto il dito F.
  * pageW = larghezza del foglio (dal dorso al bordo libero).
+ * flatten = 1 durante il gesto; scende a 0 alla fine di un'animazione.
  */
-export function solveCurl(P0: Vec, F: Vec, pageW: number): CurlParams | null {
+export function solveCurl(P0: Vec, F: Vec, pageW: number, flatten = 1): CurlParams | null {
   const dx = P0.x - F.x, dy = P0.y - F.y
   const raw = Math.hypot(dx, dy)
   if (raw < 0.5) return null
@@ -46,7 +47,9 @@ export function solveCurl(P0: Vec, F: Vec, pageW: number): CurlParams | null {
   // Un cilindro troppo stretto rispetto alla griglia crea triangoli stirati
   // a cavallo della piega (bordo "sdoppiato").
   const t = Math.max(0, Math.min(1, dist / (2 * pageW)))
-  const R = pageW * (0.055 + 0.085 * Math.sin(Math.PI * t))
+  // flatten (0..1): negli ultimi istanti dell'animazione di rilascio il rotolo
+  // si distende del tutto, così il passaggio alla pagina ferma è invisibile.
+  const R = pageW * (0.055 + 0.085 * Math.sin(Math.PI * t)) * (0.02 + 0.98 * Math.max(0, Math.min(1, flatten)))
   const d0 = (dist + Math.PI * R) / 2
   return { axis: { x: P0.x - dir.x * d0, y: P0.y - dir.y * d0 }, dir, R }
 }
@@ -142,8 +145,10 @@ float flapShadow(vec2 q) {
   float dq = dot(q - uAxis, uDir);
   if (dq > 0.0) return 1.0;
   vec2 src = q + uDir * (PI * uR - 2.0 * dq);
+  // Dentro l'impronta del lembo l'ombra è piena (lì sopra c'è il lembo; dove
+  // la prospettiva lo sposta un filo, si vede ombra e non una "copia" chiara
+  // dell'angolo). Fuori sfuma con la distanza.
   float o = outsideSheet(src);
-  if (o <= 0.0) return 1.0;
   return 1.0 - 0.16 * uShadow * exp(-o / (0.55 * uR + 2.0));
 }
 
