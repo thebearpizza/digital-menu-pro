@@ -96,7 +96,7 @@ export default function DishCard({ dish: first, lang, sequence, siblings, onClos
   const cardRef     = useRef<HTMLDivElement>(null)
   const barRef      = useRef<HTMLDivElement>(null)
   const probeRef    = useRef<HTMLDivElement>(null)
-  const pages = useRef(new Map<string, { root: HTMLDivElement; scroller: HTMLDivElement; dim: HTMLDivElement; veil: HTMLDivElement }>())
+  const pages = useRef(new Map<string, { root: HTMLDivElement; scroller: HTMLDivElement; dim: HTMLDivElement; veil: HTMLDivElement; rubbed?: boolean }>())
 
   const [initial] = useState<Entry>(() => entryFor(first))
   const stack = useRef<Entry[]>([initial])
@@ -172,12 +172,20 @@ export default function DishCard({ dish: first, lang, sequence, siblings, onClos
     pages.current.forEach((el, key) => {
       let tx = 0, dim = 0
       const moving = !!t && key === t.top
-      if (t && moving) {
+      // Rimbalzo (nessun piatto da quella parte): si spostano solo i contenuti,
+      // il vetro resta fermo, così non si apre una fessura sul menu dietro.
+      const rub = t && moving && t.kind === 'rubber' ? t.offset : 0
+      if (rub || el.rubbed) {
+        el.root.querySelectorAll<HTMLElement>('[data-rubber]').forEach(n => {
+          n.style.transform = rub ? `translate3d(${rub.toFixed(2)}px, 0, 0)` : ''
+        })
+        el.rubbed = !!rub
+      }
+      if (t && moving && t.kind !== 'rubber') {
         tx = t.kind === 'next' ? -t.r * cardW
           : t.kind === 'prev' ? -(1 - t.r) * cardW
           : t.kind === 'push' ? (1 - t.r) * cardW
-          : t.kind === 'pop' ? t.r * cardW
-          : t.offset
+          : t.r * cardW   // pop
       } else if (t && key === t.under) {
         dim = t.kind === 'next' || t.kind === 'pop' ? (1 - t.r) * DIM : t.r * DIM
       }
@@ -585,7 +593,7 @@ function Page({ layer, lang, siblings, onLink, register }: {
             <Header dish={dish} lang={lang} />
           </div>
           <section style={{ ...glassSheet('frosted'), boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.7)', flex: 1, paddingBottom: 'calc(env(safe-area-inset-bottom) + 40px + var(--extra, 0px))' }}>
-            <div className="mx-auto" style={{ maxWidth: 560, padding: '30px 24px 0' }}>
+            <div data-rubber className="mx-auto" style={{ maxWidth: 560, padding: '30px 24px 0' }}>
               {dish.description && (
                 <Block title={t('description', lang)}>
                   <p style={{ fontFamily: SERIF, fontStyle: 'italic', fontSize: 20, lineHeight: 1.45, color: INK, whiteSpace: 'pre-line' }}>
@@ -658,7 +666,7 @@ function Header({ dish, lang }: { dish: Dish; lang: Lang }) {
   const [ready] = useState(() => !!dish.image && readyImages.has(dish.image))
   const [loaded, setLoaded] = useState(ready)
   return (
-    <header className="mx-auto w-full text-center" style={{ maxWidth: 560, padding: '64px 24px 30px' }}>
+    <header data-rubber className="mx-auto w-full text-center" style={{ maxWidth: 560, padding: '64px 24px 30px' }}>
       {dish.image && (
         <div className="mx-auto" style={{ width: 'min(84%, 360px)', marginBottom: 28 }}>
           <div style={{ position: 'relative', aspectRatio: '1 / 1', borderRadius: 14, overflow: 'hidden', background: TILE, boxShadow: '0 18px 40px rgba(40,28,14,0.20), 0 2px 6px rgba(40,28,14,0.10)' }}>
