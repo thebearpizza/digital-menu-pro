@@ -40,7 +40,7 @@ export default async function ProvaPage({
   const supabase = await createClient()
 
   const { data: restaurant } = await supabase
-    .from('restaurants').select('id, name, owner_id, description, logo_url, instagram_url, facebook_url, website_url, tripadvisor_url, google_maps_url, legal_name, vat_number, legal_address')
+    .from('restaurants').select('id, name, owner_id, theme_config, description, logo_url, instagram_url, facebook_url, website_url, tripadvisor_url, google_maps_url, legal_name, vat_number, legal_address')
     .eq('qr_public_token', params.token).eq('is_active', true).single()
   if (!restaurant) notFound()
 
@@ -57,17 +57,22 @@ export default async function ProvaPage({
     hours: scheduleLabel(m as Parameters<typeof scheduleLabel>[0]),
   }))
 
-  // Più menu e nessuno scelto: pagina d'apertura. Con un solo menu si va dritti.
+  // Nessun menu scelto: pagina d'apertura (anche con un solo menu).
   const chosen = menus.find(m => m.id === searchParams.menu)
-  if (!chosen && menus.length > 1) {
+  if (!chosen) {
     const { data: bannerRows } = await supabase
       .from('restaurant_banners').select('id, media_url, media_type, title, subtitle')
       .eq('restaurant_id', restaurant.id).eq('is_active', true)
       .order('sort_order', { ascending: true })
-    const banners: Banner[] = (bannerRows ?? []).filter(b => b.media_url).map(b => ({
-      id: b.id as string, url: b.media_url as string, video: b.media_type === 'video',
+    let banners: Banner[] = (bannerRows ?? []).filter(b => b.media_url).map(b => ({
+      id: b.id as string, url: b.media_url as string, video: b.media_type === 'video', poster: null,
       title: (b.title as string | null) || null, subtitle: (b.subtitle as string | null) || null,
     }))
+    // Ponte provvisorio (fino alla nuova Personalizzazione): sfondo e logo già
+    // caricati dal ristoratore nella vecchia pagina d'apertura. Solo i file,
+    // nessuna impostazione grafica.
+    const old = oldLanding((restaurant as Row).theme_config)
+    if (!banners.length && old.background) banners = [old.background]
     const socialCols: [SocialKind, string][] = [
       ['instagram', 'instagram_url'], ['facebook', 'facebook_url'], ['tripadvisor', 'tripadvisor_url'],
       ['maps', 'google_maps_url'], ['website', 'website_url'],
@@ -78,7 +83,7 @@ export default async function ProvaPage({
         restaurant={{
           name: r.name as string,
           description: (r.description as string | null) || null,
-          logo: (r.logo_url as string | null) || null,
+          logo: (r.logo_url as string | null) || old.logo,
           socials: socialCols.filter(([, col]) => r[col]).map(([kind, col]) => ({ kind, url: r[col] as string })),
           legalName: (r.legal_name as string | null) || null,
           vat: (r.vat_number as string | null) || null,
@@ -86,7 +91,7 @@ export default async function ProvaPage({
         }} />
     )
   }
-  const menu = chosen ?? menus[0]
+  const menu = chosen
 
   // Programmazione oraria di piatti e categorie: fuori fascia non compaiono.
   const catSchedules = (menu.category_schedules ?? {}) as CategorySchedules
@@ -144,8 +149,6 @@ export default async function ProvaPage({
     })).filter(c => c.dishes.length > 0),
     info: infoPage(menu.text_content),
     allergenLegend: allergenLegendOf(menu.text_content, catalog),
-    // Niente pagina d'apertura (un solo menu): i dati legali vanno in copertina.
-    legal: menus.length === 1 ? legalLine(restaurant as Row) : null,
     labels: { allergens: 'Allergeni', cont: 'segue', allergenNote: '' },
   }
 
@@ -161,7 +164,7 @@ export default async function ProvaPage({
     catalog,
   }
 
-  return <CurlMenu key={menu.id} data={data} i18n={i18n} menus={choices} menuId={menu.id as string} token={params.token} />
+  return <CurlMenu key={menu.id} data={data} i18n={i18n} token={params.token} />
 }
 
 // ── Pagine di testo del menu ─────────────────────────────────────────────────
@@ -185,9 +188,15 @@ function allergenLegendOf(tc: unknown, catalog: AllergenCatalog): MenuData['alle
     .sort((a, b) => a.n - b.n)
 }
 
-/** "Ragione sociale · P.IVA … · Privacy" per la copertina. */
-function legalLine(r: Row): string {
-  const name = ((r.legal_name as string | null) || (r.name as string)).trim()
-  const vat = (r.vat_number as string | null)?.trim()
-  return [name, vat ? `P.IVA ${vat}` : null, 'Privacy'].filter(Boolean).join('  ·  ')
+/** File della vecchia pagina d'apertura (sfondo foto/video, logo). */
+function oldLanding(theme: unknown): { background: Banner | null; logo: string | null } {
+  const l = (theme as { landing?: { background?: { type?: string; value?: string; poster?: string }; logo?: { image?: string } } } | null)?.landing
+  const bg = l?.background
+  const media = bg && bg.value && (bg.type === 'image' || bg.type === 'video' || bg.type === 'gif')
+  return {
+    background: media
+      ? { id: 'landing-bg', url: bg!.value!, video: bg!.type === 'video', poster: bg!.poster || null, title: null, subtitle: null }
+      : null,
+    logo: l?.logo?.image || null,
+  }
 }

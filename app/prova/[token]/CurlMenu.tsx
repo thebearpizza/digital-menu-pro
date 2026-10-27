@@ -22,7 +22,7 @@ import { isLang, type Lang } from '@/lib/translations'
 import DishCard from './DishCard'
 import { loadFontCss } from './fonts'
 import Chrome, { BAR_HIDE } from './Chrome'
-import { localize, t, type I18nData, type MenuChoice } from './i18n'
+import { localize, t, type I18nData } from './i18n'
 import { GlassSheen, glassSurface } from './Glass'
 
 const LANG_KEY = 'dmp-menu-lang'   // stessa chiave del menu pubblico: la lingua scelta vale ovunque
@@ -33,8 +33,6 @@ interface Props {
   /** Menu in italiano (lingua base). */
   data:   MenuData
   i18n:   I18nData
-  menus:  MenuChoice[]
-  menuId: string
   token:  string
 }
 
@@ -68,7 +66,7 @@ type Anim = {
   arc:    number
 }
 
-export default function CurlMenu({ data: base, i18n, menus, menuId, token }: Props) {
+export default function CurlMenu({ data: base, i18n, token }: Props) {
   const router = useRouter()
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const probeRef  = useRef<HTMLDivElement>(null)
@@ -527,8 +525,6 @@ export default function CurlMenu({ data: base, i18n, menus, menuId, token }: Pro
         const right = spread && d.start.x >= spineX
         const page = spread ? index + (right ? 1 : 0) : index
         const px = d.start.x - (right ? spineX : 0)
-        // Riga legale in fondo alla copertina (un solo menu): apre la privacy.
-        if (layout?.legalAt(page, px, d.start.y)) { window.location.href = `/m/${token}/privacy`; return }
         const dish = layout?.hit(page, px, d.start.y)
         if (dish) {
           if (dish.image) { const im = new Image(); im.src = dish.image }
@@ -678,7 +674,7 @@ export default function CurlMenu({ data: base, i18n, menus, menuId, token }: Pro
       </div>
       {status !== 'loading' && (
         <Chrome shown={chrome} barRef={barRef} lang={lang} onLang={setLang}
-          canPickMenu={menus.length > 1} onMenus={() => router.push(`/prova/${token}`)}
+          onMenus={() => router.push(`/prova/${token}`)}
           categories={pageInfo.starts} active={activeCategory} onJump={p => apiRef.current?.jump(p)} />
       )}
       {hint && status !== 'loading' && pageInfo.index === 0 && (

@@ -1,6 +1,6 @@
 'use client'
 // ─────────────────────────────────────────────────────────────────────────────
-// Pagina d'apertura (dopo il QR, quando il ristorante ha più menu aperti).
+// Pagina d'apertura (dopo il QR): qui si sceglie il menu, anche se è uno solo.
 //
 //  • Sfondo: i banner del ristorante (foto con lento zoom, video in loop) che
 //    si alternano in dissolvenza con titolo e sottotitolo; senza banner, la
@@ -24,7 +24,7 @@ const LANG_KEY = 'dmp-menu-lang'
 const INK = '#1d1915'
 const ACCENT = '#9a8462'
 
-export interface Banner { id: string; url: string; video: boolean; title: string | null; subtitle: string | null }
+export interface Banner { id: string; url: string; video: boolean; poster: string | null; title: string | null; subtitle: string | null }
 export type SocialKind = 'instagram' | 'facebook' | 'website' | 'tripadvisor' | 'maps'
 
 export interface LandingProps {
@@ -225,7 +225,8 @@ function Media({ banners }: { banners: Banner[] }) {
       {banners.map((b, k) => (
         <div key={b.id} aria-hidden className="absolute inset-0" style={{ opacity: k === i ? 1 : 0, transition: 'opacity 1400ms ease' }}>
           {b.video
-            ? <video src={b.url} muted playsInline autoPlay loop preload="metadata" className="w-full h-full" style={{ objectFit: 'cover' }} />
+            // Il poster resta visibile se il video non parte (es. formato non supportato).
+            ? <video src={b.url} poster={b.poster ?? undefined} muted playsInline autoPlay loop preload="auto" className="w-full h-full" style={{ objectFit: 'cover' }} />
             // eslint-disable-next-line @next/next/no-img-element
             : <img key={k === i ? `on-${i}` : 'off'} src={b.url} alt="" className="w-full h-full"
                 style={{ objectFit: 'cover', animation: k === i ? 'lito-kb 9s ease-out forwards' : 'none' }} />}
@@ -270,7 +271,7 @@ function Legal({ restaurant, token, lang, color }: { restaurant: LandingProps['r
     <div style={{ fontFamily: SANS, fontSize: 10.5, lineHeight: 1.6, color }}>
       <p>{line1}</p>
       {restaurant.address && <p>{restaurant.address}</p>}
-      <a href={`/m/${token}/privacy`} className="underline underline-offset-2" style={{ color }}>{t('privacy', lang)}</a>
+      <a href={`/prova/${token}/privacy`} className="underline underline-offset-2" style={{ color }}>{t('privacy', lang)}</a>
     </div>
   )
 }

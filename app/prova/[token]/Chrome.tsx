@@ -2,8 +2,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // Comandi sopra il menu, in vetro, in un'unica barra in basso (come la barra
 // di Safari su iOS 26, sotto il pollice; la testatina in alto resta libera):
-//   • a sinistra "Menu" → torna alla pagina d'apertura, dove si sceglie il
-//     menu (solo se ce n'è più d'uno);
+//   • a sinistra "Menu" → torna alla pagina d'apertura, dove si sceglie il menu;
 //   • al centro le categorie: quella della pagina aperta è evidenziata
 //     (l'indicatore scivola), un tocco porta alla sua pagina;
 //   • a destra la bandierina → scelta della lingua.
@@ -32,15 +31,13 @@ interface Props {
   barRef:     React.RefObject<HTMLDivElement>
   lang:       Lang
   onLang:     (l: Lang) => void
-  /** Più menu: c'è la pagina d'apertura a cui tornare. */
-  canPickMenu: boolean
   onMenus:    () => void
   categories: { index: number; name: string; page: number }[]
   active:     number
   onJump:     (page: number) => void
 }
 
-export default function Chrome({ shown, barRef, lang, onLang, canPickMenu, onMenus, categories, active, onJump }: Props) {
+export default function Chrome({ shown, barRef, lang, onLang, onMenus, categories, active, onJump }: Props) {
   const [open, setOpen] = useState<null | 'lang'>(null)
   const hide = !shown && !open
   // Il pannello delle lingue si apre sopra il suo tasto.
@@ -65,14 +62,12 @@ export default function Chrome({ shown, barRef, lang, onLang, canPickMenu, onMen
           transition: 'transform 420ms cubic-bezier(0.2, 0.9, 0.25, 1)',
           willChange: 'transform',
         }}>
-        {canPickMenu && (
-          <Slot hide={hide}>
-            <GlassButton pill size={BAR_H} label={t('chooseMenu', lang)} onClick={onMenus}>
-              <svg width="8" height="13" viewBox="0 0 8 13" aria-hidden style={{ marginRight: -1 }}><path d="M6.5 1.5L1.8 6.5l4.7 5" fill="none" stroke={INK} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
-              <span style={{ fontFamily: SANS, fontSize: 14.5, fontWeight: 600, letterSpacing: '0.01em' }}>{t('menu', lang)}</span>
-            </GlassButton>
-          </Slot>
-        )}
+        <Slot hide={hide}>
+          <GlassButton pill size={BAR_H} label={t('chooseMenu', lang)} onClick={onMenus}>
+            <svg width="8" height="13" viewBox="0 0 8 13" aria-hidden style={{ marginRight: -1 }}><path d="M6.5 1.5L1.8 6.5l4.7 5" fill="none" stroke={INK} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
+            <span style={{ fontFamily: SANS, fontSize: 14.5, fontWeight: 600, letterSpacing: '0.01em' }}>{t('menu', lang)}</span>
+          </GlassButton>
+        </Slot>
         {categories.length > 1 && <CategoryBar categories={categories} active={active} onJump={onJump} hide={hide} />}
         <Slot hide={hide} ref={langRef}>
           <GlassButton size={BAR_H} label={`${t('language', lang)}: ${LANG_LABELS[lang]}`} expanded={open === 'lang'} onClick={toggleLang}>

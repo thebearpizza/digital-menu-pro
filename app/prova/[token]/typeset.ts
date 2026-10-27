@@ -40,9 +40,6 @@ export interface MenuData {
   info?:          { position: 'first' | 'last'; blocks: TextBlock[] } | null
   /** Legenda allergeni in fondo al menu (generata dall'elenco del ristorante). */
   allergenLegend?: { id: number; n: number; name: string }[] | null
-  /** Riga legale in fondo alla copertina (ragione sociale, P.IVA, privacy):
-   *  solo quando non c'è la pagina d'apertura che la mostra. */
-  legal?:         string | null
   /** Parole stampate sulle pagine, nella lingua scelta. */
   labels:         { allergens: string; cont: string; allergenNote: string }
 }
@@ -190,8 +187,6 @@ export interface Layout {
   hit:    (pageIndex: number, x: number, y: number) => Dish | null
   /** Pagina in cui inizia ogni categoria (index = posizione in data.categories). */
   categoryStarts: { index: number; name: string; page: number }[]
-  /** Il punto cade sulla riga legale della copertina? */
-  legalAt: (pageIndex: number, x: number, y: number) => boolean
 }
 
 // Misure verticali (in unità s).
@@ -419,9 +414,6 @@ export function layoutMenu(ctx: Ctx, data: MenuData, vp: Viewport): Layout {
       : null
   }
 
-  // Riga legale: sotto il numero di pagina della copertina.
-  const legalY = m.footY + 14 * s
-
   // ── Grana della carta: rumore fisso, generato una volta.
   const grain = makeGrain()
 
@@ -452,12 +444,6 @@ export function layoutMenu(ctx: Ctx, data: MenuData, vp: Viewport): Layout {
       drawSpaced(c, `${data.restaurantName} · ${data.menuName}`.toUpperCase(), w / 2, m.headY, 2.4 * s, 'center')
     }
     drawSpaced(c, `${index + 1}  /  ${pages.length}`, w / 2, m.footY, 1.6 * s, 'center')
-    if (index === 0 && data.legal) {
-      c.font = font('400', 8.5 * s, SANS)
-      c.fillStyle = INK_SOFT
-      c.textAlign = 'center'
-      c.fillText(data.legal, w / 2, legalY)
-    }
 
     for (const it of page.items) {
       const b = it.block
@@ -610,10 +596,7 @@ export function layoutMenu(ctx: Ctx, data: MenuData, vp: Viewport): Layout {
     return null
   }
 
-  const legalAt = (pageIndex: number, _x: number, yy: number) =>
-    pageIndex === 0 && !!data.legal && Math.abs(yy - (legalY - 3 * s)) < 14 * s
-
-  return { vp, pages, paint, hit, categoryStarts, legalAt }
+  return { vp, pages, paint, hit, categoryStarts }
 }
 
 let _grain: HTMLCanvasElement | null = null

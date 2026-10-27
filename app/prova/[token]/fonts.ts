@@ -2,7 +2,7 @@
 // /api/gfonts: il telefono del cliente non contatta Google. Un solo foglio di
 // stile per tutta la visita (pagina d'apertura e menu).
 
-const FONTS_CSS = '/api/gfonts/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400;1,500&family=Inter:wght@400;500;600&display=block'
+export const FONTS_CSS = '/api/gfonts/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400;1,500&family=Inter:wght@400;500;600&display=block'
 
 /** Inserisce (una volta) il foglio di stile dei caratteri; si risolve quando è
  *  caricato (le facce sono dichiarate, non ancora scaricate). */
