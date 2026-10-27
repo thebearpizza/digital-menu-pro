@@ -187,9 +187,17 @@ export default function DishCard({ dish: first, lang, sequence, siblings, onClos
       el.root.style.borderRadius = lift ? `${((30 * lift) / scale).toFixed(2)}px` : ''
       el.root.style.boxShadow = lift ? `0 0 34px rgba(20,14,8,${(0.30 * lift).toFixed(3)})` : ''
       el.dim.style.opacity = dim.toFixed(3)
-      // La lastra che scorre si fa più piena mentre si muove: la pagina sotto
-      // non traspare in mezzo al testo.
-      el.veil.style.opacity = (0.75 * lift).toFixed(3)
+      // La lastra che scorre sopra un'altra pagina è piena dal primo istante:
+      // attraverso il vetro chiaro si vedrebbero comparire di colpo le foto
+      // della pagina sotto (lampo). A movimento finito torna vetro sfumando.
+      const veiled = moving && t.kind !== 'rubber' && !!t.under
+      if (veiled) {
+        el.veil.style.transition = 'none'
+        el.veil.style.opacity = '1'
+      } else if (el.veil.style.opacity !== '0') {
+        el.veil.style.transition = 'opacity 280ms ease'
+        el.veil.style.opacity = '0'
+      }
     })
   }, [])
 
@@ -257,6 +265,8 @@ export default function DishCard({ dish: first, lang, sequence, siblings, onClos
     } else {
       s.q = t.qFrom
     }
+    // Ritorno annullato a metà gesto: la freccia "indietro" deve ricomparire.
+    setDepth(stack.current.length)
     const cur = current()
     // Le pagine che escono spariscono subito: altrimenti, finché React non le
     // toglie, tornerebbero al loro posto per un fotogramma (sfarfallio).
@@ -412,8 +422,13 @@ export default function DishCard({ dish: first, lang, sequence, siblings, onClos
         sw.mode = 'h'
         sw.x0 = e.clientX   // si parte da qui: nessun salto
         try { card.setPointerCapture(e.pointerId) } catch { /* già rilasciato */ }
-        const next = dx < 0 ? neighbour(1) : neighbour(-1)
-        if (next) {
+        // Dentro un collegamento: verso destra si torna alla scheda che l'ha
+        // aperto (segue il dito); verso sinistra solo il rimbalzo.
+        const inLink = stack.current.length > 1
+        const next = inLink ? null : dx < 0 ? neighbour(1) : neighbour(-1)
+        if (inLink && dx > 0) {
+          startTrans('pop', stack.current[stack.current.length - 2])
+        } else if (next) {
           warmImage(next.image)
           startTrans(dx < 0 ? 'next' : 'prev', entryFor(next))
         } else {
@@ -426,7 +441,7 @@ export default function DishCard({ dish: first, lang, sequence, siblings, onClos
       const dx = e.clientX - sw.x0
       const w = s.geo.cardW * s.geo.scale
       if (t.kind === 'rubber') t.offset = (dx * 0.28) / s.geo.scale
-      else setR(clamp01(t.kind === 'next' ? -dx / w : dx / w))
+      else setR(clamp01(t.kind === 'next' ? -dx / w : dx / w))   // prev e pop: verso destra
       schedule()
     }
     const endSwipe = (e: PointerEvent, cancelled: boolean) => {
@@ -467,6 +482,7 @@ export default function DishCard({ dish: first, lang, sequence, siblings, onClos
       if (e.key === 'Escape') { close(); return }
       if ((e.key === 'ArrowRight' || e.key === 'ArrowLeft') && !s.trans && !s.closing) {
         const fwd = e.key === 'ArrowRight'
+        if (stack.current.length > 1) { if (!fwd) back(); return }   // come lo swipe
         const next = neighbour(fwd ? 1 : -1)
         if (!next) return
         startTrans(fwd ? 'next' : 'prev', entryFor(next))
@@ -502,7 +518,7 @@ export default function DishCard({ dish: first, lang, sequence, siblings, onClos
       window.removeEventListener('keydown', onKey)
       window.removeEventListener('resize', onResize)
     }
-  }, [activeScroller, apply, close, current, neighbour, runTrans, schedule, setR, startTrans, tween])
+  }, [activeScroller, apply, back, close, current, neighbour, runTrans, schedule, setR, startTrans, tween])
 
   return (
     <div className="fixed inset-0 z-50">
