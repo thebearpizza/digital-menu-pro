@@ -24,6 +24,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { PAPER, SERIF, SANS, type Dish } from './typeset'
+import { GlassButton } from './Glass'
 
 const EXPAND = 96          // px di scorrimento per passare da staccata a tutto schermo
 const CLOSE_PULL = 110     // px di trascinamento oltre la cima per chiudere
@@ -64,6 +65,16 @@ interface Trans {
 }
 interface Tween { from: number; to: number; t0: number; dur: number; ease: (x: number) => number; set: (v: number) => void; done?: () => void }
 
+// Foto già scaricate e decodificate: una pagina nuova le mostra subito,
+// senza ripartire da vuota con la dissolvenza.
+const readyImages = new Set<string>()
+function warmImage(src: string | null | undefined) {
+  if (!src || readyImages.has(src)) return
+  const im = new Image()
+  im.src = src
+  im.decode().then(() => { readyImages.add(src) }, () => {})
+}
+
 let keySeq = 0
 const entryFor = (dish: Dish): Entry => ({ key: `p${++keySeq}`, dish, scroll: 0, q: 0 })
 
@@ -86,6 +97,8 @@ export default function DishCard({ dish: first, sequence, siblings, onClosed }: 
   const [initial] = useState<Entry>(() => entryFor(first))
   const stack = useRef<Entry[]>([initial])
   const [layers, setLayers] = useState<Layer[]>([initial])
+  // Profondità della cronologia: la freccia "indietro" c'è solo dentro un collegamento.
+  const [depth, setDepth] = useState(1)
 
   // Stato delle animazioni (fuori da React).
   const st = useRef({
@@ -103,6 +116,15 @@ export default function DishCard({ dish: first, sequence, siblings, onClosed }: 
   // Solo ref: identità stabile, utilizzabili da tutti i callback.
   const current = useCallback(() => stack.current[stack.current.length - 1], [])
   const activeScroller = useCallback(() => pages.current.get(current().key)?.scroller ?? null, [current])
+
+  // Foto dei piatti raggiungibili da qui (swipe, abbinamento): già pronte
+  // quando la pagina arriva, così non compaiono a scatti.
+  const warmAround = useCallback(() => {
+    const d = current().dish
+    const i = sequence.findIndex(x => x.id === d.id)
+    if (i >= 0) { warmImage(sequence[i + 1]?.image); warmImage(sequence[i - 1]?.image) }
+    warmImage(d.pairing?.dish.image)
+  }, [current, sequence])
 
   // ── Geometria: applica presenza, allargamento, trascinamento e pagine allo stile.
   const apply = useCallback(() => {
@@ -123,7 +145,10 @@ export default function DishCard({ dish: first, sequence, siblings, onClosed }: 
     // in basso); il contenuto ha in fondo lo stesso margine, così a tutto
     // schermo l'ultima riga resta visibile.
     const extra = Math.ceil(Math.max(0, (H - top0) / s0 - H)) + 24
-    const r = wide ? 22 : 30 * (1 - p)
+    // Mai esattamente 0: se gli angoli passano da squadrati a tondi mentre il
+    // dito scorre, Safari ricostruisce il ritaglio e perde il gesto in corso
+    // (lo scorrimento verso l'alto "si bloccava" al primo tentativo).
+    const r = wide ? 22 : Math.max(1, 30 * (1 - p))
     const enter = (1 - s.o) * (H + 40)
     card.style.width = `${cardW}px`
     card.style.left = `${(W - cardW) / 2}px`
@@ -152,9 +177,11 @@ export default function DishCard({ dish: first, sequence, siblings, onClosed }: 
       } else if (t && key === t.under) {
         dim = t.kind === 'next' || t.kind === 'pop' ? (1 - t.r) * DIM : t.r * DIM
       }
+      // Angoli tondi e ombra crescono con lo spostamento (nessuno scatto al via).
+      const lift = moving && t.kind !== 'rubber' ? Math.min(1, Math.abs(tx) / 40) : 0
       el.root.style.transform = tx ? `translate3d(${tx.toFixed(2)}px, 0, 0)` : ''
-      el.root.style.borderRadius = moving && t.kind !== 'rubber' ? `${(30 / scale).toFixed(2)}px` : ''
-      el.root.style.boxShadow = moving && t.kind !== 'rubber' ? '0 0 34px rgba(20,14,8,0.30)' : ''
+      el.root.style.borderRadius = lift ? `${((30 * lift) / scale).toFixed(2)}px` : ''
+      el.root.style.boxShadow = lift ? `0 0 34px rgba(20,14,8,${(0.30 * lift).toFixed(3)})` : ''
       el.dim.style.opacity = dim.toFixed(3)
     })
   }, [])
@@ -204,6 +231,8 @@ export default function DishCard({ dish: first, sequence, siblings, onClosed }: 
     const topKey = kind === 'next' || kind === 'pop' ? cur.key : dest.key
     const underKey = topKey === cur.key ? dest.key : cur.key
     s.trans = { kind, top: topKey, under: underKey, r: 0, qFrom: s.q, qTo: dest.q, dest, offset: 0 }
+    if (kind === 'push') setDepth(stack.current.length + 1)
+    if (kind === 'pop') setDepth(stack.current.length - 1)
     const byKey = (k: string): Layer => (k === cur.key ? cur : dest)
     setLayers([byKey(underKey), byKey(topKey)])   // sotto prima, sopra dopo
   }, [activeScroller, current])
@@ -222,11 +251,15 @@ export default function DishCard({ dish: first, sequence, siblings, onClosed }: 
       s.q = t.qFrom
     }
     const cur = current()
+    // Le pagine che escono spariscono subito: altrimenti, finché React non le
+    // toglie, tornerebbero al loro posto per un fotogramma (sfarfallio).
+    pages.current.forEach((el, key) => { if (key !== cur.key) el.root.style.visibility = 'hidden' })
     setLayers([cur])
+    warmAround()
     const sc = pages.current.get(cur.key)?.scroller
     s.lastTop = sc ? Math.max(0, sc.scrollTop) : 0
     apply()
-  }, [apply, current])
+  }, [apply, current, warmAround])
 
   const setR = useCallback((v: number) => {
     const t = st.current.trans
@@ -253,7 +286,7 @@ export default function DishCard({ dish: first, sequence, siblings, onClosed }: 
   const link = useCallback((d: Dish) => {
     const s = st.current
     if (s.trans || s.closing || d.id === current().dish.id) return
-    if (d.image) { const im = new Image(); im.src = d.image }
+    warmImage(d.image)
     startTrans('push', entryFor(d))
     runTrans(1, 460, easeOutQuint)
   }, [current, runTrans, startTrans])
@@ -283,13 +316,14 @@ export default function DishCard({ dish: first, sequence, siblings, onClosed }: 
     const prevBg = html.style.backgroundColor
     html.style.backgroundColor = CARD
     apply()
+    warmAround()
     tween('o', 0, 1, 520, easeOutQuint, v => { s.o = v })
     return () => {
       cancelAnimationFrame(s.raf); s.raf = 0
       s.tweens.clear()
       html.style.backgroundColor = prevBg
     }
-  }, [apply, tween])
+  }, [apply, tween, warmAround])
 
   useLayoutEffect(() => { apply() }, [layers, apply])
 
@@ -372,7 +406,7 @@ export default function DishCard({ dish: first, sequence, siblings, onClosed }: 
         try { card.setPointerCapture(e.pointerId) } catch { /* già rilasciato */ }
         const next = dx < 0 ? neighbour(1) : neighbour(-1)
         if (next) {
-          if (next.image) { const im = new Image(); im.src = next.image }
+          warmImage(next.image)
           startTrans(dx < 0 ? 'next' : 'prev', entryFor(next))
         } else {
           const cur = current()
@@ -479,12 +513,12 @@ export default function DishCard({ dish: first, sequence, siblings, onClosed }: 
         ))}
 
         <div ref={barRef} className="absolute left-0 right-0 top-0 flex justify-between pointer-events-none" style={{ padding: 14, zIndex: 5 }}>
-          <RoundButton label="Indietro" onClick={back}>
-            <svg width="10" height="16" viewBox="0 0 10 16" aria-hidden><path d="M8 1.5L1.8 8 8 14.5" fill="none" stroke={INK} strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" /></svg>
-          </RoundButton>
-          <RoundButton label="Chiudi" onClick={() => close()}>
-            <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden><path d="M1.5 1.5l9 9M10.5 1.5l-9 9" stroke={INK} strokeWidth="1.7" strokeLinecap="round" /></svg>
-          </RoundButton>
+          <GlassButton label="Indietro" onClick={back} hidden={depth <= 1}>
+            <svg width="11" height="18" viewBox="0 0 11 18" aria-hidden><path d="M9 1.8L2 9l7 7.2" fill="none" stroke={INK} strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" /></svg>
+          </GlassButton>
+          <GlassButton label="Chiudi" onClick={() => close()}>
+            <svg width="13" height="13" viewBox="0 0 13 13" aria-hidden><path d="M1.6 1.6l9.8 9.8M11.4 1.6l-9.8 9.8" stroke={INK} strokeWidth="2" strokeLinecap="round" /></svg>
+          </GlassButton>
         </div>
       </div>
     </div>
@@ -580,16 +614,17 @@ function Page({ layer, siblings, onLink, register }: {
 }
 
 function Header({ dish }: { dish: Dish }) {
-  const [loaded, setLoaded] = useState(false)
+  const [ready] = useState(() => !!dish.image && readyImages.has(dish.image))
+  const [loaded, setLoaded] = useState(ready)
   return (
     <header className="mx-auto w-full text-center" style={{ maxWidth: 560, padding: '64px 24px 30px', background: CARD }}>
       {dish.image && (
         <div className="mx-auto" style={{ width: 'min(84%, 360px)', marginBottom: 28 }}>
           <div style={{ position: 'relative', aspectRatio: '1 / 1', borderRadius: 14, overflow: 'hidden', background: SECTION, boxShadow: '0 18px 40px rgba(40,28,14,0.20), 0 2px 6px rgba(40,28,14,0.10)' }}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={dish.image} alt="" draggable={false} onLoad={() => setLoaded(true)}
+            <img src={dish.image} alt="" draggable={false} onLoad={() => { readyImages.add(dish.image!); setLoaded(true) }}
               ref={el => { if (el?.complete && el.naturalWidth && !loaded) setLoaded(true) }}
-              style={{ width: '100%', height: '100%', objectFit: 'cover', opacity: loaded ? 1 : 0, transition: 'opacity 300ms ease' }} />
+              style={{ width: '100%', height: '100%', objectFit: 'cover', opacity: loaded ? 1 : 0, transition: ready ? 'none' : 'opacity 300ms ease' }} />
           </div>
         </div>
       )}
@@ -626,16 +661,6 @@ function Block({ title, children }: { title: string; children: React.ReactNode }
       <h3 style={{ fontFamily: SANS, fontSize: 10.5, fontWeight: 600, letterSpacing: '0.24em', textTransform: 'uppercase', color: ACCENT, marginBottom: 12 }}>{title}</h3>
       {children}
     </div>
-  )
-}
-
-function RoundButton({ label, onClick, children }: { label: string; onClick: () => void; children: React.ReactNode }) {
-  return (
-    <button type="button" aria-label={label} onClick={onClick}
-      className="pointer-events-auto flex items-center justify-center active:scale-95 transition-transform"
-      style={{ width: 34, height: 34, borderRadius: 17, background: 'rgba(253,251,247,0.78)', boxShadow: `0 0 0 1px ${LINE}, 0 2px 8px rgba(0,0,0,0.08)`, backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)' }}>
-      {children}
-    </button>
   )
 }
 
