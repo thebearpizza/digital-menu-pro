@@ -31,7 +31,7 @@ import type { Lang } from '@/lib/translations'
 const EXPAND = 96          // px di scorrimento per passare da staccata a tutto schermo
 const CLOSE_PULL = 110     // px di trascinamento oltre la cima per chiudere
 const DIM = 0.22           // scurimento della pagina sotto durante lo "Scivola"
-const VEIL = 0.72          // velo della pagina che scorre sopra un'altra (resta un filo di vetro)
+const VEIL = 0.55          // velo della pagina che scorre sopra un'altra (resta vetro)
 
 const CARD    = '#fffdf9'                     // colore pieno (sotto le barre di Safari)
 const STAT_BG = 'rgba(255,255,255,0.55)'      // riquadro prezzo/allergeni sul vetro chiaro
@@ -46,6 +46,7 @@ const price = (p: number | null) => (p === null || isNaN(p) ? '' : `${priceFmt.f
 
 const clamp01 = (x: number) => Math.max(0, Math.min(1, x))
 const smooth = (x: number) => { const t = clamp01(x); return t * t * (3 - 2 * t) }
+const smoothRange = (a: number, b: number, x: number) => smooth((x - a) / (b - a))
 const easeOutQuint = (x: number) => 1 - Math.pow(1 - x, 5)
 const easeOutCubic = (x: number) => 1 - Math.pow(1 - x, 3)
 const easeOutQuad = (x: number) => 1 - (1 - x) * (1 - x)
@@ -197,18 +198,21 @@ export default function DishCard({ dish: first, lang, sequence, siblings, onClos
       el.root.style.borderRadius = lift ? `${((30 * lift) / scale).toFixed(2)}px` : ''
       el.root.style.boxShadow = lift ? `0 0 34px rgba(20,14,8,${(0.30 * lift).toFixed(3)})` : ''
       el.dim.style.opacity = dim.toFixed(3)
-      // La lastra che scorre sopra un'altra pagina si vela dal primo istante
-      // (resta un filo di vetro): attraverso il vetro chiaro si vedrebbero
-      // comparire di colpo le foto della pagina sotto (lampo). A movimento
-      // finito torna vetro sfumando.
-      const veiled = moving && t.kind !== 'rubber' && !!t.under
-      if (veiled) {
-        el.veil.style.transition = 'none'
-        el.veil.style.opacity = String(VEIL)
-      } else if (el.veil.style.opacity !== '0') {
-        el.veil.style.transition = 'opacity 280ms ease'
-        el.veil.style.opacity = '0'
+      // Velo della lastra che scorre sopra un'altra e presenza della pagina
+      // sotto vanno insieme al movimento, senza cambi improvvisi:
+      //  • se ne va (next/pop): all'inizio la pagina sotto compare mentre
+      //    questa si vela (niente foto che spuntano di colpo nel vetro);
+      //  • arriva (prev/push): perde il velo mentre si posa e la pagina sotto
+      //    svanisce, così a fine movimento è già vetro (niente dissolvenza dopo).
+      let veil = 0, presence = 1
+      if (t && t.kind !== 'rubber' && t.under) {
+        const arriving = t.kind === 'prev' || t.kind === 'push'
+        const k = arriving ? 1 - smoothRange(0.5, 1, t.r) : smoothRange(0, 0.15, t.r)
+        if (moving) veil = VEIL * k
+        else if (key === t.under) presence = arriving ? 1 - smoothRange(0.6, 1, t.r) : k
       }
+      el.veil.style.opacity = veil.toFixed(3)
+      el.root.style.opacity = presence < 1 ? presence.toFixed(3) : ''
     })
   }, [])
 
@@ -500,7 +504,9 @@ export default function DishCard({ dish: first, lang, sequence, siblings, onClos
       const vd = t.kind === 'next' ? -v : v                     // velocità verso l'arrivo
       const commit = !cancelled && ((t.r > 0.35 && vd > -0.2) || (vd > 0.35 && t.r > 0.02))
       const rest = commit ? 1 - t.r : t.r
-      const dur = Math.max(150, Math.min(380, rest * 440) / (1 + Math.min(1.5, Math.abs(v) * 0.6)))
+      // Minimo 220 ms: velo e pagina sotto sfumano negli ultimi istanti e
+      // devono avere il tempo di farlo per gradi anche dopo uno swipe veloce.
+      const dur = Math.max(220, Math.min(380, rest * 440) / (1 + Math.min(1.5, Math.abs(v) * 0.6)))
       runTrans(commit ? 1 : 0, dur, easeOutCubic)
     }
     const onPointerUp = (e: PointerEvent) => endSwipe(e, false)
