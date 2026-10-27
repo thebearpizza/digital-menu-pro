@@ -139,6 +139,7 @@ export default function CurlMenu({ data: base, i18n, menus, menuId, token }: Pro
       const a = layout.pages[index]?.anchor
       if (a) anchorRef.current = a
       setPageInfo({ index, spread, starts: layout.categoryStarts })
+      peekIdle()
     }
     let dpr = 1
     let W = 0, H = 0
@@ -301,6 +302,7 @@ export default function CurlMenu({ data: base, i18n, menus, menuId, token }: Pro
       const found = anchor ? layout.pages.findIndex(p => p.anchor === anchor) : -1
       index = found >= 0 ? found : Math.min(index, layout.pages.length - 1)
       if (spread) index -= index % 2
+      peeking = false
       turn = null; anim = null; drag = null
       draw(); warm(); report()
     }
@@ -345,6 +347,45 @@ export default function CurlMenu({ data: base, i18n, menus, menuId, token }: Pro
       finish()
     }
 
+    // ── Invito a sfogliare: fermi da 2 s sulla prima pagina, il lato del foglio
+    // si solleva appena e si riabbassa. Si ripete ogni 6 s (al massimo 3 volte)
+    // finché non si gira la prima pagina; da lì non ricompare più. Qualsiasi
+    // tocco lo interrompe subito.
+    const PEEK_DUR = 1400, PEEK_MAX = 3
+    let peekTimer = 0, peekT0 = 0, peeks = 0, peeking = false, turnedOnce = false
+    const peekIdle = (delay = 2000) => {
+      clearTimeout(peekTimer)
+      if (index !== 0) turnedOnce = true
+      if (turnedOnce || peeks >= PEEK_MAX || disposed) return
+      peekTimer = window.setTimeout(startPeek, delay)
+    }
+    const startPeek = () => {
+      if (!layout || index !== 0 || !canForward()) return
+      // Occupato (dito sul foglio, animazione, scheda aperta, app in background): si riprova.
+      if (drag || anim || cardOpen.current || document.hidden) { peekIdle(); return }
+      peeks++; peeking = true; peekT0 = performance.now()
+      requestAnimationFrame(peekTick)
+    }
+    const peekTick = (now: number) => {
+      if (!peeking) return
+      const u = Math.min(1, (now - peekT0) / PEEK_DUR)
+      const a = Math.pow(Math.sin(Math.PI * u), 2)          // sale e scende, morbido ai capi
+      // Si solleva il lato libero del foglio (appena inclinato, più in basso
+      // che in alto), sopra la barra dei comandi.
+      const lift = a * pageW * 0.12
+      const P0 = { x: W, y: H * 0.62 }
+      turn = { kind: 'forward', P0, F: constrain(P0, { x: W - lift, y: P0.y - lift * 0.18 }, spineX, H) }
+      draw()
+      if (u < 1) { requestAnimationFrame(peekTick); return }
+      peeking = false; turn = null; draw()
+      peekIdle(6000)
+    }
+    const cancelPeek = () => {
+      clearTimeout(peekTimer)
+      if (!peeking) return
+      peeking = false; turn = null; draw()
+    }
+
     // ── Gesti
     const pos = (e: PointerEvent): Vec => ({ x: e.clientX, y: e.clientY })
 
@@ -371,6 +412,7 @@ export default function CurlMenu({ data: base, i18n, menus, menuId, token }: Pro
 
     const onDown = (e: PointerEvent) => {
       if (!layout || drag) return
+      cancelPeek()
       skipAnim()
       canvas.setPointerCapture(e.pointerId)
       const p = pos(e)
@@ -423,9 +465,10 @@ export default function CurlMenu({ data: base, i18n, menus, menuId, token }: Pro
           if (dish.image) { const im = new Image(); im.src = dish.image }
           setCard(dish)
         } else setChrome(c => !c)   // spazio vuoto: mostra/nasconde i comandi
+        peekIdle()
         return
       }
-      if (!turn || (d.mode !== 'forward' && d.mode !== 'back')) { turn = null; request(); return }
+      if (!turn || (d.mode !== 'forward' && d.mode !== 'back')) { turn = null; request(); peekIdle(); return }
       const v = velocityX(d)
       const prog = (turn.P0.x - turn.F.x) / (2 * pageW)   // 0 = piatta, 1 = girata
       const commit = turn.kind === 'forward'
@@ -438,10 +481,12 @@ export default function CurlMenu({ data: base, i18n, menus, menuId, token }: Pro
       if (!drag || e.pointerId !== drag.pointerId) return
       drag = null
       if (turn) animate(turn, false)
+      else peekIdle()
     }
 
     const onKey = (e: KeyboardEvent) => {
       if (anim || drag || cardOpen.current) return
+      cancelPeek()
       if ((e.key === 'ArrowRight' || e.key === ' ') && canForward()) { setChrome(false); turnBy('forward', H * 0.7) }
       else if (e.key === 'ArrowLeft' && canBack()) { setChrome(false); turnBy('back', H * 0.7) }
     }
@@ -461,6 +506,7 @@ export default function CurlMenu({ data: base, i18n, menus, menuId, token }: Pro
       refresh: () => { if (layout) relayout() },
       jump: (page: number) => {
         if (!layout || anim || drag) return
+        cancelPeek()
         const target = Math.max(0, Math.min(pageCount() - 1, spread ? page - (page % 2) : page))
         if (target === index) return
         const stage = stageRef.current
@@ -495,7 +541,8 @@ export default function CurlMenu({ data: base, i18n, menus, menuId, token }: Pro
       disposed = true
       html.style.backgroundColor = prevBg
       cancelAnimationFrame(raf)
-      clearTimeout(warmTimer); clearTimeout(resizeTimer); clearTimeout(jumpTimer)
+      clearTimeout(warmTimer); clearTimeout(resizeTimer); clearTimeout(jumpTimer); clearTimeout(peekTimer)
+      peeking = false
       apiRef.current = null
       canvas.removeEventListener('pointerdown', onDown)
       canvas.removeEventListener('pointermove', onMove)
