@@ -134,7 +134,8 @@ function CategoryBar({ categories, active, onJump, hide }: {
           {ind && (
             <span aria-hidden className="absolute"
               style={{ top: 5, bottom: 5, left: ind.left, width: ind.width, borderRadius: 16,
-                background: 'rgba(255,255,255,0.88)', boxShadow: '0 1px 4px rgba(20,14,8,0.12), inset 0 0 0 0.5px rgba(0,0,0,0.04)',
+                background: 'linear-gradient(180deg, rgba(255,255,255,0.92), rgba(255,255,255,0.72))',
+                boxShadow: '0 2px 6px rgba(20,14,8,0.14), inset 0 0 0 1px rgba(255,255,255,0.9), inset 0 -3px 5px -3px rgba(40,28,14,0.10)',
                 transition: `left 420ms ${SPRING}, width 420ms ${SPRING}` }} />
           )}
           {categories.map((c, i) => (

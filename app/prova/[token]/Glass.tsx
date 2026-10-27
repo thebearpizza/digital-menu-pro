@@ -12,28 +12,47 @@ import { useEffect, useState } from 'react'
 export const SPRING = 'cubic-bezier(0.34, 1.56, 0.64, 1)'
 const GLASS_INK = '#1d1915'
 
-/** Stile di base del vetro (sfondo, sfocatura, bordi di luce, ombra). */
+/**
+ * Stile di base del vetro. Poco velo e poca sfocatura (si intravede ciò che
+ * sta sotto, schiarito; saturazione moderata: sulla carta crema di più
+ * ingiallirebbe il vetro), bordo di luce netto, spessore ai bordi
+ * (chiaro in alto, appena scuro in basso), ombra morbida.
+ */
 export function glassSurface(strength: 'light' | 'panel' = 'light'): React.CSSProperties {
   const panel = strength === 'panel'
+  const filter = panel
+    ? 'blur(16px) saturate(1.5) brightness(1.08)'
+    : 'blur(5px) saturate(1.5) brightness(1.1) contrast(1.04)'
   return {
-    background: panel ? 'rgba(252,250,246,0.62)' : 'rgba(255,255,255,0.30)',
-    backdropFilter: `blur(${panel ? 26 : 12}px) saturate(1.9) brightness(1.04)`,
-    WebkitBackdropFilter: `blur(${panel ? 26 : 12}px) saturate(1.9) brightness(1.04)`,
+    background: panel
+      ? 'linear-gradient(180deg, rgba(255,255,255,0.58), rgba(250,247,241,0.44))'
+      : 'linear-gradient(180deg, rgba(255,255,255,0.26), rgba(255,255,255,0.10))',
+    backdropFilter: filter,
+    WebkitBackdropFilter: filter,
     boxShadow: [
-      'inset 0 0 0 0.5px rgba(255,255,255,0.65)',
-      'inset 1.5px 1.5px 1px -1px rgba(255,255,255,0.95)',
-      'inset -1.5px -1.5px 1px -1px rgba(255,255,255,0.55)',
-      '0 0 0 0.5px rgba(0,0,0,0.07)',
-      panel ? '0 18px 50px rgba(20,14,8,0.22)' : '0 6px 18px rgba(20,14,8,0.14)',
+      'inset 0 0 0 1px rgba(255,255,255,0.55)',              // bordo di luce
+      'inset 1.5px 2px 1.5px -1px rgba(255,255,255,1)',       // spigolo illuminato in alto a sinistra
+      'inset -1.5px -2px 1.5px -1px rgba(255,255,255,0.6)',   // riflesso in basso a destra
+      'inset 0 10px 14px -10px rgba(255,255,255,0.75)',       // spessore: luce che entra dall'alto
+      'inset 0 -10px 14px -10px rgba(40,28,14,0.10)',         // spessore: ombra del vetro in basso
+      '0 0 0 0.5px rgba(0,0,0,0.08)',
+      panel ? '0 18px 50px rgba(20,14,8,0.22)' : '0 8px 22px rgba(20,14,8,0.16), 0 1px 3px rgba(20,14,8,0.10)',
     ].join(', '),
   }
 }
 
-/** Riflesso curvo della superficie (da mettere come primo figlio). */
+/** Riflessi della superficie (da mettere come primo figlio): una luce curva in
+ *  alto a sinistra e una più tenue che ritorna dal bordo in basso. */
 export function GlassSheen() {
   return (
     <span aria-hidden className="pointer-events-none absolute inset-0"
-      style={{ borderRadius: 'inherit', background: 'radial-gradient(120% 90% at 28% 12%, rgba(255,255,255,0.55) 0%, rgba(255,255,255,0.12) 42%, rgba(255,255,255,0) 60%, rgba(255,255,255,0.18) 100%)' }} />
+      style={{
+        borderRadius: 'inherit',
+        background: [
+          'radial-gradient(90% 60% at 30% 0%, rgba(255,255,255,0.70) 0%, rgba(255,255,255,0.18) 45%, rgba(255,255,255,0) 70%)',
+          'radial-gradient(70% 45% at 70% 108%, rgba(255,255,255,0.40) 0%, rgba(255,255,255,0) 70%)',
+        ].join(', '),
+      }} />
   )
 }
 

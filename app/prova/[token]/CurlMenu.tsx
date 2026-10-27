@@ -411,10 +411,10 @@ export default function CurlMenu({ data: base, i18n, menus, menuId, token }: Pro
     }
 
     // ── Invito a sfogliare: fermi da 2 s sulla prima pagina, il lato del foglio
-    // si solleva appena e si riabbassa. Si ripete ogni 6 s (al massimo 3 volte)
+    // si solleva piano, resta un attimo e si riabbassa (2,8 s). Si ripete ogni 6 s (al massimo 3 volte)
     // finché non si gira la prima pagina; da lì non ricompare più. Qualsiasi
     // tocco lo interrompe subito.
-    const PEEK_DUR = 1400, PEEK_MAX = 3
+    const PEEK_DUR = 2800, PEEK_MAX = 3
     let peekTimer = 0, peekT0 = 0, peeks = 0, peeking = false, turnedOnce = false
     const peekIdle = (delay = 2000) => {
       clearTimeout(peekTimer)
@@ -432,7 +432,10 @@ export default function CurlMenu({ data: base, i18n, menus, menuId, token }: Pro
     const peekTick = (now: number) => {
       if (!peeking) return
       const u = Math.min(1, (now - peekT0) / PEEK_DUR)
-      const a = Math.pow(Math.sin(Math.PI * u), 2)          // sale e scende, morbido ai capi
+      // Sale piano (40%), resta un attimo sollevato (20%), ridiscende (40%).
+      const a = u < 0.4 ? Math.pow(Math.sin((Math.PI / 2) * (u / 0.4)), 2)
+        : u < 0.6 ? 1
+        : Math.pow(Math.cos((Math.PI / 2) * ((u - 0.6) / 0.4)), 2)
       // Si solleva il lato libero del foglio (appena inclinato, più in basso
       // che in alto), sopra la barra dei comandi.
       const lift = a * pageW * 0.12
