@@ -42,14 +42,20 @@ export function glassSurface(strength: 'light' | 'panel' = 'light'): React.CSSPr
 }
 
 /**
- * Vetro per superfici grandi con testo da leggere (pagine della scheda
- * prodotto): sfocatura media (dietro si intuiscono le righe del menu) con un
- * velo chiaro e caldo che tiene il testo leggibile.
+ * Vetro per le superfici della scheda prodotto:
+ *  • clear   → vetro chiaro: poca sfocatura, il menu dietro si vede (zona con
+ *              foto, nome e prezzo, testi grandi);
+ *  • frosted → vetro smerigliato: sfocatura forte e velo chiaro, il testo da
+ *              leggere (descrizione, allergeni) non ha niente dietro che disturbi.
  */
-export function glassSheet(): React.CSSProperties {
-  const filter = 'blur(16px) saturate(1.4) brightness(1.12)'
+export function glassSheet(kind: 'clear' | 'frosted'): React.CSSProperties {
+  const filter = kind === 'clear'
+    ? 'blur(3px) saturate(1.3) brightness(1.08)'
+    : 'blur(18px) saturate(1.4) brightness(1.1)'
   return {
-    background: 'linear-gradient(180deg, rgba(255,253,249,0.56), rgba(252,249,243,0.46))',
+    background: kind === 'clear'
+      ? 'linear-gradient(180deg, rgba(255,253,249,0.34), rgba(255,253,249,0.26))'
+      : 'rgba(252,249,243,0.66)',
     backdropFilter: filter,
     WebkitBackdropFilter: filter,
   }

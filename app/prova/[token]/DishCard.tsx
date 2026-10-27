@@ -33,7 +33,7 @@ const CLOSE_PULL = 110     // px di trascinamento oltre la cima per chiudere
 const DIM = 0.22           // scurimento della pagina sotto durante lo "Scivola"
 
 const CARD    = '#fffdf9'                     // colore pieno (sotto le barre di Safari)
-const SECTION = 'rgba(120,96,60,0.07)'        // velatura della parte bassa, sopra il vetro
+const STAT_BG = 'rgba(255,255,255,0.55)'      // riquadro prezzo/allergeni sul vetro chiaro
 const TILE    = 'rgba(255,255,255,0.42)'      // riquadri chiari appoggiati sul vetro
 const INK     = '#1d1915'
 const SOFT    = '#6a6157'
@@ -547,15 +547,19 @@ function Page({ layer, lang, siblings, onLink, register }: {
   const others = siblings(dish).filter(d => d.id !== dish.id)
   const pairing = dish.pairing
   return (
-    // Ogni pagina è una lastra di vetro: sfoca il menu dietro e, nello
-    // "Scivola", anche la pagina che sta sotto (i testi non si sovrappongono).
-    <div ref={ref} className="absolute inset-0 overflow-hidden" style={glassSheet()}>
+    // Due lastre di vetro per pagina (la pagina in sé è trasparente, così
+    // entrambe vedono il menu dietro): chiara in alto (foto, nome, prezzo),
+    // smerigliata da "Descrizione" in giù. Nello "Scivola" vedono anche la
+    // pagina sotto; il velo (data-veil) la copre mentre questa scorre.
+    <div ref={ref} className="absolute inset-0 overflow-hidden">
       <div data-veil aria-hidden className="absolute inset-0 pointer-events-none" style={{ background: CARD, opacity: 0 }} />
       <div data-scroller className="absolute inset-0 overflow-y-auto"
         style={{ overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch', touchAction: 'pan-y' }}>
         <div style={{ minHeight: `calc(100% + ${EXPAND}px)`, display: 'flex', flexDirection: 'column' }}>
-          <Header dish={dish} lang={lang} />
-          <section style={{ background: SECTION, flex: 1, paddingBottom: 'calc(env(safe-area-inset-bottom) + 40px + var(--extra, 0px))' }}>
+          <div style={glassSheet('clear')}>
+            <Header dish={dish} lang={lang} />
+          </div>
+          <section style={{ ...glassSheet('frosted'), boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.7)', flex: 1, paddingBottom: 'calc(env(safe-area-inset-bottom) + 40px + var(--extra, 0px))' }}>
             <div className="mx-auto" style={{ maxWidth: 560, padding: '30px 24px 0' }}>
               {dish.description && (
                 <Block title={t('description', lang)}>
@@ -647,7 +651,7 @@ function Header({ dish, lang }: { dish: Dish; lang: Lang }) {
         {dish.name}
       </h2>
       {(dish.price !== null || dish.allergens.length > 0) && (
-        <div className="mx-auto flex" style={{ marginTop: 24, maxWidth: 380, borderRadius: 18, background: SECTION, padding: '14px 6px' }}>
+        <div className="mx-auto flex" style={{ marginTop: 24, maxWidth: 380, borderRadius: 18, background: STAT_BG, boxShadow: `inset 0 0 0 1px rgba(255,255,255,0.7), 0 1px 3px rgba(20,14,8,0.06)`, padding: '14px 6px' }}>
           {dish.price !== null && <Stat label={t('price', lang)} value={price(dish.price)} />}
           {dish.price !== null && dish.allergens.length > 0 && <span style={{ width: 1, background: LINE, margin: '4px 0' }} />}
           {dish.allergens.length > 0 && <Stat label={t('allergens', lang)} value={dish.allergens.map(a => a.n).join(' · ')} />}
