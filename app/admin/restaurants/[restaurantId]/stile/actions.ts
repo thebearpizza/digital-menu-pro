@@ -2,6 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { parseStyle, type MenuStyle } from '@/lib/menuStyle'
+import { parseLanding, type LandingStyle } from '@/lib/landingStyle'
 
 /** Salva gli stili del nuovo menu, menu per menu. Solo il proprietario del
  *  ristorante; ogni stile viene ripulito (valori ammessi, colori validi).
@@ -30,5 +31,18 @@ export async function saveMenuStyles(
       .eq('id', restaurantId).eq('owner_id', user.id)
     if (error) return { ok: false, error: 'Salvataggio non riuscito, riprova.' }
   }
+  return { ok: true }
+}
+
+/** Salva lo stile della pagina d'apertura (solo il proprietario; ripulito). */
+export async function saveLandingStyle(restaurantId: string, style: LandingStyle): Promise<{ ok: true } | { ok: false; error: string }> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { ok: false, error: 'Sessione scaduta: accedi di nuovo.' }
+  const { data, error } = await supabase.from('restaurants')
+    .update({ landing_style: parseLanding(style) })
+    .eq('id', restaurantId).eq('owner_id', user.id)
+    .select('id')
+  if (error || !data?.length) return { ok: false, error: 'Salvataggio non riuscito, riprova.' }
   return { ok: true }
 }

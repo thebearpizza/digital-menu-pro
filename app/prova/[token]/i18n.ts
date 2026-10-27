@@ -28,6 +28,8 @@ export interface MenuChoice {
   translations: MenuTranslations
   /** Orario del menu programmato ("12:00–15:30"), se c'è. */
   hours?:       string | null
+  /** Colore della carta del menu: la pagina d'apertura sfuma in questo. */
+  paper?:       string
 }
 
 const UI = {

@@ -7,7 +7,8 @@ import { ALLERGENS, allergenName, allergenNumber, type AllergenCatalog } from '@
 import { isCategoryOpenNow, isMenuOpenNow, isWindowOpenNow, scheduleLabel, type CategorySchedules } from '@/lib/menuSchedule'
 import { parseRichText } from './richText'
 import { parseStyle } from '@/lib/menuStyle'
-import Landing, { type Banner, type SocialKind } from './Landing'
+import Landing, { type SocialKind } from './Landing'
+import { initialLanding, parseLanding, type LandingMedia } from '@/lib/landingStyle'
 import type { DishTranslations, MenuTranslations } from '@/lib/translations'
 import type { I18nData, MenuChoice } from './i18n'
 
@@ -41,7 +42,7 @@ export default async function ProvaPage({
   const supabase = await createClient()
 
   const { data: restaurant } = await supabase
-    .from('restaurants').select('id, name, owner_id, theme_config, menu_style, description, logo_url, instagram_url, facebook_url, website_url, tripadvisor_url, google_maps_url, legal_name, vat_number, legal_address')
+    .from('restaurants').select('id, name, owner_id, theme_config, menu_style, landing_style, description, logo_url, instagram_url, facebook_url, website_url, tripadvisor_url, google_maps_url, legal_name, vat_number, legal_address')
     .eq('qr_public_token', params.token).eq('is_active', true).single()
   if (!restaurant) notFound()
 
@@ -56,6 +57,7 @@ export default async function ProvaPage({
     id: m.id as string, name: m.name as string,
     translations: (m.translations ?? {}) as MenuTranslations,
     hours: scheduleLabel(m as Parameters<typeof scheduleLabel>[0]),
+    paper: parseStyle(m.menu_style ?? (restaurant as Row).menu_style).page.paper,
   }))
 
   // Nessun menu scelto: pagina d'apertura (anche con un solo menu).
@@ -65,26 +67,27 @@ export default async function ProvaPage({
       .from('restaurant_banners').select('id, media_url, media_type, title, subtitle')
       .eq('restaurant_id', restaurant.id).eq('is_active', true)
       .order('sort_order', { ascending: true })
-    let banners: Banner[] = (bannerRows ?? []).filter(b => b.media_url).map(b => ({
+    const r = restaurant as Row
+    // Stile della pagina d'apertura; chi non ne ha ancora uno parte da quello
+    // che c'è già (banner e logo del menu attuale, sfondo del vecchio tema).
+    const old = oldLanding(r.theme_config)
+    let media: LandingMedia[] = (bannerRows ?? []).filter(b => b.media_url).map(b => ({
       id: b.id as string, url: b.media_url as string, video: b.media_type === 'video', poster: null,
       title: (b.title as string | null) || null, subtitle: (b.subtitle as string | null) || null,
     }))
-    // Ponte provvisorio (fino alla nuova Personalizzazione): sfondo e logo già
-    // caricati dal ristoratore nella vecchia pagina d'apertura. Solo i file,
-    // nessuna impostazione grafica.
-    const old = oldLanding((restaurant as Row).theme_config)
-    if (!banners.length && old.background) banners = [old.background]
+    if (!media.length && old.background) media = [old.background]
+    const landing = r.landing_style
+      ? parseLanding(r.landing_style)
+      : initialLanding(media, (r.logo_url as string | null) || old.logo)
     const socialCols: [SocialKind, string][] = [
       ['instagram', 'instagram_url'], ['facebook', 'facebook_url'], ['tripadvisor', 'tripadvisor_url'],
       ['maps', 'google_maps_url'], ['website', 'website_url'],
     ]
-    const r = restaurant as Row
     return (
-      <Landing token={params.token} menus={choices} banners={banners}
+      <Landing token={params.token} menus={choices} style={landing} preview={searchParams.preview === '1'}
         restaurant={{
           name: r.name as string,
           description: (r.description as string | null) || null,
-          logo: (r.logo_url as string | null) || old.logo,
           socials: socialCols.filter(([, col]) => r[col]).map(([kind, col]) => ({ kind, url: r[col] as string })),
           legalName: (r.legal_name as string | null) || null,
           vat: (r.vat_number as string | null) || null,
@@ -192,7 +195,7 @@ function allergenLegendOf(tc: unknown, catalog: AllergenCatalog): MenuData['alle
 }
 
 /** File della vecchia pagina d'apertura (sfondo foto/video, logo). */
-function oldLanding(theme: unknown): { background: Banner | null; logo: string | null } {
+function oldLanding(theme: unknown): { background: LandingMedia | null; logo: string | null } {
   const l = (theme as { landing?: { background?: { type?: string; value?: string; poster?: string }; logo?: { image?: string } } } | null)?.landing
   const bg = l?.background
   const media = bg && bg.value && (bg.type === 'image' || bg.type === 'video' || bg.type === 'gif')

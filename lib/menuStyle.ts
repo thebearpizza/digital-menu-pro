@@ -324,18 +324,18 @@ export const DEFAULT_STYLE: MenuStyle = {
 
 // ── Lettura (con valori base e controlli) ────────────────────────────────────
 
-type Raw = Record<string, unknown>
-const obj = (v: unknown): Raw => (v && typeof v === 'object' ? (v as Raw) : {})
+export type Raw = Record<string, unknown>
+export const obj = (v: unknown): Raw => (v && typeof v === 'object' ? (v as Raw) : {})
 const HEX = /^#[0-9a-f]{6}$/i
-const pick = <T extends string>(v: unknown, opts: readonly T[], d: T): T => (opts.includes(v as T) ? (v as T) : d)
-const num = (v: unknown, min: number, max: number, d: number) =>
+export const pick = <T extends string>(v: unknown, opts: readonly T[], d: T): T => (opts.includes(v as T) ? (v as T) : d)
+export const num = (v: unknown, min: number, max: number, d: number) =>
   typeof v === 'number' && Number.isFinite(v) ? Math.max(min, Math.min(max, v)) : d
-const bool = (v: unknown, d: boolean) => (typeof v === 'boolean' ? v : d)
-const hex = (v: unknown, d: string) => (typeof v === 'string' && HEX.test(v) ? v.toLowerCase() : d)
-const colorRef = (v: unknown, d: ColorRef): ColorRef =>
+export const bool = (v: unknown, d: boolean) => (typeof v === 'boolean' ? v : d)
+export const hex = (v: unknown, d: string) => (typeof v === 'string' && HEX.test(v) ? v.toLowerCase() : d)
+export const colorRef = (v: unknown, d: ColorRef): ColorRef =>
   v === 'ink' || v === 'soft' || v === 'accent' ? v : typeof v === 'string' && HEX.test(v) ? v.toLowerCase() : d
 
-function text(v: unknown, d: TextStyle, custom: Set<string>): TextStyle {
+export function text(v: unknown, d: TextStyle, custom: Set<string>): TextStyle {
   const r = obj(v)
   const font = typeof r.font === 'string' && (FONTS.some(f => f.name === r.font) || custom.has(r.font)) ? r.font : d.font
   return {
@@ -349,16 +349,10 @@ function text(v: unknown, d: TextStyle, custom: Set<string>): TextStyle {
   }
 }
 
-export function parseStyle(raw: unknown): MenuStyle {
-  const r0 = obj(raw)
-  const r = r0.version === 2 ? r0 : fromV1(r0)
-  const d = DEFAULT_STYLE
-  const pg = obj(r.page), hd = obj(r.head), rh = obj(r.runningHead), ct = obj(r.category), ds = obj(r.dish)
-  const al = obj(r.allergens), pn = obj(r.pageNumber), tp = obj(r.textPages), cd = obj(r.card), ch = obj(r.chrome), ef = obj(r.effects)
-  const bg = obj(pg.background)
-  // Caratteri caricati: prima si leggono (e si registrano), poi i testi che li usano.
+/** Caratteri caricati (validati) e già registrati per fontInfo/fontStack. */
+export function parseCustomFonts(raw: unknown): CustomFont[] {
   const isUrl = (u: unknown): u is string => typeof u === 'string' && /^https:\/\//.test(u)
-  const customFonts: CustomFont[] = (Array.isArray(r.customFonts) ? r.customFonts : [])
+  const list: CustomFont[] = (Array.isArray(raw) ? raw : [])
     .map(obj)
     .filter(f => typeof f.id === 'string' && /^[a-z0-9-]{1,40}$/i.test(f.id))
     .map(f => {
@@ -380,7 +374,19 @@ export function parseStyle(raw: unknown): MenuStyle {
     })
     .filter(f => f.faces.length > 0)
     .slice(0, 30)
-  customFonts.forEach(registerCustom)
+  list.forEach(registerCustom)
+  return list
+}
+
+export function parseStyle(raw: unknown): MenuStyle {
+  const r0 = obj(raw)
+  const r = r0.version === 2 ? r0 : fromV1(r0)
+  const d = DEFAULT_STYLE
+  const pg = obj(r.page), hd = obj(r.head), rh = obj(r.runningHead), ct = obj(r.category), ds = obj(r.dish)
+  const al = obj(r.allergens), pn = obj(r.pageNumber), tp = obj(r.textPages), cd = obj(r.card), ch = obj(r.chrome), ef = obj(r.effects)
+  const bg = obj(pg.background)
+  // Caratteri caricati: prima si leggono (e si registrano), poi i testi che li usano.
+  const customFonts = parseCustomFonts(r.customFonts)
   const custom = new Set(customFonts.map(f => CUSTOM_PREFIX + f.id))
   const tx = (v: unknown, dd: TextStyle) => text(v, dd, custom)
   const orn = (v: unknown, dd: Ornament) => pick(v, ORNAMENTS, dd)
@@ -527,9 +533,14 @@ export function textStyles(st: MenuStyle): TextStyle[] {
 }
 
 /** Foglio di stile con le sole facce usate, dal nostro proxy (mai Google). */
-export function styleFontsUrl(st: MenuStyle): string {
+export const styleFontsUrl = (st: MenuStyle) => fontsUrlFor(textStyles(st))
+/** Facce da caricare prima di impaginare (le misure dipendono dal font reale). */
+export const styleFaces = (st: MenuStyle) => facesFor(textStyles(st))
+
+/** Foglio di stile (proxy) per un elenco di testi; '' se usano solo caratteri caricati. */
+export function fontsUrlFor(texts: TextStyle[]): string {
   const fams = new Map<string, Set<string>>()
-  for (const t of textStyles(st)) {
+  for (const t of texts) {
     if (isCustomFont(t.font)) continue   // caricati dal ristoratore: FontFace (loadStyleAssets)
     const face = resolveFace(t.font, t.weight, t.italic)
     if (!fams.has(t.font)) fams.set(t.font, new Set())
@@ -542,10 +553,10 @@ export function styleFontsUrl(st: MenuStyle): string {
   return q ? `/api/gfonts/css2?${q}&display=block` : ''
 }
 
-/** Facce da caricare prima di impaginare (le misure dipendono dal font reale). */
-export function styleFaces(st: MenuStyle): string[] {
+/** Facce (stringhe "font" CSS) usate da un elenco di testi. */
+export function facesFor(texts: TextStyle[]): string[] {
   const out = new Set<string>()
-  for (const t of textStyles(st)) {
+  for (const t of texts) {
     const f = resolveFace(t.font, t.weight, t.italic)
     out.add(`${f.italic ? 'italic ' : ''}${f.weight} 20px ${fontStack(t.font)}`)
   }
