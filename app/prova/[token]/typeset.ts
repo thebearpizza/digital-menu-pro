@@ -192,7 +192,12 @@ export interface Layout {
   hit:    (pageIndex: number, x: number, y: number) => Dish | null
   /** Pagina in cui inizia ogni categoria (index = posizione in data.categories). */
   categoryStarts: { index: number; name: string; page: number }[]
+  /** Elemento sotto il punto (anteprima della Personalizzazione). */
+  pick:   (pageIndex: number, x: number, y: number) => PickTarget
 }
+
+/** Elementi del menu che si possono toccare nell'anteprima per modificarli. */
+export type PickTarget = 'paper' | 'title' | 'category' | 'name' | 'price' | 'description' | 'allergens' | 'text'
 
 // Misure verticali (in unità s).
 const NAME_SIZE = 19.5, NAME_LH = 1.18
@@ -217,6 +222,7 @@ export function layoutMenu(ctx: Ctx, data: MenuData, vp: Viewport, style: MenuSt
   const L = style.layout
   const T = styleTokens(style)
   const DISPLAY = T.display, TEXT = T.text, DETAILS = T.details
+  const DARK_PAPER = luminance(T.paper) < 0.45
   const DESC_FONT = L.italicDescriptions ? 'italic 400' : '400'
   // Centrato: il prezzo va sotto il nome (a destra non avrebbe un allineamento).
   const PRICE_MODE = L.align === 'center' ? 'below' : L.price
@@ -440,9 +446,16 @@ export function layoutMenu(ctx: Ctx, data: MenuData, vp: Viewport, style: MenuSt
     // Carta: tinta calda, luce appena più chiara al centro, grana finissima.
     c.fillStyle = T.paper
     c.fillRect(0, 0, w, h)
+    // Su carta scura la luce bianca la sbiadirebbe: luce appena accennata e
+    // bordi un filo più scuri.
     const g = c.createRadialGradient(w * 0.5, h * 0.42, 0, w * 0.5, h * 0.42, Math.hypot(w, h) * 0.62)
-    g.addColorStop(0, 'rgba(255,255,255,0.55)')
-    g.addColorStop(1, 'rgba(232,224,208,0.35)')
+    if (DARK_PAPER) {
+      g.addColorStop(0, 'rgba(255,255,255,0.06)')
+      g.addColorStop(1, 'rgba(0,0,0,0.22)')
+    } else {
+      g.addColorStop(0, 'rgba(255,255,255,0.55)')
+      g.addColorStop(1, 'rgba(232,224,208,0.35)')
+    }
     c.fillStyle = g
     c.fillRect(0, 0, w, h)
     if (grain) {
@@ -632,7 +645,48 @@ export function layoutMenu(ctx: Ctx, data: MenuData, vp: Viewport, style: MenuSt
     return null
   }
 
-  return { vp, pages, paint, hit, categoryStarts }
+  // Anteprima: che cosa c'è sotto il dito (parti del piatto comprese).
+  const pick = (pageIndex: number, x: number, y: number): PickTarget => {
+    const page = pages[pageIndex]
+    if (!page) return 'paper'
+    const pad = (L.dishSpacing * s) / 2
+    for (const it of page.items) {
+      const b = it.block
+      if (y < it.y - (b.kind === 'dish' ? pad : 4 * s) || y > it.y + it.h + (b.kind === 'dish' ? pad : 4 * s)) continue
+      if (b.kind === 'head') return 'title'
+      if (b.kind === 'cat') return 'category'
+      if (b.kind === 'tline' || b.kind === 'legend') return 'text'
+      if (b.kind !== 'dish') continue
+      let yy = it.y
+      if (b.showHead) {
+        const nameH = b.nameLines.length * NAME_SIZE * NAME_LH * s
+        if (y <= yy + nameH) {
+          const priceRight = b.price && PRICE_MODE !== 'below' && L.align !== 'center'
+          return priceRight && x > m.x0 + m.cw - 64 * s ? 'price' : 'name'
+        }
+        yy += nameH
+        if (b.price && PRICE_MODE === 'below') {
+          yy += 2 * s + PRICE_SIZE * 1.25 * s
+          if (y <= yy) return 'price'
+        }
+      }
+      const n = b.descTo - b.descFrom
+      if (n) {
+        yy += 4 * s + n * DESC_SIZE * DESC_LH * s
+        if (y <= yy) return 'description'
+      }
+      return b.allergens ? 'allergens' : 'description'
+    }
+    return 'paper'
+  }
+
+  return { vp, pages, paint, hit, categoryStarts, pick }
+}
+
+/** Luminosità relativa (0 nero – 1 bianco) di un colore #rrggbb. */
+function luminance(hex: string): number {
+  const n = parseInt(hex.slice(1), 16)
+  return (0.2126 * ((n >> 16) & 255) + 0.7152 * ((n >> 8) & 255) + 0.0722 * (n & 255)) / 255
 }
 
 let _grain: HTMLCanvasElement | null = null

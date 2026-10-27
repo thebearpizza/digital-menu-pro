@@ -94,6 +94,7 @@ export default function CurlMenu({ data: base, style: initialStyle, preview = fa
   // Stile: fisso nel menu pubblico; nell'anteprima della Personalizzazione
   // arriva a ogni modifica dalla pagina che la contiene.
   const [style, setStyle] = useState(initialStyle)
+  const previewRef = useRef(preview)
   const styleRef = useRef(style)
   styleRef.current = style
   const tokens = useMemo(() => styleTokens(style), [style])
@@ -429,6 +430,7 @@ export default function CurlMenu({ data: base, style: initialStyle, preview = fa
     let peekTimer = 0, peekT0 = 0, peeks = 0, peeking = false, turnedOnce = false
     const peekIdle = (delay = 2000) => {
       clearTimeout(peekTimer)
+      if (previewRef.current) return   // nell'anteprima del gestionale darebbe fastidio
       if (index !== 0) turnedOnce = true
       if (turnedOnce || peeks >= PEEK_MAX || disposed) return
       peekTimer = window.setTimeout(startPeek, delay)
@@ -550,6 +552,12 @@ export default function CurlMenu({ data: base, style: initialStyle, preview = fa
         const right = spread && d.start.x >= spineX
         const page = spread ? index + (right ? 1 : 0) : index
         const px = d.start.x - (right ? spineX : 0)
+        // Anteprima della Personalizzazione: il tocco dice al gestionale che
+        // cosa si vuole modificare (niente scheda del piatto).
+        if (previewRef.current && layout) {
+          window.parent?.postMessage({ type: 'lito-pick', target: layout.pick(page, px, d.start.y) }, window.location.origin)
+          return
+        }
         const dish = layout?.hit(page, px, d.start.y)
         if (dish) {
           if (dish.image) { const im = new Image(); im.src = dish.image }
@@ -714,7 +722,7 @@ export default function CurlMenu({ data: base, style: initialStyle, preview = fa
           onMenus={() => router.push(`/prova/${token}`)}
           categories={pageInfo.starts} active={activeCategory} onJump={p => apiRef.current?.jump(p)} />
       )}
-      {hint && status !== 'loading' && pageInfo.index === 0 && (
+      {hint && !preview && status !== 'loading' && pageInfo.index === 0 && (
         <SwipeHint ref={hintRef} up={t('swipeUp', lang)} side={t('swipeSide', lang)} />
       )}
       {card && <DishCard key={card.id} dish={card} style={style} lang={lang} sequence={sequence} siblings={siblings} onClosed={onClosed} />}

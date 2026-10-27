@@ -1,0 +1,23 @@
+import { createClient } from '@/lib/supabase/server'
+import { notFound } from 'next/navigation'
+import { parseStyle } from '@/lib/menuStyle'
+import StyleEditor from './StyleEditor'
+
+// Personalizzazione del nuovo menu: anteprima vera del menu e comandi accanto.
+export default async function StylePage({ params }: { params: { restaurantId: string } }) {
+  const supabase = await createClient()
+  const [{ data: restaurant }, { data: menus }] = await Promise.all([
+    supabase.from('restaurants').select('id, qr_public_token, menu_style').eq('id', params.restaurantId).single(),
+    supabase.from('menus').select('id, name').eq('restaurant_id', params.restaurantId).eq('is_active', true).order('sort_order', { ascending: true }),
+  ])
+  if (!restaurant?.qr_public_token) notFound()
+
+  return (
+    <StyleEditor
+      restaurantId={params.restaurantId}
+      token={restaurant.qr_public_token as string}
+      initialStyle={parseStyle(restaurant.menu_style)}
+      menus={(menus ?? []).map(m => ({ id: m.id as string, name: m.name as string }))}
+    />
+  )
+}
