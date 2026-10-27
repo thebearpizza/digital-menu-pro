@@ -9,24 +9,34 @@
 // del piatto, comandi, sfoglio). Toccando un elemento nell'anteprima si apre
 // il suo pannello. Ogni testo ha carattere, grandezza, spessore, corsivo,
 // colore, maiuscolo e spaziatura; gli spessori e i corsivi offerti sono solo
-// quelli che il carattere ha davvero.
+// quelli che il carattere ha davvero. Si possono caricare caratteri propri e
+// un'immagine di sfondo per le pagine.
+//
+// Ogni menu ha il suo stile: si modifica quello del menu scelto e, salvando,
+// si decide a quali altri menu applicare le stesse modifiche (agli altri
+// arrivano solo i cambiamenti fatti, il resto del loro stile non si tocca).
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react'
 import {
-  DEFAULT_STYLE, FONTS, FONT_CATS, fontInfo, fontStack, parseStyle, resolveFace,
-  type ColorRef, type FontCat, type MenuStyle, type TextStyle, type Weight,
+  CUSTOM_PREFIX, DEFAULT_STYLE, FONTS, FONT_CATS, ORNAMENTS, fontInfo, fontLabel, fontStack, mix, parseStyle,
+  registerCustomFonts, resolveFace,
+  type ColorRef, type CustomFont, type FontCat, type MenuStyle, type Ornament, type TextStyle, type Weight,
 } from '@/lib/menuStyle'
-import type { PickTarget } from '@/app/prova/[token]/typeset'
-import { saveMenuStyle } from './actions'
+import { drawOrnament, type PickTarget } from '@/app/prova/[token]/typeset'
+import { loadCustomFonts } from '@/app/prova/[token]/fonts'
+import { createClient } from '@/lib/supabase/client'
+import { compressImageFile } from '@/lib/imageCompress'
+import { saveMenuStyles } from './actions'
 
 type PanelId =
-  | 'presets' | 'paper' | 'head' | 'runningHead' | 'category' | 'dish' | 'price' | 'description'
+  | 'presets' | 'paper' | 'fonts' | 'head' | 'runningHead' | 'category' | 'dish' | 'price' | 'description'
   | 'allergens' | 'pageNumber' | 'textPages' | 'card' | 'chrome' | 'effects'
 
 const PANELS: { id: PanelId; title: string; sub: string }[] = [
   { id: 'presets',     title: 'Stili pronti',         sub: 'Un punto di partenza completo' },
-  { id: 'paper',       title: 'Carta e colori',       sub: 'Colori, superficie, margini, grandezza' },
+  { id: 'paper',       title: 'Carta e sfondo',       sub: 'Colori, superficie, immagine di sfondo, margini, grandezza' },
+  { id: 'fonts',       title: 'I tuoi caratteri',     sub: 'Carica i file dei tuoi caratteri' },
   { id: 'head',        title: 'Copertina',            sub: 'Nome del ristorante, titolo del menu, ornamento' },
   { id: 'runningHead', title: 'Testatina',            sub: 'La riga in cima alle pagine' },
   { id: 'category',    title: 'Categorie',            sub: 'Titoli delle sezioni del menu' },
@@ -81,7 +91,7 @@ const PRESETS: { name: string; desc: string; style: MenuStyle }[] = [
       page: { paper: '#f6ede0', ink: '#2b1d1a', soft: '#6b5446', accent: '#8c2f22', texture: 'linen', textureStrength: 0.45 },
       head: { title: tsx('Playfair Display', 36, 700, { italic: true }), restaurant: tsx('Playfair Display', 11, 600, { upper: true, tracking: 0.24 }), ornament: 'star' },
       runningHead: { text: tsx('Playfair Display', 9.5, 500, { upper: true, tracking: 0.2 }) },
-      category: { text: tsx('Playfair Display', 13, 700, { upper: true, tracking: 0.16 }), style: 'ornament' },
+      category: { text: tsx('Playfair Display', 13, 700, { upper: true, tracking: 0.16 }), style: 'ornament', ornament: 'leaf' },
       dish: {
         name: tsx('Playfair Display', 18.5, 600), price: tsx('Playfair Display', 18, 600),
         description: tsx('Lora', 15.5, 400, { italic: true }), leader: 'line',
@@ -99,7 +109,7 @@ const PRESETS: { name: string; desc: string; style: MenuStyle }[] = [
       dish: {
         name: tsx('Manrope', 17, 600), price: tsx('Manrope', 17, 600),
         description: tsx('Manrope', 14.5, 400, { italic: false }), descLineHeight: 1.4,
-        leader: 'none', priceFormat: 'compact', divider: 'line', spacing: 18,
+        leader: 'none', priceSymbol: 'after', priceDecimals: 'auto', divider: 'line', spacing: 18,
       },
       allergens: { text: tsx('Manrope', 9.5, 600, { upper: true, tracking: 0.1 }), label: false },
       pageNumber: { text: tsx('Manrope', 9.5, 600), format: 'plain' },
@@ -111,13 +121,13 @@ const PRESETS: { name: string; desc: string; style: MenuStyle }[] = [
     name: 'Bistrot', desc: 'Corsivo, terracotta, centrato',
     style: preset({
       page: { paper: '#f6ede3', ink: '#2a1d16', soft: '#6e5547', accent: '#b0532f', texture: 'grain', textureStrength: 0.6 },
-      head: { title: tsx('Dancing Script', 46, 700), restaurant: tsx('Josefin Sans', 11, 600, { upper: true, tracking: 0.3 }), ornament: 'dots' },
+      head: { title: tsx('Dancing Script', 46, 700), restaurant: tsx('Josefin Sans', 11, 600, { upper: true, tracking: 0.3 }), ornament: 'flourish', ornamentSize: 1.2 },
       runningHead: { text: tsx('Josefin Sans', 9.5, 600, { upper: true, tracking: 0.25 }) },
       category: { text: tsx('Dancing Script', 26, 700, { upper: false, tracking: 0 }), style: 'plain', after: 12 },
       dish: {
         align: 'center', name: tsx('Josefin Sans', 15, 700, { upper: true, tracking: 0.08 }),
-        price: tsx('Josefin Sans', 14, 600), pricePosition: 'below', priceFormat: 'euro-before',
-        description: tsx('Cormorant Garamond', 17, 500, { italic: true }), divider: 'ornament', spacing: 22,
+        price: tsx('Josefin Sans', 14, 600), pricePosition: 'below', priceSymbol: 'before',
+        description: tsx('Cormorant Garamond', 17, 500, { italic: true }), divider: 'ornament', dividerOrnament: 'leaf', spacing: 22,
       },
       allergens: { text: tsx('Josefin Sans', 9.5, 600, { upper: true, tracking: 0.14 }) },
       textPages: { title: tsx('Dancing Script', 32, 700), body: tsx('Cormorant Garamond', 17, 500) },
@@ -128,7 +138,7 @@ const PRESETS: { name: string; desc: string; style: MenuStyle }[] = [
     name: 'Elegante', desc: 'Bodoni, molto spazio, cornici',
     style: preset({
       page: { paper: '#faf8f4', ink: '#191714', soft: '#6a635a', accent: '#8a7350', margin: 40, texture: 'grain', textureStrength: 0.25 },
-      head: { title: tsx('Bodoni Moda', 40, 400, { italic: true }), restaurant: tsx('Cinzel', 11, 500, { upper: true, tracking: 0.36 }), ornament: 'line', space: 14 },
+      head: { title: tsx('Bodoni Moda', 40, 400, { italic: true }), restaurant: tsx('Cinzel', 11, 500, { upper: true, tracking: 0.36 }), ornament: 'double', space: 14, titleGap: 6 },
       runningHead: { text: tsx('Cinzel', 9, 500, { upper: true, tracking: 0.3 }) },
       category: { text: tsx('Cinzel', 12, 600, { upper: true, tracking: 0.3 }), style: 'frame', before: 38, after: 22 },
       dish: {
@@ -144,6 +154,7 @@ const PRESETS: { name: string; desc: string; style: MenuStyle }[] = [
     name: 'Notte', desc: 'Carta scura, oro, comandi fumé',
     style: preset({
       page: { paper: '#1b1916', ink: '#eee6d8', soft: '#b8ad9c', accent: '#c4a46b', textureStrength: 0.5 },
+      head: { ornament: 'asterism' },
       chrome: { tint: 'dark' },
     }),
   },
@@ -156,7 +167,7 @@ const PRESETS: { name: string; desc: string; style: MenuStyle }[] = [
       category: { text: tsx('Inter', 11, 600, { upper: true, tracking: 0.3 }), style: 'plain' },
       dish: {
         align: 'center', name: tsx('Inter', 15.5, 600), price: tsx('Inter', 14, 500, { color: 'accent' }),
-        pricePosition: 'inline', priceFormat: 'compact', description: tsx('Inter', 13.5, 400, { italic: false }),
+        pricePosition: 'inline', priceSymbol: 'none', priceDecimals: 'auto', description: tsx('Inter', 13.5, 400, { italic: false }),
         descLineHeight: 1.45, divider: 'short',
       },
       allergens: { text: tsx('Inter', 9, 500, { upper: true, tracking: 0.12 }), label: false },
@@ -174,14 +185,44 @@ const FONT_SAMPLE_URL = '/api/gfonts/css2?' +
 interface Props {
   restaurantId: string
   token:        string
-  initialStyle: MenuStyle
-  menus:        { id: string; name: string }[]
+  /** Menu attivi del ristorante, ognuno con il suo stile attuale. */
+  menus:        { id: string; name: string; style: MenuStyle }[]
 }
 
-export default function StyleEditor({ restaurantId, token, initialStyle, menus }: Props) {
-  const [style, setStyle] = useState<MenuStyle>(initialStyle)
-  const [saved, setSaved] = useState<MenuStyle>(initialStyle)
+type Flat = Record<string, unknown>
+/** Stile → { "dish.name.font": …, … } (le liste restano valori interi). */
+function flatten(o: unknown, pre = '', out: Flat = {}): Flat {
+  if (o && typeof o === 'object' && !Array.isArray(o)) for (const [k, v] of Object.entries(o)) flatten(v, pre ? `${pre}.${k}` : k, out)
+  else out[pre] = o
+  return out
+}
+/** Applica a `target` solo ciò che è cambiato da `from` a `to`. I caratteri
+ *  caricati si sommano (nessun menu perde i suoi). */
+function applyChanges(target: MenuStyle, from: MenuStyle, to: MenuStyle): MenuStyle {
+  const a = flatten(from), b = flatten(to)
+  const out = structuredClone(target) as unknown as Record<string, unknown>
+  for (const [path, v] of Object.entries(b)) {
+    if (JSON.stringify(a[path]) === JSON.stringify(v)) continue
+    if (path === 'customFonts') {
+      const have = new Set(target.customFonts.map(f => f.id))
+      out.customFonts = [...target.customFonts, ...to.customFonts.filter(f => !have.has(f.id))]
+      continue
+    }
+    const keys = path.split('.')
+    let node = out
+    for (const k of keys.slice(0, -1)) node = node[k] as Record<string, unknown>
+    node[keys[keys.length - 1]] = structuredClone(v)
+  }
+  return parseStyle(out)
+}
+
+export default function StyleEditor({ restaurantId, token, menus }: Props) {
   const [menuId, setMenuId] = useState(menus[0]?.id ?? '')
+  // Stile salvato di ogni menu; `style` è la copia di lavoro del menu scelto.
+  const [savedBy, setSavedBy] = useState<Record<string, MenuStyle>>(() => Object.fromEntries(menus.map(m => [m.id, m.style])))
+  const saved = savedBy[menuId] ?? DEFAULT_STYLE
+  const [style, setStyle] = useState<MenuStyle>(saved)
+  const [applyOpen, setApplyOpen] = useState(false)
   const [open, setOpen] = useState<PanelId | null>('presets')
   const [flash, setFlash] = useState<PanelId | null>(null)
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null)
@@ -189,6 +230,14 @@ export default function StyleEditor({ restaurantId, token, initialStyle, menus }
   const frameRef = useRef<HTMLIFrameElement>(null)
   const panelRefs = useRef(new Map<PanelId, HTMLElement>())
   const dirty = useMemo(() => JSON.stringify(style) !== JSON.stringify(saved), [style, saved])
+
+  // Caratteri caricati: riconosciuti dai campioni e dall'elenco di scelta.
+  registerCustomFonts(style.customFonts)
+  const customKey = JSON.stringify(style.customFonts)
+  const [, setFontsTick] = useState(0)
+  useEffect(() => {
+    loadCustomFonts(style.customFonts).then(() => setFontsTick(t => t + 1))
+  }, [customKey]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (document.querySelector('link[data-lito-font-samples]')) return
@@ -236,18 +285,43 @@ export default function StyleEditor({ restaurantId, token, initialStyle, menus }
   /** Modifica dello stile: si lavora su una copia. */
   const edit = useCallback((fn: (s: MenuStyle) => void) => setStyle(prev => { const n = structuredClone(prev); fn(n); return n }), [])
 
-  const save = () => startSaving(async () => {
-    const res = await saveMenuStyle(restaurantId, style)
-    if (res.ok) { setSaved(style); setMessage({ ok: true, text: 'Stile salvato.' }) }
-    else setMessage({ ok: false, text: res.error })
+  /** Salva il menu scelto più gli altri indicati (solo le modifiche fatte). */
+  const save = (others: string[]) => startSaving(async () => {
+    const updates = [
+      { menuId, style },
+      ...others.map(id => ({ menuId: id, style: applyChanges(savedBy[id] ?? DEFAULT_STYLE, saved, style) })),
+    ]
+    // Tutti i menu: diventa anche lo stile del ristorante (per i menu nuovi).
+    const all = menus.every(m => m.id === menuId || others.includes(m.id))
+    const res = await saveMenuStyles(restaurantId, updates, all ? style : null)
+    if (res.ok) {
+      setSavedBy(prev => ({ ...prev, ...Object.fromEntries(updates.map(u => [u.menuId, u.style])) }))
+      setApplyOpen(false)
+      setMessage({ ok: true, text: updates.length > 1 ? `Stile salvato in ${updates.length} menu.` : 'Stile salvato.' })
+    } else setMessage({ ok: false, text: res.error })
     window.setTimeout(() => setMessage(null), 3000)
   })
+  const askSave = () => (menus.length > 1 ? setApplyOpen(true) : save([]))
+
+  /** Cambio del menu da modificare (le modifiche non salvate si perdono). */
+  const switchMenu = (id: string) => {
+    if (id === menuId) return
+    if (dirty && !window.confirm('Le modifiche non salvate a questo menu andranno perse. Continuare?')) return
+    setMenuId(id)
+    setStyle(savedBy[id] ?? DEFAULT_STYLE)
+  }
+  // Stili pronti e "Stile base" tengono i caratteri caricati.
+  const replaceAll = (st: MenuStyle) => setStyle(prev => ({ ...structuredClone(st), customFonts: prev.customFonts }))
 
   const st = style
   const swatches = { ink: st.page.ink, soft: st.page.soft, accent: st.page.accent }
-  const T = (label: string, get: (s: MenuStyle) => TextStyle, range: [number, number], hint?: string) => (
+  const T = (label: string, get: (s: MenuStyle) => TextStyle, range: [number, number], hint?: string, noCase?: boolean) => (
     <TextStyleField label={label} hint={hint} value={get(st)} range={range} swatches={swatches} paper={st.page.paper}
-      onChange={v => edit(s => { Object.assign(get(s), v) })} />
+      custom={st.customFonts} noCase={noCase} onChange={v => edit(s => { Object.assign(get(s), v) })} />
+  )
+  const O = (label: string, value: Ornament, set: (s: MenuStyle, v: Ornament) => void, noNone?: boolean) => (
+    <OrnamentField label={label} value={value} accent={st.page.accent} paper={st.page.paper} noNone={noNone}
+      onChange={v => edit(s => set(s, v))} />
   )
 
   const body = (id: PanelId) => {
@@ -255,8 +329,8 @@ export default function StyleEditor({ restaurantId, token, initialStyle, menus }
       case 'presets': return (
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
           {PRESETS.map(p => (
-            <button key={p.name} type="button" onClick={() => setStyle(p.style)}
-              className="text-left rounded-lg border border-gray-200 hover:border-gray-400 p-2.5 transition">
+            <button key={p.name} type="button" onClick={() => replaceAll(p.style)}
+              className="text-left border border-gray-200 hover:border-gray-400 p-2.5 transition" style={{ borderRadius: 16 }}>
               <PresetSample st={p.style} />
               <div className="text-xs font-medium text-gray-800 mt-2">{p.name}</div>
               <div className="text-[11px] text-gray-400 leading-tight">{p.desc}</div>
@@ -286,6 +360,8 @@ export default function StyleEditor({ restaurantId, token, initialStyle, menus }
           <ColorField label="Testo secondario" value={st.page.soft} onChange={v => edit(s => { s.page.soft = v })} />
           <ColorField label="Accento" value={st.page.accent} onChange={v => edit(s => { s.page.accent = v })} />
         </div>
+        <BackgroundField restaurantId={restaurantId} value={st.page.background} paper={st.page.paper}
+          onChange={v => edit(s => { Object.assign(s.page.background, v) })} />
         <Choice label="Superficie della carta" value={st.page.texture} onChange={v => edit(s => { s.page.texture = v })}
           options={[{ value: 'none', label: 'Liscia' }, { value: 'grain', label: 'Grana' }, { value: 'linen', label: 'Lino' }]} />
         {st.page.texture !== 'none' && (
@@ -294,14 +370,28 @@ export default function StyleEditor({ restaurantId, token, initialStyle, menus }
         <Slider label="Luce sulla pagina" hint="Centro più chiaro e bordi appena più scuri, come la carta vera." value={st.page.light} min={0} max={1} step={0.05} format={pct} onChange={v => edit(s => { s.page.light = v })} />
         <Slider label="Grandezza di tutti i testi" value={st.page.scale} min={0.8} max={1.3} step={0.01} format={pct} onChange={v => edit(s => { s.page.scale = v })} />
         <Slider label="Margini laterali" value={st.page.margin} min={12} max={64} step={1} format={px} onChange={v => edit(s => { s.page.margin = v })} />
+        <Slider label="Margini in alto e in basso" value={st.page.marginV} min={14} max={70} step={1} format={px} onChange={v => edit(s => { s.page.marginV = v })} />
         <Slider label="Larghezza massima del testo" hint="Conta su tablet e schermi larghi." value={st.page.maxWidth} min={340} max={760} step={10} format={px} onChange={v => edit(s => { s.page.maxWidth = v })} />
       </>)
+      case 'fonts': return (
+        <FontsManager restaurantId={restaurantId} fonts={st.customFonts}
+          onAdd={f => edit(s => { s.customFonts.push(f) })}
+          onChange={(id, patch) => edit(s => { Object.assign(s.customFonts.find(f => f.id === id)!, patch) })}
+          onRemove={id => edit(s => { s.customFonts = s.customFonts.filter(f => f.id !== id) })}
+          used={id => JSON.stringify(st).includes(`"${CUSTOM_PREFIX}${id}"`)} />
+      )
       case 'head': return (<>
         <Toggle label="Mostra il nome del ristorante" value={st.head.showRestaurant} onChange={v => edit(s => { s.head.showRestaurant = v })} />
         {st.head.showRestaurant && T('Nome del ristorante', s => s.head.restaurant, [7, 24])}
         {T('Titolo del menu', s => s.head.title, [20, 72], 'Se è troppo lungo per la riga si riduce da solo.')}
-        <Choice label="Ornamento sotto il titolo" value={st.head.ornament} onChange={v => edit(s => { s.head.ornament = v })}
-          options={[{ value: 'diamond', label: 'Rombo' }, { value: 'star', label: 'Stella' }, { value: 'line', label: 'Linea' }, { value: 'dots', label: 'Puntini' }, { value: 'none', label: 'Nessuno' }]} />
+        {st.head.showRestaurant && (
+          <Slider label="Spazio tra nome del ristorante e titolo" value={st.head.titleGap} min={-10} max={40} step={1} format={signedPx} onChange={v => edit(s => { s.head.titleGap = v })} />
+        )}
+        {O('Ornamento sotto il titolo', st.head.ornament, (s, v) => { s.head.ornament = v })}
+        {st.head.ornament !== 'none' && (<>
+          <Slider label="Grandezza dell'ornamento" value={st.head.ornamentSize} min={0.6} max={2} step={0.05} format={pct} onChange={v => edit(s => { s.head.ornamentSize = v })} />
+          <Slider label="Distanza tra titolo e ornamento" value={st.head.ornamentGap} min={10} max={60} step={1} format={px} onChange={v => edit(s => { s.head.ornamentGap = v })} />
+        </>)}
         <Slider label="Spazio sotto la copertina" value={st.head.space} min={0} max={80} step={1} format={px} onChange={v => edit(s => { s.head.space = v })} />
       </>)
       case 'runningHead': return (<>
@@ -315,7 +405,8 @@ export default function StyleEditor({ restaurantId, token, initialStyle, menus }
       case 'category': return (<>
         {T('Titolo della categoria', s => s.category.text, [8, 40])}
         <Choice label="Decorazione" value={st.category.style} onChange={v => edit(s => { s.category.style = v })}
-          options={[{ value: 'rules', label: 'Filetti' }, { value: 'underline', label: 'Sottolineato' }, { value: 'frame', label: 'Cornice' }, { value: 'ornament', label: 'Rombo' }, { value: 'plain', label: 'Nessuna' }]} />
+          options={[{ value: 'rules', label: 'Filetti' }, { value: 'underline', label: 'Sottolineato' }, { value: 'frame', label: 'Cornice' }, { value: 'ornament', label: 'Ornamento sotto' }, { value: 'plain', label: 'Nessuna' }]} />
+        {st.category.style === 'ornament' && O('Ornamento sotto la categoria', st.category.ornament, (s, v) => { s.category.ornament = v }, true)}
         <Choice label="Allineamento" value={st.category.align} onChange={v => edit(s => { s.category.align = v })}
           options={[{ value: 'center', label: 'Centrato' }, { value: 'left', label: 'A sinistra' }]} />
         <Slider label="Spazio prima della categoria" value={st.category.before} min={0} max={80} step={1} format={px} onChange={v => edit(s => { s.category.before = v })} />
@@ -328,7 +419,9 @@ export default function StyleEditor({ restaurantId, token, initialStyle, menus }
         <Slider label="Spazio tra i piatti" value={st.dish.spacing} min={0} max={60} step={1} format={px} onChange={v => edit(s => { s.dish.spacing = v })} />
         <Choice label="Separatore tra i piatti" value={st.dish.divider} onChange={v => edit(s => { s.dish.divider = v })}
           options={[{ value: 'none', label: 'Nessuno' }, { value: 'line', label: 'Linea' }, { value: 'short', label: 'Lineetta' }, { value: 'dots', label: 'Puntini' }, { value: 'ornament', label: 'Ornamento' }]} />
+        {st.dish.divider === 'ornament' && O('Ornamento tra i piatti', st.dish.dividerOrnament, (s, v) => { s.dish.dividerOrnament = v }, true)}
         {T('Nome del piatto', s => s.dish.name, [11, 34])}
+        <Slider label="Interlinea del nome (nomi su più righe)" value={st.dish.nameLineHeight} min={1} max={1.6} step={0.01} format={v => v.toFixed(2)} onChange={v => edit(s => { s.dish.nameLineHeight = v })} />
       </>)
       case 'price': return (<>
         <Choice label="Posizione" value={st.dish.pricePosition} onChange={v => edit(s => { s.dish.pricePosition = v })}
@@ -338,13 +431,19 @@ export default function StyleEditor({ restaurantId, token, initialStyle, menus }
           <Choice label="Guida tra nome e prezzo" value={st.dish.leader} onChange={v => edit(s => { s.dish.leader = v })}
             options={[{ value: 'dots', label: 'Puntini' }, { value: 'line', label: 'Linea' }, { value: 'none', label: 'Nessuna' }]} />
         )}
-        <Choice label="Formato" value={st.dish.priceFormat} onChange={v => edit(s => { s.dish.priceFormat = v })}
-          options={[{ value: 'euro-after', label: '12,00 €' }, { value: 'euro-before', label: '€ 12,00' }, { value: 'number', label: '12,00' }, { value: 'compact', label: '12 €' }]}
-          hint={st.dish.priceFormat === 'compact' ? 'I decimali restano quando servono (12,50 €).' : undefined} />
-        {T('Testo del prezzo', s => s.dish.price, [10, 32])}
+        {st.dish.pricePosition !== 'right' && (
+          <Slider label={st.dish.pricePosition === 'inline' ? 'Spazio tra nome e prezzo' : 'Spazio sopra il prezzo'} value={st.dish.priceGap} min={0} max={30} step={1} format={px} onChange={v => edit(s => { s.dish.priceGap = v })} />
+        )}
+        <Choice label="Simbolo dell'euro" value={st.dish.priceSymbol} onChange={v => edit(s => { s.dish.priceSymbol = v })}
+          options={[{ value: 'after', label: 'Dopo (12 €)' }, { value: 'before', label: 'Prima (€ 12)' }, { value: 'none', label: 'Nessuno (12)' }]} />
+        <Choice label="Decimali" value={st.dish.priceDecimals} onChange={v => edit(s => { s.dish.priceDecimals = v })}
+          options={[{ value: 'always', label: 'Sempre (12,00)' }, { value: 'auto', label: 'Solo se servono (12 · 12,50)' }]} />
+        <p className="text-[11px] text-gray-400 -mt-2">Esempio: <span className="font-medium text-gray-600">{examplePrice(st)}</span></p>
+        {T('Testo del prezzo', s => s.dish.price, [10, 32], undefined, true)}
       </>)
       case 'description': return (<>
         {T('Testo della descrizione', s => s.dish.description, [10, 26])}
+        <Slider label="Spazio tra nome e descrizione" value={st.dish.descGap} min={0} max={24} step={1} format={px} onChange={v => edit(s => { s.dish.descGap = v })} />
         <Slider label="Interlinea" value={st.dish.descLineHeight} min={1.05} max={1.8} step={0.01} format={v => v.toFixed(2)} onChange={v => edit(s => { s.dish.descLineHeight = v })} />
         <Slider label="Larghezza della descrizione" hint="Più stretta = righe più corte." value={st.dish.descWidth} min={0.55} max={1} step={0.01} format={pct} onChange={v => edit(s => { s.dish.descWidth = v })} />
       </>)
@@ -353,6 +452,7 @@ export default function StyleEditor({ restaurantId, token, initialStyle, menus }
         {st.allergens.show && (<>
           <Toggle label="Scritta &quot;Allergeni&quot; prima dei numeri" value={st.allergens.label} onChange={v => edit(s => { s.allergens.label = v })} />
           {T('Testo degli allergeni', s => s.allergens.text, [7, 16])}
+          <Slider label="Spazio sopra gli allergeni" value={st.dish.allergenGap} min={0} max={30} step={1} format={px} onChange={v => edit(s => { s.dish.allergenGap = v })} />
         </>)}
       </>)
       case 'pageNumber': return (<>
@@ -360,12 +460,14 @@ export default function StyleEditor({ restaurantId, token, initialStyle, menus }
         {st.pageNumber.show && (<>
           <Choice label="Formato" value={st.pageNumber.format} onChange={v => edit(s => { s.pageNumber.format = v })}
             options={[{ value: 'of', label: '2 / 8' }, { value: 'plain', label: '2' }, { value: 'dashes', label: '— 2 —' }]} />
-          {T('Testo dei numeri', s => s.pageNumber.text, [7, 16])}
+          {T('Testo dei numeri', s => s.pageNumber.text, [7, 16], undefined, true)}
         </>)}
       </>)
       case 'textPages': return (<>
         {T('Titoli', s => s.textPages.title, [16, 44], 'I sottotitoli sono un po\' più piccoli.')}
         {T('Testo', s => s.textPages.body, [11, 24], 'Anche i nomi della legenda allergeni.')}
+        <Slider label="Interlinea" value={st.textPages.lineHeight} min={0.85} max={1.4} step={0.01} format={pct} onChange={v => edit(s => { s.textPages.lineHeight = v })} />
+        <Slider label="Spazio tra i paragrafi" value={st.textPages.paraGap} min={0} max={30} step={1} format={px} onChange={v => edit(s => { s.textPages.paraGap = v })} />
       </>)
       case 'card': return (<>
         <p className="text-[11px] text-gray-400 -mt-1">L&apos;anteprima mostra la scheda di un piatto finché questo pannello è aperto. Caratteri e colori sono quelli dei piatti.</p>
@@ -408,8 +510,8 @@ export default function StyleEditor({ restaurantId, token, initialStyle, menus }
           </PhoneFrame>
           {menus.length > 1 && (
             <label className="text-xs text-gray-500 flex items-center gap-2">
-              Menu in anteprima
-              <select value={menuId} onChange={e => setMenuId(e.target.value)} className="text-sm border border-gray-200 rounded-md px-2 py-1 bg-white">
+              Stile del menu
+              <select value={menuId} onChange={e => switchMenu(e.target.value)} className="text-sm border border-gray-200 rounded-md px-2 py-1 bg-white">
                 {menus.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
               </select>
             </label>
@@ -445,24 +547,36 @@ export default function StyleEditor({ restaurantId, token, initialStyle, menus }
             {message?.text ?? (dirty ? 'Modifiche non salvate' : 'Tutto salvato')}
           </span>
           <div className="flex-1" />
-          <button type="button" onClick={() => setStyle(DEFAULT_STYLE)} className="text-sm text-gray-500 hover:text-gray-800 px-3 py-2">
+          <button type="button" onClick={() => replaceAll(DEFAULT_STYLE)} className="text-sm text-gray-500 hover:text-gray-800 px-3 py-2">
             Stile base
           </button>
           <button type="button" onClick={() => setStyle(saved)} disabled={!dirty} className="text-sm text-gray-600 hover:text-gray-900 px-3 py-2 disabled:opacity-40">
             Annulla
           </button>
-          <button type="button" onClick={save} disabled={!dirty || saving}
+          <button type="button" onClick={askSave} disabled={!dirty || saving}
             className="text-sm font-medium rounded-lg bg-blue-600 text-white px-4 py-2 disabled:opacity-40 hover:bg-blue-700">
             {saving ? 'Salvataggio…' : 'Salva'}
           </button>
         </div>
       </div>
+
+      {applyOpen && (
+        <ApplySheet menus={menus} current={menuId} saving={saving} onCancel={() => setApplyOpen(false)} onSave={save} />
+      )}
     </div>
   )
 }
 
 const pct = (v: number) => `${Math.round(v * 100)}%`
 const px = (v: number) => `${Math.round(v)} px`
+const signedPx = (v: number) => `${v > 0 ? '+' : ''}${Math.round(v)} px`
+const examplePrice = (st: MenuStyle) => {
+  const f = (p: number) => {
+    const n = new Intl.NumberFormat('it-IT', { minimumFractionDigits: st.dish.priceDecimals === 'auto' && p % 1 === 0 ? 0 : 2, maximumFractionDigits: 2 }).format(p)
+    return st.dish.priceSymbol === 'before' ? `€ ${n}` : st.dish.priceSymbol === 'none' ? n : `${n} €`
+  }
+  return `${f(12)} · ${f(12.5)}`
+}
 const refColor = (c: ColorRef, sw: { ink: string; soft: string; accent: string }) =>
   c === 'ink' ? sw.ink : c === 'soft' ? sw.soft : c === 'accent' ? sw.accent : c
 
@@ -534,11 +648,14 @@ const WEIGHT_LABEL: Record<number, string> = { 400: 'Normale', 500: 'Medio', 600
 
 /** Stile completo di un testo: carattere, grandezza, spessore, corsivo,
  *  colore, maiuscolo, spaziatura. Solo facce che esistono davvero. */
-function TextStyleField({ label, hint, value, range, swatches, paper, onChange }: FieldBase & {
+function TextStyleField({ label, hint, value, range, swatches, paper, custom, noCase, onChange }: FieldBase & {
   value:    TextStyle
   range:    [number, number]
   swatches: { ink: string; soft: string; accent: string }
   paper:    string
+  custom:   CustomFont[]
+  /** Niente "maiuscolo" (prezzi, numeri di pagina: sono cifre). */
+  noCase?:  boolean
   onChange: (v: Partial<TextStyle>) => void
 }) {
   const info = fontInfo(value.font)
@@ -557,10 +674,10 @@ function TextStyleField({ label, hint, value, range, swatches, paper, onChange }
       <div className="flex items-center gap-2">
         <span className="text-xs font-semibold text-gray-800 shrink-0">{label}</span>
         <span className="flex-1 min-w-0 truncate text-right rounded-md px-2 py-1 text-[16px]" style={{ ...cssOf(value, swatches), background: paper }}>
-          Aa Bb 12,50
+          {noCase ? '12,50 · 1 / 8' : 'Aa Bb 12,50'}
         </span>
       </div>
-      <FontPicker value={value.font} onChange={setFont} />
+      <FontPicker value={value.font} custom={custom} onChange={setFont} />
       <Slider label="Grandezza" value={value.size} min={range[0]} max={range[1]} step={0.5} format={v => `${v} px`} onChange={v => onChange({ size: v })} />
       <FieldShell label="Spessore">
         <Segmented value={face.weight} onChange={v => onChange({ weight: v as Weight })}
@@ -570,7 +687,7 @@ function TextStyleField({ label, hint, value, range, swatches, paper, onChange }
         <Pill on={face.italic} disabled={!info.i.length} title={info.i.length ? undefined : 'Questo carattere non ha il corsivo'} onClick={() => setItalic(!face.italic)}>
           <span className="italic">Corsivo</span>
         </Pill>
-        <Pill on={value.upper} onClick={() => onChange({ upper: !value.upper })}>MAIUSCOLO</Pill>
+        {!noCase && <Pill on={value.upper} onClick={() => onChange({ upper: !value.upper })}>MAIUSCOLO</Pill>}
       </div>
       <ColorRefField value={value.color} swatches={swatches} onChange={c => onChange({ color: c })} />
       <Slider label="Spaziatura tra le lettere" value={value.tracking} min={0} max={0.5} step={0.01}
@@ -580,22 +697,24 @@ function TextStyleField({ label, hint, value, range, swatches, paper, onChange }
   )
 }
 
-function FontPicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+function FontPicker({ value, custom, onChange }: { value: string; custom: CustomFont[]; onChange: (v: string) => void }) {
   const [open, setOpen] = useState(false)
-  const [cat, setCat] = useState<FontCat | 'all'>('all')
+  const [cat, setCat] = useState<FontCat | 'all' | 'custom'>('all')
   const [q, setQ] = useState('')
-  const list = FONTS.filter(f => (cat === 'all' || f.cat === cat) && (!q || f.name.toLowerCase().includes(q.toLowerCase())))
+  const mine = custom.map(f => ({ name: CUSTOM_PREFIX + f.id, label: f.name, cat: f.cat, w: [400], i: [] as number[] }))
+  const list = (cat === 'custom' ? mine : [...mine, ...FONTS.map(f => ({ ...f, label: f.name }))])
+    .filter(f => (cat === 'all' || cat === 'custom' || f.cat === cat) && (!q || f.label.toLowerCase().includes(q.toLowerCase())))
   return (
     <div>
       <button type="button" onClick={() => setOpen(o => !o)} aria-expanded={open}
         className="w-full flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-left hover:border-gray-400">
-        <span className="flex-1 truncate text-[16px]" style={{ fontFamily: fontStack(value) }}>{value}</span>
+        <span className="flex-1 truncate text-[16px]" style={{ fontFamily: fontStack(value) }}>{fontLabel(value)}</span>
         <span className="text-[11px] text-gray-400 shrink-0">{open ? 'Chiudi' : 'Cambia carattere'}</span>
       </button>
       {open && (
         <div className="mt-2 rounded-lg border border-gray-200 bg-white p-2">
           <div className="flex flex-wrap items-center gap-1.5 mb-2">
-            {[{ cat: 'all' as const, label: 'Tutti' }, ...FONT_CATS].map(c => (
+            {[{ cat: 'all' as const, label: 'Tutti' }, ...(mine.length ? [{ cat: 'custom' as const, label: 'I tuoi' }] : []), ...FONT_CATS].map(c => (
               <button key={c.cat} type="button" onClick={() => setCat(c.cat)}
                 className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${cat === c.cat ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
                 {c.label}
@@ -606,9 +725,9 @@ function FontPicker({ value, onChange }: { value: string; onChange: (v: string) 
           <div className="grid grid-cols-2 gap-1 max-h-64 overflow-y-auto">
             {list.map(f => (
               <button key={f.name} type="button" onClick={() => { onChange(f.name); setOpen(false) }}
-                className={`text-left rounded-md px-2.5 py-1.5 transition ${f.name === value ? 'bg-blue-50 ring-1 ring-blue-500' : 'hover:bg-gray-50'}`}>
-                <span className="block truncate text-[17px] leading-tight text-gray-900" style={{ fontFamily: fontStack(f.name), fontWeight: f.w[0] }}>{f.name}</span>
-                <span className="block text-[10px] text-gray-400">{f.w.length > 1 ? `${f.w.length} spessori` : '1 spessore'}{f.i.length ? ' · corsivo' : ''}</span>
+                className={`text-left px-2.5 py-1.5 transition ${f.name === value ? 'bg-blue-50 ring-1 ring-blue-500' : 'hover:bg-gray-50'}`} style={{ borderRadius: 10 }}>
+                <span className="block truncate text-[17px] leading-tight text-gray-900" style={{ fontFamily: fontStack(f.name), fontWeight: f.w[0] }}>{f.label}</span>
+                <span className="block text-[10px] text-gray-400">{f.name.startsWith(CUSTOM_PREFIX) ? 'Caricato da te' : `${f.w.length > 1 ? `${f.w.length} spessori` : '1 spessore'}${f.i.length ? ' · corsivo' : ''}`}</span>
               </button>
             ))}
             {!list.length && <p className="col-span-2 text-xs text-gray-400 p-2">Nessun carattere trovato.</p>}
@@ -709,5 +828,222 @@ function Toggle({ label, hint, value, onChange }: FieldBase & { value: boolean; 
         {label}
       </button>
     </FieldShell>
+  )
+}
+
+// ── Ornamenti (miniature disegnate come nel menu) ───────────────────────────
+
+const ORNAMENT_LABEL: Record<Ornament, string> = {
+  diamond: 'Rombo', star: 'Stella', circle: 'Cerchio', cross: 'Croce', leaf: 'Rametto', flourish: 'Ricciolo',
+  asterism: 'Tre stelle', line: 'Linea', double: 'Doppia linea', wave: 'Onda', dots: 'Puntini', none: 'Nessuno',
+}
+
+function OrnamentThumb({ kind, accent, paper }: { kind: Ornament; accent: string; paper: string }) {
+  const ref = useRef<HTMLCanvasElement>(null)
+  useEffect(() => {
+    const cv = ref.current
+    if (!cv) return
+    const dpr = window.devicePixelRatio || 1
+    cv.width = 96 * dpr; cv.height = 30 * dpr
+    const c = cv.getContext('2d')
+    if (!c) return
+    c.setTransform(dpr, 0, 0, dpr, 0, 0)
+    c.fillStyle = paper; c.fillRect(0, 0, 96, 30)
+    drawOrnament(c, kind, 48, 15, 0.95, accent, mix(accent, paper, 0.45))
+  }, [kind, accent, paper])
+  return <canvas ref={ref} aria-hidden style={{ width: 96, height: 30, borderRadius: 6, display: 'block' }} />
+}
+
+function OrnamentField({ label, value, accent, paper, noNone, onChange }: {
+  label: string; value: Ornament; accent: string; paper: string; noNone?: boolean; onChange: (v: Ornament) => void
+}) {
+  return (
+    <FieldShell label={label}>
+      <div className="grid grid-cols-3 sm:grid-cols-4 gap-1.5">
+        {ORNAMENTS.filter(o => !(noNone && o === 'none')).map(o => (
+          <button key={o} type="button" onClick={() => onChange(o)} aria-pressed={o === value}
+            className={`flex flex-col items-center gap-1 border p-1.5 transition ${o === value ? 'border-blue-600 ring-1 ring-blue-600' : 'border-gray-200 hover:border-gray-400'}`}
+            style={{ borderRadius: 12 }}>
+            <OrnamentThumb kind={o} accent={accent} paper={paper} />
+            <span className="text-[10px] text-gray-600">{ORNAMENT_LABEL[o]}</span>
+          </button>
+        ))}
+      </div>
+    </FieldShell>
+  )
+}
+
+// ── Caricamenti (sfondo delle pagine, caratteri) ────────────────────────────
+
+const FONT_EXT = ['ttf', 'otf', 'woff', 'woff2']
+const MAX_FONT_BYTES = 4 * 1024 * 1024
+
+async function uploadAsset(restaurantId: string, folder: string, file: File, ext: string): Promise<string> {
+  const supabase = createClient()
+  const path = `${restaurantId}/${folder}/${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}.${ext}`
+  const { data, error } = await supabase.storage.from('restaurant-assets').upload(path, file, { upsert: false, contentType: file.type || undefined })
+  if (error || !data) throw new Error(error?.message ?? 'upload')
+  return supabase.storage.from('restaurant-assets').getPublicUrl(data.path).data.publicUrl
+}
+
+function BackgroundField({ restaurantId, value, paper, onChange }: {
+  restaurantId: string
+  value:        MenuStyle['page']['background']
+  paper:        string
+  onChange:     (v: Partial<MenuStyle['page']['background']>) => void
+}) {
+  const fileRef = useRef<HTMLInputElement>(null)
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+  const upload = async (raw: File) => {
+    setBusy(true); setErr(null)
+    try {
+      const file = await compressImageFile(raw)
+      const ext = (file.name.split('.').pop() || 'jpg').toLowerCase()
+      onChange({ url: await uploadAsset(restaurantId, 'menu-bg', file, ext) })
+    } catch { setErr('Caricamento non riuscito, riprova.') }
+    setBusy(false)
+  }
+  return (
+    <FieldShell label="Immagine di sfondo delle pagine" hint={value.url ? undefined : 'Una foto, una texture, un motivo: va sotto il testo, con la trasparenza che scegli.'}>
+      <div className="flex items-center gap-3">
+        <div className="w-16 h-20 shrink-0 border border-gray-200 overflow-hidden" style={{ borderRadius: 8, background: paper }}>
+          {value.url && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={value.url} alt="" className="w-full h-full object-cover" style={{ opacity: value.opacity }} />
+          )}
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button type="button" onClick={() => fileRef.current?.click()} disabled={busy}
+            className="border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:border-gray-500 disabled:opacity-50">
+            {busy ? 'Caricamento…' : value.url ? 'Cambia immagine' : 'Carica immagine'}
+          </button>
+          {value.url && (
+            <button type="button" onClick={() => onChange({ url: null })} className="px-3 py-1.5 text-xs text-gray-500 hover:text-red-600">Togli</button>
+          )}
+        </div>
+        <input ref={fileRef} type="file" accept="image/*" className="hidden"
+          onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) upload(f) }} />
+      </div>
+      {err && <p className="text-[11px] text-red-600 mt-1">{err}</p>}
+      {value.url && (
+        <div className="space-y-3 mt-3">
+          <Slider label="Intensità dello sfondo" value={value.opacity} min={0.05} max={1} step={0.05} format={pct} onChange={v => onChange({ opacity: v })} />
+          <Choice label="Disposizione" value={value.fit} onChange={v => onChange({ fit: v })}
+            options={[{ value: 'cover', label: 'A tutta pagina' }, { value: 'tile', label: 'Motivo ripetuto' }]} />
+          <Choice label="Su quali pagine" value={value.pages} onChange={v => onChange({ pages: v })}
+            options={[{ value: 'all', label: 'Tutte' }, { value: 'first', label: 'Solo la prima' }, { value: 'others', label: 'Tutte tranne la prima' }]} />
+        </div>
+      )}
+    </FieldShell>
+  )
+}
+
+function FontsManager({ restaurantId, fonts, onAdd, onChange, onRemove, used }: {
+  restaurantId: string
+  fonts:        CustomFont[]
+  onAdd:        (f: CustomFont) => void
+  onChange:     (id: string, patch: Partial<CustomFont>) => void
+  onRemove:     (id: string) => void
+  used:         (id: string) => boolean
+}) {
+  const fileRef = useRef<HTMLInputElement>(null)
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+  const upload = async (file: File) => {
+    const ext = (file.name.split('.').pop() || '').toLowerCase()
+    if (!FONT_EXT.includes(ext)) { setErr('Formati accettati: .ttf, .otf, .woff, .woff2'); return }
+    if (file.size > MAX_FONT_BYTES) { setErr('File troppo grande (massimo 4 MB).'); return }
+    setBusy(true); setErr(null)
+    try {
+      const url = await uploadAsset(restaurantId, 'menu-fonts', file, ext)
+      const id = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
+      const name = file.name.replace(/\.[^.]+$/, '').replace(/[-_]+/g, ' ').trim().slice(0, 40) || 'Carattere'
+      onAdd({ id, name, url, cat: 'serif' })
+    } catch { setErr('Caricamento non riuscito, riprova.') }
+    setBusy(false)
+  }
+  return (
+    <div className="space-y-3">
+      <p className="text-[11px] text-gray-400">
+        Carica il file di un carattere (.ttf, .otf, .woff, .woff2): poi lo trovi in ogni testo, sotto &quot;I tuoi&quot;.
+        Un file è un solo stile (per esempio il normale): per il corsivo o il grassetto carica il file apposito.
+        Usa solo caratteri che hai il diritto di usare.
+      </p>
+      {fonts.map(f => (
+        <div key={f.id} className="border border-gray-200 p-3 space-y-2" style={{ borderRadius: 12 }}>
+          <div className="text-[22px] leading-tight text-gray-900 truncate" style={{ fontFamily: fontStack(CUSTOM_PREFIX + f.id) }}>
+            {f.name} — Antipasti 12,50
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <input value={f.name} onChange={e => onChange(f.id, { name: e.target.value.slice(0, 40) })} aria-label="Nome del carattere"
+              className="flex-1 min-w-[140px] text-sm border border-gray-200 px-2 py-1 outline-none focus:border-gray-400" />
+            <select value={f.cat} onChange={e => onChange(f.id, { cat: e.target.value as FontCat })} aria-label="Tipo"
+              className="text-sm border border-gray-200 px-2 py-1 bg-white">
+              {FONT_CATS.map(c => <option key={c.cat} value={c.cat}>{c.label}</option>)}
+            </select>
+            <button type="button" className="px-2 py-1 text-xs text-gray-500 hover:text-red-600"
+              onClick={() => { if (!used(f.id) || window.confirm('Questo carattere è usato: quei testi torneranno al carattere base. Toglierlo?')) onRemove(f.id) }}>
+              Togli
+            </button>
+          </div>
+        </div>
+      ))}
+      <button type="button" onClick={() => fileRef.current?.click()} disabled={busy}
+        className="border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:border-gray-500 disabled:opacity-50">
+        {busy ? 'Caricamento…' : '+ Carica un carattere'}
+      </button>
+      <input ref={fileRef} type="file" accept=".ttf,.otf,.woff,.woff2" className="hidden"
+        onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) upload(f) }} />
+      {err && <p className="text-[11px] text-red-600">{err}</p>}
+    </div>
+  )
+}
+
+// ── Salvataggio: a quali menu ────────────────────────────────────────────────
+
+function ApplySheet({ menus, current, saving, onCancel, onSave }: {
+  menus:    { id: string; name: string }[]
+  current:  string
+  saving:   boolean
+  onCancel: () => void
+  onSave:   (others: string[]) => void
+}) {
+  const others = menus.filter(m => m.id !== current)
+  const [sel, setSel] = useState<string[]>([])
+  const all = sel.length === others.length
+  const toggle = (id: string) => setSel(s => (s.includes(id) ? s.filter(x => x !== id) : [...s, id]))
+  return (
+    <div className="fixed inset-0 z-40 flex items-end sm:items-center justify-center bg-black/30 p-4" onClick={onCancel}>
+      <div className="w-full max-w-md bg-white p-5 shadow-xl" style={{ borderRadius: 20 }} onClick={e => e.stopPropagation()}>
+        <h3 className="text-base font-semibold text-gray-900">Dove applicare le modifiche?</h3>
+        <p className="text-xs text-gray-500 mt-1">
+          Il menu <b>{menus.find(m => m.id === current)?.name}</b> si salva comunque. Agli altri menu scelti arrivano solo le
+          modifiche fatte ora: il resto del loro stile resta com&apos;è.
+        </p>
+        <div className="mt-4 space-y-1">
+          <label className="flex items-center gap-3 py-1.5 text-sm font-medium text-gray-800 cursor-pointer">
+            <input type="checkbox" checked={all} onChange={() => setSel(all ? [] : others.map(m => m.id))} className="w-4 h-4 accent-blue-600" />
+            Tutti i menu
+          </label>
+          <div className="border-t border-gray-100 pt-1">
+            {others.map(m => (
+              <label key={m.id} className="flex items-center gap-3 py-1.5 text-sm text-gray-700 cursor-pointer">
+                <input type="checkbox" checked={sel.includes(m.id)} onChange={() => toggle(m.id)} className="w-4 h-4 accent-blue-600" />
+                {m.name}
+              </label>
+            ))}
+          </div>
+        </div>
+        {all && <p className="text-[11px] text-gray-400 mt-2">Con tutti i menu, questo diventa anche lo stile dei menu che creerai.</p>}
+        <div className="flex justify-end gap-2 mt-5">
+          <button type="button" onClick={onCancel} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900">Annulla</button>
+          <button type="button" onClick={() => onSave(sel)} disabled={saving}
+            className="px-4 py-2 text-sm font-medium bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50">
+            {saving ? 'Salvataggio…' : sel.length ? `Salva in ${sel.length + 1} menu` : 'Salva solo questo menu'}
+          </button>
+        </div>
+      </div>
+    </div>
   )
 }

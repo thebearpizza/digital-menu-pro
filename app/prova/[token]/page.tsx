@@ -46,7 +46,7 @@ export default async function ProvaPage({
   if (!restaurant) notFound()
 
   const { data: allMenus } = await supabase
-    .from('menus').select('id, name, category_order, translations, schedule_enabled, schedule_from, schedule_until, category_schedules, text_content')
+    .from('menus').select('id, name, category_order, translations, schedule_enabled, schedule_from, schedule_until, category_schedules, text_content, menu_style')
     .eq('restaurant_id', restaurant.id).eq('is_active', true)
     .order('sort_order', { ascending: true })
   // Programmazione oraria: fuori fascia un menu non si vede (come nel menu pubblico).
@@ -166,7 +166,8 @@ export default async function ProvaPage({
   }
 
   return <CurlMenu key={menu.id} data={data} i18n={i18n} token={params.token}
-    style={parseStyle((restaurant as Row).menu_style)} preview={searchParams.preview === '1'} />
+    // Stile del menu, se ne ha uno suo; altrimenti quello del ristorante.
+    style={parseStyle(menu.menu_style ?? (restaurant as Row).menu_style)} preview={searchParams.preview === '1'} />
 }
 
 // ── Pagine di testo del menu ─────────────────────────────────────────────────

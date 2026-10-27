@@ -83,10 +83,12 @@ function metrics(vp: Viewport, st: MenuStyle): Metrics {
   const side  = Math.max(insets.left, insets.right) + st.page.margin * s
   const cw    = Math.max(160, Math.min(w - side * 2, st.page.maxWidth * s))
   const x0    = (w - cw) / 2
-  const headY = insets.top + 30 * s
-  const footY = h - insets.bottom - 24 * s
+  // Margine verticale: testatina e numero di pagina si spostano con lui.
+  const mv    = st.page.marginV
+  const headY = insets.top + mv * s
+  const footY = h - insets.bottom - mv * 0.8 * s
   // Senza testatina il testo può salire.
-  const top   = st.runningHead.show ? headY + 30 * s : insets.top + 30 * s
+  const top   = st.runningHead.show ? headY + 30 * s : insets.top + mv * s
   return { s, x0, cw, top, bottom: footY - 30 * s, headY, footY }
 }
 
@@ -197,12 +199,14 @@ export type PickTarget =
   | 'paper' | 'restaurant' | 'title' | 'runningHead' | 'category' | 'name' | 'price'
   | 'description' | 'allergens' | 'pageNumber' | 'text'
 
-const NAME_LH = 1.18
 const TEXT_GAP = 14
 
-export function layoutMenu(ctx: Ctx, data: MenuData, vp: Viewport, style: MenuStyle = DEFAULT_STYLE): Layout {
+export interface Assets { background: HTMLImageElement | null }
+
+export function layoutMenu(ctx: Ctx, data: MenuData, vp: Viewport, style: MenuStyle = DEFAULT_STYLE, assets: Assets = { background: null }): Layout {
   const st = style
   const D = st.dish
+  const NAME_LH = D.nameLineHeight
   const DARK_PAPER = luminance(st.page.paper) < 0.45
   const ACCENT_SOFT = mix(st.page.accent, st.page.paper, 0.45)
   const m = metrics(vp, st)
@@ -232,10 +236,11 @@ export function layoutMenu(ctx: Ctx, data: MenuData, vp: Viewport, style: MenuSt
   // Spazio tra i piatti: con un separatore serve almeno lo spazio per disegnarlo.
   const GAP = Math.max(D.spacing, D.divider === 'none' ? 0 : 16) * s
   const CAT_BEFORE = st.category.before * s, CAT_AFTER = st.category.after * s
+  const DESC_GAP = D.descGap * s, ALG_GAP = D.allergenGap * s, INLINE_GAP = (10 + D.priceGap) * s
 
   // ── Misura dei piatti
   const measureDish = (dish: Dish): DishBlock => {
-    const price = formatPrice(dish.price, D.priceFormat)
+    const price = formatPrice(dish.price, D.priceSymbol, D.priceDecimals)
     const priceW = price ? measure(ctx, PRICE, price) : 0
     // Prezzo a destra: il nome e la descrizione gli lasciano spazio.
     const reserve = price && PRICE_POS === 'right' ? priceW + 22 * s : 0
@@ -243,7 +248,7 @@ export function layoutMenu(ctx: Ctx, data: MenuData, vp: Viewport, style: MenuSt
     let priceAt: DishBlock['priceAt'] = PRICE_POS
     if (price && PRICE_POS === 'inline') {
       const last = nameLines[nameLines.length - 1] ?? ''
-      if (measure(ctx, NAME, last) + 12 * s + priceW > m.cw) priceAt = 'below'
+      if (measure(ctx, NAME, last) + INLINE_GAP + priceW > m.cw) priceAt = 'below'
     }
     const descW = Math.min(PRICE_POS === 'right' ? m.cw - Math.max(reserve, 18 * s) : m.cw, m.cw * D.descWidth)
     const descLines = dish.description ? wrap(tx(DESC, dish.description), descW, t => measure(ctx, DESC, t)) : []
@@ -254,14 +259,14 @@ export function layoutMenu(ctx: Ctx, data: MenuData, vp: Viewport, style: MenuSt
     return { kind: 'dish', dish, nameLines, price, priceAt, descLines, allergens, descFrom: 0, descTo: descLines.length, showHead: true }
   }
   const nameH = (b: DishBlock) => b.nameLines.length * NAME.size * NAME_LH
-  const priceBelowH = () => 2 * s + PRICE.size * 1.25
+  const priceBelowH = () => D.priceGap * s + PRICE.size * 1.25
   const dishHeight = (b: DishBlock) => {
     let hh = 0
     if (b.showHead) hh += nameH(b)
     if (b.showHead && b.price && b.priceAt === 'below') hh += priceBelowH()
     const n = b.descTo - b.descFrom
-    if (n) hh += 4 * s + n * DESC.size * DESC_LH
-    if (b.allergens && b.descTo === b.descLines.length) hh += 8 * s + ALG.size * 1.4
+    if (n) hh += DESC_GAP + n * DESC.size * DESC_LH
+    if (b.allergens && b.descTo === b.descLines.length) hh += ALG_GAP + ALG.size * 1.4
     return hh
   }
 
@@ -269,9 +274,9 @@ export function layoutMenu(ctx: Ctx, data: MenuData, vp: Viewport, style: MenuSt
   const H = st.head
   const TITLE_FIT = fit(H.title, data.menuName, m.cw)
   const restBase = H.showRestaurant ? REST.size + 3.5 * s : 0
-  const titleBase = restBase + (H.showRestaurant ? TITLE_FIT.size * 1.21 : TITLE_FIT.size * 0.95)
-  const ornY = titleBase + 24 * s
-  const HEAD_H = (H.ornament === 'none' ? titleBase + 30 * s : ornY + 34 * s) + H.space * s
+  const titleBase = restBase + (H.showRestaurant ? TITLE_FIT.size * 1.21 + H.titleGap * s : TITLE_FIT.size * 0.95)
+  const ornY = titleBase + H.ornamentGap * s
+  const HEAD_H = (H.ornament === 'none' ? titleBase + 30 * s : ornY + (24 + 10 * H.ornamentSize) * s) + H.space * s
 
   // ── Titolo di categoria
   const CS = st.category.style
@@ -281,11 +286,12 @@ export function layoutMenu(ctx: Ctx, data: MenuData, vp: Viewport, style: MenuSt
 
   // ── Testo ricco → righe (a capo per parole, con caratteri diversi nella riga)
   const TP = st.textPages
+  const LHK = TP.lineHeight, PG = TP.paraGap
   const textStyleOf = (k: Exclude<TextBlock['kind'], 'gap'>): { t: TextStyle; lh: number; after: number } =>
-    k === 'h1' ? { t: TP.title, lh: 1.18, after: 10 }
-    : k === 'h2' ? { t: { ...TP.title, size: TP.title.size * 0.78 }, lh: 1.25, after: 8 }
-    : k === 'h3' ? { t: { ...TP.body, italic: true, color: 'soft' }, lh: 1.32, after: 6 }
-    : { t: TP.body, lh: 1.36, after: 6 }
+    k === 'h1' ? { t: TP.title, lh: 1.18 * LHK, after: PG + 4 }
+    : k === 'h2' ? { t: { ...TP.title, size: TP.title.size * 0.78 }, lh: 1.25 * LHK, after: PG + 2 }
+    : k === 'h3' ? { t: { ...TP.body, italic: true, color: 'soft' }, lh: 1.32 * LHK, after: PG }
+    : { t: TP.body, lh: 1.36 * LHK, after: PG }
   type Piece = { block: Block | null; h: number }   // null = spazio vuoto
   const textPieces = (blocks: TextBlock[], from: TextLineBlock['from']): Piece[] => {
     const out: Piece[] = []
@@ -499,6 +505,24 @@ export function layoutMenu(ctx: Ctx, data: MenuData, vp: Viewport, style: MenuSt
       const pat = c.createPattern(texture, 'repeat')
       if (pat) { c.globalAlpha = 0.125 * st.page.textureStrength; c.fillStyle = pat; c.fillRect(0, 0, w, h); c.globalAlpha = 1 }
     }
+    // Sfondo scelto dal ristoratore, sopra la carta e sotto il testo.
+    const BG = st.page.background
+    const bgOn = BG.pages === 'all' || (BG.pages === 'first' ? index === 0 : index > 0)
+    if (assets.background && BG.url && bgOn) {
+      const im = assets.background
+      c.globalAlpha = BG.opacity
+      if (BG.fit === 'tile') {
+        // Motivo ripetuto, alla scala del telefono (~ 240 px di lato).
+        const k = (240 * s) / Math.max(im.naturalWidth, im.naturalHeight)
+        const tw = im.naturalWidth * k, th = im.naturalHeight * k
+        for (let ty = 0; ty < h; ty += th) for (let tx0 = 0; tx0 < w; tx0 += tw) c.drawImage(im, tx0, ty, tw, th)
+      } else {
+        const k = Math.max(w / im.naturalWidth, h / im.naturalHeight)
+        const iw = im.naturalWidth * k, ih = im.naturalHeight * k
+        c.drawImage(im, (w - iw) / 2, (h - ih) / 2, iw, ih)
+      }
+      c.globalAlpha = 1
+    }
     c.textBaseline = 'alphabetic'
     if (!page) return
 
@@ -552,43 +576,11 @@ export function layoutMenu(ctx: Ctx, data: MenuData, vp: Viewport, style: MenuSt
       draw(c, r, name, cx, top + restBase, 'center')
     }
     draw(c, TITLE_FIT, tx(TITLE_FIT, data.menuName), cx, top + titleBase, 'center')
-    if (H.ornament !== 'none') ornament(c, H.ornament, cx, top + ornY)
+    if (H.ornament !== 'none') ornament(c, H.ornament, cx, top + ornY, H.ornamentSize)
   }
 
-  function diamond(c: Ctx, cx: number, cy: number, r: number) {
-    c.beginPath()
-    c.moveTo(cx, cy - r); c.lineTo(cx + r, cy); c.lineTo(cx, cy + r); c.lineTo(cx - r, cy); c.closePath()
-    c.fill()
-  }
-
-  function ornament(c: Ctx, kind: Ornament, cx: number, cy: number) {
-    c.strokeStyle = ACCENT_SOFT
-    c.fillStyle = st.page.accent
-    c.lineWidth = Math.max(0.6, 0.75 * s)
-    if (kind === 'line') {
-      c.beginPath(); c.moveTo(cx - 40 * s, cy); c.lineTo(cx + 40 * s, cy); c.stroke()
-    } else if (kind === 'dots') {
-      for (const dx of [-12, 0, 12]) { c.beginPath(); c.arc(cx + dx * s, cy, 1.6 * s, 0, Math.PI * 2); c.fill() }
-    } else if (kind === 'star') {
-      c.beginPath()
-      c.moveTo(cx - 46 * s, cy); c.lineTo(cx - 12 * s, cy)
-      c.moveTo(cx + 12 * s, cy); c.lineTo(cx + 46 * s, cy)
-      c.stroke()
-      const R = 5 * s, r = 2 * s
-      c.beginPath()
-      for (let i = 0; i < 10; i++) {
-        const a = -Math.PI / 2 + (i * Math.PI) / 5, rr = i % 2 ? r : R
-        c.lineTo(cx + Math.cos(a) * rr, cy + Math.sin(a) * rr)
-      }
-      c.closePath(); c.fill()
-    } else {
-      c.beginPath()
-      c.moveTo(cx - 46 * s, cy); c.lineTo(cx - 9 * s, cy)
-      c.moveTo(cx + 9 * s, cy);  c.lineTo(cx + 46 * s, cy)
-      c.stroke()
-      diamond(c, cx, cy, 3.2 * s)
-    }
-  }
+  const ornament = (c: Ctx, kind: Ornament, cx: number, cy: number, k: number) =>
+    drawOrnament(c, kind, cx, cy, s * k, st.page.accent, ACCENT_SOFT)
 
   function paintCat(c: Ctx, b: CatBlock, top: number) {
     const left = st.category.align === 'left'
@@ -615,9 +607,8 @@ export function layoutMenu(ctx: Ctx, data: MenuData, vp: Viewport, style: MenuSt
       const fx = tx0 - CAT_PAD * 1.5, fw = tw + CAT_PAD * 3
       c.strokeRect(fx, top + 0.5, fw, CAT_H - 1)
     } else if (CS === 'ornament' && !b.cont) {
-      // Piccolo rombo sotto il titolo.
-      c.fillStyle = st.page.accent
-      diamond(c, left ? tx0 + 2.6 * s : cx, base + 8 * s, 2.6 * s)
+      // Ornamento piccolo sotto il titolo (a sinistra: sotto l'inizio).
+      ornament(c, st.category.ornament, left ? tx0 + 46 * 0.55 * s : cx, base + 9 * s, 0.55)
     }
     if (b.cont) draw(c, CONT, data.labels.cont, left ? tx0 : cx, top + CAT_H + 12 * s, left ? 'left' : 'center')
   }
@@ -636,11 +627,7 @@ export function layoutMenu(ctx: Ctx, data: MenuData, vp: Viewport, style: MenuSt
       c.beginPath(); c.moveTo(x0, yy); c.lineTo(x1, yy); c.stroke()
     } else if (kind === 'dots') {
       for (const dx of [-10, 0, 10]) { c.beginPath(); c.arc(cx + dx * s, yy, 1.1 * s, 0, Math.PI * 2); c.fill() }
-    } else {
-      c.fillStyle = st.page.accent
-      c.beginPath(); c.moveTo(cx - 30 * s, yy); c.lineTo(cx - 7 * s, yy); c.moveTo(cx + 7 * s, yy); c.lineTo(cx + 30 * s, yy); c.stroke()
-      diamond(c, cx, yy, 2.4 * s)
-    }
+    } else ornament(c, D.dividerOrnament, cx, yy, 0.65)
   }
 
   function paintDish(c: Ctx, b: DishBlock, top: number) {
@@ -676,7 +663,7 @@ export function layoutMenu(ctx: Ctx, data: MenuData, vp: Viewport, style: MenuSt
         }
         if (inline) {
           // Prezzo in riga, subito dopo il nome.
-          const gap = 12 * s
+          const gap = INLINE_GAP
           const pw = measure(c, PRICE, b.price)
           if (CENTER) {
             const start = x - (lw + gap + pw) / 2
@@ -687,21 +674,21 @@ export function layoutMenu(ctx: Ctx, data: MenuData, vp: Viewport, style: MenuSt
       })
       y += nameH(b)
       if (b.price && b.priceAt === 'below') {
-        y += 2 * s
+        y += D.priceGap * s
         draw(c, PRICE, b.price, x, y + PRICE.size * 0.92, align)
         y += PRICE.size * 1.25
       }
     }
     const n = b.descTo - b.descFrom
     if (n) {
-      y += 4 * s
+      y += DESC_GAP
       for (let i = b.descFrom; i < b.descTo; i++) {
         draw(c, DESC, b.descLines[i], x, y + DESC.size * 0.95, align)
         y += DESC.size * DESC_LH
       }
     }
     if (b.allergens && b.descTo === b.descLines.length) {
-      y += 8 * s
+      y += ALG_GAP
       draw(c, ALG, b.allergens, x, y + ALG.size, align)
     }
   }
@@ -752,7 +739,7 @@ export function layoutMenu(ctx: Ctx, data: MenuData, vp: Viewport, style: MenuSt
       }
       const n = b.descTo - b.descFrom
       if (n) {
-        yy += 4 * s + n * DESC.size * DESC_LH
+        yy += DESC_GAP + n * DESC.size * DESC_LH
         if (y <= yy) return 'description'
       }
       return b.allergens ? 'allergens' : 'description'
@@ -761,6 +748,93 @@ export function layoutMenu(ctx: Ctx, data: MenuData, vp: Viewport, style: MenuSt
   }
 
   return { vp, pages, paint, hit, categoryStarts, pick }
+}
+
+// ── Ornamenti ────────────────────────────────────────────────────────────────
+
+function diamond(c: Ctx, cx: number, cy: number, r: number) {
+  c.beginPath()
+  c.moveTo(cx, cy - r); c.lineTo(cx + r, cy); c.lineTo(cx, cy + r); c.lineTo(cx - r, cy); c.closePath()
+  c.fill()
+}
+
+function star(c: Ctx, cx: number, cy: number, R: number, r: number) {
+  c.beginPath()
+  for (let i = 0; i < 10; i++) {
+    const a = -Math.PI / 2 + (i * Math.PI) / 5, rr = i % 2 ? r : R
+    c.lineTo(cx + Math.cos(a) * rr, cy + Math.sin(a) * rr)
+  }
+  c.closePath(); c.fill()
+}
+
+/** Ornamento centrato in (cx, cy), largo ~92·u: u = unità in px (scala ×
+ *  grandezza). Accento pieno per i motivi, accento tenue per i filetti.
+ *  Usato dalle pagine e dalle miniature della Personalizzazione. */
+export function drawOrnament(c: Ctx, kind: Ornament, cx: number, cy: number, u: number, accent: string, soft: string) {
+  c.strokeStyle = soft
+  c.fillStyle = accent
+  c.lineWidth = Math.max(0.6, 0.75 * u)
+  const line = (x0: number, x1: number, yy = cy) => { c.beginPath(); c.moveTo(cx + x0 * u, yy); c.lineTo(cx + x1 * u, yy); c.stroke() }
+  // Filetti ai lati di un motivo centrale largo 2·gap.
+  const wings = (gap: number) => { line(-46, -gap); line(gap, 46) }
+  switch (kind) {
+    case 'line': line(-40, 40); break
+    case 'double': line(-40, 40, cy - 1.8 * u); line(-40, 40, cy + 1.8 * u); break
+    case 'dots':
+      for (const dx of [-12, 0, 12]) { c.beginPath(); c.arc(cx + dx * u, cy, 1.6 * u, 0, Math.PI * 2); c.fill() }
+      break
+    case 'wave': {
+      c.beginPath()
+      for (let x = -40; x <= 40; x += 1) {
+        const yy = cy + Math.sin((x / 10) * Math.PI) * 2.4 * u
+        if (x === -40) c.moveTo(cx + x * u, yy); else c.lineTo(cx + x * u, yy)
+      }
+      c.stroke()
+      break
+    }
+    case 'star': wings(12); star(c, cx, cy, 5 * u, 2 * u); break
+    case 'circle':
+      wings(9)
+      c.beginPath(); c.arc(cx, cy, 3.4 * u, 0, Math.PI * 2); c.lineWidth = Math.max(0.7, 1 * u); c.strokeStyle = accent; c.stroke()
+      break
+    case 'cross':
+      wings(10)
+      c.strokeStyle = accent; c.lineWidth = Math.max(0.8, 1.1 * u)
+      c.beginPath(); c.moveTo(cx - 4 * u, cy); c.lineTo(cx + 4 * u, cy); c.moveTo(cx, cy - 4 * u); c.lineTo(cx, cy + 4 * u); c.stroke()
+      break
+    case 'leaf':
+      // Rametto: due foglie dal centro, poi i filetti.
+      line(-46, -24); line(24, 46)
+      for (const sd of [-1, 1]) {
+        c.beginPath()
+        c.moveTo(cx + sd * 3 * u, cy)
+        c.quadraticCurveTo(cx + sd * 12 * u, cy - 6.5 * u, cx + sd * 21 * u, cy)
+        c.quadraticCurveTo(cx + sd * 12 * u, cy + 6.5 * u, cx + sd * 3 * u, cy)
+        c.fill()
+      }
+      c.beginPath(); c.arc(cx, cy, 1.5 * u, 0, Math.PI * 2); c.fill()
+      break
+    case 'flourish':
+      // Ricciolo simmetrico (svolazzo calligrafico) con un punto al centro.
+      c.strokeStyle = accent
+      c.lineWidth = Math.max(0.7, 0.9 * u)
+      for (const sd of [-1, 1]) {
+        c.beginPath()
+        c.moveTo(cx + sd * 4 * u, cy)
+        c.bezierCurveTo(cx + sd * 14 * u, cy - 9 * u, cx + sd * 24 * u, cy + 8 * u, cx + sd * 34 * u, cy)
+        c.bezierCurveTo(cx + sd * 40 * u, cy - 5 * u, cx + sd * 44 * u, cy - 1 * u, cx + sd * 40 * u, cy + 2.5 * u)
+        c.stroke()
+      }
+      c.beginPath(); c.arc(cx, cy, 1.7 * u, 0, Math.PI * 2); c.fill()
+      break
+    case 'asterism':
+      for (const [dx, dy] of [[0, -3.4], [-4.2, 3], [4.2, 3]]) star(c, cx + dx * u, cy + dy * u, 2.7 * u, 1.1 * u)
+      break
+    case 'diamond':
+      wings(9); diamond(c, cx, cy, 3.2 * u)
+      break
+    case 'none': break
+  }
 }
 
 /** Luminosità relativa (0 nero – 1 bianco) di un colore #rrggbb. */

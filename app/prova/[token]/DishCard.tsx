@@ -64,7 +64,7 @@ function cardStyleOf(st: MenuStyle) {
     NAME_PLAIN: plain(st.dish.name),
     INK: onCard(st.page.ink, DARK_INK), SOFT: onCard(st.page.soft, DARK_SOFT), ACCENT: onCard(st.page.accent, '#9a8462'),
     card: st.card,
-    price: (p: number | null) => formatPrice(p, st.dish.priceFormat),
+    price: (p: number | null) => formatPrice(p, st.dish.priceSymbol, st.dish.priceDecimals),
     alpha: 0.92 - 0.8 * st.card.glass,   // velo del vetro della scheda
   }
 }

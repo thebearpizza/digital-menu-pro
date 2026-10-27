@@ -17,11 +17,11 @@
 import { forwardRef, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { CurlRenderer, constrain, solveCurl, type Rect, type Scene, type Sheet, type Vec } from './curl'
 import { useRouter } from 'next/navigation'
-import { layoutMenu, fontFaces, SANS, type Dish, type Layout, type MenuData, type Insets } from './typeset'
-import { styleFontsUrl, type MenuStyle } from '@/lib/menuStyle'
+import { layoutMenu, SANS, type Dish, type Layout, type MenuData, type Insets } from './typeset'
+import { parseStyle, registerCustomFonts, type MenuStyle } from '@/lib/menuStyle'
 import { isLang, type Lang } from '@/lib/translations'
 import DishCard from './DishCard'
-import { loadFontCss } from './fonts'
+import { loadStyleAssets } from './fonts'
 import Chrome, { BAR_HIDE } from './Chrome'
 import { localize, t, type I18nData } from './i18n'
 import { GlassSheen, glassSurface } from './Glass'
@@ -95,14 +95,18 @@ export default function CurlMenu({ data: base, style: initialStyle, preview = fa
   // arriva a ogni modifica dalla pagina che la contiene.
   const [style, setStyle] = useState(initialStyle)
   const previewRef = useRef(preview)
+  // Caratteri caricati dal ristoratore: riconosciuti da fontStack/resolveFace.
+  registerCustomFonts(style.customFonts)
   const styleRef = useRef(style)
   styleRef.current = style
+  // Sfondo delle pagine già caricato (serve all'impaginazione).
+  const assetsRef = useRef<{ background: HTMLImageElement | null }>({ background: null })
   useEffect(() => {
     if (!preview) return
     const onMsg = (e: MessageEvent) => {
       if (e.origin !== window.location.origin) return
       const msg = e.data as { type?: string; style?: MenuStyle; open?: boolean }
-      if (msg?.type === 'lito-style' && msg.style) setStyle(msg.style)
+      if (msg?.type === 'lito-style' && msg.style) setStyle(parseStyle(msg.style))   // ripulito; registra i caratteri caricati
       // Pannello "Scheda del piatto" della Personalizzazione: mostra la scheda
       // di un piatto (meglio se con foto e descrizione).
       if (msg?.type === 'lito-card') {
@@ -151,8 +155,9 @@ export default function CurlMenu({ data: base, style: initialStyle, preview = fa
 
     // ── Font: prima il foglio di stile (dichiara le facce), POI la richiesta
     // delle facce: chiesta prima, document.fonts.load risponde "pronto" a vuoto.
+    // Anche i caratteri caricati e lo sfondo delle pagine.
     const fontsReady = Promise.race([
-      loadFontCss(styleFontsUrl(styleRef.current)).then(() => Promise.all(fontFaces(styleRef.current).map(f => document.fonts.load(f)))),
+      loadStyleAssets(styleRef.current),
       new Promise(r => setTimeout(r, 6000)),
     ])
 
@@ -377,7 +382,7 @@ export default function CurlMenu({ data: base, style: initialStyle, preview = fa
       textures.clear(); bitmaps.clear()
       renderer?.setPaper(styleRef.current.page.paper)
       html.style.backgroundColor = styleRef.current.page.paper
-      layout = layoutMenu(sctx, dataRef.current, { w: pageW, h: H, insets: insets() }, styleRef.current)
+      layout = layoutMenu(sctx, dataRef.current, { w: pageW, h: H, insets: insets() }, styleRef.current, assetsRef.current)
       const found = anchor ? layout.pages.findIndex(p => p.anchor === anchor) : -1
       index = found >= 0 ? found : Math.min(index, layout.pages.length - 1)
       if (spread) index -= index % 2
@@ -645,11 +650,16 @@ export default function CurlMenu({ data: base, style: initialStyle, preview = fa
     let resizeTimer = 0
     const onResize = () => { clearTimeout(resizeTimer); resizeTimer = window.setTimeout(relayout, 120) }
 
-    fontsReady.then(() => {
-      if (disposed) return
-      relayout()
-      setStatus(renderer ? 'ready' : 'nogl')
-    })
+    fontsReady
+      // Lo stile può essere cambiato nel frattempo (anteprima): si impagina
+      // con le risorse dello stile attuale (già in memoria se pronte).
+      .then(() => Promise.race([loadStyleAssets(styleRef.current), new Promise<null>(r => setTimeout(() => r(null), 4000))]))
+      .then(a => {
+        if (disposed) return
+        if (a) assetsRef.current = a
+        relayout()
+        setStatus(renderer ? 'ready' : 'nogl')
+      })
 
     canvas.addEventListener('pointerdown', onDown)
     canvas.addEventListener('pointermove', onMove)
@@ -686,10 +696,9 @@ export default function CurlMenu({ data: base, style: initialStyle, preview = fa
   useEffect(() => {
     if (firstStyle.current) { firstStyle.current = false; return }
     let stale = false
-    loadFontCss(styleFontsUrl(style))
-      .then(() => Promise.all(fontFaces(style).map(f => document.fonts.load(f))))
+    loadStyleAssets(style)
+      .then(a => { if (!stale) { assetsRef.current = a; apiRef.current?.refresh() } })
       .catch(() => undefined)
-      .then(() => { if (!stale) apiRef.current?.refresh() })
     return () => { stale = true }
   }, [style])
 

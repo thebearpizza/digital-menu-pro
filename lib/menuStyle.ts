@@ -104,9 +104,33 @@ export const FONT_CATS: { cat: FontCat; label: string }[] = [
 const FALLBACK: Record<FontCat, string> = {
   serif: 'Georgia, serif', sans: '-apple-system, "Helvetica Neue", Arial, sans-serif', script: 'cursive',
 }
-export const fontInfo = (name: string): MenuFont => FONTS.find(f => f.name === name) ?? FONTS[0]
+
+// ── Caratteri caricati dal ristoratore ───────────────────────────────────────
+// Un file = un carattere (una sola faccia, tonda e normale). Nello stile il
+// carattere si chiama "custom:<id>"; nel browser la famiglia è "lito-<id>"
+// (nessun conflitto con i nomi del catalogo). Il nome scelto dal ristoratore
+// serve solo da etichetta.
+
+export interface CustomFont { id: string; name: string; url: string; cat: FontCat }
+export const CUSTOM_PREFIX = 'custom:'
+export const isCustomFont = (name: string) => name.startsWith(CUSTOM_PREFIX)
+export const customFamily = (id: string) => `lito-${id}`
+// Registro dei caratteri caricati incontrati (parseStyle li registra): serve
+// a fontInfo/fontStack, che non ricevono lo stile.
+const CUSTOM = new Map<string, MenuFont & { label: string }>()
+function registerCustom(f: CustomFont) {
+  CUSTOM.set(CUSTOM_PREFIX + f.id, { name: CUSTOM_PREFIX + f.id, label: f.name, cat: f.cat, w: [400], i: [] })
+}
+/** Registra i caratteri caricati (fontInfo/fontStack/fontLabel li riconoscono). */
+export const registerCustomFonts = (list: CustomFont[]) => list.forEach(registerCustom)
+
+export const fontInfo = (name: string): MenuFont =>
+  FONTS.find(f => f.name === name) ?? CUSTOM.get(name) ?? FONTS[0]
+/** Nome da mostrare (per i caratteri caricati, quello scelto dal ristoratore). */
+export const fontLabel = (name: string) => CUSTOM.get(name)?.label ?? name
 /** Pila CSS/canvas per una famiglia ("Nome", riserve). */
-export const fontStack = (name: string) => `"${name}", ${FALLBACK[fontInfo(name).cat]}`
+export const fontStack = (name: string) =>
+  `"${isCustomFont(name) ? customFamily(name.slice(CUSTOM_PREFIX.length)) : name}", ${FALLBACK[fontInfo(name).cat]}`
 
 /** Faccia reale più vicina a quella chiesta (spessore e corsivo). */
 export function resolveFace(name: string, weight: number, italic: boolean): { weight: number; italic: boolean } {
@@ -134,8 +158,19 @@ export interface TextStyle {
   tracking: number    // spaziatura tra le lettere, in em (0 – 0.5)
 }
 
-export type Ornament = 'diamond' | 'line' | 'dots' | 'star' | 'none'
+export const ORNAMENTS = [
+  'diamond', 'star', 'circle', 'cross', 'leaf', 'flourish', 'asterism', 'line', 'double', 'wave', 'dots', 'none',
+] as const
+export type Ornament = typeof ORNAMENTS[number]
 export type Divider = 'none' | 'line' | 'short' | 'dots' | 'ornament'
+
+/** Sfondo delle pagine (immagine caricata dal ristoratore). */
+export interface PageBackground {
+  url:     string | null
+  opacity: number                         // 0.05 – 1
+  fit:     'cover' | 'tile'
+  pages:   'all' | 'first' | 'others'
+}
 
 export interface MenuStyle {
   version: 2
@@ -145,20 +180,26 @@ export interface MenuStyle {
     textureStrength: number   // 0 – 1
     light: number             // luce al centro e bordi più scuri: 0 – 1
     margin: number            // margine laterale (px): 12 – 64
+    marginV: number           // margine in alto e in basso (px): 14 – 70
     maxWidth: number          // larghezza massima del testo (px): 340 – 760
     scale: number             // scala generale dei testi: 0.8 – 1.3
+    background: PageBackground
   }
   head: {
     showRestaurant: boolean
     restaurant: TextStyle
     title: TextStyle
+    titleGap: number          // spazio in più tra nome del ristorante e titolo: -10 – 40
     ornament: Ornament
+    ornamentSize: number      // 0.6 – 2
+    ornamentGap: number       // distanza tra titolo e ornamento: 10 – 60
     space: number             // spazio sotto il titolo prima dei piatti: 0 – 80
   }
   runningHead: { show: boolean; content: 'both' | 'restaurant' | 'menu'; text: TextStyle }
   category: {
     text: TextStyle
     style: 'rules' | 'ornament' | 'underline' | 'frame' | 'plain'
+    ornament: Ornament        // quello sotto il titolo, con lo stile 'ornament'
     align: 'center' | 'left'
     before: number            // spazio prima: 0 – 80
     after: number             // spazio dopo: 0 – 60
@@ -168,18 +209,24 @@ export interface MenuStyle {
     align: 'left' | 'center'
     spacing: number           // spazio tra i piatti: 0 – 60
     divider: Divider
+    dividerOrnament: Ornament // con il separatore 'ornament'
     name: TextStyle
+    nameLineHeight: number    // 1 – 1.6
     description: TextStyle
+    descGap: number           // spazio tra nome e descrizione: 0 – 24
     descLineHeight: number    // 1.05 – 1.8
     descWidth: number         // quota della colonna: 0.55 – 1
+    allergenGap: number       // spazio prima degli allergeni: 0 – 30
     price: TextStyle
     pricePosition: 'right' | 'below' | 'inline'
+    priceGap: number          // spazio tra nome e prezzo (sotto o in riga): 0 – 30
     leader: 'dots' | 'line' | 'none'
-    priceFormat: 'euro-after' | 'euro-before' | 'number' | 'compact'
+    priceSymbol: 'after' | 'before' | 'none'
+    priceDecimals: 'always' | 'auto'   // auto: 12 invece di 12,00 (12,50 resta)
   }
   allergens: { show: boolean; label: boolean; text: TextStyle }
   pageNumber: { show: boolean; format: 'of' | 'plain' | 'dashes'; text: TextStyle }
-  textPages: { title: TextStyle; body: TextStyle }
+  textPages: { title: TextStyle; body: TextStyle; lineHeight: number; paraGap: number }   // 0.85 – 1.4, 0 – 30
   card: {
     photo: 'square' | 'landscape' | 'portrait' | 'circle'
     photoWidth: number        // % della larghezza: 50 – 100
@@ -192,6 +239,7 @@ export interface MenuStyle {
   }
   chrome: { tint: 'light' | 'dark'; peek: boolean; hints: boolean }
   effects: { shadow: number; speed: number }   // ombre dello sfoglio 0 – 1.6, velocità 0.6 – 1.6
+  customFonts: CustomFont[]
 }
 
 const T = (font: string, size: number, weight: Weight, color: ColorRef, o: Partial<TextStyle> = {}): TextStyle =>
@@ -201,30 +249,35 @@ const SERIF = 'Cormorant Garamond', SANS = 'Inter'
 
 export const DEFAULT_STYLE: MenuStyle = {
   version: 2,
-  page: { paper: '#fbf8f2', ink: '#1d1915', soft: '#5f574d', accent: '#9a8462', texture: 'grain', textureStrength: 0.4, light: 1, margin: 30, maxWidth: 560, scale: 1 },
+  page: { paper: '#fbf8f2', ink: '#1d1915', soft: '#5f574d', accent: '#9a8462', texture: 'grain', textureStrength: 0.4, light: 1, margin: 30, marginV: 30, maxWidth: 560, scale: 1,
+    background: { url: null, opacity: 0.35, fit: 'cover', pages: 'all' } },
   head: {
     showRestaurant: true,
     restaurant: T(SANS, 10.5, 500, 'accent', { upper: true, tracking: 0.32 }),
     title: T(SERIF, 38, 500, 'ink'),
+    titleGap: 0,
     ornament: 'diamond',
+    ornamentSize: 1,
+    ornamentGap: 24,
     space: 0,
   },
   runningHead: { show: true, content: 'both', text: T(SANS, 9.5, 500, 'accent', { upper: true, tracking: 0.25 }) },
-  category: { text: T(SANS, 11, 600, 'accent', { upper: true, tracking: 0.25 }), style: 'rules', align: 'center', before: 30, after: 18, continued: true },
+  category: { text: T(SANS, 11, 600, 'accent', { upper: true, tracking: 0.25 }), style: 'rules', ornament: 'diamond', align: 'center', before: 30, after: 18, continued: true },
   dish: {
-    align: 'left', spacing: 20, divider: 'none',
-    name: T(SERIF, 19.5, 600, 'ink'),
+    align: 'left', spacing: 20, divider: 'none', dividerOrnament: 'diamond',
+    name: T(SERIF, 19.5, 600, 'ink'), nameLineHeight: 1.18,
     description: T(SERIF, 16.5, 400, 'soft', { italic: true }),
-    descLineHeight: 1.28, descWidth: 1,
+    descGap: 4, descLineHeight: 1.28, descWidth: 1, allergenGap: 8,
     price: T(SERIF, 19.5, 600, 'ink'),
-    pricePosition: 'right', leader: 'dots', priceFormat: 'euro-after',
+    pricePosition: 'right', priceGap: 2, leader: 'dots', priceSymbol: 'after', priceDecimals: 'always',
   },
   allergens: { show: true, label: true, text: T(SANS, 9.5, 500, 'accent', { upper: true, tracking: 0.14 }) },
   pageNumber: { show: true, format: 'of', text: T(SANS, 9.5, 500, 'accent', { tracking: 0.17 }) },
-  textPages: { title: T(SERIF, 25, 500, 'ink'), body: T(SERIF, 16.5, 400, 'ink') },
+  textPages: { title: T(SERIF, 25, 500, 'ink'), body: T(SERIF, 16.5, 400, 'ink'), lineHeight: 1, paraGap: 6 },
   card: { photo: 'square', photoWidth: 84, radius: 14, titleSize: 34, glass: 0.5, showCategory: true, showSummary: true, showMore: true },
   chrome: { tint: 'light', peek: true, hints: true },
   effects: { shadow: 1, speed: 1 },
+  customFonts: [],
 }
 
 // ── Lettura (con valori base e controlli) ────────────────────────────────────
@@ -240,10 +293,11 @@ const hex = (v: unknown, d: string) => (typeof v === 'string' && HEX.test(v) ? v
 const colorRef = (v: unknown, d: ColorRef): ColorRef =>
   v === 'ink' || v === 'soft' || v === 'accent' ? v : typeof v === 'string' && HEX.test(v) ? v.toLowerCase() : d
 
-function text(v: unknown, d: TextStyle): TextStyle {
+function text(v: unknown, d: TextStyle, custom: Set<string>): TextStyle {
   const r = obj(v)
+  const font = typeof r.font === 'string' && (FONTS.some(f => f.name === r.font) || custom.has(r.font)) ? r.font : d.font
   return {
-    font:     FONTS.some(f => f.name === r.font) ? (r.font as string) : d.font,
+    font,
     size:     num(r.size, 6, 80, d.size),
     weight:   ([400, 500, 600, 700] as const).includes(r.weight as Weight) ? (r.weight as Weight) : d.weight,
     italic:   bool(r.italic, d.italic),
@@ -259,6 +313,23 @@ export function parseStyle(raw: unknown): MenuStyle {
   const d = DEFAULT_STYLE
   const pg = obj(r.page), hd = obj(r.head), rh = obj(r.runningHead), ct = obj(r.category), ds = obj(r.dish)
   const al = obj(r.allergens), pn = obj(r.pageNumber), tp = obj(r.textPages), cd = obj(r.card), ch = obj(r.chrome), ef = obj(r.effects)
+  const bg = obj(pg.background)
+  // Caratteri caricati: prima si leggono (e si registrano), poi i testi che li usano.
+  const customFonts: CustomFont[] = (Array.isArray(r.customFonts) ? r.customFonts : [])
+    .map(obj)
+    .filter(f => typeof f.id === 'string' && /^[a-z0-9-]{1,40}$/i.test(f.id) && typeof f.url === 'string' && /^https:\/\//.test(f.url))
+    .slice(0, 30)
+    .map(f => ({
+      id: f.id as string, url: f.url as string,
+      name: typeof f.name === 'string' && f.name.trim() ? f.name.trim().slice(0, 40) : 'Carattere',
+      cat: pick(f.cat, ['serif', 'sans', 'script'] as const, 'serif'),
+    }))
+  customFonts.forEach(registerCustom)
+  const custom = new Set(customFonts.map(f => CUSTOM_PREFIX + f.id))
+  const tx = (v: unknown, dd: TextStyle) => text(v, dd, custom)
+  const orn = (v: unknown, dd: Ornament) => pick(v, ORNAMENTS, dd)
+  // Formato del prezzo della versione precedente (un solo campo).
+  const oldFmt = ds.priceFormat
   return {
     version: 2,
     page: {
@@ -267,24 +338,35 @@ export function parseStyle(raw: unknown): MenuStyle {
       textureStrength: num(pg.textureStrength, 0, 1, d.page.textureStrength),
       light: num(pg.light, 0, 1, d.page.light),
       margin: num(pg.margin, 12, 64, d.page.margin),
+      marginV: num(pg.marginV, 14, 70, d.page.marginV),
       maxWidth: num(pg.maxWidth, 340, 760, d.page.maxWidth),
       scale: num(pg.scale, 0.8, 1.3, d.page.scale),
+      background: {
+        url: typeof bg.url === 'string' && /^https:\/\//.test(bg.url) ? bg.url : null,
+        opacity: num(bg.opacity, 0.05, 1, d.page.background.opacity),
+        fit: pick(bg.fit, ['cover', 'tile'] as const, d.page.background.fit),
+        pages: pick(bg.pages, ['all', 'first', 'others'] as const, d.page.background.pages),
+      },
     },
     head: {
       showRestaurant: bool(hd.showRestaurant, d.head.showRestaurant),
-      restaurant: text(hd.restaurant, d.head.restaurant),
-      title: text(hd.title, d.head.title),
-      ornament: pick(hd.ornament, ['diamond', 'line', 'dots', 'star', 'none'] as const, d.head.ornament),
+      restaurant: tx(hd.restaurant, d.head.restaurant),
+      title: tx(hd.title, d.head.title),
+      titleGap: num(hd.titleGap, -10, 40, d.head.titleGap),
+      ornament: orn(hd.ornament, d.head.ornament),
+      ornamentSize: num(hd.ornamentSize, 0.6, 2, d.head.ornamentSize),
+      ornamentGap: num(hd.ornamentGap, 10, 60, d.head.ornamentGap),
       space: num(hd.space, 0, 80, d.head.space),
     },
     runningHead: {
       show: bool(rh.show, d.runningHead.show),
       content: pick(rh.content, ['both', 'restaurant', 'menu'] as const, d.runningHead.content),
-      text: text(rh.text, d.runningHead.text),
+      text: tx(rh.text, d.runningHead.text),
     },
     category: {
-      text: text(ct.text, d.category.text),
+      text: tx(ct.text, d.category.text),
       style: pick(ct.style, ['rules', 'ornament', 'underline', 'frame', 'plain'] as const, d.category.style),
+      ornament: orn(ct.ornament, d.category.ornament),
       align: pick(ct.align, ['center', 'left'] as const, d.category.align),
       before: num(ct.before, 0, 80, d.category.before),
       after: num(ct.after, 0, 60, d.category.after),
@@ -294,22 +376,33 @@ export function parseStyle(raw: unknown): MenuStyle {
       align: pick(ds.align, ['left', 'center'] as const, d.dish.align),
       spacing: num(ds.spacing, 0, 60, d.dish.spacing),
       divider: pick(ds.divider, ['none', 'line', 'short', 'dots', 'ornament'] as const, d.dish.divider),
-      name: text(ds.name, d.dish.name),
-      description: text(ds.description, d.dish.description),
+      dividerOrnament: orn(ds.dividerOrnament, d.dish.dividerOrnament),
+      name: tx(ds.name, d.dish.name),
+      nameLineHeight: num(ds.nameLineHeight, 1, 1.6, d.dish.nameLineHeight),
+      description: tx(ds.description, d.dish.description),
+      descGap: num(ds.descGap, 0, 24, d.dish.descGap),
       descLineHeight: num(ds.descLineHeight, 1.05, 1.8, d.dish.descLineHeight),
       descWidth: num(ds.descWidth, 0.55, 1, d.dish.descWidth),
-      price: text(ds.price, d.dish.price),
+      allergenGap: num(ds.allergenGap, 0, 30, d.dish.allergenGap),
+      price: tx(ds.price, d.dish.price),
       pricePosition: pick(ds.pricePosition, ['right', 'below', 'inline'] as const, d.dish.pricePosition),
+      priceGap: num(ds.priceGap, 0, 30, d.dish.priceGap),
       leader: pick(ds.leader, ['dots', 'line', 'none'] as const, d.dish.leader),
-      priceFormat: pick(ds.priceFormat, ['euro-after', 'euro-before', 'number', 'compact'] as const, d.dish.priceFormat),
+      priceSymbol: pick(ds.priceSymbol, ['after', 'before', 'none'] as const,
+        oldFmt === 'euro-before' ? 'before' : oldFmt === 'number' ? 'none' : d.dish.priceSymbol),
+      priceDecimals: pick(ds.priceDecimals, ['always', 'auto'] as const, oldFmt === 'compact' ? 'auto' : d.dish.priceDecimals),
     },
-    allergens: { show: bool(al.show, d.allergens.show), label: bool(al.label, d.allergens.label), text: text(al.text, d.allergens.text) },
+    allergens: { show: bool(al.show, d.allergens.show), label: bool(al.label, d.allergens.label), text: tx(al.text, d.allergens.text) },
     pageNumber: {
       show: bool(pn.show, d.pageNumber.show),
       format: pick(pn.format, ['of', 'plain', 'dashes'] as const, d.pageNumber.format),
-      text: text(pn.text, d.pageNumber.text),
+      text: tx(pn.text, d.pageNumber.text),
     },
-    textPages: { title: text(tp.title, d.textPages.title), body: text(tp.body, d.textPages.body) },
+    textPages: {
+      title: tx(tp.title, d.textPages.title), body: tx(tp.body, d.textPages.body),
+      lineHeight: num(tp.lineHeight, 0.85, 1.4, d.textPages.lineHeight),
+      paraGap: num(tp.paraGap, 0, 30, d.textPages.paraGap),
+    },
     card: {
       photo: pick(cd.photo, ['square', 'landscape', 'portrait', 'circle'] as const, d.card.photo),
       photoWidth: num(cd.photoWidth, 50, 100, d.card.photoWidth),
@@ -322,6 +415,7 @@ export function parseStyle(raw: unknown): MenuStyle {
     },
     chrome: { tint: pick(ch.tint, ['light', 'dark'] as const, d.chrome.tint), peek: bool(ch.peek, d.chrome.peek), hints: bool(ch.hints, d.chrome.hints) },
     effects: { shadow: num(ef.shadow, 0, 1.6, d.effects.shadow), speed: num(ef.speed, 0.6, 1.6, d.effects.speed) },
+    customFonts,
   }
 }
 
@@ -377,6 +471,7 @@ export function textStyles(st: MenuStyle): TextStyle[] {
 export function styleFontsUrl(st: MenuStyle): string {
   const fams = new Map<string, Set<string>>()
   for (const t of textStyles(st)) {
+    if (isCustomFont(t.font)) continue   // caricati dal ristoratore: FontFace (loadStyleAssets)
     const face = resolveFace(t.font, t.weight, t.italic)
     if (!fams.has(t.font)) fams.set(t.font, new Set())
     fams.get(t.font)!.add(`${face.italic ? 1 : 0},${face.weight}`)
@@ -385,7 +480,7 @@ export function styleFontsUrl(st: MenuStyle): string {
     const tuples = Array.from(set).sort((a, b) => (a < b ? -1 : 1)).join(';')
     return `family=${encodeURIComponent(n).replace(/%20/g, '+')}:ital,wght@${tuples}`
   }).join('&')
-  return `/api/gfonts/css2?${q}&display=block`
+  return q ? `/api/gfonts/css2?${q}&display=block` : ''
 }
 
 /** Facce da caricare prima di impaginare (le misure dipendono dal font reale). */
@@ -416,10 +511,11 @@ export function cssFont(t: TextStyle, scale = 1): string {
   return `${f.italic ? 'italic ' : ''}${f.weight} ${(t.size * scale).toFixed(2)}px ${fontStack(t.font)}`
 }
 
-/** Prezzo nel formato scelto. */
-export function formatPrice(p: number | null, fmt: MenuStyle['dish']['priceFormat']): string {
+/** Prezzo nel formato scelto: simbolo dopo/prima/nessuno, decimali sempre
+ *  o solo quando servono (12 invece di 12,00; 12,50 resta). */
+export function formatPrice(p: number | null, symbol: MenuStyle['dish']['priceSymbol'], decimals: MenuStyle['dish']['priceDecimals']): string {
   if (p === null || p === undefined || Number.isNaN(p)) return ''
   const whole = Math.round(p * 100) % 100 === 0
-  const n = new Intl.NumberFormat('it-IT', { minimumFractionDigits: fmt === 'compact' && whole ? 0 : 2, maximumFractionDigits: 2 }).format(p)
-  return fmt === 'euro-before' ? `€ ${n}` : fmt === 'number' ? n : `${n} €`
+  const n = new Intl.NumberFormat('it-IT', { minimumFractionDigits: decimals === 'auto' && whole ? 0 : 2, maximumFractionDigits: 2 }).format(p)
+  return symbol === 'before' ? `€ ${n}` : symbol === 'none' ? n : `${n} €`
 }
