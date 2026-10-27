@@ -14,9 +14,10 @@
 // del dito); F è il punto dove quel bordo deve trovarsi.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { CurlRenderer, constrain, solveCurl, type Rect, type Scene, type Sheet, type Vec } from './curl'
-import { layoutMenu, FONT_FACES, PAPER, type Layout, type MenuData, type Insets } from './typeset'
+import { layoutMenu, FONT_FACES, PAPER, type Dish, type Layout, type MenuData, type Insets } from './typeset'
+import DishCard from './DishCard'
 
 const FONTS_CSS = '/api/gfonts/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400;1,500&family=Inter:wght@400;500;600&display=block'
 
@@ -33,8 +34,6 @@ type Turn = {
   kind:  'forward' | 'back'
   P0:    Vec
   F:     Vec
-  /** 1 = rotolo pieno; verso 0 nell'ultimo tratto dell'animazione. */
-  flatten?: number
 }
 
 type Anim = {
@@ -44,14 +43,19 @@ type Anim = {
   t0:     number
   dur:    number
   commit: boolean
-  /** Arco verticale (px): il tocco gira la pagina dall'angolo, non dritta. */
+  /** Arco verticale (px): da tastiera la pagina si gira dall'angolo, non dritta. */
   arc:    number
 }
 
 export default function CurlMenu({ data }: { data: MenuData }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const probeRef  = useRef<HTMLDivElement>(null)
+  const stageRef  = useRef<HTMLDivElement>(null)
   const [status, setStatus] = useState<'loading' | 'ready' | 'nogl'>('loading')
+  // Scheda del piatto aperta (il tocco su un piatto la apre).
+  const [card, setCard] = useState<Dish | null>(null)
+  const cardOpen = useRef(false)
+  cardOpen.current = !!card
 
   useEffect(() => {
     const canvas = canvasRef.current!
@@ -178,7 +182,7 @@ export default function CurlMenu({ data }: { data: MenuData }) {
       }
 
       const fwd = turn.kind === 'forward'
-      const curl = solveCurl(turn.P0, turn.F, pageW, turn.flatten ?? 1)
+      const curl = solveCurl(turn.P0, turn.F, pageW)
       const prog = Math.max(0, Math.min(1, (turn.P0.x - turn.F.x) / (2 * pageW)))
       const shadow = Math.min(1, prog * 7, (1 - prog) * 7)
       // Il foglio che si muove: la destra che gira (avanti) o la sinistra che
@@ -263,10 +267,6 @@ export default function CurlMenu({ data }: { data: MenuData }) {
         y: anim.from.y + (anim.to.y - anim.from.y) * e - Math.sin(Math.PI * e) * anim.arc,
       }
       anim.turn.F = constrain(anim.turn.P0, raw, spineX, H)
-      // Ultimo 30% del percorso: il rotolo si distende fino a sparire, e con
-      // lui le sue ombre → la pagina si posa senza scatti.
-      const rest = 1 - e
-      anim.turn.flatten = rest >= 0.3 ? 1 : (rest / 0.3) * (rest / 0.3) * (3 - 2 * (rest / 0.3))
       turn = anim.turn
       if (k < 1) { draw(); requestAnimationFrame(tick); return }
       finish()
@@ -363,12 +363,16 @@ export default function CurlMenu({ data }: { data: MenuData }) {
       const d = drag
       drag = null
       const moved = Math.hypot(d.last.x - d.start.x, d.last.y - d.start.y)
-      if (d.mode === 'undecided' && moved < 8 && e.timeStamp - d.startedAt < 400) {
-        // Tocco: destra = avanti, sinistra = indietro.
-        const fwdZone = spread ? d.start.x > W * 0.55 : d.start.x > W * 0.6
-        const backZone = spread ? d.start.x < W * 0.45 : d.start.x < W * 0.4
-        if (fwdZone && canForward()) turnBy('forward', d.start.y)
-        else if (backZone && canBack()) turnBy('back', d.start.y)
+      if (d.mode === 'undecided' && moved < 8 && e.timeStamp - d.startedAt < 500) {
+        // Tocco: apre la scheda del piatto sotto il dito (la pagina si gira
+        // solo trascinando o con uno swipe deciso).
+        const right = spread && d.start.x >= spineX
+        const page = spread ? index + (right ? 1 : 0) : index
+        const dish = layout?.hit(page, d.start.x - (right ? spineX : 0), d.start.y)
+        if (dish) {
+          if (dish.image) { const im = new Image(); im.src = dish.image }
+          setCard(dish)
+        }
         return
       }
       if (!turn || (d.mode !== 'forward' && d.mode !== 'back')) { turn = null; request(); return }
@@ -387,7 +391,7 @@ export default function CurlMenu({ data }: { data: MenuData }) {
     }
 
     const onKey = (e: KeyboardEvent) => {
-      if (anim || drag) return
+      if (anim || drag || cardOpen.current) return
       if ((e.key === 'ArrowRight' || e.key === ' ') && canForward()) turnBy('forward', H * 0.7)
       else if (e.key === 'ArrowLeft' && canBack()) turnBy('back', H * 0.7)
     }
@@ -433,22 +437,36 @@ export default function CurlMenu({ data }: { data: MenuData }) {
     }
   }, [data])
 
+  // Piatti della stessa categoria del menu (per "Altro in …" nella scheda).
+  const siblings = useCallback((d: Dish) => data.categories.find(c => c.dishes.some(x => x.id === d.id))?.dishes ?? [], [data])
+  // Con la scheda aperta il menu dietro arretra appena (come i fogli di iOS).
+  const onPresence = useCallback((o: number) => {
+    const el = stageRef.current
+    if (!el) return
+    el.style.transform = o > 0.001 ? `scale(${(1 - 0.04 * o).toFixed(4)})` : ''
+    el.style.borderRadius = o > 0.001 ? `${(14 * o).toFixed(1)}px` : ''
+  }, [])
+  const onClosed = useCallback(() => { onPresence(0); setCard(null) }, [onPresence])
+
   return (
-    <div className="fixed inset-0 overflow-hidden" style={{ background: PAPER, overscrollBehavior: 'none' }}>
-      {/* Sonda invisibile: legge le aree sicure (notch, barra home) in px. */}
-      <div ref={probeRef} aria-hidden className="pointer-events-none fixed inset-0 invisible"
-        style={{ padding: 'env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)' }} />
-      <canvas
-        ref={canvasRef}
-        className="block select-none"
-        style={{ touchAction: 'none', WebkitUserSelect: 'none', WebkitTouchCallout: 'none', opacity: status === 'loading' ? 0 : 1, transition: 'opacity 0.35s ease' }}
-        aria-label={`${data.restaurantName} — ${data.menuName}`}
-      />
-      {status === 'loading' && (
-        <div className="absolute inset-0 flex items-center justify-center">
-          <span className="text-[10px] uppercase tracking-[0.35em]" style={{ color: '#9a8462' }}>{data.restaurantName}</span>
-        </div>
-      )}
+    <div className="fixed inset-0 overflow-hidden" style={{ background: '#16120e', overscrollBehavior: 'none' }}>
+      <div ref={stageRef} className="absolute inset-0 overflow-hidden" style={{ background: PAPER, transformOrigin: '50% 50%' }}>
+        {/* Sonda invisibile: legge le aree sicure (notch, barra home) in px. */}
+        <div ref={probeRef} aria-hidden className="pointer-events-none fixed inset-0 invisible"
+          style={{ padding: 'env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)' }} />
+        <canvas
+          ref={canvasRef}
+          className="block select-none"
+          style={{ touchAction: 'none', WebkitUserSelect: 'none', WebkitTouchCallout: 'none', opacity: status === 'loading' ? 0 : 1, transition: 'opacity 0.35s ease' }}
+          aria-label={`${data.restaurantName} — ${data.menuName}`}
+        />
+        {status === 'loading' && (
+          <div className="absolute inset-0 flex items-center justify-center">
+            <span className="text-[10px] uppercase tracking-[0.35em]" style={{ color: '#9a8462' }}>{data.restaurantName}</span>
+          </div>
+        )}
+      </div>
+      {card && <DishCard key={card.id} dish={card} siblings={siblings} onClosed={onClosed} onPresence={onPresence} />}
     </div>
   )
 }

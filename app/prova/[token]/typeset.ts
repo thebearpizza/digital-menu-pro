@@ -18,7 +18,12 @@ export interface Dish {
   name:        string
   description: string | null
   price:       number | null
-  allergens:   number[]
+  /** Numero mostrato (personalizzabile per account) e nome per esteso. */
+  allergens:   { n: number; name: string }[]
+  image:       string | null
+  category:    string
+  /** Abbinamento consigliato (anche da un altro menu del ristorante). */
+  pairing:     { label: string | null; dish: Dish } | null
 }
 
 export interface Category { name: string; dishes: Dish[] }
@@ -158,6 +163,8 @@ export interface Layout {
   vp:     Viewport
   pages:  Page[]
   paint:  (ctx: Ctx, pageIndex: number) => void
+  /** Piatto sotto il punto (x, y) della pagina, in coordinate della pagina. */
+  hit:    (pageIndex: number, x: number, y: number) => Dish | null
 }
 
 // Misure verticali (in unità s).
@@ -180,7 +187,7 @@ export function layoutMenu(ctx: Ctx, data: MenuData, vp: Viewport): Layout {
     const nameLines = wrap(ctx, dish.name, m.cw - priceW)
     ctx.font = font('italic 400', DESC_SIZE * s, SERIF)
     const descLines = dish.description ? wrap(ctx, dish.description, m.cw - Math.max(priceW, 18 * s)) : []
-    const allergens = dish.allergens?.length ? `ALLERGENI  ${dish.allergens.join(' · ')}` : ''
+    const allergens = dish.allergens?.length ? `ALLERGENI  ${dish.allergens.map(a => a.n).join(' · ')}` : ''
     return { kind: 'dish', dish, nameLines, price, descLines, allergens, descFrom: 0, descTo: descLines.length, showHead: true }
   }
   const dishHeight = (b: DishBlock) => {
@@ -397,7 +404,20 @@ export function layoutMenu(ctx: Ctx, data: MenuData, vp: Viewport): Layout {
     }
   }
 
-  return { vp, pages, paint }
+  // Il bersaglio del tocco è tutto il blocco del piatto, allargato di metà
+  // dello spazio tra un piatto e l'altro (nessun buco tra due piatti vicini).
+  const hit = (pageIndex: number, x: number, y: number): Dish | null => {
+    const page = pages[pageIndex]
+    if (!page || x < m.x0 - 16 * s || x > m.x0 + m.cw + 16 * s) return null
+    const pad = (GAP_DISH * s) / 2
+    for (const it of page.items) {
+      if (it.block.kind !== 'dish') continue
+      if (y >= it.y - pad && y <= it.y + it.h + pad) return it.block.dish
+    }
+    return null
+  }
+
+  return { vp, pages, paint, hit }
 }
 
 let _grain: HTMLCanvasElement | null = null

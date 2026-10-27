@@ -29,9 +29,8 @@ export interface CurlParams {
 /**
  * Piega che porta il punto P0 del foglio sotto il dito F.
  * pageW = larghezza del foglio (dal dorso al bordo libero).
- * flatten = 1 durante il gesto; scende a 0 alla fine di un'animazione.
  */
-export function solveCurl(P0: Vec, F: Vec, pageW: number, flatten = 1): CurlParams | null {
+export function solveCurl(P0: Vec, F: Vec, pageW: number): CurlParams | null {
   const dx = P0.x - F.x, dy = P0.y - F.y
   const raw = Math.hypot(dx, dy)
   if (raw < 0.5) return null
@@ -43,13 +42,19 @@ export function solveCurl(P0: Vec, F: Vec, pageW: number, flatten = 1): CurlPara
   const len = Math.hypot(vx, vy)
   const dir = len > 0 ? { x: vx / len, y: vy / len } : { x: 1, y: 0 }
   const dist = dx * dir.x + dy * dir.y
-  // Raggio: già morbido all'inizio, più ampio a metà gesto, mai sottile.
-  // Un cilindro troppo stretto rispetto alla griglia crea triangoli stirati
-  // a cavallo della piega (bordo "sdoppiato").
+  // Raggio: morbido a metà gesto, mai sottile rispetto alla griglia (un
+  // cilindro troppo stretto crea triangoli stirati a cavallo della piega).
+  // Ai due capi (foglio appena sollevato / appena posato dall'altra parte) il
+  // rotolo si chiude fino a zero, come la carta vera legata al dorso: così il
+  // foglio arriva piatto, senza curva scura vicino al dorso che poi sparisce
+  // di colpo quando la pagina si ferma. Vale durante il gesto, non solo
+  // nell'animazione: chi tiene il foglio quasi posato lo vede già disteso.
   const t = Math.max(0, Math.min(1, dist / (2 * pageW)))
-  // flatten (0..1): negli ultimi istanti dell'animazione di rilascio il rotolo
-  // si distende del tutto, così il passaggio alla pagina ferma è invisibile.
-  const R = pageW * (0.055 + 0.085 * Math.sin(Math.PI * t)) * (0.02 + 0.98 * Math.max(0, Math.min(1, flatten)))
+  const lift = Math.sin(Math.min(1, t / 0.08) * Math.PI / 2)
+  const u = Math.min(1, (1 - t) / 0.25)
+  const land = u * u * (3 - 2 * u)
+  // Mai esattamente 0: lo shader usa R in smoothstep e divisioni.
+  const R = Math.max(0.25, pageW * (0.055 + 0.085 * Math.sin(Math.PI * t)) * lift * land)
   const d0 = (dist + Math.PI * R) / 2
   return { axis: { x: P0.x - dir.x * d0, y: P0.y - dir.y * d0 }, dir, R }
 }
