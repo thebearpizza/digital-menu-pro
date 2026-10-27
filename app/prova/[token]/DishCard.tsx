@@ -31,6 +31,7 @@ import type { Lang } from '@/lib/translations'
 const EXPAND = 96          // px di scorrimento per passare da staccata a tutto schermo
 const CLOSE_PULL = 110     // px di trascinamento oltre la cima per chiudere
 const DIM = 0.22           // scurimento della pagina sotto durante lo "Scivola"
+const VEIL = 0.72          // velo della pagina che scorre sopra un'altra (resta un filo di vetro)
 
 const CARD    = '#fffdf9'                     // colore pieno (sotto le barre di Safari)
 const STAT_BG = 'rgba(255,255,255,0.55)'      // riquadro prezzo/allergeni sul vetro chiaro
@@ -158,6 +159,7 @@ export default function DishCard({ dish: first, lang, sequence, siblings, onClos
     card.style.left = `${(W - cardW) / 2}px`
     card.style.height = `${H + extra}px`
     card.style.setProperty('--extra', `${extra}px`)
+    card.style.setProperty('--frost', p.toFixed(3))
     card.style.transform = `translate3d(0, ${(top + enter + s.pull).toFixed(2)}px, 0) scale(${scale.toFixed(5)})`
     card.style.borderRadius = `${(r / scale).toFixed(2)}px ${(r / scale).toFixed(2)}px 0 0`
     card.style.boxShadow = `0 -2px 30px rgba(20,14,8,${(0.16 * (1 - p)).toFixed(3)})`
@@ -195,13 +197,14 @@ export default function DishCard({ dish: first, lang, sequence, siblings, onClos
       el.root.style.borderRadius = lift ? `${((30 * lift) / scale).toFixed(2)}px` : ''
       el.root.style.boxShadow = lift ? `0 0 34px rgba(20,14,8,${(0.30 * lift).toFixed(3)})` : ''
       el.dim.style.opacity = dim.toFixed(3)
-      // La lastra che scorre sopra un'altra pagina è piena dal primo istante:
-      // attraverso il vetro chiaro si vedrebbero comparire di colpo le foto
-      // della pagina sotto (lampo). A movimento finito torna vetro sfumando.
+      // La lastra che scorre sopra un'altra pagina si vela dal primo istante
+      // (resta un filo di vetro): attraverso il vetro chiaro si vedrebbero
+      // comparire di colpo le foto della pagina sotto (lampo). A movimento
+      // finito torna vetro sfumando.
       const veiled = moving && t.kind !== 'rubber' && !!t.under
       if (veiled) {
         el.veil.style.transition = 'none'
-        el.veil.style.opacity = '1'
+        el.veil.style.opacity = String(VEIL)
       } else if (el.veil.style.opacity !== '0') {
         el.veil.style.transition = 'opacity 280ms ease'
         el.veil.style.opacity = '0'
@@ -362,6 +365,7 @@ export default function DishCard({ dish: first, lang, sequence, siblings, onClos
 
     // Scorrimento: la direzione allarga/rimpicciolisce (mai oltre quanto
     // permette la distanza dalla cima: in cima la scheda è sempre staccata).
+    let lastDir = 0, settleTimer = 0
     const onScroll = (e: Event) => {
       const sc = activeScroller()
       if (!sc || e.target !== sc) return
@@ -371,8 +375,29 @@ export default function DishCard({ dish: first, lang, sequence, siblings, onClos
       const top = Math.max(0, Math.min(max, sc.scrollTop))   // ignora i rimbalzi
       const d = top - s.lastTop
       s.lastTop = top
+      if (s.tweens.has('snap')) return                       // la calamita guida da sola
+      if (d) lastDir = Math.sign(d)
       s.q = Math.min(clamp01(s.q + d / EXPAND), top / EXPAND)
       schedule()
+      clearTimeout(settleTimer); settleTimer = window.setTimeout(settle, 110)
+    }
+
+    // Calamita (come Libri): lasciata a metà dell'allargamento, la scheda
+    // finisce il movimento da sola, nella direzione in cui si stava andando.
+    const settle = () => {
+      const sc = activeScroller()
+      if (!sc || touch || s.trans || s.closing || s.tweens.has('snap')) return
+      if (s.q <= 0.001 || s.q >= 0.999) return
+      const open = lastDir ? lastDir > 0 : s.q > 0.5
+      const q0 = s.q, top0 = Math.max(0, sc.scrollTop)
+      // Vicino alla cima si scorre anche il contenuto (in cima = staccata,
+      // da EXPAND in giù = tutto schermo); più in basso cambia solo la scheda.
+      const topTo = top0 < EXPAND ? (open ? EXPAND : 0) : top0
+      const dur = 260 + 160 * (open ? 1 - q0 : q0)
+      tween('snap', 0, 1, dur, easeOutCubic, v => {
+        if (topTo !== top0) sc.scrollTop = top0 + (topTo - top0) * v
+        s.q = q0 + ((open ? 1 : 0) - q0) * v
+      })
     }
 
     // ── Trascinamento verso il basso dalla cima: chiusura.
@@ -382,6 +407,8 @@ export default function DishCard({ dish: first, lang, sequence, siblings, onClos
       const t0 = e.touches[0]
       touch = { x0: t0.clientX, y0: t0.clientY, armed: !!sc && sc.scrollTop <= 0, pulling: false, last: [{ y: t0.clientY, t: e.timeStamp }], bounceClose: false }
       s.tweens.delete('pull')
+      s.tweens.delete('snap')   // il dito riprende la scheda
+      clearTimeout(settleTimer)
     }
     const onTouchMove = (e: TouchEvent) => {
       if (!touch || s.closing) return
@@ -405,6 +432,8 @@ export default function DishCard({ dish: first, lang, sequence, siblings, onClos
       if (!touch) return
       const t = touch
       touch = null
+      // Dito lasciato fermo a metà (nessuno scorrimento dopo): calamita.
+      clearTimeout(settleTimer); settleTimer = window.setTimeout(settle, 110)
       if (t.bounceClose) { close(0.8); return }
       if (!t.pulling) return
       const a = t.last[0], b = t.last[t.last.length - 1]
@@ -480,6 +509,7 @@ export default function DishCard({ dish: first, lang, sequence, siblings, onClos
     // Rotella/trackpad: in cima, una spinta decisa verso l'alto chiude.
     let wheelAcc = 0, wheelTimer = 0
     const onWheel = (e: WheelEvent) => {
+      s.tweens.delete('snap')
       const sc = activeScroller()
       if (!sc || sc.scrollTop > 0 || e.deltaY >= 0) { wheelAcc = 0; return }
       wheelAcc += -e.deltaY
@@ -512,7 +542,7 @@ export default function DishCard({ dish: first, lang, sequence, siblings, onClos
     window.addEventListener('keydown', onKey)
     window.addEventListener('resize', onResize)
     return () => {
-      clearTimeout(wheelTimer)
+      clearTimeout(wheelTimer); clearTimeout(settleTimer)
       card.removeEventListener('scroll', onScroll, { capture: true })
       card.removeEventListener('touchstart', onTouchStart)
       card.removeEventListener('touchmove', onTouchMove)
@@ -572,8 +602,8 @@ function Page({ layer, lang, siblings, onLink, register }: {
   const pairing = dish.pairing
   return (
     // Due lastre di vetro per pagina (la pagina in sé è trasparente, così
-    // entrambe vedono il menu dietro): chiara in alto (foto, nome, prezzo),
-    // smerigliata da "Descrizione" in giù. Nello "Scivola" vedono anche la
+    // entrambe vedono il menu dietro): in alto (foto, nome, prezzo) e da
+    // "Descrizione" in giù, che si opacizza mentre la scheda si allarga. Nello "Scivola" vedono anche la
     // pagina sotto; il velo (data-veil) la copre mentre questa scorre.
     <div ref={ref} className="absolute inset-0 overflow-hidden">
       <div data-veil aria-hidden className="absolute inset-0 pointer-events-none" style={{ background: CARD, opacity: 0 }} />
@@ -582,18 +612,21 @@ function Page({ layer, lang, siblings, onLink, register }: {
           contenuto allungherebbe lo scorrimento. */}
       <div data-scroller className="absolute inset-0 overflow-y-auto"
         style={{ overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch', touchAction: 'pan-y',
-          background: 'linear-gradient(180deg, transparent calc(100% - 150px), #f7f4ee calc(100% - 40px))' }}>
+          background: 'linear-gradient(180deg, transparent calc(100% - 150px), rgba(247,244,238,var(--frost, 0)) calc(100% - 40px))' }}>
         <div style={{ position: 'relative', minHeight: `calc(100% + ${EXPAND}px)`, display: 'flex', flexDirection: 'column' }}>
           {/* Vetro sopra la cima: nel rimbalzo di iOS si vede la stessa lastra e
               non il menu scurito dietro (sopra l'inizio non si può scorrere,
               quindi non allunga la pagina). */}
           <div aria-hidden className="absolute left-0 right-0 pointer-events-none"
-            style={{ ...glassSheet('clear'), background: 'rgba(255,253,249,0.52)', bottom: '100%', height: '100vh' }} />
-          <div style={glassSheet('clear')}>
+            style={{ ...glassSheet(), background: 'rgba(255,253,249,0.52)', bottom: '100%', height: '100vh' }} />
+          <div style={glassSheet()}>
             <Header dish={dish} lang={lang} />
           </div>
-          <section style={{ ...glassSheet('frosted'), boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.7)', flex: 1, paddingBottom: 'calc(env(safe-area-inset-bottom) + 40px + var(--extra, 0px))' }}>
-            <div data-rubber className="mx-auto" style={{ maxWidth: 560, padding: '30px 24px 0' }}>
+          <section className="relative" style={{ ...glassSheet(), boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.7)', flex: 1, paddingBottom: 'calc(env(safe-area-inset-bottom) + 40px + var(--extra, 0px))' }}>
+            {/* Come in Libri: parte vetro come la zona sopra e si opacizza
+                mentre la scheda si allarga (--frost = allargamento 0..1). */}
+            <div aria-hidden className="absolute inset-0 pointer-events-none" style={{ background: 'rgba(252,249,243,0.62)', opacity: 'var(--frost, 0)' }} />
+            <div data-rubber className="relative mx-auto" style={{ maxWidth: 560, padding: '30px 24px 0' }}>
               {dish.description && (
                 <Block title={t('description', lang)}>
                   <p style={{ fontFamily: SERIF, fontStyle: 'italic', fontSize: 20, lineHeight: 1.45, color: INK, whiteSpace: 'pre-line' }}>
