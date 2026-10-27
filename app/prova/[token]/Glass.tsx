@@ -114,14 +114,16 @@ export function GlassButton({ label, onClick, children, size = 40, pill = false,
  * tasto che lo apre, si chiude toccando fuori. Resta montato il tempo
  * dell'animazione di chiusura.
  */
-export function GlassMenu({ open, onClose, align, edge, bottom, title, children }: {
+export function GlassMenu({ open, onClose, align, edge, bottom, top, title, children }: {
   open:     boolean
   onClose:  () => void
   align:    'left' | 'right'
   /** Distanza (px) dal bordo sinistro/destro: il pannello parte dal suo tasto. */
   edge:     number
-  /** Distanza dal fondo dello schermo (il pannello si apre verso l'alto). */
-  bottom:   string
+  /** Distanza dal fondo dello schermo (il pannello si apre verso l'alto)… */
+  bottom?:  string
+  /** …oppure dalla cima (si apre verso il basso). */
+  top?:     string
   title?:   string
   children: React.ReactNode
 }) {
@@ -144,10 +146,10 @@ export function GlassMenu({ open, onClose, align, edge, bottom, title, children 
       <div role="menu" className="fixed overflow-hidden"
         style={{
           ...glassSurface('panel'),
-          zIndex: 45, bottom, [align]: Math.max(12, edge),
+          zIndex: 45, top, bottom: top ? undefined : bottom, [align]: Math.max(12, edge),
           minWidth: 232, maxWidth: 'calc(100vw - 24px)', maxHeight: '60vh', overflowY: 'auto',
           borderRadius: 24, padding: '6px 0',
-          transformOrigin: `${align} bottom`,
+          transformOrigin: `${align} ${top ? 'top' : 'bottom'}`,
           transform: shown ? 'scale(1)' : 'scale(0.55)',
           opacity: shown ? 1 : 0,
           transition: shown ? `transform 380ms ${SPRING}, opacity 180ms ease` : 'transform 200ms ease, opacity 180ms ease',

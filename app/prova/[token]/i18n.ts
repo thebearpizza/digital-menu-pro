@@ -22,7 +22,13 @@ export interface I18nData {
   catalog:   AllergenCatalog
 }
 
-export interface MenuChoice { id: string; name: string; translations: MenuTranslations }
+export interface MenuChoice {
+  id:           string
+  name:         string
+  translations: MenuTranslations
+  /** Orario del menu programmato ("12:00–15:30"), se c'è. */
+  hours?:       string | null
+}
 
 const UI = {
   menu:        { it: 'Menu',                    en: 'Menu',                fr: 'Menu',               de: 'Menü',                   es: 'Menú' },
@@ -45,6 +51,8 @@ const UI = {
     de: 'Allergene gemäß EU-Verordnung 1169/2011. Für Fragen steht Ihnen unser Personal gerne zur Verfügung.',
     es: 'Alérgenos según el Reglamento UE 1169/2011. Nuestro personal está a su disposición para cualquier información.',
   },
+  privacy:     { it: 'Informativa privacy',     en: 'Privacy policy',      fr: 'Confidentialité',    de: 'Datenschutz',            es: 'Privacidad' },
+  vat:         { it: 'P.IVA',                   en: 'VAT',                 fr: 'TVA',                de: 'USt-IdNr.',              es: 'NIF-IVA' },
   cont:        { it: 'segue',                   en: 'continued',           fr: 'suite',              de: 'Fortsetzung',            es: 'continúa' },
 } satisfies Record<string, Record<Lang, string>>
 

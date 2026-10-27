@@ -20,6 +20,7 @@ import { useRouter } from 'next/navigation'
 import { layoutMenu, FONT_FACES, PAPER, SANS, type Dish, type Layout, type MenuData, type Insets } from './typeset'
 import { isLang, type Lang } from '@/lib/translations'
 import DishCard from './DishCard'
+import { loadFontCss } from './fonts'
 import Chrome, { BAR_HIDE } from './Chrome'
 import { localize, t, type I18nData, type MenuChoice } from './i18n'
 import { GlassSheen, glassSurface } from './Glass'
@@ -39,7 +40,6 @@ interface Props {
 
 interface PageInfo { index: number; spread: boolean; starts: Layout['categoryStarts'] }
 
-const FONTS_CSS = '/api/gfonts/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400;1,500&family=Inter:wght@400;500;600&display=block'
 
 type Drag = {
   pointerId: number
@@ -124,20 +124,8 @@ export default function CurlMenu({ data: base, i18n, menus, menuId, token }: Pro
 
     // ── Font: prima il foglio di stile (dichiara le facce), POI la richiesta
     // delle facce: chiesta prima, document.fonts.load risponde "pronto" a vuoto.
-    const cssReady = new Promise<void>(resolve => {
-      let link = document.querySelector<HTMLLinkElement>('link[data-curl-fonts]')
-      if (link?.dataset.loaded) { resolve(); return }
-      if (!link) {
-        link = document.createElement('link')
-        link.rel = 'stylesheet'; link.href = FONTS_CSS; link.dataset.curlFonts = '1'
-        document.head.appendChild(link)
-      }
-      const done = () => { link!.dataset.loaded = '1'; resolve() }
-      link.addEventListener('load', done, { once: true })
-      link.addEventListener('error', () => resolve(), { once: true })
-    })
     const fontsReady = Promise.race([
-      cssReady.then(() => Promise.all(FONT_FACES.map(f => document.fonts.load(f)))),
+      loadFontCss().then(() => Promise.all(FONT_FACES.map(f => document.fonts.load(f)))),
       new Promise(r => setTimeout(r, 6000)),
     ])
 
@@ -538,7 +526,10 @@ export default function CurlMenu({ data: base, i18n, menus, menuId, token }: Pro
         // solo trascinando o con uno swipe deciso).
         const right = spread && d.start.x >= spineX
         const page = spread ? index + (right ? 1 : 0) : index
-        const dish = layout?.hit(page, d.start.x - (right ? spineX : 0), d.start.y)
+        const px = d.start.x - (right ? spineX : 0)
+        // Riga legale in fondo alla copertina (un solo menu): apre la privacy.
+        if (layout?.legalAt(page, px, d.start.y)) { window.location.href = `/m/${token}/privacy`; return }
+        const dish = layout?.hit(page, px, d.start.y)
         if (dish) {
           if (dish.image) { const im = new Image(); im.src = dish.image }
           setCard(dish)
@@ -649,7 +640,7 @@ export default function CurlMenu({ data: base, i18n, menus, menuId, token }: Pro
       window.removeEventListener('keydown', onKey)
       for (const t of Array.from(textures.values())) renderer?.deleteTexture(t)
     }
-  }, [])
+  }, [token])
 
   // Cambio lingua: stesso impianto, testi nuovi.
   useEffect(() => { apiRef.current?.refresh() }, [data])
@@ -686,8 +677,8 @@ export default function CurlMenu({ data: base, i18n, menus, menuId, token }: Pro
         )}
       </div>
       {status !== 'loading' && (
-        <Chrome shown={chrome} barRef={barRef} lang={lang} onLang={setLang} menus={menus} menuId={menuId}
-          onMenu={id => router.replace(`/prova/${token}?menu=${id}`)}
+        <Chrome shown={chrome} barRef={barRef} lang={lang} onLang={setLang}
+          canPickMenu={menus.length > 1} onMenus={() => router.push(`/prova/${token}`)}
           categories={pageInfo.starts} active={activeCategory} onJump={p => apiRef.current?.jump(p)} />
       )}
       {hint && status !== 'loading' && pageInfo.index === 0 && (

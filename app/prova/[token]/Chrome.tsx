@@ -2,7 +2,8 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // Comandi sopra il menu, in vetro, in un'unica barra in basso (come la barra
 // di Safari su iOS 26, sotto il pollice; la testatina in alto resta libera):
-//   • a sinistra "Menu" → scelta del menu (solo se ce n'è più d'uno);
+//   • a sinistra "Menu" → torna alla pagina d'apertura, dove si sceglie il
+//     menu (solo se ce n'è più d'uno);
 //   • al centro le categorie: quella della pagina aperta è evidenziata
 //     (l'indicatore scivola), un tocco porta alla sua pagina;
 //   • a destra la bandierina → scelta della lingua.
@@ -13,9 +14,9 @@
 
 import { forwardRef, useLayoutEffect, useRef, useState } from 'react'
 import { FlagIcon } from '@/components/ui/FlagIcon'
-import { ALL_LANGS, LANG_LABELS, menuName, type Lang } from '@/lib/translations'
+import { ALL_LANGS, LANG_LABELS, type Lang } from '@/lib/translations'
 import { GlassButton, GlassMenu, GlassMenuItem, GlassSheen, glassSurface, SPRING } from './Glass'
-import { t, type MenuChoice } from './i18n'
+import { t } from './i18n'
 import { SANS } from './typeset'
 
 const INK = '#1d1915'
@@ -31,25 +32,24 @@ interface Props {
   barRef:     React.RefObject<HTMLDivElement>
   lang:       Lang
   onLang:     (l: Lang) => void
-  menus:      MenuChoice[]
-  menuId:     string
-  onMenu:     (id: string) => void
+  /** Più menu: c'è la pagina d'apertura a cui tornare. */
+  canPickMenu: boolean
+  onMenus:    () => void
   categories: { index: number; name: string; page: number }[]
   active:     number
   onJump:     (page: number) => void
 }
 
-export default function Chrome({ shown, barRef, lang, onLang, menus, menuId, onMenu, categories, active, onJump }: Props) {
-  const [open, setOpen] = useState<null | 'menu' | 'lang'>(null)
+export default function Chrome({ shown, barRef, lang, onLang, canPickMenu, onMenus, categories, active, onJump }: Props) {
+  const [open, setOpen] = useState<null | 'lang'>(null)
   const hide = !shown && !open
-  // I pannelli si aprono sopra il loro tasto (allineati al suo bordo esterno).
-  const menuRef = useRef<HTMLDivElement>(null)
+  // Il pannello delle lingue si apre sopra il suo tasto.
   const langRef = useRef<HTMLDivElement>(null)
-  const [edges, setEdges] = useState({ menu: 12, lang: 12 })
-  const toggle = (which: 'menu' | 'lang') => {
-    const m = menuRef.current?.getBoundingClientRect(), l = langRef.current?.getBoundingClientRect()
-    setEdges({ menu: m ? m.left : 12, lang: l ? window.innerWidth - l.right : 12 })
-    setOpen(o => (o === which ? null : which))
+  const [edge, setEdge] = useState(12)
+  const toggleLang = () => {
+    const l = langRef.current?.getBoundingClientRect()
+    setEdge(l ? window.innerWidth - l.right : 12)
+    setOpen(o => (o === 'lang' ? null : 'lang'))
   }
 
   return (
@@ -65,28 +65,23 @@ export default function Chrome({ shown, barRef, lang, onLang, menus, menuId, onM
           transition: 'transform 420ms cubic-bezier(0.2, 0.9, 0.25, 1)',
           willChange: 'transform',
         }}>
-        {menus.length > 1 && (
-          <Slot hide={hide} ref={menuRef}>
-            <GlassButton pill size={BAR_H} label={t('chooseMenu', lang)} expanded={open === 'menu'} onClick={() => toggle('menu')}>
+        {canPickMenu && (
+          <Slot hide={hide}>
+            <GlassButton pill size={BAR_H} label={t('chooseMenu', lang)} onClick={onMenus}>
+              <svg width="8" height="13" viewBox="0 0 8 13" aria-hidden style={{ marginRight: -1 }}><path d="M6.5 1.5L1.8 6.5l4.7 5" fill="none" stroke={INK} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
               <span style={{ fontFamily: SANS, fontSize: 14.5, fontWeight: 600, letterSpacing: '0.01em' }}>{t('menu', lang)}</span>
             </GlassButton>
           </Slot>
         )}
         {categories.length > 1 && <CategoryBar categories={categories} active={active} onJump={onJump} hide={hide} />}
         <Slot hide={hide} ref={langRef}>
-          <GlassButton size={BAR_H} label={`${t('language', lang)}: ${LANG_LABELS[lang]}`} expanded={open === 'lang'} onClick={() => toggle('lang')}>
+          <GlassButton size={BAR_H} label={`${t('language', lang)}: ${LANG_LABELS[lang]}`} expanded={open === 'lang'} onClick={toggleLang}>
             <Flag lang={lang} />
           </GlassButton>
         </Slot>
       </div>
 
-      <GlassMenu open={open === 'menu'} onClose={() => setOpen(null)} align="left" edge={edges.menu} bottom={MENU_BOTTOM} title={t('chooseMenu', lang)}>
-        {menus.map(m => (
-          <GlassMenuItem key={m.id} label={menuName(m.name, m.translations, lang)} checked={m.id === menuId}
-            onClick={() => { setOpen(null); if (m.id !== menuId) onMenu(m.id) }} />
-        ))}
-      </GlassMenu>
-      <GlassMenu open={open === 'lang'} onClose={() => setOpen(null)} align="right" edge={edges.lang} bottom={MENU_BOTTOM} title={t('language', lang)}>
+      <GlassMenu open={open === 'lang'} onClose={() => setOpen(null)} align="right" edge={edge} bottom={MENU_BOTTOM} title={t('language', lang)}>
         {ALL_LANGS.map(l => (
           <GlassMenuItem key={l} icon={<Flag lang={l} />} label={LANG_LABELS[l]} checked={l === lang}
             onClick={() => { setOpen(null); onLang(l) }} />
@@ -162,7 +157,7 @@ function CategoryBar({ categories, active, onJump, hide }: {
 
 // Contenitore flex: la bandierina (inline-block) non scivola sulla linea di
 // base del testo e il suo bordo sottile non viene ritagliato.
-function Flag({ lang }: { lang: Lang }) {
+export function Flag({ lang }: { lang: Lang }) {
   return (
     <span className="flex items-center justify-center" style={{ width: 24, height: 18 }}>
       <FlagIcon lang={lang} className="!block w-[22px] h-[15px]" />

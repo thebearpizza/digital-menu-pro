@@ -4,8 +4,9 @@ import { createClient } from '@/lib/supabase/server'
 import CurlMenu from './CurlMenu'
 import { PAPER, type Dish, type MenuData } from './typeset'
 import { ALLERGENS, allergenName, allergenNumber, type AllergenCatalog } from '@/lib/allergens'
-import { isCategoryOpenNow, isMenuOpenNow, isWindowOpenNow, type CategorySchedules } from '@/lib/menuSchedule'
+import { isCategoryOpenNow, isMenuOpenNow, isWindowOpenNow, scheduleLabel, type CategorySchedules } from '@/lib/menuSchedule'
 import { parseRichText } from './richText'
+import Landing, { type Banner, type SocialKind } from './Landing'
 import type { DishTranslations, MenuTranslations } from '@/lib/translations'
 import type { I18nData, MenuChoice } from './i18n'
 
@@ -39,7 +40,7 @@ export default async function ProvaPage({
   const supabase = await createClient()
 
   const { data: restaurant } = await supabase
-    .from('restaurants').select('id, name, owner_id')
+    .from('restaurants').select('id, name, owner_id, description, logo_url, instagram_url, facebook_url, website_url, tripadvisor_url, google_maps_url, legal_name, vat_number, legal_address')
     .eq('qr_public_token', params.token).eq('is_active', true).single()
   if (!restaurant) notFound()
 
@@ -49,8 +50,43 @@ export default async function ProvaPage({
     .order('sort_order', { ascending: true })
   // Programmazione oraria: fuori fascia un menu non si vede (come nel menu pubblico).
   const menus = (allMenus ?? []).filter(m => isMenuOpenNow(m as Parameters<typeof isMenuOpenNow>[0]))
-  const menu = menus.find(m => m.id === searchParams.menu) ?? menus[0]
-  if (!menu) notFound()
+  if (!menus.length) notFound()
+  const choices: MenuChoice[] = menus.map(m => ({
+    id: m.id as string, name: m.name as string,
+    translations: (m.translations ?? {}) as MenuTranslations,
+    hours: scheduleLabel(m as Parameters<typeof scheduleLabel>[0]),
+  }))
+
+  // Più menu e nessuno scelto: pagina d'apertura. Con un solo menu si va dritti.
+  const chosen = menus.find(m => m.id === searchParams.menu)
+  if (!chosen && menus.length > 1) {
+    const { data: bannerRows } = await supabase
+      .from('restaurant_banners').select('id, media_url, media_type, title, subtitle')
+      .eq('restaurant_id', restaurant.id).eq('is_active', true)
+      .order('sort_order', { ascending: true })
+    const banners: Banner[] = (bannerRows ?? []).filter(b => b.media_url).map(b => ({
+      id: b.id as string, url: b.media_url as string, video: b.media_type === 'video',
+      title: (b.title as string | null) || null, subtitle: (b.subtitle as string | null) || null,
+    }))
+    const socialCols: [SocialKind, string][] = [
+      ['instagram', 'instagram_url'], ['facebook', 'facebook_url'], ['tripadvisor', 'tripadvisor_url'],
+      ['maps', 'google_maps_url'], ['website', 'website_url'],
+    ]
+    const r = restaurant as Row
+    return (
+      <Landing token={params.token} menus={choices} banners={banners}
+        restaurant={{
+          name: r.name as string,
+          description: (r.description as string | null) || null,
+          logo: (r.logo_url as string | null) || null,
+          socials: socialCols.filter(([, col]) => r[col]).map(([kind, col]) => ({ kind, url: r[col] as string })),
+          legalName: (r.legal_name as string | null) || null,
+          vat: (r.vat_number as string | null) || null,
+          address: (r.legal_address as string | null) || null,
+        }} />
+    )
+  }
+  const menu = chosen ?? menus[0]
 
   // Programmazione oraria di piatti e categorie: fuori fascia non compaiono.
   const catSchedules = (menu.category_schedules ?? {}) as CategorySchedules
@@ -108,6 +144,8 @@ export default async function ProvaPage({
     })).filter(c => c.dishes.length > 0),
     info: infoPage(menu.text_content),
     allergenLegend: allergenLegendOf(menu.text_content, catalog),
+    // Niente pagina d'apertura (un solo menu): i dati legali vanno in copertina.
+    legal: menus.length === 1 ? legalLine(restaurant as Row) : null,
     labels: { allergens: 'Allergeni', cont: 'segue', allergenNote: '' },
   }
 
@@ -122,7 +160,6 @@ export default async function ProvaPage({
     })),
     catalog,
   }
-  const choices: MenuChoice[] = menus.map(m => ({ id: m.id as string, name: m.name as string, translations: (m.translations ?? {}) as MenuTranslations }))
 
   return <CurlMenu key={menu.id} data={data} i18n={i18n} menus={choices} menuId={menu.id as string} token={params.token} />
 }
@@ -146,4 +183,11 @@ function allergenLegendOf(tc: unknown, catalog: AllergenCatalog): MenuData['alle
   return ALLERGENS
     .map(a => ({ id: a.id, n: allergenNumber(a.id, catalog), name: allergenName(a.id, 'it', catalog) }))
     .sort((a, b) => a.n - b.n)
+}
+
+/** "Ragione sociale · P.IVA … · Privacy" per la copertina. */
+function legalLine(r: Row): string {
+  const name = ((r.legal_name as string | null) || (r.name as string)).trim()
+  const vat = (r.vat_number as string | null)?.trim()
+  return [name, vat ? `P.IVA ${vat}` : null, 'Privacy'].filter(Boolean).join('  ·  ')
 }
