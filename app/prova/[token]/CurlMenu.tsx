@@ -16,8 +16,25 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { CurlRenderer, constrain, solveCurl, type Rect, type Scene, type Sheet, type Vec } from './curl'
+import { useRouter } from 'next/navigation'
 import { layoutMenu, FONT_FACES, PAPER, type Dish, type Layout, type MenuData, type Insets } from './typeset'
+import { isLang, type Lang } from '@/lib/translations'
 import DishCard from './DishCard'
+import Chrome from './Chrome'
+import { localize, type I18nData, type MenuChoice } from './i18n'
+
+const LANG_KEY = 'dmp-menu-lang'   // stessa chiave del menu pubblico: la lingua scelta vale ovunque
+
+interface Props {
+  /** Menu in italiano (lingua base). */
+  data:   MenuData
+  i18n:   I18nData
+  menus:  MenuChoice[]
+  menuId: string
+  token:  string
+}
+
+interface PageInfo { index: number; spread: boolean; starts: Layout['categoryStarts'] }
 
 const FONTS_CSS = '/api/gfonts/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400;1,500&family=Inter:wght@400;500;600&display=block'
 
@@ -47,10 +64,32 @@ type Anim = {
   arc:    number
 }
 
-export default function CurlMenu({ data }: { data: MenuData }) {
+export default function CurlMenu({ data: base, i18n, menus, menuId, token }: Props) {
+  const router = useRouter()
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const probeRef  = useRef<HTMLDivElement>(null)
+  const stageRef  = useRef<HTMLDivElement>(null)
   const [status, setStatus] = useState<'loading' | 'ready' | 'nogl'>('loading')
+
+  // Lingua (ricordata sul dispositivo) e menu tradotto.
+  const [lang, setLangState] = useState<Lang>('it')
+  useEffect(() => {
+    try { const saved = localStorage.getItem(LANG_KEY); if (isLang(saved)) setLangState(saved) } catch { /* memoria non disponibile */ }
+  }, [])
+  const setLang = useCallback((l: Lang) => {
+    setLangState(l)
+    try { localStorage.setItem(LANG_KEY, l) } catch { /* memoria non disponibile */ }
+  }, [])
+  const data = useMemo(() => localize(base, i18n, lang), [base, i18n, lang])
+  const dataRef = useRef(data)
+  dataRef.current = data
+
+  // Comandi (Menu, lingua, categorie): visibili all'apertura, spariscono
+  // girando pagina, riappaiono toccando uno spazio vuoto della pagina.
+  const [chrome, setChrome] = useState(true)
+  const [pageInfo, setPageInfo] = useState<PageInfo>({ index: 0, spread: false, starts: [] })
+  const apiRef = useRef<{ refresh: () => void; jump: (page: number) => void } | null>(null)
+  const anchorRef = useRef<string | null>(null)   // primo piatto visto: resta lì cambiando lingua
   // Scheda del piatto aperta (il tocco su un piatto la apre).
   const [card, setCard] = useState<Dish | null>(null)
   const cardOpen = useRef(false)
@@ -94,6 +133,13 @@ export default function CurlMenu({ data }: { data: MenuData }) {
 
     let layout: Layout | null = null
     let index = 0
+    // Comunica a React la pagina aperta (categoria attiva nella barra).
+    const report = () => {
+      if (!layout) return
+      const a = layout.pages[index]?.anchor
+      if (a) anchorRef.current = a
+      setPageInfo({ index, spread, starts: layout.categoryStarts })
+    }
     let dpr = 1
     let W = 0, H = 0
     let spread = false
@@ -235,7 +281,7 @@ export default function CurlMenu({ data }: { data: MenuData }) {
 
     // ── Misure, impaginazione, resize (mantiene il primo piatto visto)
     const relayout = () => {
-      const anchor = layout?.pages[index]?.anchor ?? null
+      const anchor = layout?.pages[index]?.anchor ?? anchorRef.current
       W = window.innerWidth; H = window.innerHeight
       // Doppia pagina come Libri: schermo largo e in orizzontale (solo con WebGL).
       spread = !!renderer && W >= 700 && W / H >= 1.15
@@ -251,12 +297,12 @@ export default function CurlMenu({ data }: { data: MenuData }) {
       renderer?.resize(W, H, canvas.width, canvas.height)
       for (const t of Array.from(textures.values())) renderer?.deleteTexture(t)
       textures.clear(); bitmaps.clear()
-      layout = layoutMenu(sctx, data, { w: pageW, h: H, insets: insets() })
+      layout = layoutMenu(sctx, dataRef.current, { w: pageW, h: H, insets: insets() })
       const found = anchor ? layout.pages.findIndex(p => p.anchor === anchor) : -1
       index = found >= 0 ? found : Math.min(index, layout.pages.length - 1)
       if (spread) index -= index % 2
       turn = null; anim = null; drag = null
-      draw(); warm()
+      draw(); warm(); report()
     }
 
     // ── Animazione di rilascio
@@ -279,7 +325,7 @@ export default function CurlMenu({ data }: { data: MenuData }) {
       const { turn: t, commit } = anim
       if (commit) index += (t.kind === 'forward' ? 1 : -1) * step()
       anim = null; turn = null
-      draw(); prune(); warm()
+      draw(); prune(); warm(); report()
     }
     const turnedX = () => 2 * spineX - W     // F.x con il foglio girato del tutto
     const animate = (t: Turn, commit: boolean, velocity = 0, arc = 0) => {
@@ -344,6 +390,7 @@ export default function CurlMenu({ data }: { data: MenuData }) {
         if (dx < 0 && canForward()) drag.mode = 'forward'
         else if (dx > 0 && canBack()) drag.mode = 'back'
         else { drag.mode = 'none'; return }
+        setChrome(false)   // si legge: i comandi si tolgono di mezzo
         // Il gesto riparte da qui (x E y): nessun salto, nessuna piega storta
         // nei primi fotogrammi.
         drag.start = { x: p.x, y: p.y }
@@ -375,7 +422,7 @@ export default function CurlMenu({ data }: { data: MenuData }) {
         if (dish) {
           if (dish.image) { const im = new Image(); im.src = dish.image }
           setCard(dish)
-        }
+        } else setChrome(c => !c)   // spazio vuoto: mostra/nasconde i comandi
         return
       }
       if (!turn || (d.mode !== 'forward' && d.mode !== 'back')) { turn = null; request(); return }
@@ -395,8 +442,8 @@ export default function CurlMenu({ data }: { data: MenuData }) {
 
     const onKey = (e: KeyboardEvent) => {
       if (anim || drag || cardOpen.current) return
-      if ((e.key === 'ArrowRight' || e.key === ' ') && canForward()) turnBy('forward', H * 0.7)
-      else if (e.key === 'ArrowLeft' && canBack()) turnBy('back', H * 0.7)
+      if ((e.key === 'ArrowRight' || e.key === ' ') && canForward()) { setChrome(false); turnBy('forward', H * 0.7) }
+      else if (e.key === 'ArrowLeft' && canBack()) { setChrome(false); turnBy('back', H * 0.7) }
     }
 
     // ── Contesto WebGL perso (es. app in background su iOS): si ricrea tutto.
@@ -405,6 +452,26 @@ export default function CurlMenu({ data }: { data: MenuData }) {
       try { renderer = new CurlRenderer(canvas, PAPER) } catch { renderer = null }
       textures.clear()
       relayout()
+    }
+
+    // Comandi da React: nuova lingua (si reimpagina restando sullo stesso
+    // piatto) e salto alla pagina di una categoria (breve dissolvenza sulla carta).
+    let jumpTimer = 0
+    apiRef.current = {
+      refresh: () => { if (layout) relayout() },
+      jump: (page: number) => {
+        if (!layout || anim || drag) return
+        const target = Math.max(0, Math.min(pageCount() - 1, spread ? page - (page % 2) : page))
+        if (target === index) return
+        const stage = stageRef.current
+        if (stage) { stage.style.transition = 'opacity 120ms ease'; stage.style.opacity = '0' }
+        clearTimeout(jumpTimer)
+        jumpTimer = window.setTimeout(() => {
+          index = target; turn = null
+          draw(); prune(); warm(); report()
+          if (stage) { stage.style.transition = 'opacity 220ms ease'; stage.style.opacity = '1' }
+        }, 120)
+      },
     }
 
     let resizeTimer = 0
@@ -428,7 +495,8 @@ export default function CurlMenu({ data }: { data: MenuData }) {
       disposed = true
       html.style.backgroundColor = prevBg
       cancelAnimationFrame(raf)
-      clearTimeout(warmTimer); clearTimeout(resizeTimer)
+      clearTimeout(warmTimer); clearTimeout(resizeTimer); clearTimeout(jumpTimer)
+      apiRef.current = null
       canvas.removeEventListener('pointerdown', onDown)
       canvas.removeEventListener('pointermove', onMove)
       canvas.removeEventListener('pointerup', onUp)
@@ -439,17 +507,27 @@ export default function CurlMenu({ data }: { data: MenuData }) {
       window.removeEventListener('keydown', onKey)
       for (const t of Array.from(textures.values())) renderer?.deleteTexture(t)
     }
-  }, [data])
+  }, [])
+
+  // Cambio lingua: stesso impianto, testi nuovi.
+  useEffect(() => { apiRef.current?.refresh() }, [data])
 
   // Piatti della stessa categoria del menu (per "Altro in …" nella scheda).
   const siblings = useCallback((d: Dish) => data.categories.find(c => c.dishes.some(x => x.id === d.id))?.dishes ?? [], [data])
   // Tutti i piatti in ordine di menu (swipe precedente/successivo nella scheda).
   const sequence = useMemo(() => data.categories.flatMap(c => c.dishes), [data])
   const onClosed = useCallback(() => setCard(null), [])
+  // Categoria della pagina aperta (in doppia pagina conta anche la destra).
+  const activeCategory = useMemo(() => {
+    const last = pageInfo.index + (pageInfo.spread ? 1 : 0)
+    let a = 0
+    pageInfo.starts.forEach((c, i) => { if (c.page <= last) a = i })
+    return a
+  }, [pageInfo])
 
   return (
     <div className="fixed inset-0 overflow-hidden" style={{ background: PAPER, overscrollBehavior: 'none' }}>
-      <div className="absolute inset-0 overflow-hidden">
+      <div ref={stageRef} className="absolute inset-0 overflow-hidden">
         {/* Sonda invisibile: legge le aree sicure (notch, barra home) in px. */}
         <div ref={probeRef} aria-hidden className="pointer-events-none fixed inset-0 invisible"
           style={{ padding: 'env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)' }} />
@@ -465,7 +543,12 @@ export default function CurlMenu({ data }: { data: MenuData }) {
           </div>
         )}
       </div>
-      {card && <DishCard key={card.id} dish={card} sequence={sequence} siblings={siblings} onClosed={onClosed} />}
+      {status !== 'loading' && (
+        <Chrome shown={chrome} lang={lang} onLang={setLang} menus={menus} menuId={menuId}
+          onMenu={id => router.replace(`/prova/${token}?menu=${id}`)}
+          categories={pageInfo.starts} active={activeCategory} onJump={p => apiRef.current?.jump(p)} />
+      )}
+      {card && <DishCard key={card.id} dish={card} lang={lang} sequence={sequence} siblings={siblings} onClosed={onClosed} />}
     </div>
   )
 }

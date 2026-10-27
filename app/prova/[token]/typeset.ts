@@ -18,8 +18,8 @@ export interface Dish {
   name:        string
   description: string | null
   price:       number | null
-  /** Numero mostrato (personalizzabile per account) e nome per esteso. */
-  allergens:   { n: number; name: string }[]
+  /** id ufficiale (1–14), numero mostrato (personalizzabile per account) e nome per esteso. */
+  allergens:   { id: number; n: number; name: string }[]
   image:       string | null
   category:    string
   /** Abbinamento consigliato (anche da un altro menu del ristorante). */
@@ -32,6 +32,8 @@ export interface MenuData {
   restaurantName: string
   menuName:       string
   categories:     Category[]
+  /** Parole stampate sulle pagine, nella lingua scelta. */
+  labels:         { allergens: string; cont: string }
 }
 
 export interface Insets { top: number; right: number; bottom: number; left: number }
@@ -165,6 +167,8 @@ export interface Layout {
   paint:  (ctx: Ctx, pageIndex: number) => void
   /** Piatto sotto il punto (x, y) della pagina, in coordinate della pagina. */
   hit:    (pageIndex: number, x: number, y: number) => Dish | null
+  /** Pagina in cui inizia ogni categoria (index = posizione in data.categories). */
+  categoryStarts: { index: number; name: string; page: number }[]
 }
 
 // Misure verticali (in unità s).
@@ -187,7 +191,7 @@ export function layoutMenu(ctx: Ctx, data: MenuData, vp: Viewport): Layout {
     const nameLines = wrap(ctx, dish.name, m.cw - priceW)
     ctx.font = font('italic 400', DESC_SIZE * s, SERIF)
     const descLines = dish.description ? wrap(ctx, dish.description, m.cw - Math.max(priceW, 18 * s)) : []
-    const allergens = dish.allergens?.length ? `ALLERGENI  ${dish.allergens.map(a => a.n).join(' · ')}` : ''
+    const allergens = dish.allergens?.length ? `${data.labels.allergens.toUpperCase()}  ${dish.allergens.map(a => a.n).join(' · ')}` : ''
     return { kind: 'dish', dish, nameLines, price, descLines, allergens, descFrom: 0, descTo: descLines.length, showHead: true }
   }
   const dishHeight = (b: DishBlock) => {
@@ -210,7 +214,9 @@ export function layoutMenu(ctx: Ctx, data: MenuData, vp: Viewport): Layout {
 
   cur.push({ block: { kind: 'head' }, y, h: HEAD_H }); y += HEAD_H
 
-  for (const cat of data.categories) {
+  const categoryStarts: Layout['categoryStarts'] = []
+  for (let ci = 0; ci < data.categories.length; ci++) {
+    const cat = data.categories[ci]
     if (!cat.dishes.length) continue
     const dishes = cat.dishes.map(measureDish)
     // Titolo + primo piatto devono stare insieme.
@@ -218,6 +224,7 @@ export function layoutMenu(ctx: Ctx, data: MenuData, vp: Viewport): Layout {
     const before = cur.length && cur[cur.length - 1].block.kind !== 'head' ? GAP_CAT_BEFORE * s : 0
     if (before + CAT_H + GAP_CAT_AFTER * s + Math.min(firstH, m.bottom - m.top - CAT_H - GAP_CAT_AFTER * s) > room()) newPage()
     y += cur.length ? (cur[cur.length - 1].block.kind === 'head' ? 0 : GAP_CAT_BEFORE * s) : 0
+    categoryStarts.push({ index: ci, name: cat.name, page: pages.length })
     cur.push({ block: { kind: 'cat', name: cat.name, cont: false }, y, h: CAT_H }); y += CAT_H + GAP_CAT_AFTER * s
 
     for (let i = 0; i < dishes.length; i++) {
@@ -353,7 +360,7 @@ export function layoutMenu(ctx: Ctx, data: MenuData, vp: Viewport): Layout {
       c.font = font('italic 400', 12 * s, SERIF)
       c.fillStyle = ACCENT
       c.textAlign = 'center'
-      c.fillText('segue', cx, base + 14 * s)
+      c.fillText(data.labels.cont, cx, base + 14 * s)
     }
   }
 
@@ -417,7 +424,7 @@ export function layoutMenu(ctx: Ctx, data: MenuData, vp: Viewport): Layout {
     return null
   }
 
-  return { vp, pages, paint, hit }
+  return { vp, pages, paint, hit, categoryStarts }
 }
 
 let _grain: HTMLCanvasElement | null = null

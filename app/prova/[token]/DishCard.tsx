@@ -25,6 +25,8 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { PAPER, SERIF, SANS, type Dish } from './typeset'
 import { GlassButton } from './Glass'
+import { t } from './i18n'
+import type { Lang } from '@/lib/translations'
 
 const EXPAND = 96          // px di scorrimento per passare da staccata a tutto schermo
 const CLOSE_PULL = 110     // px di trascinamento oltre la cima per chiudere
@@ -80,6 +82,7 @@ const entryFor = (dish: Dish): Entry => ({ key: `p${++keySeq}`, dish, scroll: 0,
 
 interface Props {
   dish:     Dish
+  lang:     Lang
   /** Tutti i piatti del menu in ordine (swipe precedente/successivo). */
   sequence: Dish[]
   /** Altri piatti della stessa categoria (per "Altro in …"). */
@@ -87,7 +90,7 @@ interface Props {
   onClosed: () => void
 }
 
-export default function DishCard({ dish: first, sequence, siblings, onClosed }: Props) {
+export default function DishCard({ dish: first, lang, sequence, siblings, onClosed }: Props) {
   const backdropRef = useRef<HTMLDivElement>(null)
   const cardRef     = useRef<HTMLDivElement>(null)
   const barRef      = useRef<HTMLDivElement>(null)
@@ -509,14 +512,14 @@ export default function DishCard({ dish: first, sequence, siblings, onClosed }: 
         style={{ height: '100%', background: CARD, transformOrigin: '50% 0', willChange: 'transform', transform: 'translate3d(0,120vh,0)', WebkitUserSelect: 'none' }}>
 
         {layers.map(l => (
-          <Page key={l.key} layer={l} siblings={siblings} onLink={link} register={register} />
+          <Page key={l.key} layer={l} lang={lang} siblings={siblings} onLink={link} register={register} />
         ))}
 
         <div ref={barRef} className="absolute left-0 right-0 top-0 flex justify-between pointer-events-none" style={{ padding: 14, zIndex: 5 }}>
-          <GlassButton label="Indietro" onClick={back} hidden={depth <= 1}>
+          <GlassButton label={t('back', lang)} onClick={back} hidden={depth <= 1}>
             <svg width="11" height="18" viewBox="0 0 11 18" aria-hidden><path d="M9 1.8L2 9l7 7.2" fill="none" stroke={INK} strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" /></svg>
           </GlassButton>
-          <GlassButton label="Chiudi" onClick={() => close()}>
+          <GlassButton label={t('close', lang)} onClick={() => close()}>
             <svg width="13" height="13" viewBox="0 0 13 13" aria-hidden><path d="M1.6 1.6l9.8 9.8M11.4 1.6l-9.8 9.8" stroke={INK} strokeWidth="2" strokeLinecap="round" /></svg>
           </GlassButton>
         </div>
@@ -527,8 +530,9 @@ export default function DishCard({ dish: first, sequence, siblings, onClosed }: 
 
 // ── Pagina della scheda ──────────────────────────────────────────────────────
 
-function Page({ layer, siblings, onLink, register }: {
+function Page({ layer, lang, siblings, onLink, register }: {
   layer:    Layer
+  lang:     Lang
   siblings: (d: Dish) => Dish[]
   onLink:   (d: Dish) => void
   register: (key: string, el: HTMLDivElement | null) => void
@@ -542,11 +546,11 @@ function Page({ layer, siblings, onLink, register }: {
       <div data-scroller className="absolute inset-0 overflow-y-auto"
         style={{ overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch', touchAction: 'pan-y' }}>
         <div style={{ minHeight: `calc(100% + ${EXPAND}px)`, display: 'flex', flexDirection: 'column' }}>
-          <Header dish={dish} />
+          <Header dish={dish} lang={lang} />
           <section style={{ background: SECTION, flex: 1, paddingBottom: 'calc(env(safe-area-inset-bottom) + 40px + var(--extra, 0px))' }}>
             <div className="mx-auto" style={{ maxWidth: 560, padding: '30px 24px 0' }}>
               {dish.description && (
-                <Block title="Descrizione">
+                <Block title={t('description', lang)}>
                   <p style={{ fontFamily: SERIF, fontStyle: 'italic', fontSize: 20, lineHeight: 1.45, color: INK, whiteSpace: 'pre-line' }}>
                     {dish.description}
                   </p>
@@ -554,7 +558,7 @@ function Page({ layer, siblings, onLink, register }: {
               )}
 
               {pairing && (
-                <Block title={pairing.label || 'Abbinamento consigliato'}>
+                <Block title={pairing.label || t('pairing', lang)}>
                   <button type="button" onClick={() => onLink(pairing.dish)}
                     className="w-full flex items-center text-left active:opacity-60 transition-opacity"
                     style={{ gap: 14, background: CARD, borderRadius: 16, padding: 12, border: `1px solid ${LINE}` }}>
@@ -571,7 +575,7 @@ function Page({ layer, siblings, onLink, register }: {
               )}
 
               {dish.allergens.length > 0 && (
-                <Block title="Allergeni">
+                <Block title={t('allergens', lang)}>
                   <ul style={{ display: 'grid', gap: 10 }}>
                     {dish.allergens.map(a => (
                       <li key={a.n} className="flex items-center" style={{ gap: 12 }}>
@@ -587,13 +591,13 @@ function Page({ layer, siblings, onLink, register }: {
               )}
 
               {others.length > 0 && (
-                <Block title={`Altro in ${dish.category}`}>
+                <Block title={`${t('moreIn', lang)} ${dish.category}`}>
                   {/* data-noswipe: qui lo scorrimento orizzontale è della fila, non cambia piatto. */}
-                  <div data-noswipe className="flex overflow-x-auto"
+                  <div data-noswipe className="flex items-start overflow-x-auto"
                     style={{ gap: 12, margin: '0 -24px', padding: '2px 24px 6px', scrollSnapType: 'x mandatory', overscrollBehaviorX: 'contain' }}>
                     {others.map(o => (
                       <button key={o.id} type="button" onClick={() => onLink(o)}
-                        className="shrink-0 text-left active:opacity-60 transition-opacity"
+                        className="shrink-0 flex flex-col items-stretch justify-start text-left active:opacity-60 transition-opacity"
                         style={{ width: 132, scrollSnapAlign: 'start' }}>
                         <Thumb dish={o} size={132} />
                         <span className="block" style={{ fontFamily: SERIF, fontWeight: 600, fontSize: 16, lineHeight: 1.2, color: INK, marginTop: 8 }}>{o.name}</span>
@@ -613,7 +617,7 @@ function Page({ layer, siblings, onLink, register }: {
   )
 }
 
-function Header({ dish }: { dish: Dish }) {
+function Header({ dish, lang }: { dish: Dish; lang: Lang }) {
   const [ready] = useState(() => !!dish.image && readyImages.has(dish.image))
   const [loaded, setLoaded] = useState(ready)
   return (
@@ -636,9 +640,9 @@ function Header({ dish }: { dish: Dish }) {
       </h2>
       {(dish.price !== null || dish.allergens.length > 0) && (
         <div className="mx-auto flex" style={{ marginTop: 24, maxWidth: 380, borderRadius: 18, background: SECTION, padding: '14px 6px' }}>
-          {dish.price !== null && <Stat label="Prezzo" value={price(dish.price)} />}
+          {dish.price !== null && <Stat label={t('price', lang)} value={price(dish.price)} />}
           {dish.price !== null && dish.allergens.length > 0 && <span style={{ width: 1, background: LINE, margin: '4px 0' }} />}
-          {dish.allergens.length > 0 && <Stat label="Allergeni" value={dish.allergens.map(a => a.n).join(' · ')} />}
+          {dish.allergens.length > 0 && <Stat label={t('allergens', lang)} value={dish.allergens.map(a => a.n).join(' · ')} />}
         </div>
       )}
     </header>
