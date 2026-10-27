@@ -553,9 +553,18 @@ function Page({ layer, lang, siblings, onLink, register }: {
     // pagina sotto; il velo (data-veil) la copre mentre questa scorre.
     <div ref={ref} className="absolute inset-0 overflow-hidden">
       <div data-veil aria-hidden className="absolute inset-0 pointer-events-none" style={{ background: CARD, opacity: 0 }} />
+      {/* Sfondo fermo sul fondo dell'area (sfumato, solo quanto arriva il
+          rimbalzo): copre il rimbalzo in fondo, dove un vetro sotto il
+          contenuto allungherebbe lo scorrimento. */}
       <div data-scroller className="absolute inset-0 overflow-y-auto"
-        style={{ overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch', touchAction: 'pan-y' }}>
-        <div style={{ minHeight: `calc(100% + ${EXPAND}px)`, display: 'flex', flexDirection: 'column' }}>
+        style={{ overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch', touchAction: 'pan-y',
+          background: 'linear-gradient(180deg, transparent calc(100% - 150px), #f7f4ee calc(100% - 40px))' }}>
+        <div style={{ position: 'relative', minHeight: `calc(100% + ${EXPAND}px)`, display: 'flex', flexDirection: 'column' }}>
+          {/* Vetro sopra la cima: nel rimbalzo di iOS si vede la stessa lastra e
+              non il menu scurito dietro (sopra l'inizio non si può scorrere,
+              quindi non allunga la pagina). */}
+          <div aria-hidden className="absolute left-0 right-0 pointer-events-none"
+            style={{ ...glassSheet('clear'), background: 'rgba(255,253,249,0.52)', bottom: '100%', height: '100vh' }} />
           <div style={glassSheet('clear')}>
             <Header dish={dish} lang={lang} />
           </div>
