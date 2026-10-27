@@ -22,8 +22,9 @@
 // animazioni scrivono lo stile direttamente (niente render React per fotogramma).
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { SERIF, SANS, type Dish } from './typeset'
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import type { Dish } from './typeset'
+import { DEFAULT_STYLE, styleTokens, type MenuStyle } from '@/lib/menuStyle'
 import { GlassButton, glassSheet } from './Glass'
 import { t } from './i18n'
 import type { Lang } from '@/lib/translations'
@@ -36,9 +37,14 @@ const VEIL = 0.55          // velo della pagina che scorre sopra un'altra (resta
 const CARD    = '#fffdf9'                     // colore pieno (sotto le barre di Safari)
 const STAT_BG = 'rgba(255,255,255,0.55)'      // riquadro prezzo/allergeni sul vetro chiaro
 const TILE    = 'rgba(255,255,255,0.42)'      // riquadri chiari appoggiati sul vetro
-const INK     = '#1d1915'
-const SOFT    = '#6a6157'
-const ACCENT  = '#9a8462'
+// Caratteri e colori del testo della scheda: quelli del menu (stile del
+// ristorante), letti da tutte le parti della scheda tramite contesto.
+function cardStyleOf(st: MenuStyle) {
+  const t = styleTokens(st)
+  return { SERIF: t.display, TEXT: t.text, SANS: t.details, INK: t.ink, SOFT: t.inkSoft, ACCENT: t.accent, ITALIC: st.layout.italicDescriptions }
+}
+const CardStyle = createContext(cardStyleOf(DEFAULT_STYLE))
+const useCardStyle = () => useContext(CardStyle)
 const LINE    = 'rgba(29,25,21,0.09)'
 
 const priceFmt = new Intl.NumberFormat('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -85,6 +91,7 @@ const entryFor = (dish: Dish): Entry => ({ key: `p${++keySeq}`, dish, scroll: 0,
 
 interface Props {
   dish:     Dish
+  style:    MenuStyle
   lang:     Lang
   /** Tutti i piatti del menu in ordine (swipe precedente/successivo). */
   sequence: Dish[]
@@ -93,7 +100,9 @@ interface Props {
   onClosed: () => void
 }
 
-export default function DishCard({ dish: first, lang, sequence, siblings, onClosed }: Props) {
+export default function DishCard({ dish: first, style, lang, sequence, siblings, onClosed }: Props) {
+  const cs = useMemo(() => cardStyleOf(style), [style])
+  const { INK } = cs
   const backdropRef = useRef<HTMLDivElement>(null)
   const cardRef     = useRef<HTMLDivElement>(null)
   const barRef      = useRef<HTMLDivElement>(null)
@@ -565,31 +574,33 @@ export default function DishCard({ dish: first, lang, sequence, siblings, onClos
   }, [activeScroller, apply, back, close, current, neighbour, runTrans, schedule, setR, startTrans, tween])
 
   return (
-    <div className="fixed inset-0 z-50">
-      <div ref={probeRef} aria-hidden className="pointer-events-none fixed inset-0 invisible"
-        style={{ padding: 'env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)' }} />
-      {/* Fondo: scurisce il menu; un tocco fuori dalla scheda la chiude. */}
-      <div ref={backdropRef} className="absolute inset-0" style={{ background: 'rgba(24,18,12,0.12)', opacity: 0 }}
-        onClick={() => close()} />
+    <CardStyle.Provider value={cs}>
+      <div className="fixed inset-0 z-50">
+        <div ref={probeRef} aria-hidden className="pointer-events-none fixed inset-0 invisible"
+          style={{ padding: 'env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)' }} />
+        {/* Fondo: scurisce il menu; un tocco fuori dalla scheda la chiude. */}
+        <div ref={backdropRef} className="absolute inset-0" style={{ background: 'rgba(24,18,12,0.12)', opacity: 0 }}
+          onClick={() => close()} />
 
-      <div ref={cardRef} role="dialog" aria-modal="true" aria-label={layers[layers.length - 1].dish.name}
-        className="absolute top-0 overflow-hidden select-none"
-        style={{ height: '100%', background: 'transparent', transformOrigin: '50% 0', willChange: 'transform', transform: 'translate3d(0,120vh,0)', WebkitUserSelect: 'none' }}>
+        <div ref={cardRef} role="dialog" aria-modal="true" aria-label={layers[layers.length - 1].dish.name}
+          className="absolute top-0 overflow-hidden select-none"
+          style={{ height: '100%', background: 'transparent', transformOrigin: '50% 0', willChange: 'transform', transform: 'translate3d(0,120vh,0)', WebkitUserSelect: 'none' }}>
 
-        {layers.map(l => (
-          <Page key={l.key} layer={l} lang={lang} siblings={siblings} onLink={link} register={register} />
-        ))}
+          {layers.map(l => (
+            <Page key={l.key} layer={l} lang={lang} siblings={siblings} onLink={link} register={register} />
+          ))}
 
-        <div ref={barRef} className="absolute left-0 right-0 top-0 flex justify-between pointer-events-none" style={{ padding: 14, zIndex: 5 }}>
-          <GlassButton label={t('back', lang)} onClick={back} hidden={depth <= 1}>
-            <svg width="11" height="18" viewBox="0 0 11 18" aria-hidden><path d="M9 1.8L2 9l7 7.2" fill="none" stroke={INK} strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" /></svg>
-          </GlassButton>
-          <GlassButton label={t('close', lang)} onClick={() => close()}>
-            <svg width="13" height="13" viewBox="0 0 13 13" aria-hidden><path d="M1.6 1.6l9.8 9.8M11.4 1.6l-9.8 9.8" stroke={INK} strokeWidth="2" strokeLinecap="round" /></svg>
-          </GlassButton>
+          <div ref={barRef} className="absolute left-0 right-0 top-0 flex justify-between pointer-events-none" style={{ padding: 14, zIndex: 5 }}>
+            <GlassButton label={t('back', lang)} onClick={back} hidden={depth <= 1}>
+              <svg width="11" height="18" viewBox="0 0 11 18" aria-hidden><path d="M9 1.8L2 9l7 7.2" fill="none" stroke={INK} strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" /></svg>
+            </GlassButton>
+            <GlassButton label={t('close', lang)} onClick={() => close()}>
+              <svg width="13" height="13" viewBox="0 0 13 13" aria-hidden><path d="M1.6 1.6l9.8 9.8M11.4 1.6l-9.8 9.8" stroke={INK} strokeWidth="2" strokeLinecap="round" /></svg>
+            </GlassButton>
+          </div>
         </div>
       </div>
-    </div>
+    </CardStyle.Provider>
   )
 }
 
@@ -602,6 +613,7 @@ function Page({ layer, lang, siblings, onLink, register }: {
   onLink:   (d: Dish) => void
   register: (key: string, el: HTMLDivElement | null) => void
 }) {
+  const { SERIF, TEXT, SANS, INK, SOFT, ACCENT, ITALIC } = useCardStyle()
   const { dish } = layer
   const ref = useCallback((el: HTMLDivElement | null) => register(layer.key, el), [layer.key, register])
   const others = siblings(dish).filter(d => d.id !== dish.id)
@@ -635,7 +647,7 @@ function Page({ layer, lang, siblings, onLink, register }: {
             <div data-rubber className="relative mx-auto" style={{ maxWidth: 560, padding: '30px 24px 0' }}>
               {dish.description && (
                 <Block title={t('description', lang)}>
-                  <p style={{ fontFamily: SERIF, fontStyle: 'italic', fontSize: 20, lineHeight: 1.45, color: INK, whiteSpace: 'pre-line' }}>
+                  <p style={{ fontFamily: TEXT, fontStyle: ITALIC ? 'italic' : 'normal', fontSize: 20, lineHeight: 1.45, color: INK, whiteSpace: 'pre-line' }}>
                     {dish.description}
                   </p>
                 </Block>
@@ -702,6 +714,7 @@ function Page({ layer, lang, siblings, onLink, register }: {
 }
 
 function Header({ dish, lang }: { dish: Dish; lang: Lang }) {
+  const { SERIF, SANS, INK, ACCENT } = useCardStyle()
   const [ready] = useState(() => !!dish.image && readyImages.has(dish.image))
   const [loaded, setLoaded] = useState(ready)
   return (
@@ -734,6 +747,7 @@ function Header({ dish, lang }: { dish: Dish; lang: Lang }) {
 }
 
 function Stat({ label, value }: { label: string; value: string }) {
+  const { SERIF, SANS, INK, SOFT } = useCardStyle()
   return (
     <div className="flex-1 min-w-0" style={{ padding: '0 10px' }}>
       <div style={{ fontFamily: SANS, fontSize: 9.5, fontWeight: 600, letterSpacing: '0.2em', textTransform: 'uppercase', color: SOFT }}>{label}</div>
@@ -744,6 +758,7 @@ function Stat({ label, value }: { label: string; value: string }) {
 }
 
 function Block({ title, children }: { title: string; children: React.ReactNode }) {
+  const { SANS, ACCENT } = useCardStyle()
   return (
     <div style={{ marginBottom: 32 }}>
       <h3 style={{ fontFamily: SANS, fontSize: 10.5, fontWeight: 600, letterSpacing: '0.24em', textTransform: 'uppercase', color: ACCENT, marginBottom: 12 }}>{title}</h3>
@@ -753,6 +768,7 @@ function Block({ title, children }: { title: string; children: React.ReactNode }
 }
 
 function Thumb({ dish, size }: { dish: Dish; size: number }) {
+  const { SERIF, ACCENT } = useCardStyle()
   return (
     <span className="block shrink-0 overflow-hidden" style={{ width: size, height: size, borderRadius: size > 80 ? 12 : 10, background: TILE, boxShadow: `inset 0 0 0 1px ${LINE}` }}>
       {dish.image
@@ -764,6 +780,7 @@ function Thumb({ dish, size }: { dish: Dish; size: number }) {
 }
 
 function Chevron() {
+  const { SOFT } = useCardStyle()
   return (
     <svg width="8" height="14" viewBox="0 0 8 14" aria-hidden className="shrink-0" style={{ marginRight: 4 }}>
       <path d="M1 1l6 6-6 6" fill="none" stroke={SOFT} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />

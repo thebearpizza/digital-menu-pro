@@ -275,6 +275,9 @@ export class CurlRenderer {
     gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, idx, gl.STATIC_DRAW)
   }
 
+  /** Colore della carta (fondo e retro dei fogli) quando cambia lo stile. */
+  setPaper(hex: string) { this.paper = hexToRgb(hex) }
+
   get maxTexture(): number { return this.gl.getParameter(this.gl.MAX_TEXTURE_SIZE) as number }
 
   resize(wCss: number, hCss: number, pxW: number, pxH: number) {

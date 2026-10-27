@@ -6,6 +6,7 @@ import { PAPER, type Dish, type MenuData } from './typeset'
 import { ALLERGENS, allergenName, allergenNumber, type AllergenCatalog } from '@/lib/allergens'
 import { isCategoryOpenNow, isMenuOpenNow, isWindowOpenNow, scheduleLabel, type CategorySchedules } from '@/lib/menuSchedule'
 import { parseRichText } from './richText'
+import { parseStyle } from '@/lib/menuStyle'
 import Landing, { type Banner, type SocialKind } from './Landing'
 import type { DishTranslations, MenuTranslations } from '@/lib/translations'
 import type { I18nData, MenuChoice } from './i18n'
@@ -36,11 +37,11 @@ export const metadata: Metadata = {
 
 export default async function ProvaPage({
   params, searchParams,
-}: { params: { token: string }; searchParams: { menu?: string } }) {
+}: { params: { token: string }; searchParams: { menu?: string; preview?: string } }) {
   const supabase = await createClient()
 
   const { data: restaurant } = await supabase
-    .from('restaurants').select('id, name, owner_id, theme_config, description, logo_url, instagram_url, facebook_url, website_url, tripadvisor_url, google_maps_url, legal_name, vat_number, legal_address')
+    .from('restaurants').select('id, name, owner_id, theme_config, menu_style, description, logo_url, instagram_url, facebook_url, website_url, tripadvisor_url, google_maps_url, legal_name, vat_number, legal_address')
     .eq('qr_public_token', params.token).eq('is_active', true).single()
   if (!restaurant) notFound()
 
@@ -164,7 +165,8 @@ export default async function ProvaPage({
     catalog,
   }
 
-  return <CurlMenu key={menu.id} data={data} i18n={i18n} token={params.token} />
+  return <CurlMenu key={menu.id} data={data} i18n={i18n} token={params.token}
+    style={parseStyle((restaurant as Row).menu_style)} preview={searchParams.preview === '1'} />
 }
 
 // ── Pagine di testo del menu ─────────────────────────────────────────────────

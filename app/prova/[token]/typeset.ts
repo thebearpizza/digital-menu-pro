@@ -1,3 +1,5 @@
+import { DEFAULT_STYLE, fontStack, styleTokens, type MenuStyle } from '@/lib/menuStyle'
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Impaginazione del menu (prototipo "pageCurl").
 //
@@ -50,20 +52,22 @@ export interface Viewport { w: number; h: number; insets: Insets }
 
 // ── Stile ────────────────────────────────────────────────────────────────────
 
-export const PAPER   = '#fbf8f2'
-const INK            = '#1d1915'
-const INK_SOFT       = '#5f574d'
-const ACCENT         = '#9a8462'
-const ACCENT_SOFT    = '#c9bba2'
+// Colori e caratteri arrivano dallo stile del ristorante (lib/menuStyle).
+// Queste costanti sono i valori base, per chi disegna fuori dalle pagine.
+export const PAPER = DEFAULT_STYLE.colors.paper
 
-export const SERIF = '"Cormorant Garamond", "Iowan Old Style", Georgia, serif'
-export const SANS  = '"Inter", -apple-system, "Helvetica Neue", Arial, sans-serif'
+export const SERIF = fontStack(DEFAULT_STYLE.fonts.display)
+export const SANS  = fontStack(DEFAULT_STYLE.fonts.details)
 
 // Facce da caricare prima di impaginare (le misure dipendono dal font reale).
-export const FONT_FACES = [
-  `600 20px ${SERIF}`, `500 20px ${SERIF}`, `400 20px ${SERIF}`, `italic 400 20px ${SERIF}`, `italic 500 20px ${SERIF}`,
-  `500 12px ${SANS}`, `600 12px ${SANS}`,
-]
+export function fontFaces(st: MenuStyle): string[] {
+  const d = fontStack(st.fonts.display), t = fontStack(st.fonts.text), x = fontStack(st.fonts.details)
+  return [
+    `600 20px ${d}`, `500 20px ${d}`, `400 20px ${d}`,
+    `400 20px ${t}`, `italic 400 20px ${t}`, `italic 500 20px ${t}`, `600 20px ${t}`,
+    `500 12px ${x}`, `600 12px ${x}`,
+  ]
+}
 
 interface Metrics {
   s:         number   // fattore di scala tipografico
@@ -75,10 +79,11 @@ interface Metrics {
   footY:     number   // baseline del numero di pagina
 }
 
-function metrics(vp: Viewport): Metrics {
+function metrics(vp: Viewport, textScale: number): Metrics {
   const { w, h, insets } = vp
   // Scala: telefono ≈ 1, tablet fino a 1.45; contenuto mai più largo di ~34em.
-  const s     = Math.max(0.86, Math.min(1.45, Math.min(w, h * 0.62) / 390))
+  // Moltiplicata per la grandezza del testo scelta nella Personalizzazione.
+  const s     = Math.max(0.86, Math.min(1.45, Math.min(w, h * 0.62) / 390)) * textScale
   const side  = Math.max(insets.left, insets.right) + 30 * s
   const cw    = Math.min(w - side * 2, 560 * s)
   const x0    = (w - cw) / 2
@@ -200,33 +205,43 @@ const LEGEND_SIZE = 17, LEGEND_LH = 1.62
 // Stile dei blocchi di testo delle pagine informative (unità s). La
 // formattazione del vecchio PDF (caratteri, dimensioni, righe vuote) non vale
 // qui: contano solo struttura, grassetto, corsivo e allineamento.
-const TEXT_STYLE: Record<Exclude<TextBlock['kind'], 'gap'>, { size: number; lh: number; weight: string; italic: boolean; color: string; after: number }> = {
-  h1: { size: 25,   lh: 1.18, weight: '500', italic: false, color: INK,      after: 10 },
-  h2: { size: 19.5, lh: 1.25, weight: '500', italic: false, color: INK,      after: 8 },
-  h3: { size: 16.5, lh: 1.32, weight: '400', italic: true,  color: INK_SOFT, after: 6 },
-  p:  { size: 16.5, lh: 1.36, weight: '400', italic: false, color: INK,      after: 6 },
+const TEXT_STYLE: Record<Exclude<TextBlock['kind'], 'gap'>, { size: number; lh: number; weight: string; italic: boolean; soft: boolean; display: boolean; after: number }> = {
+  h1: { size: 25,   lh: 1.18, weight: '500', italic: false, soft: false, display: true,  after: 10 },
+  h2: { size: 19.5, lh: 1.25, weight: '500', italic: false, soft: false, display: true,  after: 8 },
+  h3: { size: 16.5, lh: 1.32, weight: '400', italic: true,  soft: true,  display: false, after: 6 },
+  p:  { size: 16.5, lh: 1.36, weight: '400', italic: false, soft: false, display: false, after: 6 },
 }
 const TEXT_GAP = 14
 
-export function layoutMenu(ctx: Ctx, data: MenuData, vp: Viewport): Layout {
-  const m = metrics(vp)
+export function layoutMenu(ctx: Ctx, data: MenuData, vp: Viewport, style: MenuStyle = DEFAULT_STYLE): Layout {
+  const L = style.layout
+  const T = styleTokens(style)
+  const DISPLAY = T.display, TEXT = T.text, DETAILS = T.details
+  const DESC_FONT = L.italicDescriptions ? 'italic 400' : '400'
+  // Centrato: il prezzo va sotto il nome (a destra non avrebbe un allineamento).
+  const PRICE_MODE = L.align === 'center' ? 'below' : L.price
+  const PRICE_SIZE = NAME_SIZE * 0.84
+  const m = metrics(vp, L.textScale)
   const s = m.s
 
   // ── Misura dei piatti
-  ctx.font = font('600', NAME_SIZE * s, SERIF)
+  ctx.font = font('600', NAME_SIZE * s, DISPLAY)
   const measureDish = (dish: Dish): DishBlock => {
     const price = formatPrice(dish.price)
-    ctx.font = font('600', NAME_SIZE * s, SERIF)
-    const priceW = price ? ctx.measureText(price).width + 22 * s : 0
+    ctx.font = font('600', NAME_SIZE * s, DISPLAY)
+    // Prezzo a destra: il nome e la descrizione gli lasciano spazio.
+    const priceW = price && PRICE_MODE !== 'below' ? ctx.measureText(price).width + 22 * s : 0
     const nameLines = wrap(ctx, dish.name, m.cw - priceW)
-    ctx.font = font('italic 400', DESC_SIZE * s, SERIF)
-    const descLines = dish.description ? wrap(ctx, dish.description, m.cw - Math.max(priceW, 18 * s)) : []
-    const allergens = dish.allergens?.length ? `${data.labels.allergens.toUpperCase()}  ${dish.allergens.map(a => a.n).join(' · ')}` : ''
+    ctx.font = font(DESC_FONT, DESC_SIZE * s, TEXT)
+    const descW = PRICE_MODE === 'below' ? m.cw : m.cw - Math.max(priceW, 18 * s)
+    const descLines = dish.description ? wrap(ctx, dish.description, descW) : []
+    const allergens = L.showAllergens && dish.allergens?.length ? `${data.labels.allergens.toUpperCase()}  ${dish.allergens.map(a => a.n).join(' · ')}` : ''
     return { kind: 'dish', dish, nameLines, price, descLines, allergens, descFrom: 0, descTo: descLines.length, showHead: true }
   }
   const dishHeight = (b: DishBlock) => {
     let hh = 0
     if (b.showHead) hh += b.nameLines.length * NAME_SIZE * NAME_LH * s
+    if (b.showHead && b.price && PRICE_MODE === 'below') hh += 2 * s + PRICE_SIZE * 1.25 * s
     const n = b.descTo - b.descFrom
     if (n) hh += 4 * s + n * DESC_SIZE * DESC_LH * s
     if (b.allergens && b.descTo === b.descLines.length) hh += 8 * s + ALG_SIZE * 1.4 * s
@@ -246,7 +261,7 @@ export function layoutMenu(ctx: Ctx, data: MenuData, vp: Viewport): Layout {
       const fontOf = (r: TextRun) => {
         const italic = st.italic || !!r.italic
         const weight = r.bold ? (italic ? '500' : '600') : st.weight
-        return font(`${italic ? 'italic ' : ''}${weight}`, size, SERIF)
+        return font(`${italic ? 'italic ' : ''}${weight}`, size, st.display ? DISPLAY : TEXT)
       }
       // Parole con il loro carattere; '\n' = a capo forzato.
       const words: { text: string; font: string; br: boolean; space: boolean }[] = []
@@ -276,7 +291,7 @@ export function layoutMenu(ctx: Ctx, data: MenuData, vp: Viewport): Layout {
         const sp = line.length ? pendingSpace : 0
         if (line.length && lw + sp + w > m.cw) { flush() }
         const lead = line.length ? pendingSpace : 0
-        line.push({ text: wd.text, font: wd.font, color: st.color, w: lead + w })
+        line.push({ text: wd.text, font: wd.font, color: st.soft ? T.inkSoft : T.ink, w: lead + w })
         lw += lead + w
         ctx.font = wd.font
         pendingSpace = wd.space ? ctx.measureText(' ').width : 0
@@ -339,7 +354,7 @@ export function layoutMenu(ctx: Ctx, data: MenuData, vp: Viewport): Layout {
     for (let i = 0; i < dishes.length; i++) {
       let b = dishes[i]
       let h = dishHeight(b)
-      const gap = cur.length && cur[cur.length - 1].block.kind === 'dish' ? GAP_DISH * s : 0
+      const gap = cur.length && cur[cur.length - 1].block.kind === 'dish' ? L.dishSpacing * s : 0
       if (gap + h <= room()) { y += gap; cur.push({ block: b, y, h }); y += h; continue }
 
       const full = m.bottom - m.top - CAT_H - GAP_CAT_AFTER * s
@@ -385,7 +400,7 @@ export function layoutMenu(ctx: Ctx, data: MenuData, vp: Viewport): Layout {
     if (cur.length) newPage()
     cur.push({ block: { kind: 'cat', name: data.labels.allergens, cont: false }, y, h: CAT_H }); y += CAT_H + GAP_CAT_AFTER * s
     placeLegendNote()
-    ctx.font = font('400', LEGEND_SIZE * s, SERIF)
+    ctx.font = font('400', LEGEND_SIZE * s, TEXT)
     const nameW = Math.max(...legend.map(a => ctx.measureText(a.name).width))
     const col = Math.min(m.cw, nameW + 34 * s)
     for (const a of legend) {
@@ -423,7 +438,7 @@ export function layoutMenu(ctx: Ctx, data: MenuData, vp: Viewport): Layout {
     const page = pages[index] as Page | undefined
     const { w, h } = vp
     // Carta: tinta calda, luce appena più chiara al centro, grana finissima.
-    c.fillStyle = PAPER
+    c.fillStyle = T.paper
     c.fillRect(0, 0, w, h)
     const g = c.createRadialGradient(w * 0.5, h * 0.42, 0, w * 0.5, h * 0.42, Math.hypot(w, h) * 0.62)
     g.addColorStop(0, 'rgba(255,255,255,0.55)')
@@ -438,12 +453,12 @@ export function layoutMenu(ctx: Ctx, data: MenuData, vp: Viewport): Layout {
     if (!page) return
 
     // Testatina (dalla seconda pagina) e numero di pagina.
-    c.fillStyle = ACCENT
-    c.font = font('500', 9.5 * s, SANS)
+    c.fillStyle = T.accent
+    c.font = font('500', 9.5 * s, DETAILS)
     if (index > 0) {
       drawSpaced(c, `${data.restaurantName} · ${data.menuName}`.toUpperCase(), w / 2, m.headY, 2.4 * s, 'center')
     }
-    drawSpaced(c, `${index + 1}  /  ${pages.length}`, w / 2, m.footY, 1.6 * s, 'center')
+    if (L.pageNumbers) drawSpaced(c, `${index + 1}  /  ${pages.length}`, w / 2, m.footY, 1.6 * s, 'center')
 
     for (const it of page.items) {
       const b = it.block
@@ -471,39 +486,39 @@ export function layoutMenu(ctx: Ctx, data: MenuData, vp: Viewport): Layout {
   function paintLegend(c: Ctx, b: LegendBlock, top: number) {
     const left = m.x0 + (m.cw - b.col) / 2
     const base = top + LEGEND_SIZE * s * 0.95
-    c.font = font('600', 11 * s, SANS)
-    c.fillStyle = ACCENT
+    c.font = font('600', 11 * s, DETAILS)
+    c.fillStyle = T.accent
     c.textAlign = 'right'
     c.fillText(String(b.n), left + 20 * s, base - 1 * s)
-    c.font = font('400', LEGEND_SIZE * s, SERIF)
-    c.fillStyle = INK
+    c.font = font('400', LEGEND_SIZE * s, TEXT)
+    c.fillStyle = T.ink
     c.textAlign = 'left'
     c.fillText(b.name, left + 34 * s, base)
   }
 
   function paintHead(c: Ctx, top: number) {
     const cx = vp.w / 2
-    c.fillStyle = ACCENT
-    c.font = font('500', 10.5 * s, SANS)
+    c.fillStyle = T.accent
+    c.font = font('500', 10.5 * s, DETAILS)
     drawSpaced(c, data.restaurantName.toUpperCase(), cx, top + 14 * s, 3.4 * s, 'center')
-    c.fillStyle = INK
-    c.font = font('500', 38 * s, SERIF)
+    c.fillStyle = T.ink
+    c.font = font('500', 38 * s, DISPLAY)
     // Nome del menu: se troppo largo, si riduce fino a starci.
     let size = 38 * s
-    while (c.measureText(data.menuName).width > m.cw && size > 22 * s) { size -= 1; c.font = font('500', size, SERIF) }
+    while (c.measureText(data.menuName).width > m.cw && size > 22 * s) { size -= 1; c.font = font('500', size, DISPLAY) }
     c.textAlign = 'center'
     c.fillText(data.menuName, cx, top + 60 * s)
     ornament(c, cx, top + 84 * s)
   }
 
   function ornament(c: Ctx, cx: number, cy: number) {
-    c.strokeStyle = ACCENT_SOFT
+    c.strokeStyle = T.accentSoft
     c.lineWidth = Math.max(0.6, 0.75 * s)
     c.beginPath()
     c.moveTo(cx - 46 * s, cy); c.lineTo(cx - 9 * s, cy)
     c.moveTo(cx + 9 * s, cy);  c.lineTo(cx + 46 * s, cy)
     c.stroke()
-    c.fillStyle = ACCENT
+    c.fillStyle = T.accent
     const r = 3.2 * s
     c.beginPath()
     c.moveTo(cx, cy - r); c.lineTo(cx + r, cy); c.lineTo(cx, cy + r); c.lineTo(cx - r, cy); c.closePath()
@@ -513,24 +528,33 @@ export function layoutMenu(ctx: Ctx, data: MenuData, vp: Viewport): Layout {
   function paintCat(c: Ctx, b: CatBlock, top: number) {
     const cx = m.x0 + m.cw / 2
     const base = top + CAT_SIZE * s
-    c.font = font('600', CAT_SIZE * s, SANS)
-    c.fillStyle = ACCENT
+    c.font = font('600', CAT_SIZE * s, DETAILS)
+    c.fillStyle = T.accent
     const label = b.name.toUpperCase()
     const spacing = 2.8 * s
     const tw = spacedWidth(c, label, spacing)
     drawSpaced(c, label, cx, base, spacing, 'center')
-    // Filetti ai lati del titolo.
-    c.strokeStyle = ACCENT_SOFT
-    c.lineWidth = Math.max(0.5, 0.7 * s)
-    const ly = base - CAT_SIZE * s * 0.36
-    const pad = 12 * s
-    c.beginPath()
-    c.moveTo(m.x0, ly); c.lineTo(cx - tw / 2 - pad, ly)
-    c.moveTo(cx + tw / 2 + pad, ly); c.lineTo(m.x0 + m.cw, ly)
-    c.stroke()
+    if (L.category === 'rules') {
+      // Filetti ai lati del titolo.
+      c.strokeStyle = T.accentSoft
+      c.lineWidth = Math.max(0.5, 0.7 * s)
+      const ly = base - CAT_SIZE * s * 0.36
+      const pad = 12 * s
+      c.beginPath()
+      c.moveTo(m.x0, ly); c.lineTo(cx - tw / 2 - pad, ly)
+      c.moveTo(cx + tw / 2 + pad, ly); c.lineTo(m.x0 + m.cw, ly)
+      c.stroke()
+    } else if (L.category === 'ornament' && !b.cont) {
+      // Piccolo rombo sotto il titolo.
+      const r = 2.6 * s, oy = base + 8 * s
+      c.fillStyle = T.accent
+      c.beginPath()
+      c.moveTo(cx, oy - r); c.lineTo(cx + r, oy); c.lineTo(cx, oy + r); c.lineTo(cx - r, oy); c.closePath()
+      c.fill()
+    }
     if (b.cont) {
-      c.font = font('italic 400', 12 * s, SERIF)
-      c.fillStyle = ACCENT
+      c.font = font('italic 400', 12 * s, TEXT)
+      c.fillStyle = T.accent
       c.textAlign = 'center'
       c.fillText(data.labels.cont, cx, base + 14 * s)
     }
@@ -539,47 +563,59 @@ export function layoutMenu(ctx: Ctx, data: MenuData, vp: Viewport): Layout {
   function paintDish(c: Ctx, b: DishBlock, top: number) {
     let y = top
     const right = m.x0 + m.cw
+    const center = L.align === 'center'
+    const x = center ? m.x0 + m.cw / 2 : m.x0
+    const align: CanvasTextAlign = center ? 'center' : 'left'
     if (b.showHead) {
-      c.font = font('600', NAME_SIZE * s, SERIF)
-      c.fillStyle = INK
+      c.font = font('600', NAME_SIZE * s, DISPLAY)
+      c.fillStyle = T.ink
       b.nameLines.forEach((line, i) => {
         const base = y + NAME_SIZE * s * (0.92 + i * NAME_LH)
-        c.textAlign = 'left'
-        c.fillText(line, m.x0, base)
-        if (i === 0 && b.price) {
+        c.textAlign = align
+        c.fillText(line, x, base)
+        if (i === 0 && b.price && PRICE_MODE !== 'below') {
           c.textAlign = 'right'
           c.fillText(b.price, right, base)
           // Puntini guida tra nome e prezzo, solo se c'è spazio vero.
           const from = m.x0 + c.measureText(line).width + 8 * s
           const to = right - c.measureText(b.price).width - 8 * s
-          if (b.nameLines.length === 1 && to - from > 14 * s) {
-            c.fillStyle = ACCENT_SOFT
+          if (PRICE_MODE === 'dots' && b.nameLines.length === 1 && to - from > 14 * s) {
+            c.fillStyle = T.accentSoft
             const step = 5 * s
-            for (let x = Math.ceil(from / step) * step; x <= to; x += step) {
-              c.beginPath(); c.arc(x, base - 1.2 * s, 0.75 * s, 0, Math.PI * 2); c.fill()
+            for (let px = Math.ceil(from / step) * step; px <= to; px += step) {
+              c.beginPath(); c.arc(px, base - 1.2 * s, 0.75 * s, 0, Math.PI * 2); c.fill()
             }
-            c.fillStyle = INK
+            c.fillStyle = T.ink
           }
         }
       })
       y += b.nameLines.length * NAME_SIZE * NAME_LH * s
+      if (b.price && PRICE_MODE === 'below') {
+        // Prezzo sotto il nome.
+        y += 2 * s
+        c.font = font('600', PRICE_SIZE * s, DISPLAY)
+        c.fillStyle = T.ink
+        c.textAlign = align
+        c.fillText(b.price, x, y + PRICE_SIZE * s * 0.92)
+        y += PRICE_SIZE * 1.25 * s
+      }
     }
     const n = b.descTo - b.descFrom
     if (n) {
       y += 4 * s
-      c.font = font('italic 400', DESC_SIZE * s, SERIF)
-      c.fillStyle = INK_SOFT
-      c.textAlign = 'left'
+      c.font = font(DESC_FONT, DESC_SIZE * s, TEXT)
+      c.fillStyle = T.inkSoft
+      c.textAlign = align
       for (let i = b.descFrom; i < b.descTo; i++) {
-        c.fillText(b.descLines[i], m.x0, y + DESC_SIZE * s * 0.95)
+        c.fillText(b.descLines[i], x, y + DESC_SIZE * s * 0.95)
         y += DESC_SIZE * DESC_LH * s
       }
     }
     if (b.allergens && b.descTo === b.descLines.length) {
       y += 8 * s
-      c.font = font('500', ALG_SIZE * s, SANS)
-      c.fillStyle = ACCENT
-      drawSpaced(c, b.allergens, m.x0, y + ALG_SIZE * s, 1.3 * s, 'left')
+      c.font = font('500', ALG_SIZE * s, DETAILS)
+      c.fillStyle = T.accent
+      drawSpaced(c, b.allergens, x, y + ALG_SIZE * s, 1.3 * s, align)
     }
   }
 
@@ -588,7 +624,7 @@ export function layoutMenu(ctx: Ctx, data: MenuData, vp: Viewport): Layout {
   const hit = (pageIndex: number, x: number, y: number): Dish | null => {
     const page = pages[pageIndex]
     if (!page || x < m.x0 - 16 * s || x > m.x0 + m.cw + 16 * s) return null
-    const pad = (GAP_DISH * s) / 2
+    const pad = (L.dishSpacing * s) / 2
     for (const it of page.items) {
       if (it.block.kind !== 'dish') continue
       if (y >= it.y - pad && y <= it.y + it.h + pad) return it.block.dish

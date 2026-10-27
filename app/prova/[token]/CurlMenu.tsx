@@ -17,7 +17,8 @@
 import { forwardRef, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { CurlRenderer, constrain, solveCurl, type Rect, type Scene, type Sheet, type Vec } from './curl'
 import { useRouter } from 'next/navigation'
-import { layoutMenu, FONT_FACES, PAPER, SANS, type Dish, type Layout, type MenuData, type Insets } from './typeset'
+import { layoutMenu, fontFaces, SANS, type Dish, type Layout, type MenuData, type Insets } from './typeset'
+import { styleFontsUrl, styleTokens, type MenuStyle } from '@/lib/menuStyle'
 import { isLang, type Lang } from '@/lib/translations'
 import DishCard from './DishCard'
 import { loadFontCss } from './fonts'
@@ -32,6 +33,10 @@ const BAR_TRAVEL = 72               // px di gesto per aprire/chiudere del tutto
 interface Props {
   /** Menu in italiano (lingua base). */
   data:   MenuData
+  /** Stile del ristorante (colori, caratteri, layout). */
+  style:  MenuStyle
+  /** Anteprima della Personalizzazione: lo stile arriva in tempo reale. */
+  preview?: boolean
   i18n:   I18nData
   token:  string
 }
@@ -66,7 +71,7 @@ type Anim = {
   arc:    number
 }
 
-export default function CurlMenu({ data: base, i18n, token }: Props) {
+export default function CurlMenu({ data: base, style: initialStyle, preview = false, i18n, token }: Props) {
   const router = useRouter()
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const probeRef  = useRef<HTMLDivElement>(null)
@@ -85,6 +90,24 @@ export default function CurlMenu({ data: base, i18n, token }: Props) {
   const data = useMemo(() => localize(base, i18n, lang), [base, i18n, lang])
   const dataRef = useRef(data)
   dataRef.current = data
+
+  // Stile: fisso nel menu pubblico; nell'anteprima della Personalizzazione
+  // arriva a ogni modifica dalla pagina che la contiene.
+  const [style, setStyle] = useState(initialStyle)
+  const styleRef = useRef(style)
+  styleRef.current = style
+  const tokens = useMemo(() => styleTokens(style), [style])
+  useEffect(() => {
+    if (!preview) return
+    const onMsg = (e: MessageEvent) => {
+      if (e.origin !== window.location.origin) return
+      const msg = e.data as { type?: string; style?: MenuStyle }
+      if (msg?.type === 'lito-style' && msg.style) setStyle(msg.style)
+    }
+    window.addEventListener('message', onMsg)
+    window.parent?.postMessage({ type: 'lito-preview-ready' }, window.location.origin)
+    return () => window.removeEventListener('message', onMsg)
+  }, [preview])
 
   // Barra dei comandi (Menu, categorie, lingua): nascosta; si apre scorrendo
   // verso l'alto e segue il dito; si chiude scorrendo in giù, girando pagina o
@@ -118,18 +141,18 @@ export default function CurlMenu({ data: base, i18n, token }: Props) {
     // Sotto le barre di Safari si vede lo sfondo della pagina: color carta.
     const html = document.documentElement
     const prevBg = html.style.backgroundColor
-    html.style.backgroundColor = PAPER
+    html.style.backgroundColor = styleRef.current.colors.paper
 
     // ── Font: prima il foglio di stile (dichiara le facce), POI la richiesta
     // delle facce: chiesta prima, document.fonts.load risponde "pronto" a vuoto.
     const fontsReady = Promise.race([
-      loadFontCss().then(() => Promise.all(FONT_FACES.map(f => document.fonts.load(f)))),
+      loadFontCss(styleFontsUrl(styleRef.current)).then(() => Promise.all(fontFaces(styleRef.current).map(f => document.fonts.load(f)))),
       new Promise(r => setTimeout(r, 6000)),
     ])
 
     let renderer: CurlRenderer | null = null
     let ctx2d: CanvasRenderingContext2D | null = null   // ripiego senza WebGL
-    try { renderer = new CurlRenderer(canvas, PAPER) } catch { ctx2d = canvas.getContext('2d') }
+    try { renderer = new CurlRenderer(canvas, styleRef.current.colors.paper) } catch { ctx2d = canvas.getContext('2d') }
 
     // Canvas di lavoro per comporre una pagina alla volta.
     const scratch = document.createElement('canvas')
@@ -310,7 +333,7 @@ export default function CurlMenu({ data: base, i18n, token }: Props) {
       } else if (ctx2d) {
         // Ripiego: la pagina scorre via orizzontalmente, senza 3D.
         ctx2d.setTransform(dpr, 0, 0, dpr, 0, 0)
-        ctx2d.fillStyle = PAPER; ctx2d.fillRect(0, 0, W, H)
+        ctx2d.fillStyle = styleRef.current.colors.paper; ctx2d.fillRect(0, 0, W, H)
         if (turn) {
           const prog = Math.max(0, Math.min(1, (turn.P0.x - turn.F.x) / (2 * W)))
           const under = bitmap(turn.kind === 'forward' ? index + 1 : index)
@@ -346,7 +369,9 @@ export default function CurlMenu({ data: base, i18n, token }: Props) {
       renderer?.resize(W, H, canvas.width, canvas.height)
       for (const t of Array.from(textures.values())) renderer?.deleteTexture(t)
       textures.clear(); bitmaps.clear()
-      layout = layoutMenu(sctx, dataRef.current, { w: pageW, h: H, insets: insets() })
+      renderer?.setPaper(styleRef.current.colors.paper)
+      html.style.backgroundColor = styleRef.current.colors.paper
+      layout = layoutMenu(sctx, dataRef.current, { w: pageW, h: H, insets: insets() }, styleRef.current)
       const found = anchor ? layout.pages.findIndex(p => p.anchor === anchor) : -1
       index = found >= 0 ? found : Math.min(index, layout.pages.length - 1)
       if (spread) index -= index % 2
@@ -576,7 +601,7 @@ export default function CurlMenu({ data: base, i18n, token }: Props) {
     // ── Contesto WebGL perso (es. app in background su iOS): si ricrea tutto.
     const onLost = (e: Event) => { e.preventDefault() }
     const onRestored = () => {
-      try { renderer = new CurlRenderer(canvas, PAPER) } catch { renderer = null }
+      try { renderer = new CurlRenderer(canvas, styleRef.current.colors.paper) } catch { renderer = null }
       textures.clear()
       relayout()
     }
@@ -641,6 +666,18 @@ export default function CurlMenu({ data: base, i18n, token }: Props) {
   // Cambio lingua: stesso impianto, testi nuovi.
   useEffect(() => { apiRef.current?.refresh() }, [data])
 
+  // Cambio di stile (anteprima): prima i caratteri nuovi, poi si reimpagina.
+  const firstStyle = useRef(true)
+  useEffect(() => {
+    if (firstStyle.current) { firstStyle.current = false; return }
+    let stale = false
+    loadFontCss(styleFontsUrl(style))
+      .then(() => Promise.all(fontFaces(style).map(f => document.fonts.load(f))))
+      .catch(() => undefined)
+      .then(() => { if (!stale) apiRef.current?.refresh() })
+    return () => { stale = true }
+  }, [style])
+
   // Piatti della stessa categoria del menu (per "Altro in …" nella scheda).
   const siblings = useCallback((d: Dish) => data.categories.find(c => c.dishes.some(x => x.id === d.id))?.dishes ?? [], [data])
   // Tutti i piatti in ordine di menu (swipe precedente/successivo nella scheda).
@@ -655,7 +692,7 @@ export default function CurlMenu({ data: base, i18n, token }: Props) {
   }, [pageInfo])
 
   return (
-    <div className="fixed inset-0 overflow-hidden" style={{ background: PAPER, overscrollBehavior: 'none' }}>
+    <div className="fixed inset-0 overflow-hidden" style={{ background: tokens.paper, overscrollBehavior: 'none' }}>
       <div ref={stageRef} className="absolute inset-0 overflow-hidden">
         {/* Sonda invisibile: legge le aree sicure (notch, barra home) in px. */}
         <div ref={probeRef} aria-hidden className="pointer-events-none fixed inset-0 invisible"
@@ -680,7 +717,7 @@ export default function CurlMenu({ data: base, i18n, token }: Props) {
       {hint && status !== 'loading' && pageInfo.index === 0 && (
         <SwipeHint ref={hintRef} up={t('swipeUp', lang)} side={t('swipeSide', lang)} />
       )}
-      {card && <DishCard key={card.id} dish={card} lang={lang} sequence={sequence} siblings={siblings} onClosed={onClosed} />}
+      {card && <DishCard key={card.id} dish={card} style={style} lang={lang} sequence={sequence} siblings={siblings} onClosed={onClosed} />}
     </div>
   )
 }
