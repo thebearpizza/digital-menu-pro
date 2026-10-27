@@ -38,6 +38,13 @@ const UI = {
   back:        { it: 'Indietro',                en: 'Back',                fr: 'Retour',             de: 'Zurück',                 es: 'Atrás' },
   swipeUp:     { it: 'Scorri in su: categorie, menu e lingua', en: 'Swipe up: categories, menus and language', fr: 'Glissez vers le haut : catégories, menus et langue', de: 'Nach oben wischen: Kategorien, Menüs und Sprache', es: 'Desliza hacia arriba: categorías, menús e idioma' },
   swipeSide:   { it: 'Scorri di lato per sfogliare', en: 'Swipe sideways to turn pages', fr: 'Glissez sur le côté pour tourner les pages', de: 'Zur Seite wischen zum Blättern', es: 'Desliza hacia un lado para pasar página' },
+  allergenNote: {
+    it: 'Allergeni secondo il Reg. UE 1169/2011. Per qualsiasi informazione il nostro staff è a vostra disposizione.',
+    en: 'Allergens according to EU Regulation 1169/2011. Our staff will be happy to help with any question.',
+    fr: 'Allergènes selon le règlement UE 1169/2011. Notre personnel est à votre disposition pour toute information.',
+    de: 'Allergene gemäß EU-Verordnung 1169/2011. Für Fragen steht Ihnen unser Personal gerne zur Verfügung.',
+    es: 'Alérgenos según el Reglamento UE 1169/2011. Nuestro personal está a su disposición para cualquier información.',
+  },
   cont:        { it: 'segue',                   en: 'continued',           fr: 'suite',              de: 'Fortsetzung',            es: 'continúa' },
 } satisfies Record<string, Record<Lang, string>>
 
@@ -46,8 +53,10 @@ export const t = (key: UIKey, lang: Lang): string => UI[key][lang] ?? UI[key].it
 
 /** Il menu nella lingua scelta (l'italiano è la base). */
 export function localize(base: MenuData, i18n: I18nData, lang: Lang): MenuData {
-  const labels = { allergens: t('allergens', lang), cont: t('cont', lang) }
-  if (lang === 'it') return { ...base, labels }
+  const labels = { allergens: t('allergens', lang), cont: t('cont', lang), allergenNote: t('allergenNote', lang) }
+  // La legenda segue sempre la lingua (anche in italiano: nomi del catalogo).
+  const allergenLegend = base.allergenLegend?.map(a => ({ ...a, name: allergenName(a.id, lang, i18n.catalog) })) ?? null
+  if (lang === 'it') return { ...base, labels, allergenLegend }
   const dish = (d: Dish, menuTr: MenuTranslations | null): Dish => ({
     ...d,
     name:        dishName(d.name, i18n.dishes[d.id], lang),
@@ -61,6 +70,7 @@ export function localize(base: MenuData, i18n: I18nData, lang: Lang): MenuData {
   return {
     ...base,
     labels,
+    allergenLegend,
     menuName:   menuName(base.menuName, i18n.menu, lang),
     categories: base.categories.map(c => ({
       name:   categoryName(c.name, i18n.menu, lang),

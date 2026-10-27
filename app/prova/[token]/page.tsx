@@ -3,8 +3,9 @@ import type { Metadata } from 'next'
 import { createClient } from '@/lib/supabase/server'
 import CurlMenu from './CurlMenu'
 import { PAPER, type Dish, type MenuData } from './typeset'
-import { allergenName, allergenNumber, type AllergenCatalog } from '@/lib/allergens'
-import { isMenuOpenNow } from '@/lib/menuSchedule'
+import { ALLERGENS, allergenName, allergenNumber, type AllergenCatalog } from '@/lib/allergens'
+import { isCategoryOpenNow, isMenuOpenNow, isWindowOpenNow, type CategorySchedules } from '@/lib/menuSchedule'
+import { parseRichText } from './richText'
 import type { DishTranslations, MenuTranslations } from '@/lib/translations'
 import type { I18nData, MenuChoice } from './i18n'
 
@@ -15,7 +16,11 @@ import type { I18nData, MenuChoice } from './i18n'
 
 export const dynamic = 'force-dynamic'
 
-const DISH_COLS = 'id, name, description, price, category, allergens, sort_order, image_url, pairing_dish_id, pairing_label, translations'
+const DISH_COLS = 'id, name, description, price, category, allergens, sort_order, image_url, pairing_dish_id, pairing_label, translations, schedule_enabled, schedule_from, schedule_until'
+// Nome con cui il gestionale mostra (e programma) i piatti senza categoria.
+const NO_CATEGORY = 'Senza categoria'
+
+type TextPage = { enabled?: boolean; body?: string; position?: 'first' | 'last'; align?: 'left' | 'center' | 'right' }
 type Row = Record<string, unknown>
 
 export const metadata: Metadata = {
@@ -39,7 +44,7 @@ export default async function ProvaPage({
   if (!restaurant) notFound()
 
   const { data: allMenus } = await supabase
-    .from('menus').select('id, name, category_order, translations, schedule_enabled, schedule_from, schedule_until')
+    .from('menus').select('id, name, category_order, translations, schedule_enabled, schedule_from, schedule_until, category_schedules, text_content')
     .eq('restaurant_id', restaurant.id).eq('is_active', true)
     .order('sort_order', { ascending: true })
   // Programmazione oraria: fuori fascia un menu non si vede (come nel menu pubblico).
@@ -47,7 +52,11 @@ export default async function ProvaPage({
   const menu = menus.find(m => m.id === searchParams.menu) ?? menus[0]
   if (!menu) notFound()
 
-  const [{ data: dishes }, { data: overrides }] = await Promise.all([
+  // Programmazione oraria di piatti e categorie: fuori fascia non compaiono.
+  const catSchedules = (menu.category_schedules ?? {}) as CategorySchedules
+  const dishOpen = (d: Row) => isWindowOpenNow(d.schedule_enabled as boolean | null, d.schedule_from as string | null, d.schedule_until as string | null)
+
+  const [{ data: allDishes }, { data: overrides }] = await Promise.all([
     supabase
       .from('dishes').select(DISH_COLS)
       .eq('menu_id', menu.id).eq('is_active', true)
@@ -56,16 +65,18 @@ export default async function ProvaPage({
     supabase.from('allergen_overrides').select('items').eq('user_id', restaurant.owner_id).maybeSingle(),
   ])
   const catalog = (overrides?.items ?? null) as AllergenCatalog
+  const dishes = (allDishes ?? []).filter(d => dishOpen(d as Row) && isCategoryOpenNow(catSchedules[(d.category as string | null) || NO_CATEGORY]))
 
   // Abbinamenti: il piatto consigliato può stare in un altro menu del ristorante.
-  const pairIds = Array.from(new Set((dishes ?? []).map(d => d.pairing_dish_id as string | null).filter((x): x is string => !!x)))
+  const pairIds = Array.from(new Set(dishes.map(d => d.pairing_dish_id as string | null).filter((x): x is string => !!x)))
   const { data: pairRows } = pairIds.length
     ? await supabase.from('dishes').select(`${DISH_COLS}, menus!inner(restaurant_id, translations)`)
         .in('id', pairIds).eq('is_active', true).eq('menus.restaurant_id', restaurant.id)
     : { data: [] as Row[] }
 
   const toDish = (d: Row, withPairing: boolean): Dish => {
-    const pair = withPairing && d.pairing_dish_id ? (pairRows ?? []).find(p => p.id === d.pairing_dish_id) : null
+    // Un abbinamento fuori orario non si propone.
+    const pair = withPairing && d.pairing_dish_id ? (pairRows ?? []).find(p => p.id === d.pairing_dish_id && dishOpen(p as Row)) : null
     return {
       id: d.id as string,
       name: d.name as string,
@@ -74,7 +85,7 @@ export default async function ProvaPage({
       allergens: ((d.allergens as unknown[] | null) ?? []).map(Number).filter(id => id > 0)
         .map(id => ({ id, n: allergenNumber(id, catalog), name: allergenName(id, 'it', catalog) })),
       image: (d.image_url as string | null) || null,
-      category: ((d.category as string | null) ?? '') || 'Altro',
+      category: ((d.category as string | null) ?? '') || NO_CATEGORY,
       pairing: pair ? { label: (d.pairing_label as string | null) || null, dish: toDish(pair as Row, false) } : null,
     }
   }
@@ -82,7 +93,7 @@ export default async function ProvaPage({
   // Categorie: prima l'ordine salvato nel menu, poi le altre nell'ordine in cui
   // compaiono i piatti.
   const order: string[] = Array.isArray(menu.category_order) ? [...menu.category_order] : []
-  for (const d of dishes ?? []) {
+  for (const d of dishes) {
     const c = (d.category as string | null) ?? ''
     if (!order.includes(c)) order.push(c)
   }
@@ -90,19 +101,21 @@ export default async function ProvaPage({
     restaurantName: restaurant.name as string,
     menuName: menu.name as string,
     categories: order.map(name => ({
-      name: name || 'Altro',
-      dishes: (dishes ?? [])
+      name: name || NO_CATEGORY,
+      dishes: dishes
         .filter(d => ((d.category as string | null) ?? '') === name)
         .map(d => toDish(d, true)),
     })).filter(c => c.dishes.length > 0),
-    labels: { allergens: 'Allergeni', cont: 'segue' },
+    info: infoPage(menu.text_content),
+    allergenLegend: allergenLegendOf(menu.text_content, catalog),
+    labels: { allergens: 'Allergeni', cont: 'segue', allergenNote: '' },
   }
 
   // Traduzioni (generate dal gestionale): la lingua si sceglie sul telefono.
   const trOf = (r: Row) => (r.translations ?? {}) as DishTranslations
   const i18n: I18nData = {
     menu: (menu.translations ?? {}) as MenuTranslations,
-    dishes: Object.fromEntries([...(dishes ?? []), ...(pairRows ?? [])].map(d => [d.id as string, trOf(d as Row)])),
+    dishes: Object.fromEntries([...dishes, ...(pairRows ?? [])].map(d => [d.id as string, trOf(d as Row)])),
     pairMenus: Object.fromEntries((pairRows ?? []).map(d => {
       const m = (d as Row).menus as { translations?: MenuTranslations } | null
       return [d.id as string, (m?.translations ?? {}) as MenuTranslations]
@@ -112,4 +125,25 @@ export default async function ProvaPage({
   const choices: MenuChoice[] = menus.map(m => ({ id: m.id as string, name: m.name as string, translations: (m.translations ?? {}) as MenuTranslations }))
 
   return <CurlMenu key={menu.id} data={data} i18n={i18n} menus={choices} menuId={menu.id as string} token={params.token} />
+}
+
+// ── Pagine di testo del menu ─────────────────────────────────────────────────
+
+/** Pagina informativa del ristoratore (se attiva e non vuota). */
+function infoPage(tc: unknown): MenuData['info'] {
+  const info = (tc as { info?: TextPage } | null)?.info
+  if (!info?.enabled) return null
+  const blocks = parseRichText(info.body, info.align ?? 'left')
+  return blocks.length ? { position: info.position === 'last' ? 'last' : 'first', blocks } : null
+}
+
+/** Legenda allergeni: se il ristoratore ha attivato la pagina allergeni, viene
+ *  generata dal suo elenco (nomi e numeri personalizzati, tradotta); il testo
+ *  scritto a mano nel gestionale non serve più. */
+function allergenLegendOf(tc: unknown, catalog: AllergenCatalog): MenuData['allergenLegend'] {
+  const page = (tc as { allergen?: TextPage } | null)?.allergen
+  if (!page?.enabled) return null
+  return ALLERGENS
+    .map(a => ({ id: a.id, n: allergenNumber(a.id, catalog), name: allergenName(a.id, 'it', catalog) }))
+    .sort((a, b) => a.n - b.n)
 }

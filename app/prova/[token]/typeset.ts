@@ -28,12 +28,20 @@ export interface Dish {
 
 export interface Category { name: string; dishes: Dish[] }
 
+/** Testo ricco delle pagine informative: titoli, paragrafi, grassetto, corsivo. */
+export interface TextRun { text: string; bold?: boolean; italic?: boolean }
+export interface TextBlock { kind: 'h1' | 'h2' | 'h3' | 'p' | 'gap'; align: 'left' | 'center' | 'right'; runs: TextRun[] }
+
 export interface MenuData {
   restaurantName: string
   menuName:       string
   categories:     Category[]
+  /** Pagina informativa del ristoratore (in testa o in fondo al menu). */
+  info?:          { position: 'first' | 'last'; blocks: TextBlock[] } | null
+  /** Legenda allergeni in fondo al menu (generata dall'elenco del ristorante). */
+  allergenLegend?: { id: number; n: number; name: string }[] | null
   /** Parole stampate sulle pagine, nella lingua scelta. */
-  labels:         { allergens: string; cont: string }
+  labels:         { allergens: string; cont: string; allergenNote: string }
 }
 
 export interface Insets { top: number; right: number; bottom: number; left: number }
@@ -53,7 +61,7 @@ export const SANS  = '"Inter", -apple-system, "Helvetica Neue", Arial, sans-seri
 
 // Facce da caricare prima di impaginare (le misure dipendono dal font reale).
 export const FONT_FACES = [
-  `600 20px ${SERIF}`, `500 20px ${SERIF}`, `italic 400 20px ${SERIF}`, `italic 500 20px ${SERIF}`,
+  `600 20px ${SERIF}`, `500 20px ${SERIF}`, `400 20px ${SERIF}`, `italic 400 20px ${SERIF}`, `italic 500 20px ${SERIF}`,
   `500 12px ${SANS}`, `600 12px ${SANS}`,
 ]
 
@@ -150,7 +158,17 @@ interface DishBlock {
 }
 interface CatBlock { kind: 'cat'; name: string; cont: boolean }
 interface HeadBlock { kind: 'head' }
-type Block = DishBlock | CatBlock | HeadBlock
+/** Una riga di testo ricco già spezzata (pagine informative). */
+interface TextLineBlock {
+  kind:  'tline'
+  segs:  { text: string; font: string; color: string; w: number }[]
+  width: number
+  size:  number
+  align: TextBlock['align']
+  from:  'info' | 'legend'
+}
+interface LegendBlock { kind: 'legend'; n: number; name: string; col: number }
+type Block = DishBlock | CatBlock | HeadBlock | TextLineBlock | LegendBlock
 
 interface Placed { block: Block; y: number; h: number }
 
@@ -177,6 +195,18 @@ const DESC_SIZE = 16.5, DESC_LH = 1.28
 const ALG_SIZE  = 9.5
 const CAT_SIZE  = 11
 const GAP_DISH  = 20, GAP_CAT_BEFORE = 30, GAP_CAT_AFTER = 18
+const LEGEND_SIZE = 17, LEGEND_LH = 1.62
+
+// Stile dei blocchi di testo delle pagine informative (unità s). La
+// formattazione del vecchio PDF (caratteri, dimensioni, righe vuote) non vale
+// qui: contano solo struttura, grassetto, corsivo e allineamento.
+const TEXT_STYLE: Record<Exclude<TextBlock['kind'], 'gap'>, { size: number; lh: number; weight: string; italic: boolean; color: string; after: number }> = {
+  h1: { size: 25,   lh: 1.18, weight: '500', italic: false, color: INK,      after: 10 },
+  h2: { size: 19.5, lh: 1.25, weight: '500', italic: false, color: INK,      after: 8 },
+  h3: { size: 16.5, lh: 1.32, weight: '400', italic: true,  color: INK_SOFT, after: 6 },
+  p:  { size: 16.5, lh: 1.36, weight: '400', italic: false, color: INK,      after: 6 },
+}
+const TEXT_GAP = 14
 
 export function layoutMenu(ctx: Ctx, data: MenuData, vp: Viewport): Layout {
   const m = metrics(vp)
@@ -205,6 +235,62 @@ export function layoutMenu(ctx: Ctx, data: MenuData, vp: Viewport): Layout {
   const HEAD_H = 118 * s
   const CAT_H  = CAT_SIZE * 1.4 * s
 
+  // ── Testo ricco → righe (a capo per parole, con caratteri diversi nella riga)
+  type Piece = { block: Block | null; h: number }   // null = spazio vuoto
+  const textPieces = (blocks: TextBlock[], from: TextLineBlock['from']): Piece[] => {
+    const out: Piece[] = []
+    for (const b of blocks) {
+      if (b.kind === 'gap') { out.push({ block: null, h: TEXT_GAP * s }); continue }
+      const st = TEXT_STYLE[b.kind]
+      const size = st.size * s
+      const fontOf = (r: TextRun) => {
+        const italic = st.italic || !!r.italic
+        const weight = r.bold ? (italic ? '500' : '600') : st.weight
+        return font(`${italic ? 'italic ' : ''}${weight}`, size, SERIF)
+      }
+      // Parole con il loro carattere; '\n' = a capo forzato.
+      const words: { text: string; font: string; br: boolean; space: boolean }[] = []
+      for (const r of b.runs) {
+        const f = fontOf(r)
+        const parts = r.text.split(/(\n|\s+)/)
+        for (const part of parts) {
+          if (!part) continue
+          if (part === '\n') { words.push({ text: '', font: f, br: true, space: false }); continue }
+          if (/^\s+$/.test(part)) { if (words.length) words[words.length - 1].space = true; continue }
+          words.push({ text: part, font: f, br: false, space: false })
+        }
+      }
+      let line: TextLineBlock['segs'] = []
+      let lw = 0
+      const flush = () => {
+        if (!line.length) return
+        out.push({ block: { kind: 'tline', segs: line, width: lw, size, align: b.align, from }, h: size * st.lh })
+        line = []; lw = 0
+      }
+      let pendingSpace = 0
+      for (let i = 0; i < words.length; i++) {
+        const wd = words[i]
+        if (wd.br) { flush(); pendingSpace = 0; continue }
+        ctx.font = wd.font
+        const w = ctx.measureText(wd.text).width
+        const sp = line.length ? pendingSpace : 0
+        if (line.length && lw + sp + w > m.cw) { flush() }
+        const lead = line.length ? pendingSpace : 0
+        line.push({ text: wd.text, font: wd.font, color: st.color, w: lead + w })
+        lw += lead + w
+        ctx.font = wd.font
+        pendingSpace = wd.space ? ctx.measureText(' ').width : 0
+      }
+      flush()
+      if (out.length) out[out.length - 1].h += st.after * s
+    }
+    // Niente spazi vuoti in testa o in coda.
+    while (out.length && !out[0].block) out.shift()
+    while (out.length && !out[out.length - 1].block) out.pop()
+    return out
+  }
+  const piecesHeight = (ps: Piece[]) => ps.reduce((a, p) => a + p.h, 0)
+
   // ── Impaginazione
   const pages: Page[] = []
   let cur: Placed[] = []
@@ -213,6 +299,29 @@ export function layoutMenu(ctx: Ctx, data: MenuData, vp: Viewport): Layout {
   const room = () => m.bottom - y
 
   cur.push({ block: { kind: 'head' }, y, h: HEAD_H }); y += HEAD_H
+
+  /** Mette i pezzi di testo a partire da y; se stanno nello spazio rimasto li
+   *  centra (un po' più in alto del centro), altrimenti continua sulle pagine
+   *  successive senza lasciare spazi vuoti in cima. */
+  const placeText = (ps: Piece[]) => {
+    if (!ps.length) return
+    const total = piecesHeight(ps)
+    if (total <= room()) y += (room() - total) * 0.42
+    for (const pc of ps) {
+      if (pc.h > room() && cur.length) { newPage(); if (!pc.block) continue }
+      if (pc.block) cur.push({ block: pc.block, y, h: pc.h })
+      y += pc.h
+    }
+  }
+
+  // Pagina informativa in testa: sotto il titolo del menu, poi i piatti da
+  // una pagina nuova.
+  const infoPieces = data.info?.blocks.length ? textPieces(data.info.blocks, 'info') : []
+  if (infoPieces.length && data.info!.position === 'first') {
+    y += 10 * s
+    placeText(infoPieces)
+    newPage()
+  }
 
   const categoryStarts: Layout['categoryStarts'] = []
   for (let ci = 0; ci < data.categories.length; ci++) {
@@ -264,10 +373,45 @@ export function layoutMenu(ctx: Ctx, data: MenuData, vp: Viewport): Layout {
       b = dishes[i]
     }
   }
+  // Pagina informativa in fondo.
+  if (infoPieces.length && data.info!.position === 'last') {
+    if (cur.length) newPage()
+    placeText(infoPieces)
+  }
+
+  // Legenda degli allergeni: ultima pagina, numeri e nomi in colonna centrata.
+  const legend = data.allergenLegend ?? []
+  if (legend.length) {
+    if (cur.length) newPage()
+    cur.push({ block: { kind: 'cat', name: data.labels.allergens, cont: false }, y, h: CAT_H }); y += CAT_H + GAP_CAT_AFTER * s
+    placeLegendNote()
+    ctx.font = font('400', LEGEND_SIZE * s, SERIF)
+    const nameW = Math.max(...legend.map(a => ctx.measureText(a.name).width))
+    const col = Math.min(m.cw, nameW + 34 * s)
+    for (const a of legend) {
+      const h = LEGEND_SIZE * LEGEND_LH * s
+      if (h > room()) {
+        newPage()
+        cur.push({ block: { kind: 'cat', name: data.labels.allergens, cont: true }, y, h: CAT_H }); y += CAT_H + GAP_CAT_AFTER * s
+      }
+      cur.push({ block: { kind: 'legend', n: a.n, name: a.name, col }, y, h }); y += h
+    }
+  }
+  function placeLegendNote() {
+    const note = textPieces([{ kind: 'h3', align: 'center', runs: [{ text: data.labels.allergenNote }] }], 'legend')
+    for (const pc of note) { if (pc.block) cur.push({ block: pc.block, y, h: pc.h }); y += pc.h }
+    y += 14 * s
+  }
+
   if (cur.length) newPage()
   for (const p of pages) {
     const d = p.items.find(it => it.block.kind === 'dish')
-    p.anchor = d ? (d.block as DishBlock).dish.id : null
+    // Àncora per ritrovare la pagina (resize, lingua): primo piatto, oppure
+    // il tipo di pagina di testo.
+    p.anchor = d ? (d.block as DishBlock).dish.id
+      : p.items.some(it => it.block.kind === 'legend') ? 'allergens'
+      : p.items.some(it => it.block.kind === 'tline') ? 'info'
+      : null
   }
 
   // ── Grana della carta: rumore fisso, generato una volta.
@@ -305,8 +449,36 @@ export function layoutMenu(ctx: Ctx, data: MenuData, vp: Viewport): Layout {
       const b = it.block
       if (b.kind === 'head') paintHead(c, it.y)
       else if (b.kind === 'cat') paintCat(c, b, it.y)
+      else if (b.kind === 'tline') paintTextLine(c, b, it.y)
+      else if (b.kind === 'legend') paintLegend(c, b, it.y)
       else paintDish(c, b, it.y)
     }
+  }
+
+  function paintTextLine(c: Ctx, b: TextLineBlock, top: number) {
+    let x = b.align === 'left' ? m.x0 : b.align === 'right' ? m.x0 + m.cw - b.width : m.x0 + (m.cw - b.width) / 2
+    const base = top + b.size * 0.95
+    c.textAlign = 'right'
+    for (const sg of b.segs) {
+      c.font = sg.font
+      c.fillStyle = sg.color
+      x += sg.w
+      c.fillText(sg.text, x, base)   // allineata a destra: lo spazio iniziale resta a sinistra
+    }
+    c.textAlign = 'left'
+  }
+
+  function paintLegend(c: Ctx, b: LegendBlock, top: number) {
+    const left = m.x0 + (m.cw - b.col) / 2
+    const base = top + LEGEND_SIZE * s * 0.95
+    c.font = font('600', 11 * s, SANS)
+    c.fillStyle = ACCENT
+    c.textAlign = 'right'
+    c.fillText(String(b.n), left + 20 * s, base - 1 * s)
+    c.font = font('400', LEGEND_SIZE * s, SERIF)
+    c.fillStyle = INK
+    c.textAlign = 'left'
+    c.fillText(b.name, left + 34 * s, base)
   }
 
   function paintHead(c: Ctx, top: number) {
