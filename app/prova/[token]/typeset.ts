@@ -1,4 +1,7 @@
-import { DEFAULT_STYLE, fontStack, styleTokens, type MenuStyle } from '@/lib/menuStyle'
+import {
+  DEFAULT_STYLE, cssFont, fontStack, formatPrice, mix, resolveColor, styleFaces,
+  type MenuStyle, type Ornament, type TextStyle,
+} from '@/lib/menuStyle'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Impaginazione del menu (prototipo "pageCurl").
@@ -54,20 +57,12 @@ export interface Viewport { w: number; h: number; insets: Insets }
 
 // Colori e caratteri arrivano dallo stile del ristorante (lib/menuStyle).
 // Queste costanti sono i valori base, per chi disegna fuori dalle pagine.
-export const PAPER = DEFAULT_STYLE.colors.paper
+export const PAPER = DEFAULT_STYLE.page.paper
+export const SERIF = fontStack(DEFAULT_STYLE.dish.name.font)
+export const SANS  = fontStack(DEFAULT_STYLE.category.text.font)
 
-export const SERIF = fontStack(DEFAULT_STYLE.fonts.display)
-export const SANS  = fontStack(DEFAULT_STYLE.fonts.details)
-
-// Facce da caricare prima di impaginare (le misure dipendono dal font reale).
-export function fontFaces(st: MenuStyle): string[] {
-  const d = fontStack(st.fonts.display), t = fontStack(st.fonts.text), x = fontStack(st.fonts.details)
-  return [
-    `600 20px ${d}`, `500 20px ${d}`, `400 20px ${d}`,
-    `400 20px ${t}`, `italic 400 20px ${t}`, `italic 500 20px ${t}`, `600 20px ${t}`,
-    `500 12px ${x}`, `600 12px ${x}`,
-  ]
-}
+/** Facce da caricare prima di impaginare (le misure dipendono dal font reale). */
+export const fontFaces = styleFaces
 
 interface Metrics {
   s:         number   // fattore di scala tipografico
@@ -79,35 +74,39 @@ interface Metrics {
   footY:     number   // baseline del numero di pagina
 }
 
-function metrics(vp: Viewport, textScale: number): Metrics {
+function metrics(vp: Viewport, st: MenuStyle): Metrics {
   const { w, h, insets } = vp
-  // Scala: telefono ≈ 1, tablet fino a 1.45; contenuto mai più largo di ~34em.
-  // Moltiplicata per la grandezza del testo scelta nella Personalizzazione.
-  const s     = Math.max(0.86, Math.min(1.45, Math.min(w, h * 0.62) / 390)) * textScale
-  const side  = Math.max(insets.left, insets.right) + 30 * s
-  const cw    = Math.min(w - side * 2, 560 * s)
+  // Scala: telefono ≈ 1, tablet fino a 1.45; moltiplicata per la scala dei
+  // testi scelta nella Personalizzazione. Margini e larghezza massima del
+  // testo dallo stile.
+  const s     = Math.max(0.86, Math.min(1.45, Math.min(w, h * 0.62) / 390)) * st.page.scale
+  const side  = Math.max(insets.left, insets.right) + st.page.margin * s
+  const cw    = Math.max(160, Math.min(w - side * 2, st.page.maxWidth * s))
   const x0    = (w - cw) / 2
   const headY = insets.top + 30 * s
   const footY = h - insets.bottom - 24 * s
-  return { s, x0, cw, top: headY + 30 * s, bottom: footY - 30 * s, headY, footY }
+  // Senza testatina il testo può salire.
+  const top   = st.runningHead.show ? headY + 30 * s : insets.top + 30 * s
+  return { s, x0, cw, top, bottom: footY - 30 * s, headY, footY }
 }
 
 // ── Testo ────────────────────────────────────────────────────────────────────
 
 type Ctx = CanvasRenderingContext2D
 
-function font(style: string, size: number, family: string) {
-  return `${style} ${size.toFixed(2)}px ${family}`
-}
+/** Stile di testo pronto per il canvas (px, colore effettivo, spaziatura px). */
+interface RT { font: string; size: number; color: string; upper: boolean; track: number }
 
 /** Larghezza di un testo con spaziatura lettere manuale (canvas letterSpacing
  *  non è affidabile su tutti i Safari). */
 function spacedWidth(ctx: Ctx, text: string, spacing: number): number {
   if (!text) return 0
+  if (!spacing) return ctx.measureText(text).width
   return ctx.measureText(text).width + spacing * (Array.from(text).length - 1)
 }
 
 function drawSpaced(ctx: Ctx, text: string, x: number, y: number, spacing: number, align: 'left' | 'center' | 'right') {
+  if (!spacing) { ctx.textAlign = align; ctx.fillText(text, x, y); ctx.textAlign = 'left'; return }
   const total = spacedWidth(ctx, text, spacing)
   let cx = align === 'left' ? x : align === 'center' ? x - total / 2 : x - total
   ctx.textAlign = 'left'
@@ -118,7 +117,7 @@ function drawSpaced(ctx: Ctx, text: string, x: number, y: number, spacing: numbe
 }
 
 /** A capo per parole; le parole più larghe della riga vengono spezzate. */
-function wrap(ctx: Ctx, text: string, maxW: number): string[] {
+function wrap(text: string, maxW: number, measure: (t: string) => number): string[] {
   const out: string[] = []
   for (const para of text.split(/\r?\n/)) {
     const words = para.trim().split(/\s+/).filter(Boolean)
@@ -126,13 +125,13 @@ function wrap(ctx: Ctx, text: string, maxW: number): string[] {
     let line = ''
     for (const word of words) {
       const cand = line ? `${line} ${word}` : word
-      if (ctx.measureText(cand).width <= maxW) { line = cand; continue }
+      if (measure(cand) <= maxW) { line = cand; continue }
       if (line) out.push(line)
-      if (ctx.measureText(word).width <= maxW) { line = word; continue }
+      if (measure(word) <= maxW) { line = word; continue }
       // Parola più larga della riga: si spezza carattere per carattere.
       let chunk = ''
       for (const ch of Array.from(word)) {
-        if (ctx.measureText(chunk + ch).width > maxW && chunk) { out.push(chunk); chunk = ch }
+        if (measure(chunk + ch) > maxW && chunk) { out.push(chunk); chunk = ch }
         else chunk += ch
       }
       line = chunk
@@ -142,11 +141,6 @@ function wrap(ctx: Ctx, text: string, maxW: number): string[] {
   return out
 }
 
-const priceFmt = new Intl.NumberFormat('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-function formatPrice(p: number | null): string {
-  return p === null || p === undefined || isNaN(p) ? '' : `${priceFmt.format(p)} €`
-}
-
 // ── Blocchi ──────────────────────────────────────────────────────────────────
 
 interface DishBlock {
@@ -154,6 +148,8 @@ interface DishBlock {
   dish:      Dish
   nameLines: string[]
   price:     string
+  /** Posizione effettiva del prezzo (in riga diventa "sotto" se non ci sta). */
+  priceAt:   'right' | 'below' | 'inline'
   descLines: string[]
   allergens: string
   /** Se il piatto è stato spezzato: righe di descrizione già usate. */
@@ -162,7 +158,7 @@ interface DishBlock {
   showHead:  boolean
 }
 interface CatBlock { kind: 'cat'; name: string; cont: boolean }
-interface HeadBlock { kind: 'head' }
+interface HeadBlock { kind: 'head'; titleSize: number }
 /** Una riga di testo ricco già spezzata (pagine informative). */
 interface TextLineBlock {
   kind:  'tline'
@@ -197,83 +193,113 @@ export interface Layout {
 }
 
 /** Elementi del menu che si possono toccare nell'anteprima per modificarli. */
-export type PickTarget = 'paper' | 'title' | 'category' | 'name' | 'price' | 'description' | 'allergens' | 'text'
+export type PickTarget =
+  | 'paper' | 'restaurant' | 'title' | 'runningHead' | 'category' | 'name' | 'price'
+  | 'description' | 'allergens' | 'pageNumber' | 'text'
 
-// Misure verticali (in unità s).
-const NAME_SIZE = 19.5, NAME_LH = 1.18
-const DESC_SIZE = 16.5, DESC_LH = 1.28
-const ALG_SIZE  = 9.5
-const CAT_SIZE  = 11
-const GAP_DISH  = 20, GAP_CAT_BEFORE = 30, GAP_CAT_AFTER = 18
-const LEGEND_SIZE = 17, LEGEND_LH = 1.62
-
-// Stile dei blocchi di testo delle pagine informative (unità s). La
-// formattazione del vecchio PDF (caratteri, dimensioni, righe vuote) non vale
-// qui: contano solo struttura, grassetto, corsivo e allineamento.
-const TEXT_STYLE: Record<Exclude<TextBlock['kind'], 'gap'>, { size: number; lh: number; weight: string; italic: boolean; soft: boolean; display: boolean; after: number }> = {
-  h1: { size: 25,   lh: 1.18, weight: '500', italic: false, soft: false, display: true,  after: 10 },
-  h2: { size: 19.5, lh: 1.25, weight: '500', italic: false, soft: false, display: true,  after: 8 },
-  h3: { size: 16.5, lh: 1.32, weight: '400', italic: true,  soft: true,  display: false, after: 6 },
-  p:  { size: 16.5, lh: 1.36, weight: '400', italic: false, soft: false, display: false, after: 6 },
-}
+const NAME_LH = 1.18
 const TEXT_GAP = 14
 
 export function layoutMenu(ctx: Ctx, data: MenuData, vp: Viewport, style: MenuStyle = DEFAULT_STYLE): Layout {
-  const L = style.layout
-  const T = styleTokens(style)
-  const DISPLAY = T.display, TEXT = T.text, DETAILS = T.details
-  const DARK_PAPER = luminance(T.paper) < 0.45
-  const DESC_FONT = L.italicDescriptions ? 'italic 400' : '400'
-  // Centrato: il prezzo va sotto il nome (a destra non avrebbe un allineamento).
-  const PRICE_MODE = L.align === 'center' ? 'below' : L.price
-  const PRICE_SIZE = NAME_SIZE * 0.84
-  const m = metrics(vp, L.textScale)
+  const st = style
+  const D = st.dish
+  const DARK_PAPER = luminance(st.page.paper) < 0.45
+  const ACCENT_SOFT = mix(st.page.accent, st.page.paper, 0.45)
+  const m = metrics(vp, st)
   const s = m.s
+  const rt = (t: TextStyle, k = 1): RT => ({
+    font: cssFont(t, s * k), size: t.size * s * k, color: resolveColor(t.color, st), upper: t.upper, track: t.tracking * t.size * s * k,
+  })
+  const tx = (r: RT, text: string) => (r.upper ? text.toLocaleUpperCase('it-IT') : text)
+  const measure = (c: Ctx, r: RT, text: string) => { c.font = r.font; return spacedWidth(c, text, r.track) }
+  const draw = (c: Ctx, r: RT, text: string, x: number, y: number, align: 'left' | 'center' | 'right') => {
+    c.font = r.font; c.fillStyle = r.color; drawSpaced(c, text, x, y, r.track, align)
+  }
+  /** Riduce un testo su una riga finché non sta nella larghezza (fino al 55%). */
+  const fit = (t: TextStyle, text: string, maxW: number): RT => {
+    let k = 1, r = rt(t)
+    while (measure(ctx, r, tx(r, text)) > maxW && k > 0.55) { k -= 0.04; r = rt(t, k) }
+    return r
+  }
+
+  const NAME = rt(D.name), DESC = rt(D.description), PRICE = rt(D.price), ALG = rt(st.allergens.text)
+  const CAT = rt(st.category.text), RUN = rt(st.runningHead.text), PNUM = rt(st.pageNumber.text)
+  const REST = rt(st.head.restaurant)
+  const CENTER = D.align === 'center'
+  // Centrato: il prezzo a destra non avrebbe un allineamento, va sotto.
+  const PRICE_POS = CENTER && D.pricePosition === 'right' ? 'below' : D.pricePosition
+  const DESC_LH = D.descLineHeight
+  // Spazio tra i piatti: con un separatore serve almeno lo spazio per disegnarlo.
+  const GAP = Math.max(D.spacing, D.divider === 'none' ? 0 : 16) * s
+  const CAT_BEFORE = st.category.before * s, CAT_AFTER = st.category.after * s
 
   // ── Misura dei piatti
-  ctx.font = font('600', NAME_SIZE * s, DISPLAY)
   const measureDish = (dish: Dish): DishBlock => {
-    const price = formatPrice(dish.price)
-    ctx.font = font('600', NAME_SIZE * s, DISPLAY)
+    const price = formatPrice(dish.price, D.priceFormat)
+    const priceW = price ? measure(ctx, PRICE, price) : 0
     // Prezzo a destra: il nome e la descrizione gli lasciano spazio.
-    const priceW = price && PRICE_MODE !== 'below' ? ctx.measureText(price).width + 22 * s : 0
-    const nameLines = wrap(ctx, dish.name, m.cw - priceW)
-    ctx.font = font(DESC_FONT, DESC_SIZE * s, TEXT)
-    const descW = PRICE_MODE === 'below' ? m.cw : m.cw - Math.max(priceW, 18 * s)
-    const descLines = dish.description ? wrap(ctx, dish.description, descW) : []
-    const allergens = L.showAllergens && dish.allergens?.length ? `${data.labels.allergens.toUpperCase()}  ${dish.allergens.map(a => a.n).join(' · ')}` : ''
-    return { kind: 'dish', dish, nameLines, price, descLines, allergens, descFrom: 0, descTo: descLines.length, showHead: true }
+    const reserve = price && PRICE_POS === 'right' ? priceW + 22 * s : 0
+    const nameLines = wrap(tx(NAME, dish.name), m.cw - reserve, t => measure(ctx, NAME, t))
+    let priceAt: DishBlock['priceAt'] = PRICE_POS
+    if (price && PRICE_POS === 'inline') {
+      const last = nameLines[nameLines.length - 1] ?? ''
+      if (measure(ctx, NAME, last) + 12 * s + priceW > m.cw) priceAt = 'below'
+    }
+    const descW = Math.min(PRICE_POS === 'right' ? m.cw - Math.max(reserve, 18 * s) : m.cw, m.cw * D.descWidth)
+    const descLines = dish.description ? wrap(tx(DESC, dish.description), descW, t => measure(ctx, DESC, t)) : []
+    const nums = dish.allergens?.map(a => a.n).join(' · ') ?? ''
+    const allergens = st.allergens.show && nums
+      ? tx(ALG, st.allergens.label ? `${data.labels.allergens}  ${nums}` : nums)
+      : ''
+    return { kind: 'dish', dish, nameLines, price, priceAt, descLines, allergens, descFrom: 0, descTo: descLines.length, showHead: true }
   }
+  const nameH = (b: DishBlock) => b.nameLines.length * NAME.size * NAME_LH
+  const priceBelowH = () => 2 * s + PRICE.size * 1.25
   const dishHeight = (b: DishBlock) => {
     let hh = 0
-    if (b.showHead) hh += b.nameLines.length * NAME_SIZE * NAME_LH * s
-    if (b.showHead && b.price && PRICE_MODE === 'below') hh += 2 * s + PRICE_SIZE * 1.25 * s
+    if (b.showHead) hh += nameH(b)
+    if (b.showHead && b.price && b.priceAt === 'below') hh += priceBelowH()
     const n = b.descTo - b.descFrom
-    if (n) hh += 4 * s + n * DESC_SIZE * DESC_LH * s
-    if (b.allergens && b.descTo === b.descLines.length) hh += 8 * s + ALG_SIZE * 1.4 * s
+    if (n) hh += 4 * s + n * DESC.size * DESC_LH
+    if (b.allergens && b.descTo === b.descLines.length) hh += 8 * s + ALG.size * 1.4
     return hh
   }
-  const HEAD_H = 118 * s
-  const CAT_H  = CAT_SIZE * 1.4 * s
+
+  // ── Testata della prima pagina: nome del ristorante, titolo, ornamento.
+  const H = st.head
+  const TITLE_FIT = fit(H.title, data.menuName, m.cw)
+  const restBase = H.showRestaurant ? REST.size + 3.5 * s : 0
+  const titleBase = restBase + (H.showRestaurant ? TITLE_FIT.size * 1.21 : TITLE_FIT.size * 0.95)
+  const ornY = titleBase + 24 * s
+  const HEAD_H = (H.ornament === 'none' ? titleBase + 30 * s : ornY + 34 * s) + H.space * s
+
+  // ── Titolo di categoria
+  const CS = st.category.style
+  const CAT_PAD = CS === 'frame' ? 8 * s : 0
+  const CAT_H = CAT.size * 1.4 + CAT_PAD * 2 + (CS === 'underline' ? 7 * s : 0)
+  const CONT = rt({ ...D.description, size: 12, italic: true, color: st.category.text.color, upper: false, tracking: 0 })
 
   // ── Testo ricco → righe (a capo per parole, con caratteri diversi nella riga)
+  const TP = st.textPages
+  const textStyleOf = (k: Exclude<TextBlock['kind'], 'gap'>): { t: TextStyle; lh: number; after: number } =>
+    k === 'h1' ? { t: TP.title, lh: 1.18, after: 10 }
+    : k === 'h2' ? { t: { ...TP.title, size: TP.title.size * 0.78 }, lh: 1.25, after: 8 }
+    : k === 'h3' ? { t: { ...TP.body, italic: true, color: 'soft' }, lh: 1.32, after: 6 }
+    : { t: TP.body, lh: 1.36, after: 6 }
   type Piece = { block: Block | null; h: number }   // null = spazio vuoto
   const textPieces = (blocks: TextBlock[], from: TextLineBlock['from']): Piece[] => {
     const out: Piece[] = []
     for (const b of blocks) {
       if (b.kind === 'gap') { out.push({ block: null, h: TEXT_GAP * s }); continue }
-      const st = TEXT_STYLE[b.kind]
-      const size = st.size * s
-      const fontOf = (r: TextRun) => {
-        const italic = st.italic || !!r.italic
-        const weight = r.bold ? (italic ? '500' : '600') : st.weight
-        return font(`${italic ? 'italic ' : ''}${weight}`, size, st.display ? DISPLAY : TEXT)
-      }
+      const ts = textStyleOf(b.kind)
+      const base = rt(ts.t)
+      const size = base.size
+      const fontOf = (r: TextRun) => cssFont({ ...ts.t, italic: ts.t.italic || !!r.italic, weight: r.bold ? 700 : ts.t.weight }, s)
       // Parole con il loro carattere; '\n' = a capo forzato.
       const words: { text: string; font: string; br: boolean; space: boolean }[] = []
       for (const r of b.runs) {
         const f = fontOf(r)
-        const parts = r.text.split(/(\n|\s+)/)
+        const parts = tx(base, r.text).split(/(\n|\s+)/)
         for (const part of parts) {
           if (!part) continue
           if (part === '\n') { words.push({ text: '', font: f, br: true, space: false }); continue }
@@ -285,7 +311,7 @@ export function layoutMenu(ctx: Ctx, data: MenuData, vp: Viewport, style: MenuSt
       let lw = 0
       const flush = () => {
         if (!line.length) return
-        out.push({ block: { kind: 'tline', segs: line, width: lw, size, align: b.align, from }, h: size * st.lh })
+        out.push({ block: { kind: 'tline', segs: line, width: lw, size, align: b.align, from }, h: size * ts.lh })
         line = []; lw = 0
       }
       let pendingSpace = 0
@@ -297,13 +323,13 @@ export function layoutMenu(ctx: Ctx, data: MenuData, vp: Viewport, style: MenuSt
         const sp = line.length ? pendingSpace : 0
         if (line.length && lw + sp + w > m.cw) { flush() }
         const lead = line.length ? pendingSpace : 0
-        line.push({ text: wd.text, font: wd.font, color: st.soft ? T.inkSoft : T.ink, w: lead + w })
+        line.push({ text: wd.text, font: wd.font, color: base.color, w: lead + w })
         lw += lead + w
         ctx.font = wd.font
         pendingSpace = wd.space ? ctx.measureText(' ').width : 0
       }
       flush()
-      if (out.length) out[out.length - 1].h += st.after * s
+      if (out.length) out[out.length - 1].h += ts.after * s
     }
     // Niente spazi vuoti in testa o in coda.
     while (out.length && !out[0].block) out.shift()
@@ -318,8 +344,11 @@ export function layoutMenu(ctx: Ctx, data: MenuData, vp: Viewport, style: MenuSt
   let y = m.top
   const newPage = () => { pages.push({ index: pages.length, items: cur, anchor: null }); cur = []; y = m.top }
   const room = () => m.bottom - y
+  const contHead = (name: string) => {
+    cur.push({ block: { kind: 'cat', name, cont: st.category.continued }, y, h: CAT_H }); y += CAT_H + CAT_AFTER
+  }
 
-  cur.push({ block: { kind: 'head' }, y, h: HEAD_H }); y += HEAD_H
+  cur.push({ block: { kind: 'head', titleSize: TITLE_FIT.size }, y, h: HEAD_H }); y += HEAD_H
 
   /** Mette i pezzi di testo a partire da y; se stanno nello spazio rimasto li
    *  centra (un po' più in alto del centro), altrimenti continua sulle pagine
@@ -351,32 +380,31 @@ export function layoutMenu(ctx: Ctx, data: MenuData, vp: Viewport, style: MenuSt
     const dishes = cat.dishes.map(measureDish)
     // Titolo + primo piatto devono stare insieme.
     const firstH = dishes.length ? dishHeight(dishes[0]) : 0
-    const before = cur.length && cur[cur.length - 1].block.kind !== 'head' ? GAP_CAT_BEFORE * s : 0
-    if (before + CAT_H + GAP_CAT_AFTER * s + Math.min(firstH, m.bottom - m.top - CAT_H - GAP_CAT_AFTER * s) > room()) newPage()
-    y += cur.length ? (cur[cur.length - 1].block.kind === 'head' ? 0 : GAP_CAT_BEFORE * s) : 0
+    const afterHead = !cur.length || cur[cur.length - 1].block.kind === 'head'
+    const before = afterHead ? 0 : CAT_BEFORE
+    if (before + CAT_H + CAT_AFTER + Math.min(firstH, m.bottom - m.top - CAT_H - CAT_AFTER) > room()) newPage()
+    y += cur.length && cur[cur.length - 1].block.kind !== 'head' ? CAT_BEFORE : 0
     categoryStarts.push({ index: ci, name: cat.name, page: pages.length })
-    cur.push({ block: { kind: 'cat', name: cat.name, cont: false }, y, h: CAT_H }); y += CAT_H + GAP_CAT_AFTER * s
+    cur.push({ block: { kind: 'cat', name: cat.name, cont: false }, y, h: CAT_H }); y += CAT_H + CAT_AFTER
 
     for (let i = 0; i < dishes.length; i++) {
-      let b = dishes[i]
+      const b = dishes[i]
       let h = dishHeight(b)
-      const gap = cur.length && cur[cur.length - 1].block.kind === 'dish' ? L.dishSpacing * s : 0
+      const gap = cur.length && cur[cur.length - 1].block.kind === 'dish' ? GAP : 0
       if (gap + h <= room()) { y += gap; cur.push({ block: b, y, h }); y += h; continue }
 
-      const full = m.bottom - m.top - CAT_H - GAP_CAT_AFTER * s
+      const full = m.bottom - m.top - CAT_H - CAT_AFTER
       if (h <= full) {
         newPage()
-        cur.push({ block: { kind: 'cat', name: cat.name, cont: true }, y, h: CAT_H }); y += CAT_H + GAP_CAT_AFTER * s
+        contHead(cat.name)
         cur.push({ block: b, y, h }); y += h
         continue
       }
       // Piatto più alto di una pagina intera: si spezza tra le righe di descrizione.
       let from = 0
       while (from < b.descLines.length || from === 0) {
-        if (room() < NAME_SIZE * 2 * s) {
-          newPage()
-          cur.push({ block: { kind: 'cat', name: cat.name, cont: true }, y, h: CAT_H }); y += CAT_H + GAP_CAT_AFTER * s
-        } else y += gap
+        if (room() < NAME.size * 2) { newPage(); contHead(cat.name) }
+        else y += gap
         const part: DishBlock = { ...b, descFrom: from, showHead: from === 0, descTo: from }
         while (part.descTo < b.descLines.length) {
           const next = { ...part, descTo: part.descTo + 1 }
@@ -389,9 +417,8 @@ export function layoutMenu(ctx: Ctx, data: MenuData, vp: Viewport, style: MenuSt
         from = part.descTo
         if (from >= b.descLines.length) break
         newPage()
-        cur.push({ block: { kind: 'cat', name: cat.name, cont: true }, y, h: CAT_H }); y += CAT_H + GAP_CAT_AFTER * s
+        contHead(cat.name)
       }
-      b = dishes[i]
     }
   }
   // Pagina informativa in fondo.
@@ -402,23 +429,23 @@ export function layoutMenu(ctx: Ctx, data: MenuData, vp: Viewport, style: MenuSt
 
   // Legenda degli allergeni: ultima pagina, numeri e nomi in colonna centrata.
   const legend = data.allergenLegend ?? []
+  const LEG_NAME = rt({ ...TP.body, size: TP.body.size * 1.03 })
+  const LEG_NUM = rt({ ...st.allergens.text, size: st.allergens.text.size * 1.16, weight: 600 })
+  const LEG_LH = 1.62
   if (legend.length) {
     if (cur.length) newPage()
-    cur.push({ block: { kind: 'cat', name: data.labels.allergens, cont: false }, y, h: CAT_H }); y += CAT_H + GAP_CAT_AFTER * s
+    cur.push({ block: { kind: 'cat', name: data.labels.allergens, cont: false }, y, h: CAT_H }); y += CAT_H + CAT_AFTER
     placeLegendNote()
-    ctx.font = font('400', LEGEND_SIZE * s, TEXT)
-    const nameW = Math.max(...legend.map(a => ctx.measureText(a.name).width))
+    const nameW = Math.max(...legend.map(a => measure(ctx, LEG_NAME, tx(LEG_NAME, a.name))))
     const col = Math.min(m.cw, nameW + 34 * s)
     for (const a of legend) {
-      const h = LEGEND_SIZE * LEGEND_LH * s
-      if (h > room()) {
-        newPage()
-        cur.push({ block: { kind: 'cat', name: data.labels.allergens, cont: true }, y, h: CAT_H }); y += CAT_H + GAP_CAT_AFTER * s
-      }
+      const h = LEG_NAME.size * LEG_LH
+      if (h > room()) { newPage(); contHead(data.labels.allergens) }
       cur.push({ block: { kind: 'legend', n: a.n, name: a.name, col }, y, h }); y += h
     }
   }
   function placeLegendNote() {
+    if (!data.labels.allergenNote) return
     const note = textPieces([{ kind: 'h3', align: 'center', runs: [{ text: data.labels.allergenNote }] }], 'legend')
     for (const pc of note) { if (pc.block) cur.push({ block: pc.block, y, h: pc.h }); y += pc.h }
     y += 14 * s
@@ -435,51 +462,65 @@ export function layoutMenu(ctx: Ctx, data: MenuData, vp: Viewport, style: MenuSt
       : null
   }
 
-  // ── Grana della carta: rumore fisso, generato una volta.
-  const grain = makeGrain()
+  // ── Superficie della carta: rumore fisso, generato una volta.
+  const texture = st.page.texture === 'none' ? null : makeTexture(st.page.texture)
+  const RUN_TEXT = tx(RUN, st.runningHead.content === 'restaurant' ? data.restaurantName
+    : st.runningHead.content === 'menu' ? data.menuName
+    : `${data.restaurantName} · ${data.menuName}`)
+  const pageLabel = (i: number) => {
+    const n = String(i + 1)
+    return st.pageNumber.format === 'plain' ? n : st.pageNumber.format === 'dashes' ? `— ${n} —` : `${n}  /  ${pages.length}`
+  }
 
   /** Disegna la pagina `index`; fuori dall'intervallo disegna carta vuota
    *  (es. la destra dell'ultima doppia pagina quando le pagine sono dispari). */
   const paint = (c: Ctx, index: number) => {
     const page = pages[index] as Page | undefined
     const { w, h } = vp
-    // Carta: tinta calda, luce appena più chiara al centro, grana finissima.
-    c.fillStyle = T.paper
+    // Carta: tinta scelta, luce appena più chiara al centro, superficie.
+    c.fillStyle = st.page.paper
     c.fillRect(0, 0, w, h)
-    // Su carta scura la luce bianca la sbiadirebbe: luce appena accennata e
-    // bordi un filo più scuri.
-    const g = c.createRadialGradient(w * 0.5, h * 0.42, 0, w * 0.5, h * 0.42, Math.hypot(w, h) * 0.62)
-    if (DARK_PAPER) {
-      g.addColorStop(0, 'rgba(255,255,255,0.06)')
-      g.addColorStop(1, 'rgba(0,0,0,0.22)')
-    } else {
-      g.addColorStop(0, 'rgba(255,255,255,0.55)')
-      g.addColorStop(1, 'rgba(232,224,208,0.35)')
+    const L = st.page.light
+    if (L > 0) {
+      // Su carta scura la luce bianca la sbiadirebbe: luce appena accennata e
+      // bordi un filo più scuri.
+      const g = c.createRadialGradient(w * 0.5, h * 0.42, 0, w * 0.5, h * 0.42, Math.hypot(w, h) * 0.62)
+      if (DARK_PAPER) {
+        g.addColorStop(0, `rgba(255,255,255,${0.06 * L})`)
+        g.addColorStop(1, `rgba(0,0,0,${0.22 * L})`)
+      } else {
+        g.addColorStop(0, `rgba(255,255,255,${0.55 * L})`)
+        g.addColorStop(1, `rgba(150,130,100,${0.12 * L})`)
+      }
+      c.fillStyle = g
+      c.fillRect(0, 0, w, h)
     }
-    c.fillStyle = g
-    c.fillRect(0, 0, w, h)
-    if (grain) {
-      const pat = c.createPattern(grain, 'repeat')
-      if (pat) { c.globalAlpha = 0.05; c.fillStyle = pat; c.fillRect(0, 0, w, h); c.globalAlpha = 1 }
+    if (texture && st.page.textureStrength > 0) {
+      const pat = c.createPattern(texture, 'repeat')
+      if (pat) { c.globalAlpha = 0.125 * st.page.textureStrength; c.fillStyle = pat; c.fillRect(0, 0, w, h); c.globalAlpha = 1 }
     }
     c.textBaseline = 'alphabetic'
     if (!page) return
 
     // Testatina (dalla seconda pagina) e numero di pagina.
-    c.fillStyle = T.accent
-    c.font = font('500', 9.5 * s, DETAILS)
-    if (index > 0) {
-      drawSpaced(c, `${data.restaurantName} · ${data.menuName}`.toUpperCase(), w / 2, m.headY, 2.4 * s, 'center')
+    if (index > 0 && st.runningHead.show) {
+      const r = measure(c, RUN, RUN_TEXT) > m.cw ? fit(st.runningHead.text, RUN_TEXT, m.cw) : RUN
+      draw(c, r, RUN_TEXT, w / 2, m.headY, 'center')
     }
-    if (L.pageNumbers) drawSpaced(c, `${index + 1}  /  ${pages.length}`, w / 2, m.footY, 1.6 * s, 'center')
+    if (st.pageNumber.show) draw(c, PNUM, tx(PNUM, pageLabel(index)), w / 2, m.footY, 'center')
 
+    let prev: Placed | null = null
     for (const it of page.items) {
       const b = it.block
-      if (b.kind === 'head') paintHead(c, it.y)
+      if (b.kind === 'head') paintHead(c, b, it.y)
       else if (b.kind === 'cat') paintCat(c, b, it.y)
       else if (b.kind === 'tline') paintTextLine(c, b, it.y)
       else if (b.kind === 'legend') paintLegend(c, b, it.y)
-      else paintDish(c, b, it.y)
+      else {
+        if (prev?.block.kind === 'dish' && b.showHead) paintDivider(c, (prev.y + prev.h + it.y) / 2)
+        paintDish(c, b, it.y)
+      }
+      prev = it
     }
   }
 
@@ -498,137 +539,170 @@ export function layoutMenu(ctx: Ctx, data: MenuData, vp: Viewport, style: MenuSt
 
   function paintLegend(c: Ctx, b: LegendBlock, top: number) {
     const left = m.x0 + (m.cw - b.col) / 2
-    const base = top + LEGEND_SIZE * s * 0.95
-    c.font = font('600', 11 * s, DETAILS)
-    c.fillStyle = T.accent
-    c.textAlign = 'right'
-    c.fillText(String(b.n), left + 20 * s, base - 1 * s)
-    c.font = font('400', LEGEND_SIZE * s, TEXT)
-    c.fillStyle = T.ink
-    c.textAlign = 'left'
-    c.fillText(b.name, left + 34 * s, base)
+    const base = top + LEG_NAME.size * 0.95
+    draw(c, LEG_NUM, String(b.n), left + 20 * s, base - 1 * s, 'right')
+    draw(c, LEG_NAME, tx(LEG_NAME, b.name), left + 34 * s, base, 'left')
   }
 
-  function paintHead(c: Ctx, top: number) {
+  function paintHead(c: Ctx, b: HeadBlock, top: number) {
     const cx = vp.w / 2
-    c.fillStyle = T.accent
-    c.font = font('500', 10.5 * s, DETAILS)
-    drawSpaced(c, data.restaurantName.toUpperCase(), cx, top + 14 * s, 3.4 * s, 'center')
-    c.fillStyle = T.ink
-    c.font = font('500', 38 * s, DISPLAY)
-    // Nome del menu: se troppo largo, si riduce fino a starci.
-    let size = 38 * s
-    while (c.measureText(data.menuName).width > m.cw && size > 22 * s) { size -= 1; c.font = font('500', size, DISPLAY) }
-    c.textAlign = 'center'
-    c.fillText(data.menuName, cx, top + 60 * s)
-    ornament(c, cx, top + 84 * s)
+    if (H.showRestaurant) {
+      const name = tx(REST, data.restaurantName)
+      const r = measure(c, REST, name) > m.cw ? fit(H.restaurant, data.restaurantName, m.cw) : REST
+      draw(c, r, name, cx, top + restBase, 'center')
+    }
+    draw(c, TITLE_FIT, tx(TITLE_FIT, data.menuName), cx, top + titleBase, 'center')
+    if (H.ornament !== 'none') ornament(c, H.ornament, cx, top + ornY)
   }
 
-  function ornament(c: Ctx, cx: number, cy: number) {
-    c.strokeStyle = T.accentSoft
-    c.lineWidth = Math.max(0.6, 0.75 * s)
-    c.beginPath()
-    c.moveTo(cx - 46 * s, cy); c.lineTo(cx - 9 * s, cy)
-    c.moveTo(cx + 9 * s, cy);  c.lineTo(cx + 46 * s, cy)
-    c.stroke()
-    c.fillStyle = T.accent
-    const r = 3.2 * s
+  function diamond(c: Ctx, cx: number, cy: number, r: number) {
     c.beginPath()
     c.moveTo(cx, cy - r); c.lineTo(cx + r, cy); c.lineTo(cx, cy + r); c.lineTo(cx - r, cy); c.closePath()
     c.fill()
   }
 
-  function paintCat(c: Ctx, b: CatBlock, top: number) {
-    const cx = m.x0 + m.cw / 2
-    const base = top + CAT_SIZE * s
-    c.font = font('600', CAT_SIZE * s, DETAILS)
-    c.fillStyle = T.accent
-    const label = b.name.toUpperCase()
-    const spacing = 2.8 * s
-    const tw = spacedWidth(c, label, spacing)
-    drawSpaced(c, label, cx, base, spacing, 'center')
-    if (L.category === 'rules') {
-      // Filetti ai lati del titolo.
-      c.strokeStyle = T.accentSoft
-      c.lineWidth = Math.max(0.5, 0.7 * s)
-      const ly = base - CAT_SIZE * s * 0.36
-      const pad = 12 * s
+  function ornament(c: Ctx, kind: Ornament, cx: number, cy: number) {
+    c.strokeStyle = ACCENT_SOFT
+    c.fillStyle = st.page.accent
+    c.lineWidth = Math.max(0.6, 0.75 * s)
+    if (kind === 'line') {
+      c.beginPath(); c.moveTo(cx - 40 * s, cy); c.lineTo(cx + 40 * s, cy); c.stroke()
+    } else if (kind === 'dots') {
+      for (const dx of [-12, 0, 12]) { c.beginPath(); c.arc(cx + dx * s, cy, 1.6 * s, 0, Math.PI * 2); c.fill() }
+    } else if (kind === 'star') {
       c.beginPath()
-      c.moveTo(m.x0, ly); c.lineTo(cx - tw / 2 - pad, ly)
-      c.moveTo(cx + tw / 2 + pad, ly); c.lineTo(m.x0 + m.cw, ly)
+      c.moveTo(cx - 46 * s, cy); c.lineTo(cx - 12 * s, cy)
+      c.moveTo(cx + 12 * s, cy); c.lineTo(cx + 46 * s, cy)
       c.stroke()
-    } else if (L.category === 'ornament' && !b.cont) {
-      // Piccolo rombo sotto il titolo.
-      const r = 2.6 * s, oy = base + 8 * s
-      c.fillStyle = T.accent
+      const R = 5 * s, r = 2 * s
       c.beginPath()
-      c.moveTo(cx, oy - r); c.lineTo(cx + r, oy); c.lineTo(cx, oy + r); c.lineTo(cx - r, oy); c.closePath()
-      c.fill()
+      for (let i = 0; i < 10; i++) {
+        const a = -Math.PI / 2 + (i * Math.PI) / 5, rr = i % 2 ? r : R
+        c.lineTo(cx + Math.cos(a) * rr, cy + Math.sin(a) * rr)
+      }
+      c.closePath(); c.fill()
+    } else {
+      c.beginPath()
+      c.moveTo(cx - 46 * s, cy); c.lineTo(cx - 9 * s, cy)
+      c.moveTo(cx + 9 * s, cy);  c.lineTo(cx + 46 * s, cy)
+      c.stroke()
+      diamond(c, cx, cy, 3.2 * s)
     }
-    if (b.cont) {
-      c.font = font('italic 400', 12 * s, TEXT)
-      c.fillStyle = T.accent
-      c.textAlign = 'center'
-      c.fillText(data.labels.cont, cx, base + 14 * s)
+  }
+
+  function paintCat(c: Ctx, b: CatBlock, top: number) {
+    const left = st.category.align === 'left'
+    const cx = m.x0 + m.cw / 2
+    const label = tx(CAT, b.name)
+    const r = measure(c, CAT, label) > m.cw - 24 * s ? fit(st.category.text, b.name, m.cw - 24 * s) : CAT
+    const base = top + CAT_PAD + r.size
+    const tw = measure(c, r, label)
+    const tx0 = left ? m.x0 + CAT_PAD * 1.5 : cx - tw / 2
+    draw(c, r, label, left ? tx0 : cx, base, left ? 'left' : 'center')
+    c.strokeStyle = ACCENT_SOFT
+    c.lineWidth = Math.max(0.5, 0.7 * s)
+    const ly = base - r.size * 0.36
+    const pad = 12 * s
+    if (CS === 'rules') {
+      // Filetti ai lati del titolo (a destra soltanto, se allineato a sinistra).
+      c.beginPath()
+      if (!left) { c.moveTo(m.x0, ly); c.lineTo(tx0 - pad, ly) }
+      c.moveTo(tx0 + tw + pad, ly); c.lineTo(m.x0 + m.cw, ly)
+      c.stroke()
+    } else if (CS === 'underline') {
+      c.beginPath(); c.moveTo(tx0, base + 7 * s); c.lineTo(tx0 + tw, base + 7 * s); c.stroke()
+    } else if (CS === 'frame') {
+      const fx = tx0 - CAT_PAD * 1.5, fw = tw + CAT_PAD * 3
+      c.strokeRect(fx, top + 0.5, fw, CAT_H - 1)
+    } else if (CS === 'ornament' && !b.cont) {
+      // Piccolo rombo sotto il titolo.
+      c.fillStyle = st.page.accent
+      diamond(c, left ? tx0 + 2.6 * s : cx, base + 8 * s, 2.6 * s)
+    }
+    if (b.cont) draw(c, CONT, data.labels.cont, left ? tx0 : cx, top + CAT_H + 12 * s, left ? 'left' : 'center')
+  }
+
+  function paintDivider(c: Ctx, yy: number) {
+    const kind = D.divider
+    if (kind === 'none') return
+    const cx = m.x0 + m.cw / 2
+    c.strokeStyle = ACCENT_SOFT
+    c.fillStyle = ACCENT_SOFT
+    c.lineWidth = Math.max(0.5, 0.6 * s)
+    if (kind === 'line' || kind === 'short') {
+      const half = kind === 'line' ? m.cw / 2 : 22 * s
+      const x0 = CENTER || kind === 'short' ? cx - half : m.x0
+      const x1 = CENTER || kind === 'short' ? cx + half : m.x0 + m.cw
+      c.beginPath(); c.moveTo(x0, yy); c.lineTo(x1, yy); c.stroke()
+    } else if (kind === 'dots') {
+      for (const dx of [-10, 0, 10]) { c.beginPath(); c.arc(cx + dx * s, yy, 1.1 * s, 0, Math.PI * 2); c.fill() }
+    } else {
+      c.fillStyle = st.page.accent
+      c.beginPath(); c.moveTo(cx - 30 * s, yy); c.lineTo(cx - 7 * s, yy); c.moveTo(cx + 7 * s, yy); c.lineTo(cx + 30 * s, yy); c.stroke()
+      diamond(c, cx, yy, 2.4 * s)
     }
   }
 
   function paintDish(c: Ctx, b: DishBlock, top: number) {
     let y = top
     const right = m.x0 + m.cw
-    const center = L.align === 'center'
-    const x = center ? m.x0 + m.cw / 2 : m.x0
-    const align: CanvasTextAlign = center ? 'center' : 'left'
+    const x = CENTER ? m.x0 + m.cw / 2 : m.x0
+    const align = CENTER ? 'center' : 'left'
     if (b.showHead) {
-      c.font = font('600', NAME_SIZE * s, DISPLAY)
-      c.fillStyle = T.ink
       b.nameLines.forEach((line, i) => {
-        const base = y + NAME_SIZE * s * (0.92 + i * NAME_LH)
-        c.textAlign = align
-        c.fillText(line, x, base)
-        if (i === 0 && b.price && PRICE_MODE !== 'below') {
-          c.textAlign = 'right'
-          c.fillText(b.price, right, base)
-          // Puntini guida tra nome e prezzo, solo se c'è spazio vero.
-          const from = m.x0 + c.measureText(line).width + 8 * s
-          const to = right - c.measureText(b.price).width - 8 * s
-          if (PRICE_MODE === 'dots' && b.nameLines.length === 1 && to - from > 14 * s) {
-            c.fillStyle = T.accentSoft
-            const step = 5 * s
-            for (let px = Math.ceil(from / step) * step; px <= to; px += step) {
-              c.beginPath(); c.arc(px, base - 1.2 * s, 0.75 * s, 0, Math.PI * 2); c.fill()
+        const base = y + NAME.size * (0.92 + i * NAME_LH)
+        const inline = i === b.nameLines.length - 1 && !!b.price && b.priceAt === 'inline'
+        // Centrato con prezzo in riga: nome e prezzo si centrano insieme (sotto).
+        if (!(inline && CENTER)) draw(c, NAME, line, x, base, align)
+        const lw = measure(c, NAME, line)
+        if (i === 0 && b.price && b.priceAt === 'right') {
+          draw(c, PRICE, b.price, right, base, 'right')
+          // Guida tra nome e prezzo, solo se c'è spazio vero.
+          const from = m.x0 + lw + 8 * s
+          const to = right - measure(c, PRICE, b.price) - 8 * s
+          if (D.leader !== 'none' && b.nameLines.length === 1 && to - from > 14 * s) {
+            c.fillStyle = ACCENT_SOFT
+            c.strokeStyle = ACCENT_SOFT
+            if (D.leader === 'dots') {
+              const step = 5 * s
+              for (let px = Math.ceil(from / step) * step; px <= to; px += step) {
+                c.beginPath(); c.arc(px, base - 1.2 * s, 0.75 * s, 0, Math.PI * 2); c.fill()
+              }
+            } else {
+              c.lineWidth = Math.max(0.5, 0.6 * s)
+              c.beginPath(); c.moveTo(from, base - 1.4 * s); c.lineTo(to, base - 1.4 * s); c.stroke()
             }
-            c.fillStyle = T.ink
           }
         }
+        if (inline) {
+          // Prezzo in riga, subito dopo il nome.
+          const gap = 12 * s
+          const pw = measure(c, PRICE, b.price)
+          if (CENTER) {
+            const start = x - (lw + gap + pw) / 2
+            draw(c, NAME, line, start, base, 'left')
+            draw(c, PRICE, b.price, start + lw + gap, base, 'left')
+          } else draw(c, PRICE, b.price, x + lw + gap, base, 'left')
+        }
       })
-      y += b.nameLines.length * NAME_SIZE * NAME_LH * s
-      if (b.price && PRICE_MODE === 'below') {
-        // Prezzo sotto il nome.
+      y += nameH(b)
+      if (b.price && b.priceAt === 'below') {
         y += 2 * s
-        c.font = font('600', PRICE_SIZE * s, DISPLAY)
-        c.fillStyle = T.ink
-        c.textAlign = align
-        c.fillText(b.price, x, y + PRICE_SIZE * s * 0.92)
-        y += PRICE_SIZE * 1.25 * s
+        draw(c, PRICE, b.price, x, y + PRICE.size * 0.92, align)
+        y += PRICE.size * 1.25
       }
     }
     const n = b.descTo - b.descFrom
     if (n) {
       y += 4 * s
-      c.font = font(DESC_FONT, DESC_SIZE * s, TEXT)
-      c.fillStyle = T.inkSoft
-      c.textAlign = align
       for (let i = b.descFrom; i < b.descTo; i++) {
-        c.fillText(b.descLines[i], x, y + DESC_SIZE * s * 0.95)
-        y += DESC_SIZE * DESC_LH * s
+        draw(c, DESC, b.descLines[i], x, y + DESC.size * 0.95, align)
+        y += DESC.size * DESC_LH
       }
     }
     if (b.allergens && b.descTo === b.descLines.length) {
       y += 8 * s
-      c.font = font('500', ALG_SIZE * s, DETAILS)
-      c.fillStyle = T.accent
-      drawSpaced(c, b.allergens, x, y + ALG_SIZE * s, 1.3 * s, align)
+      draw(c, ALG, b.allergens, x, y + ALG.size, align)
     }
   }
 
@@ -637,7 +711,7 @@ export function layoutMenu(ctx: Ctx, data: MenuData, vp: Viewport, style: MenuSt
   const hit = (pageIndex: number, x: number, y: number): Dish | null => {
     const page = pages[pageIndex]
     if (!page || x < m.x0 - 16 * s || x > m.x0 + m.cw + 16 * s) return null
-    const pad = (L.dishSpacing * s) / 2
+    const pad = GAP / 2
     for (const it of page.items) {
       if (it.block.kind !== 'dish') continue
       if (y >= it.y - pad && y <= it.y + it.h + pad) return it.block.dish
@@ -649,30 +723,36 @@ export function layoutMenu(ctx: Ctx, data: MenuData, vp: Viewport, style: MenuSt
   const pick = (pageIndex: number, x: number, y: number): PickTarget => {
     const page = pages[pageIndex]
     if (!page) return 'paper'
-    const pad = (L.dishSpacing * s) / 2
+    if (st.pageNumber.show && Math.abs(y - m.footY + PNUM.size * 0.4) < 14 * s) return 'pageNumber'
+    if (pageIndex > 0 && st.runningHead.show && Math.abs(y - m.headY + RUN.size * 0.4) < 14 * s) return 'runningHead'
+    const pad = GAP / 2
     for (const it of page.items) {
       const b = it.block
       if (y < it.y - (b.kind === 'dish' ? pad : 4 * s) || y > it.y + it.h + (b.kind === 'dish' ? pad : 4 * s)) continue
-      if (b.kind === 'head') return 'title'
+      if (b.kind === 'head') return H.showRestaurant && y < it.y + restBase + 6 * s ? 'restaurant' : 'title'
       if (b.kind === 'cat') return 'category'
       if (b.kind === 'tline' || b.kind === 'legend') return 'text'
-      if (b.kind !== 'dish') continue
       let yy = it.y
       if (b.showHead) {
-        const nameH = b.nameLines.length * NAME_SIZE * NAME_LH * s
-        if (y <= yy + nameH) {
-          const priceRight = b.price && PRICE_MODE !== 'below' && L.align !== 'center'
-          return priceRight && x > m.x0 + m.cw - 64 * s ? 'price' : 'name'
+        const nh = nameH(b)
+        if (y <= yy + nh) {
+          if (b.price && b.priceAt === 'right' && x > m.x0 + m.cw - measure(ctx, PRICE, b.price) - 12 * s) return 'price'
+          if (b.price && b.priceAt === 'inline' && y > yy + nh - NAME.size * NAME_LH) {
+            const lw = measure(ctx, NAME, b.nameLines[b.nameLines.length - 1])
+            const px = CENTER ? m.x0 + m.cw / 2 + lw / 2 : m.x0 + lw
+            if (x > px) return 'price'
+          }
+          return 'name'
         }
-        yy += nameH
-        if (b.price && PRICE_MODE === 'below') {
-          yy += 2 * s + PRICE_SIZE * 1.25 * s
+        yy += nh
+        if (b.price && b.priceAt === 'below') {
+          yy += priceBelowH()
           if (y <= yy) return 'price'
         }
       }
       const n = b.descTo - b.descFrom
       if (n) {
-        yy += 4 * s + n * DESC_SIZE * DESC_LH * s
+        yy += 4 * s + n * DESC.size * DESC_LH
         if (y <= yy) return 'description'
       }
       return b.allergens ? 'allergens' : 'description'
@@ -689,23 +769,31 @@ function luminance(hex: string): number {
   return (0.2126 * ((n >> 16) & 255) + 0.7152 * ((n >> 8) & 255) + 0.0722 * (n & 255)) / 255
 }
 
-let _grain: HTMLCanvasElement | null = null
-function makeGrain(): HTMLCanvasElement | null {
-  if (_grain) return _grain
+const _tex: Partial<Record<'grain' | 'linen', HTMLCanvasElement>> = {}
+/** Superficie della carta: grana (rumore fine) o lino (trama di fili). */
+function makeTexture(kind: 'grain' | 'linen'): HTMLCanvasElement | null {
+  if (_tex[kind]) return _tex[kind]!
   if (typeof document === 'undefined') return null
+  const N = 160
   const g = document.createElement('canvas')
-  g.width = g.height = 160
+  g.width = g.height = N
   const c = g.getContext('2d')
   if (!c) return null
-  const img = c.createImageData(160, 160)
+  const img = c.createImageData(N, N)
   let seed = 7
-  for (let i = 0; i < img.data.length; i += 4) {
-    seed = (seed * 16807) % 2147483647
-    const v = 110 + (seed % 120)
-    img.data[i] = img.data[i + 1] = img.data[i + 2] = v
+  const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647 }
+  // Lino: fili orizzontali e verticali di spessore irregolare.
+  const rows = Array.from({ length: N }, () => rnd() * 2 - 1)
+  const cols = Array.from({ length: N }, () => rnd() * 2 - 1)
+  for (let i = 0, p = 0; i < img.data.length; i += 4, p++) {
+    const x = p % N, yy = (p / N) | 0
+    const v = kind === 'grain'
+      ? 110 + rnd() * 120
+      : 170 + rows[yy] * 38 + cols[x] * 38 + (rnd() - 0.5) * 30
+    img.data[i] = img.data[i + 1] = img.data[i + 2] = Math.max(0, Math.min(255, v))
     img.data[i + 3] = 255
   }
   c.putImageData(img, 0, 0)
-  _grain = g
+  _tex[kind] = g
   return g
 }

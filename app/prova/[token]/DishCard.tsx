@@ -24,7 +24,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { Dish } from './typeset'
-import { DEFAULT_STYLE, styleTokens, type MenuStyle } from '@/lib/menuStyle'
+import { DEFAULT_STYLE, fontStack, formatPrice, resolveColor, resolveFace, type MenuStyle, type TextStyle } from '@/lib/menuStyle'
 import { GlassButton, glassSheet } from './Glass'
 import { t } from './i18n'
 import type { Lang } from '@/lib/translations'
@@ -39,16 +39,40 @@ const STAT_BG = 'rgba(255,255,255,0.55)'      // riquadro prezzo/allergeni sul v
 const TILE    = 'rgba(255,255,255,0.42)'      // riquadri chiari appoggiati sul vetro
 // Caratteri e colori del testo della scheda: quelli del menu (stile del
 // ristorante), letti da tutte le parti della scheda tramite contesto.
+// La scheda è sempre su vetro chiaro: un colore troppo chiaro (carta scura)
+// torna al testo base, per restare leggibile.
+const DARK_INK = '#1d1915', DARK_SOFT = '#5f574d'
+function lum(hex: string) {
+  const n = parseInt(hex.slice(1), 16)
+  return (0.2126 * ((n >> 16) & 255) + 0.7152 * ((n >> 8) & 255) + 0.0722 * (n & 255)) / 255
+}
+const onCard = (c: string, fallback: string) => (lum(c) > 0.62 ? fallback : c)
 function cardStyleOf(st: MenuStyle) {
-  const t = styleTokens(st)
-  return { SERIF: t.display, TEXT: t.text, SANS: t.details, INK: t.ink, SOFT: t.inkSoft, ACCENT: t.accent, ITALIC: st.layout.italicDescriptions }
+  /** Carattere, spessore, corsivo, maiuscolo e spaziatura di uno stile (CSS). */
+  const css = (t: TextStyle, fallback = DARK_INK): React.CSSProperties => {
+    const f = resolveFace(t.font, t.weight, t.italic)
+    return {
+      fontFamily: fontStack(t.font), fontWeight: f.weight, fontStyle: f.italic ? 'italic' : 'normal',
+      textTransform: t.upper ? 'uppercase' : 'none', letterSpacing: `${t.tracking}em`,
+      color: onCard(resolveColor(t.color, st), fallback),
+    }
+  }
+  const plain = (t: TextStyle): React.CSSProperties => ({ ...css(t), textTransform: 'none', letterSpacing: 0, fontStyle: 'normal' })
+  return {
+    NAME: css(st.dish.name), DESC: css(st.dish.description, DARK_SOFT), PRICE: css(st.dish.price),
+    LABEL: css(st.category.text), DETAIL: css(st.allergens.text, DARK_SOFT), DETAIL_PLAIN: plain(st.allergens.text),
+    NAME_PLAIN: plain(st.dish.name),
+    INK: onCard(st.page.ink, DARK_INK), SOFT: onCard(st.page.soft, DARK_SOFT), ACCENT: onCard(st.page.accent, '#9a8462'),
+    card: st.card,
+    price: (p: number | null) => formatPrice(p, st.dish.priceFormat),
+    alpha: 0.92 - 0.8 * st.card.glass,   // velo del vetro della scheda
+  }
 }
 const CardStyle = createContext(cardStyleOf(DEFAULT_STYLE))
 const useCardStyle = () => useContext(CardStyle)
 const LINE    = 'rgba(29,25,21,0.09)'
+const PHOTO_RATIO: Record<MenuStyle['card']['photo'], string> = { square: '1 / 1', landscape: '4 / 3', portrait: '4 / 5', circle: '1 / 1' }
 
-const priceFmt = new Intl.NumberFormat('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-const price = (p: number | null) => (p === null || isNaN(p) ? '' : `${priceFmt.format(p)} €`)
 
 const clamp01 = (x: number) => Math.max(0, Math.min(1, x))
 const smooth = (x: number) => { const t = clamp01(x); return t * t * (3 - 2 * t) }
@@ -613,7 +637,7 @@ function Page({ layer, lang, siblings, onLink, register }: {
   onLink:   (d: Dish) => void
   register: (key: string, el: HTMLDivElement | null) => void
 }) {
-  const { SERIF, TEXT, SANS, INK, SOFT, ACCENT, ITALIC } = useCardStyle()
+  const { NAME_PLAIN, DESC, DETAIL, DETAIL_PLAIN, ACCENT, card, price, alpha } = useCardStyle()
   const { dish } = layer
   const ref = useCallback((el: HTMLDivElement | null) => register(layer.key, el), [layer.key, register])
   const others = siblings(dish).filter(d => d.id !== dish.id)
@@ -636,18 +660,18 @@ function Page({ layer, lang, siblings, onLink, register }: {
               non il menu scurito dietro (sopra l'inizio non si può scorrere,
               quindi non allunga la pagina). */}
           <div aria-hidden className="absolute left-0 right-0 pointer-events-none"
-            style={{ ...glassSheet(), background: 'rgba(255,253,249,0.52)', bottom: '100%', height: '100vh' }} />
-          <div style={glassSheet()}>
+            style={{ ...glassSheet(alpha), background: `rgba(255,253,249,${alpha})`, bottom: '100%', height: '100vh' }} />
+          <div style={glassSheet(alpha)}>
             <Header dish={dish} lang={lang} />
           </div>
-          <section className="relative" style={{ ...glassSheet(), boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.7)', flex: 1, paddingBottom: 'calc(env(safe-area-inset-bottom) + 40px + var(--extra, 0px))' }}>
+          <section className="relative" style={{ ...glassSheet(alpha), boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.7)', flex: 1, paddingBottom: 'calc(env(safe-area-inset-bottom) + 40px + var(--extra, 0px))' }}>
             {/* Come in Libri: parte vetro come la zona sopra e si opacizza
                 mentre la scheda si allarga (--frost = allargamento 0..1). */}
             <div aria-hidden className="absolute inset-0 pointer-events-none" style={{ background: 'rgba(252,249,243,0.62)', opacity: 'var(--frost, 0)' }} />
             <div data-rubber className="relative mx-auto" style={{ maxWidth: 560, padding: '30px 24px 0' }}>
               {dish.description && (
                 <Block title={t('description', lang)}>
-                  <p style={{ fontFamily: TEXT, fontStyle: ITALIC ? 'italic' : 'normal', fontSize: 20, lineHeight: 1.45, color: INK, whiteSpace: 'pre-line' }}>
+                  <p style={{ ...DESC, fontSize: 20, lineHeight: 1.45, whiteSpace: 'pre-line' }}>
                     {dish.description}
                   </p>
                 </Block>
@@ -660,8 +684,8 @@ function Page({ layer, lang, siblings, onLink, register }: {
                     style={{ gap: 14, background: TILE, borderRadius: 16, padding: 12, border: `1px solid ${LINE}` }}>
                     <Thumb dish={pairing.dish} size={56} />
                     <span className="flex-1 min-w-0">
-                      <span className="block truncate" style={{ fontFamily: SERIF, fontWeight: 600, fontSize: 19, color: INK }}>{pairing.dish.name}</span>
-                      <span className="block" style={{ fontFamily: SANS, fontSize: 12, color: SOFT, marginTop: 2 }}>
+                      <span className="block truncate" style={{ ...NAME_PLAIN, fontSize: 19 }}>{pairing.dish.name}</span>
+                      <span className="block" style={{ ...DETAIL_PLAIN, fontWeight: 400, fontSize: 12, color: DETAIL.color, marginTop: 2 }}>
                         {[pairing.dish.category, price(pairing.dish.price)].filter(Boolean).join(' · ')}
                       </span>
                     </span>
@@ -676,17 +700,17 @@ function Page({ layer, lang, siblings, onLink, register }: {
                     {dish.allergens.map(a => (
                       <li key={a.n} className="flex items-center" style={{ gap: 12 }}>
                         <span className="inline-flex items-center justify-center shrink-0"
-                          style={{ width: 26, height: 26, borderRadius: 13, border: `1px solid ${ACCENT}`, color: ACCENT, fontFamily: SANS, fontSize: 11, fontWeight: 600 }}>
+                          style={{ ...DETAIL_PLAIN, width: 26, height: 26, borderRadius: 13, border: `1px solid ${ACCENT}`, color: ACCENT, fontSize: 11, fontWeight: 600 }}>
                           {a.n}
                         </span>
-                        <span style={{ fontFamily: SANS, fontSize: 15, color: INK }}>{a.name}</span>
+                        <span style={{ ...DETAIL_PLAIN, fontWeight: 400, fontSize: 15, color: NAME_PLAIN.color }}>{a.name}</span>
                       </li>
                     ))}
                   </ul>
                 </Block>
               )}
 
-              {others.length > 0 && (
+              {card.showMore && others.length > 0 && (
                 <Block title={`${t('moreIn', lang)} ${dish.category}`}>
                   {/* data-noswipe: qui lo scorrimento orizzontale è della fila, non cambia piatto. */}
                   <div data-noswipe className="flex items-start overflow-x-auto"
@@ -696,8 +720,8 @@ function Page({ layer, lang, siblings, onLink, register }: {
                         className="shrink-0 flex flex-col items-stretch justify-start text-left active:opacity-60 transition-opacity"
                         style={{ width: 132, scrollSnapAlign: 'start' }}>
                         <Thumb dish={o} size={132} />
-                        <span className="block" style={{ fontFamily: SERIF, fontWeight: 600, fontSize: 16, lineHeight: 1.2, color: INK, marginTop: 8 }}>{o.name}</span>
-                        {o.price !== null && <span className="block" style={{ fontFamily: SANS, fontSize: 12, color: SOFT, marginTop: 2 }}>{price(o.price)}</span>}
+                        <span className="block" style={{ ...NAME_PLAIN, fontSize: 16, lineHeight: 1.2, marginTop: 8 }}>{o.name}</span>
+                        {o.price !== null && <span className="block" style={{ ...DETAIL_PLAIN, fontWeight: 400, fontSize: 12, color: DETAIL.color, marginTop: 2 }}>{price(o.price)}</span>}
                       </button>
                     ))}
                   </div>
@@ -714,14 +738,14 @@ function Page({ layer, lang, siblings, onLink, register }: {
 }
 
 function Header({ dish, lang }: { dish: Dish; lang: Lang }) {
-  const { SERIF, SANS, INK, ACCENT } = useCardStyle()
+  const { NAME, PRICE, LABEL, DETAIL, card, price } = useCardStyle()
   const [ready] = useState(() => !!dish.image && readyImages.has(dish.image))
   const [loaded, setLoaded] = useState(ready)
   return (
     <header data-rubber className="mx-auto w-full text-center" style={{ maxWidth: 560, padding: '64px 24px 30px' }}>
       {dish.image && (
-        <div className="mx-auto" style={{ width: 'min(84%, 360px)', marginBottom: 28 }}>
-          <div style={{ position: 'relative', aspectRatio: '1 / 1', borderRadius: 14, overflow: 'hidden', background: TILE, boxShadow: '0 18px 40px rgba(40,28,14,0.20), 0 2px 6px rgba(40,28,14,0.10)' }}>
+        <div className="mx-auto" style={{ width: `min(${card.photoWidth}%, ${Math.round(card.photoWidth * 4.3)}px)`, marginBottom: 28 }}>
+          <div style={{ position: 'relative', aspectRatio: PHOTO_RATIO[card.photo], borderRadius: card.photo === 'circle' ? '50%' : card.radius, overflow: 'hidden', background: TILE, boxShadow: '0 18px 40px rgba(40,28,14,0.20), 0 2px 6px rgba(40,28,14,0.10)' }}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={dish.image} alt="" draggable={false} onLoad={() => { readyImages.add(dish.image!); setLoaded(true) }}
               ref={el => { if (el?.complete && el.naturalWidth && !loaded) setLoaded(true) }}
@@ -729,52 +753,53 @@ function Header({ dish, lang }: { dish: Dish; lang: Lang }) {
           </div>
         </div>
       )}
-      <p style={{ fontFamily: SANS, fontSize: 10.5, fontWeight: 600, letterSpacing: '0.28em', textTransform: 'uppercase', color: ACCENT }}>
-        {dish.category}
-      </p>
-      <h2 style={{ fontFamily: SERIF, fontWeight: 500, fontSize: 34, lineHeight: 1.1, color: INK, margin: '10px 0 0' }}>
+      {card.showCategory && (
+        <p style={{ ...LABEL, fontSize: 10.5 }}>
+          {dish.category}
+        </p>
+      )}
+      <h2 style={{ ...NAME, fontSize: card.titleSize, lineHeight: 1.1, margin: card.showCategory ? '10px 0 0' : 0 }}>
         {dish.name}
       </h2>
-      {(dish.price !== null || dish.allergens.length > 0) && (
+      {card.showSummary && (dish.price !== null || dish.allergens.length > 0) && (
         <div className="mx-auto flex" style={{ marginTop: 24, maxWidth: 380, borderRadius: 18, background: STAT_BG, boxShadow: `inset 0 0 0 1px rgba(255,255,255,0.7), 0 1px 3px rgba(20,14,8,0.06)`, padding: '14px 6px' }}>
-          {dish.price !== null && <Stat label={t('price', lang)} value={price(dish.price)} />}
+          {dish.price !== null && <Stat label={t('price', lang)} value={price(dish.price)} valueStyle={PRICE} labelStyle={DETAIL} />}
           {dish.price !== null && dish.allergens.length > 0 && <span style={{ width: 1, background: LINE, margin: '4px 0' }} />}
-          {dish.allergens.length > 0 && <Stat label={t('allergens', lang)} value={dish.allergens.map(a => a.n).join(' · ')} />}
+          {dish.allergens.length > 0 && <Stat label={t('allergens', lang)} value={dish.allergens.map(a => a.n).join(' · ')} valueStyle={{ ...PRICE, textTransform: 'none', letterSpacing: 0 }} labelStyle={DETAIL} />}
         </div>
       )}
     </header>
   )
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
-  const { SERIF, SANS, INK, SOFT } = useCardStyle()
+function Stat({ label, value, valueStyle, labelStyle }: { label: string; value: string; valueStyle: React.CSSProperties; labelStyle: React.CSSProperties }) {
   return (
     <div className="flex-1 min-w-0" style={{ padding: '0 10px' }}>
-      <div style={{ fontFamily: SANS, fontSize: 9.5, fontWeight: 600, letterSpacing: '0.2em', textTransform: 'uppercase', color: SOFT }}>{label}</div>
+      <div style={{ ...labelStyle, fontSize: 9.5 }}>{label}</div>
       {/* Valori lunghi (molti allergeni): carattere più piccolo e a capo, mai tagliati. */}
-      <div style={{ fontFamily: SERIF, fontWeight: 600, fontSize: value.length > 10 ? 17 : 22, lineHeight: 1.2, color: INK, marginTop: 4, textWrap: 'balance' } as React.CSSProperties}>{value}</div>
+      <div style={{ ...valueStyle, fontSize: value.length > 10 ? 17 : 22, lineHeight: 1.2, marginTop: 4, textWrap: 'balance' } as React.CSSProperties}>{value}</div>
     </div>
   )
 }
 
 function Block({ title, children }: { title: string; children: React.ReactNode }) {
-  const { SANS, ACCENT } = useCardStyle()
+  const { LABEL } = useCardStyle()
   return (
     <div style={{ marginBottom: 32 }}>
-      <h3 style={{ fontFamily: SANS, fontSize: 10.5, fontWeight: 600, letterSpacing: '0.24em', textTransform: 'uppercase', color: ACCENT, marginBottom: 12 }}>{title}</h3>
+      <h3 style={{ ...LABEL, fontSize: 10.5, marginBottom: 12 }}>{title}</h3>
       {children}
     </div>
   )
 }
 
 function Thumb({ dish, size }: { dish: Dish; size: number }) {
-  const { SERIF, ACCENT } = useCardStyle()
+  const { NAME_PLAIN, ACCENT, card } = useCardStyle()
   return (
-    <span className="block shrink-0 overflow-hidden" style={{ width: size, height: size, borderRadius: size > 80 ? 12 : 10, background: TILE, boxShadow: `inset 0 0 0 1px ${LINE}` }}>
+    <span className="block shrink-0 overflow-hidden" style={{ width: size, height: size, borderRadius: card.photo === 'circle' ? '50%' : Math.min(card.radius, size > 80 ? 12 : 10), background: TILE, boxShadow: `inset 0 0 0 1px ${LINE}` }}>
       {dish.image
         // eslint-disable-next-line @next/next/no-img-element
         ? <img src={dish.image} alt="" loading="lazy" draggable={false} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-        : <span className="flex items-center justify-center h-full" style={{ fontFamily: SERIF, fontStyle: 'italic', fontSize: size * 0.42, color: ACCENT }}>{dish.name.trim().charAt(0)}</span>}
+        : <span className="flex items-center justify-center h-full" style={{ fontFamily: NAME_PLAIN.fontFamily, fontStyle: 'italic', fontSize: size * 0.42, color: ACCENT }}>{dish.name.trim().charAt(0)}</span>}
     </span>
   )
 }

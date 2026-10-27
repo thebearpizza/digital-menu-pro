@@ -7,10 +7,16 @@
 // Pensato per tutti i comandi in sovraimpressione del menu.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useEffect, useState } from 'react'
+import { createContext, useContext, useEffect, useState } from 'react'
 
 export const SPRING = 'cubic-bezier(0.34, 1.56, 0.64, 1)'
 const GLASS_INK = '#1d1915'
+
+/** Tinta del vetro dei comandi (scelta nella Personalizzazione): chiaro, o
+ *  scuro con testo bianco (per carte scure o per chi lo preferisce). */
+export type GlassTintKind = 'light' | 'dark'
+export const GlassTint = createContext<GlassTintKind>('light')
+export const glassInk = (tint: GlassTintKind) => (tint === 'dark' ? '#ffffff' : GLASS_INK)
 
 /**
  * Stile di base del vetro. Poco velo e poca sfocatura (si intravede ciò che
@@ -18,8 +24,25 @@ const GLASS_INK = '#1d1915'
  * ingiallirebbe il vetro), bordo di luce netto, spessore ai bordi
  * (chiaro in alto, appena scuro in basso), ombra morbida.
  */
-export function glassSurface(strength: 'light' | 'panel' = 'light'): React.CSSProperties {
+export function glassSurface(strength: 'light' | 'panel' = 'light', tint: GlassTintKind = 'light'): React.CSSProperties {
   const panel = strength === 'panel'
+  if (tint === 'dark') {
+    // Vetro fumé: velo scuro, sfocatura un po' più forte, filo di luce tenue.
+    const f = panel ? 'blur(16px) saturate(1.5) brightness(0.82)' : 'blur(12px) saturate(1.5) brightness(0.88)'
+    return {
+      background: panel
+        ? 'linear-gradient(180deg, rgba(38,33,28,0.66), rgba(24,21,18,0.58))'
+        : 'linear-gradient(180deg, rgba(38,33,28,0.46), rgba(24,21,18,0.36))',
+      backdropFilter: f,
+      WebkitBackdropFilter: f,
+      boxShadow: [
+        'inset 0 1px 0 rgba(255,255,255,0.20)',
+        'inset 0 0 0 0.5px rgba(255,255,255,0.12)',
+        '0 0 0 0.5px rgba(0,0,0,0.22)',
+        panel ? '0 18px 50px rgba(0,0,0,0.35)' : '0 6px 18px rgba(0,0,0,0.20), 0 1px 3px rgba(0,0,0,0.14)',
+      ].join(', '),
+    }
+  }
   // Come il "Liquid Glass" chiaro di iOS 26: poco velo, sfocatura che ravviva i
   // colori di ciò che sta sotto, filo di luce sul bordo alto, contorno
   // sottilissimo e ombra morbida (sulla carta chiara un vetro troppo bianco e
@@ -46,11 +69,12 @@ export function glassSurface(strength: 'light' | 'panel' = 'light'): React.CSSPr
 /** Riflesso della superficie (da mettere come primo figlio): luce morbida
  *  dall'alto che sfuma a metà, appena un ritorno sul fondo. */
 export function GlassSheen() {
+  const k = useContext(GlassTint) === 'dark' ? 0.3 : 1
   return (
     <span aria-hidden className="pointer-events-none absolute inset-0"
       style={{
         borderRadius: 'inherit',
-        background: 'linear-gradient(180deg, rgba(255,255,255,0.38) 0%, rgba(255,255,255,0.06) 48%, rgba(255,255,255,0) 62%, rgba(255,255,255,0.10) 100%)',
+        background: `linear-gradient(180deg, rgba(255,255,255,${0.38 * k}) 0%, rgba(255,255,255,${0.06 * k}) 48%, rgba(255,255,255,0) 62%, rgba(255,255,255,${0.10 * k}) 100%)`,
       }} />
   )
 }
@@ -61,10 +85,10 @@ export function GlassSheen() {
  * bassa della scheda ci aggiunge sopra una velatura che cresce mentre la
  * scheda si allarga (DishCard, --frost).
  */
-export function glassSheet(): React.CSSProperties {
+export function glassSheet(alpha = 0.52): React.CSSProperties {
   const filter = 'blur(8px) saturate(1.35) brightness(1.08)'
   return {
-    background: 'linear-gradient(180deg, rgba(255,253,249,0.52), rgba(255,253,249,0.44))',
+    background: `linear-gradient(180deg, rgba(255,253,249,${alpha}), rgba(255,253,249,${Math.max(0.08, alpha - 0.08)}))`,
     backdropFilter: filter,
     WebkitBackdropFilter: filter,
   }
@@ -84,6 +108,7 @@ interface ButtonProps {
 
 export function GlassButton({ label, onClick, children, size = 40, pill = false, hidden = false, expanded }: ButtonProps) {
   const [pressed, setPressed] = useState(false)
+  const tint = useContext(GlassTint)
   const release = () => setPressed(false)
   return (
     <button type="button" aria-label={label} aria-hidden={hidden || undefined} tabIndex={hidden ? -1 : 0}
@@ -92,7 +117,7 @@ export function GlassButton({ label, onClick, children, size = 40, pill = false,
       onPointerDown={() => setPressed(true)} onPointerUp={release} onPointerLeave={release} onPointerCancel={release}
       className="relative flex items-center justify-center shrink-0"
       style={{
-        ...glassSurface(),
+        ...glassSurface('light', tint),
         height: size, minWidth: size, borderRadius: size / 2,
         padding: pill ? '0 15px 0 13px' : 0,
         pointerEvents: hidden ? 'none' : 'auto',
@@ -100,7 +125,7 @@ export function GlassButton({ label, onClick, children, size = 40, pill = false,
         transform: `scale(${hidden ? 0.7 : pressed ? 1.1 : 1})`,
         transition: `transform 320ms ${SPRING}, opacity 220ms ease, filter 200ms ease`,
         filter: pressed ? 'brightness(1.06)' : 'none',
-        color: GLASS_INK,
+        color: glassInk(tint),
         WebkitTapHighlightColor: 'transparent',
       }}>
       <GlassSheen />
@@ -129,6 +154,7 @@ export function GlassMenu({ open, onClose, align, edge, bottom, top, title, chil
 }) {
   const [mounted, setMounted] = useState(open)
   const [shown, setShown] = useState(false)
+  const tint = useContext(GlassTint)
   useEffect(() => {
     if (open) {
       setMounted(true)
@@ -145,7 +171,7 @@ export function GlassMenu({ open, onClose, align, edge, bottom, top, title, chil
       <div className="fixed inset-0" style={{ zIndex: 44 }} onClick={onClose} />
       <div role="menu" className="fixed overflow-hidden"
         style={{
-          ...glassSurface('panel'),
+          ...glassSurface('panel', tint),
           zIndex: 45, top, bottom: top ? undefined : bottom, [align]: Math.max(12, edge),
           minWidth: 232, maxWidth: 'calc(100vw - 24px)', maxHeight: '60vh', overflowY: 'auto',
           borderRadius: 24, padding: '6px 0',
@@ -156,7 +182,7 @@ export function GlassMenu({ open, onClose, align, edge, bottom, top, title, chil
         }}>
         <GlassSheen />
         {title && (
-          <div className="relative" style={{ padding: '8px 18px 6px', fontFamily: '"Inter", -apple-system, sans-serif', fontSize: 11, fontWeight: 600, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'rgba(29,25,21,0.45)' }}>
+          <div className="relative" style={{ padding: '8px 18px 6px', fontFamily: '"Inter", -apple-system, sans-serif', fontSize: 11, fontWeight: 600, letterSpacing: '0.14em', textTransform: 'uppercase', color: tint === 'dark' ? 'rgba(255,255,255,0.5)' : 'rgba(29,25,21,0.45)' }}>
             {title}
           </div>
         )}
@@ -172,13 +198,14 @@ export function GlassMenuItem({ icon, label, checked, onClick }: {
   checked?: boolean
   onClick:  () => void
 }) {
+  const ink = glassInk(useContext(GlassTint))
   return (
     <button type="button" role="menuitemradio" aria-checked={!!checked} onClick={onClick}
       className="w-full flex items-center text-left active:bg-black/5 transition-colors"
-      style={{ gap: 12, padding: '11px 18px', minHeight: 46, fontFamily: '"Inter", -apple-system, sans-serif', fontSize: 16, color: GLASS_INK, WebkitTapHighlightColor: 'transparent' }}>
+      style={{ gap: 12, padding: '11px 18px', minHeight: 46, fontFamily: '"Inter", -apple-system, sans-serif', fontSize: 16, color: ink, WebkitTapHighlightColor: 'transparent' }}>
       <span className="shrink-0 flex items-center justify-center" style={{ width: 16 }}>
         {checked && (
-          <svg width="14" height="11" viewBox="0 0 14 11" aria-hidden><path d="M1.5 5.8l3.8 3.7L12.5 1.5" fill="none" stroke={GLASS_INK} strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" /></svg>
+          <svg width="14" height="11" viewBox="0 0 14 11" aria-hidden><path d="M1.5 5.8l3.8 3.7L12.5 1.5" fill="none" stroke={ink} strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" /></svg>
         )}
       </span>
       {icon && <span className="shrink-0 flex items-center">{icon}</span>}

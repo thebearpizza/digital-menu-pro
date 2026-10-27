@@ -322,7 +322,7 @@ export class CurlRenderer {
 
     const m = scene.moving
     const c = m?.curl ?? null
-    const shadow = c ? Math.max(0, Math.min(1, scene.shadow)) : 0
+    const shadow = c ? Math.max(0, Math.min(1.6, scene.shadow)) : 0
     gl.uniform1f(this.u.uShadow, shadow)
     gl.uniform2f(this.u.uAxis, c ? c.axis.x : this.sw * 10, c ? c.axis.y : 0)
     gl.uniform2f(this.u.uDir, c ? c.dir.x : 1, c ? c.dir.y : 0)

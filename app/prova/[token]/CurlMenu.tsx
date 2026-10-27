@@ -18,7 +18,7 @@ import { forwardRef, useCallback, useEffect, useMemo, useRef, useState } from 'r
 import { CurlRenderer, constrain, solveCurl, type Rect, type Scene, type Sheet, type Vec } from './curl'
 import { useRouter } from 'next/navigation'
 import { layoutMenu, fontFaces, SANS, type Dish, type Layout, type MenuData, type Insets } from './typeset'
-import { styleFontsUrl, styleTokens, type MenuStyle } from '@/lib/menuStyle'
+import { styleFontsUrl, type MenuStyle } from '@/lib/menuStyle'
 import { isLang, type Lang } from '@/lib/translations'
 import DishCard from './DishCard'
 import { loadFontCss } from './fonts'
@@ -97,18 +97,23 @@ export default function CurlMenu({ data: base, style: initialStyle, preview = fa
   const previewRef = useRef(preview)
   const styleRef = useRef(style)
   styleRef.current = style
-  const tokens = useMemo(() => styleTokens(style), [style])
   useEffect(() => {
     if (!preview) return
     const onMsg = (e: MessageEvent) => {
       if (e.origin !== window.location.origin) return
-      const msg = e.data as { type?: string; style?: MenuStyle }
+      const msg = e.data as { type?: string; style?: MenuStyle; open?: boolean }
       if (msg?.type === 'lito-style' && msg.style) setStyle(msg.style)
+      // Pannello "Scheda del piatto" della Personalizzazione: mostra la scheda
+      // di un piatto (meglio se con foto e descrizione).
+      if (msg?.type === 'lito-card') {
+        const all = data.categories.flatMap(c => c.dishes)
+        setCard(msg.open ? all.find(d => d.image && d.description) ?? all.find(d => d.image) ?? all[0] ?? null : null)
+      }
     }
     window.addEventListener('message', onMsg)
     window.parent?.postMessage({ type: 'lito-preview-ready' }, window.location.origin)
     return () => window.removeEventListener('message', onMsg)
-  }, [preview])
+  }, [preview, data])
 
   // Barra dei comandi (Menu, categorie, lingua): nascosta; si apre scorrendo
   // verso l'alto e segue il dito; si chiude scorrendo in giù, girando pagina o
@@ -142,7 +147,7 @@ export default function CurlMenu({ data: base, style: initialStyle, preview = fa
     // Sotto le barre di Safari si vede lo sfondo della pagina: color carta.
     const html = document.documentElement
     const prevBg = html.style.backgroundColor
-    html.style.backgroundColor = styleRef.current.colors.paper
+    html.style.backgroundColor = styleRef.current.page.paper
 
     // ── Font: prima il foglio di stile (dichiara le facce), POI la richiesta
     // delle facce: chiesta prima, document.fonts.load risponde "pronto" a vuoto.
@@ -153,7 +158,7 @@ export default function CurlMenu({ data: base, style: initialStyle, preview = fa
 
     let renderer: CurlRenderer | null = null
     let ctx2d: CanvasRenderingContext2D | null = null   // ripiego senza WebGL
-    try { renderer = new CurlRenderer(canvas, styleRef.current.colors.paper) } catch { ctx2d = canvas.getContext('2d') }
+    try { renderer = new CurlRenderer(canvas, styleRef.current.page.paper) } catch { ctx2d = canvas.getContext('2d') }
 
     // Canvas di lavoro per comporre una pagina alla volta.
     const scratch = document.createElement('canvas')
@@ -262,7 +267,7 @@ export default function CurlMenu({ data: base, style: initialStyle, preview = fa
       const fwd = turn.kind === 'forward'
       const curl = solveCurl(turn.P0, turn.F, pageW)
       const prog = Math.max(0, Math.min(1, (turn.P0.x - turn.F.x) / (2 * pageW)))
-      const shadow = Math.min(1, prog * 7, (1 - prog) * 7)
+      const shadow = Math.min(1, prog * 7, (1 - prog) * 7) * styleRef.current.effects.shadow
       // Il foglio che si muove: la destra che gira (avanti) o la sinistra che
       // torna (indietro). In doppia pagina il retro è la pagina vera.
       const frontIdx = fwd ? index + (spread ? 1 : 0) : index - 1
@@ -334,7 +339,7 @@ export default function CurlMenu({ data: base, style: initialStyle, preview = fa
       } else if (ctx2d) {
         // Ripiego: la pagina scorre via orizzontalmente, senza 3D.
         ctx2d.setTransform(dpr, 0, 0, dpr, 0, 0)
-        ctx2d.fillStyle = styleRef.current.colors.paper; ctx2d.fillRect(0, 0, W, H)
+        ctx2d.fillStyle = styleRef.current.page.paper; ctx2d.fillRect(0, 0, W, H)
         if (turn) {
           const prog = Math.max(0, Math.min(1, (turn.P0.x - turn.F.x) / (2 * W)))
           const under = bitmap(turn.kind === 'forward' ? index + 1 : index)
@@ -370,8 +375,8 @@ export default function CurlMenu({ data: base, style: initialStyle, preview = fa
       renderer?.resize(W, H, canvas.width, canvas.height)
       for (const t of Array.from(textures.values())) renderer?.deleteTexture(t)
       textures.clear(); bitmaps.clear()
-      renderer?.setPaper(styleRef.current.colors.paper)
-      html.style.backgroundColor = styleRef.current.colors.paper
+      renderer?.setPaper(styleRef.current.page.paper)
+      html.style.backgroundColor = styleRef.current.page.paper
       layout = layoutMenu(sctx, dataRef.current, { w: pageW, h: H, insets: insets() }, styleRef.current)
       const found = anchor ? layout.pages.findIndex(p => p.anchor === anchor) : -1
       index = found >= 0 ? found : Math.min(index, layout.pages.length - 1)
@@ -412,7 +417,8 @@ export default function CurlMenu({ data: base, style: initialStyle, preview = fa
       const dist = Math.hypot(target.x - t.F.x, target.y - t.F.y)
       // Durata: proporzionale alla strada, più breve se il dito era veloce.
       const base = Math.max(170, Math.min(560, (dist / pageW) * 430))
-      const dur = Math.max(140, base / (1 + Math.min(2.5, Math.abs(velocity) * 0.9)))
+      // Velocità dello sfoglio scelta nella Personalizzazione.
+      const dur = Math.max(140, base / (1 + Math.min(2.5, Math.abs(velocity) * 0.9))) / styleRef.current.effects.speed
       anim = { turn: t, from: { ...t.F }, to: target, t0: performance.now(), dur: arc ? Math.max(dur, 460) : dur, commit, arc }
       requestAnimationFrame(tick)
     }
@@ -431,6 +437,7 @@ export default function CurlMenu({ data: base, style: initialStyle, preview = fa
     const peekIdle = (delay = 2000) => {
       clearTimeout(peekTimer)
       if (previewRef.current) return   // nell'anteprima del gestionale darebbe fastidio
+      if (!styleRef.current.chrome.peek) return
       if (index !== 0) turnedOnce = true
       if (turnedOnce || peeks >= PEEK_MAX || disposed) return
       peekTimer = window.setTimeout(startPeek, delay)
@@ -609,7 +616,7 @@ export default function CurlMenu({ data: base, style: initialStyle, preview = fa
     // ── Contesto WebGL perso (es. app in background su iOS): si ricrea tutto.
     const onLost = (e: Event) => { e.preventDefault() }
     const onRestored = () => {
-      try { renderer = new CurlRenderer(canvas, styleRef.current.colors.paper) } catch { renderer = null }
+      try { renderer = new CurlRenderer(canvas, styleRef.current.page.paper) } catch { renderer = null }
       textures.clear()
       relayout()
     }
@@ -700,7 +707,7 @@ export default function CurlMenu({ data: base, style: initialStyle, preview = fa
   }, [pageInfo])
 
   return (
-    <div className="fixed inset-0 overflow-hidden" style={{ background: tokens.paper, overscrollBehavior: 'none' }}>
+    <div className="fixed inset-0 overflow-hidden" style={{ background: style.page.paper, overscrollBehavior: 'none' }}>
       <div ref={stageRef} className="absolute inset-0 overflow-hidden">
         {/* Sonda invisibile: legge le aree sicure (notch, barra home) in px. */}
         <div ref={probeRef} aria-hidden className="pointer-events-none fixed inset-0 invisible"
@@ -713,16 +720,17 @@ export default function CurlMenu({ data: base, style: initialStyle, preview = fa
         />
         {status === 'loading' && (
           <div className="absolute inset-0 flex items-center justify-center">
-            <span className="text-[10px] uppercase tracking-[0.35em]" style={{ color: '#9a8462' }}>{data.restaurantName}</span>
+            <span className="text-[10px] uppercase tracking-[0.35em]" style={{ color: style.page.accent }}>{data.restaurantName}</span>
           </div>
         )}
       </div>
       {status !== 'loading' && (
         <Chrome shown={chrome} barRef={barRef} lang={lang} onLang={setLang}
           onMenus={() => router.push(`/prova/${token}`)}
-          categories={pageInfo.starts} active={activeCategory} onJump={p => apiRef.current?.jump(p)} />
+          categories={pageInfo.starts} active={activeCategory} onJump={p => apiRef.current?.jump(p)}
+          tint={style.chrome.tint} accent={style.page.accent} />
       )}
-      {hint && !preview && status !== 'loading' && pageInfo.index === 0 && (
+      {hint && style.chrome.hints && !preview && status !== 'loading' && pageInfo.index === 0 && (
         <SwipeHint ref={hintRef} up={t('swipeUp', lang)} side={t('swipeSide', lang)} />
       )}
       {card && <DishCard key={card.id} dish={card} style={style} lang={lang} sequence={sequence} siblings={siblings} onClosed={onClosed} />}

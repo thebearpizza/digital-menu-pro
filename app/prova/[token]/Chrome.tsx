@@ -14,12 +14,14 @@
 import { forwardRef, useLayoutEffect, useRef, useState } from 'react'
 import { FlagIcon } from '@/components/ui/FlagIcon'
 import { ALL_LANGS, LANG_LABELS, type Lang } from '@/lib/translations'
-import { GlassButton, GlassMenu, GlassMenuItem, GlassSheen, glassSurface, SPRING } from './Glass'
+import { GlassButton, GlassMenu, GlassMenuItem, GlassSheen, GlassTint, glassInk, glassSurface, SPRING, type GlassTintKind } from './Glass'
 import { t } from './i18n'
 import { SANS } from './typeset'
+import { mix } from '@/lib/menuStyle'
 
-const INK = '#1d1915'
-const SELECTED = '#6e5838'   // oro scuro del menu: categoria aperta
+// Categoria aperta: l'accento del menu (scurito sul vetro chiaro, schiarito su
+// quello scuro, per restare leggibile).
+const selectedOf = (accent: string, tint: GlassTintKind) => mix(accent, tint === 'dark' ? '#ffffff' : '#000000', tint === 'dark' ? 0.35 : 0.3)
 export const BAR_H = 42
 /** Spostamento della barra nascosta (px oltre all'area sicura in basso). */
 export const BAR_HIDE = BAR_H + 22
@@ -35,9 +37,12 @@ interface Props {
   categories: { index: number; name: string; page: number }[]
   active:     number
   onJump:     (page: number) => void
+  tint:       GlassTintKind
+  accent:     string
 }
 
-export default function Chrome({ shown, barRef, lang, onLang, onMenus, categories, active, onJump }: Props) {
+export default function Chrome({ shown, barRef, lang, onLang, onMenus, categories, active, onJump, tint, accent }: Props) {
+  const INK = glassInk(tint)
   const [open, setOpen] = useState<null | 'lang'>(null)
   const hide = !shown && !open
   // Il pannello delle lingue si apre sopra il suo tasto.
@@ -50,7 +55,7 @@ export default function Chrome({ shown, barRef, lang, onLang, onMenus, categorie
   }
 
   return (
-    <>
+    <GlassTint.Provider value={tint}>
       <div ref={barRef} className="fixed left-0 right-0 flex items-center justify-center"
         style={{
           bottom: BOTTOM, zIndex: 40, gap: 8,
@@ -68,7 +73,7 @@ export default function Chrome({ shown, barRef, lang, onLang, onMenus, categorie
             <span style={{ fontFamily: SANS, fontSize: 14.5, fontWeight: 600, letterSpacing: '0.01em' }}>{t('menu', lang)}</span>
           </GlassButton>
         </Slot>
-        {categories.length > 1 && <CategoryBar categories={categories} active={active} onJump={onJump} hide={hide} />}
+        {categories.length > 1 && <CategoryBar categories={categories} active={active} onJump={onJump} hide={hide} tint={tint} accent={accent} />}
         <Slot hide={hide} ref={langRef}>
           <GlassButton size={BAR_H} label={`${t('language', lang)}: ${LANG_LABELS[lang]}`} expanded={open === 'lang'} onClick={toggleLang}>
             <Flag lang={lang} />
@@ -82,7 +87,7 @@ export default function Chrome({ shown, barRef, lang, onLang, onMenus, categorie
             onClick={() => { setOpen(null); onLang(l) }} />
         ))}
       </GlassMenu>
-    </>
+    </GlassTint.Provider>
   )
 }
 
@@ -92,12 +97,17 @@ const Slot = forwardRef<HTMLDivElement, { hide: boolean; children: React.ReactNo
 
 // ── Barra delle categorie ────────────────────────────────────────────────────
 
-function CategoryBar({ categories, active, onJump, hide }: {
+function CategoryBar({ categories, active, onJump, hide, tint, accent }: {
   categories: Props['categories']
   active:     number
   onJump:     (page: number) => void
   hide:       boolean
+  tint:       GlassTintKind
+  accent:     string
 }) {
+  const dark = tint === 'dark'
+  const SELECTED = selectedOf(accent, tint)
+  const ar = parseInt(accent.slice(1, 3), 16), ag = parseInt(accent.slice(3, 5), 16), ab = parseInt(accent.slice(5, 7), 16)
   const scrollRef = useRef<HTMLDivElement>(null)
   const chipRefs = useRef<(HTMLButtonElement | null)[]>([])
   const [ind, setInd] = useState<{ left: number; width: number } | null>(null)
@@ -115,7 +125,7 @@ function CategoryBar({ categories, active, onJump, hide }: {
 
   return (
     <nav aria-label="Categorie" className="relative overflow-hidden min-w-0"
-      style={{ ...glassSurface(), pointerEvents: hide ? 'none' : 'auto', borderRadius: BAR_H / 2, height: BAR_H, flex: '0 1 auto', maxWidth: 560 }}>
+      style={{ ...glassSurface('light', tint), pointerEvents: hide ? 'none' : 'auto', borderRadius: BAR_H / 2, height: BAR_H, flex: '0 1 auto', maxWidth: 560 }}>
       <GlassSheen />
       <div ref={scrollRef} className="relative h-full overflow-x-auto"
         style={{ scrollbarWidth: 'none', touchAction: 'pan-x', overscrollBehaviorX: 'contain',
@@ -127,8 +137,10 @@ function CategoryBar({ categories, active, onJump, hide }: {
               // Selettore come la barra di iOS 26: capsula appena tinta (oro
               // del menu) con filo di luce, non una pillola bianca piena.
               style={{ top: 5, bottom: 5, left: ind.left, width: ind.width, borderRadius: 16,
-                background: 'rgba(154,124,80,0.14)',
-                boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.55), inset 0 0 0 0.5px rgba(120,92,52,0.12)',
+                background: `rgba(${ar},${ag},${ab},${dark ? 0.26 : 0.14})`,
+                boxShadow: dark
+                  ? 'inset 0 1px 0 rgba(255,255,255,0.16), inset 0 0 0 0.5px rgba(255,255,255,0.10)'
+                  : `inset 0 1px 0 rgba(255,255,255,0.55), inset 0 0 0 0.5px rgba(${ar},${ag},${ab},0.16)`,
                 transition: `left 420ms ${SPRING}, width 420ms ${SPRING}` }} />
           )}
           {categories.map((c, i) => (
@@ -139,7 +151,7 @@ function CategoryBar({ categories, active, onJump, hide }: {
               // Stesso spessore per tutte (l'indicatore non cambia misura
               // cambiando selezione); nomi lunghi con i puntini.
               style={{ height: 32, maxWidth: 176, padding: '0 13px', borderRadius: 16, fontFamily: SANS, fontSize: 13, fontWeight: 600,
-                letterSpacing: '0.01em', color: i === active ? SELECTED : 'rgba(29,25,21,0.66)', transition: 'color 250ms ease',
+                letterSpacing: '0.01em', color: i === active ? SELECTED : dark ? 'rgba(255,255,255,0.72)' : 'rgba(29,25,21,0.66)', transition: 'color 250ms ease',
                 WebkitTapHighlightColor: 'transparent' }}>
               {c.name}
             </button>
