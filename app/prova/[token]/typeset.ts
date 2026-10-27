@@ -259,8 +259,10 @@ export function layoutMenu(ctx: Ctx, data: MenuData, vp: Viewport): Layout {
   // ── Grana della carta: rumore fisso, generato una volta.
   const grain = makeGrain()
 
+  /** Disegna la pagina `index`; fuori dall'intervallo disegna carta vuota
+   *  (es. la destra dell'ultima doppia pagina quando le pagine sono dispari). */
   const paint = (c: Ctx, index: number) => {
-    const page = pages[index]
+    const page = pages[index] as Page | undefined
     const { w, h } = vp
     // Carta: tinta calda, luce appena più chiara al centro, grana finissima.
     c.fillStyle = PAPER
@@ -275,6 +277,7 @@ export function layoutMenu(ctx: Ctx, data: MenuData, vp: Viewport): Layout {
       if (pat) { c.globalAlpha = 0.05; c.fillStyle = pat; c.fillRect(0, 0, w, h); c.globalAlpha = 1 }
     }
     c.textBaseline = 'alphabetic'
+    if (!page) return
 
     // Testatina (dalla seconda pagina) e numero di pagina.
     c.fillStyle = ACCENT

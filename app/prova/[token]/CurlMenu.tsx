@@ -2,15 +2,20 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // Menu a tutto schermo con sfoglio "a cilindro" (prototipo).
 //
-// Stato: pagina corrente `index`. Durante uno sfoglio:
-//   avanti   → la pagina `index` si arrotola e scopre `index + 1`;
-//   indietro → la pagina `index − 1` (già girata) torna giù sopra `index`.
-// In entrambi i casi la pagina che si muove è afferrata sul bordo libero
-// (P0 = destra, all'altezza del dito) e il punto F segue il dito.
+// Due impaginazioni, come l'app Libri:
+//   • pagina singola (telefono, tablet in verticale): il foglio è tutto lo
+//     schermo, il dorso è il bordo sinistro;
+//   • doppia pagina (tablet/schermo largo in orizzontale): due pagine
+//     affiancate, il dorso è al centro; il foglio di destra gira attorno al
+//     dorso e si posa sulla sinistra mostrando sul retro la pagina successiva.
+//
+// `index` = prima pagina visibile (in doppia pagina: la sinistra, sempre pari).
+// Il foglio che si muove è afferrato sul bordo libero (P0, a destra, all'altezza
+// del dito); F è il punto dove quel bordo deve trovarsi.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useEffect, useRef, useState } from 'react'
-import { CurlRenderer, constrain, solveCurl, type Vec } from './curl'
+import { CurlRenderer, constrain, solveCurl, type Rect, type Scene, type Sheet, type Vec } from './curl'
 import { layoutMenu, FONT_FACES, PAPER, type Layout, type MenuData, type Insets } from './typeset'
 
 const FONTS_CSS = '/api/gfonts/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400;1,500&family=Inter:wght@400;500;600&display=block'
@@ -51,9 +56,8 @@ export default function CurlMenu({ data }: { data: MenuData }) {
     const probe  = probeRef.current!
     let disposed = false
 
-    // ── Font: CSS dal nostro dominio (proxy), poi attesa delle facce usate.
-    // Prima il foglio di stile (dichiara le facce), POI la richiesta delle facce:
-    // chiesta prima, document.fonts.load risponde "pronto" senza aver caricato.
+    // ── Font: prima il foglio di stile (dichiara le facce), POI la richiesta
+    // delle facce: chiesta prima, document.fonts.load risponde "pronto" a vuoto.
     const cssReady = new Promise<void>(resolve => {
       let link = document.querySelector<HTMLLinkElement>('link[data-curl-fonts]')
       if (link?.dataset.loaded) { resolve(); return }
@@ -83,6 +87,8 @@ export default function CurlMenu({ data }: { data: MenuData }) {
     let index = 0
     let dpr = 1
     let W = 0, H = 0
+    let spread = false
+    let pageW = 0, spineX = 0
     const textures = new Map<number, WebGLTexture>()
     const bitmaps  = new Map<number, HTMLCanvasElement>()   // solo ripiego 2D
 
@@ -90,6 +96,11 @@ export default function CurlMenu({ data }: { data: MenuData }) {
     let turn: Turn | null = null
     let anim: Anim | null = null
     let raf = 0
+
+    const step = () => (spread ? 2 : 1)
+    const pageCount = () => layout?.pages.length ?? 0
+    const canForward = () => index + step() < pageCount()
+    const canBack = () => index > 0
 
     const insets = (): Insets => {
       const cs = getComputedStyle(probe)
@@ -100,20 +111,22 @@ export default function CurlMenu({ data }: { data: MenuData }) {
     }
 
     const pageCanvas = (i: number): HTMLCanvasElement => {
-      scratch.width = Math.round(W * dpr); scratch.height = Math.round(H * dpr)
+      scratch.width = Math.round(pageW * dpr); scratch.height = Math.round(H * dpr)
       sctx.setTransform(dpr, 0, 0, dpr, 0, 0)
       layout!.paint(sctx, i)
       return scratch
     }
 
+    // Pagine fuori intervallo (fine della doppia pagina) = carta vuota.
     const texture = (i: number): WebGLTexture | null => {
-      if (!layout || i < 0 || i >= layout.pages.length || !renderer) return null
-      let t = textures.get(i)
-      if (!t) { t = renderer.createTexture(pageCanvas(i)); textures.set(i, t) }
+      if (!layout || !renderer || i < 0) return null
+      const key = Math.min(i, pageCount())   // tutte le vuote condividono una texture
+      let t = textures.get(key)
+      if (!t) { t = renderer.createTexture(pageCanvas(key)); textures.set(key, t) }
       return t
     }
     const bitmap = (i: number): HTMLCanvasElement | null => {
-      if (!layout || i < 0 || i >= layout.pages.length) return null
+      if (!layout || i < 0 || i >= pageCount()) return null
       let b = bitmaps.get(i)
       if (!b) {
         const src = pageCanvas(i)
@@ -124,18 +137,63 @@ export default function CurlMenu({ data }: { data: MenuData }) {
       return b
     }
 
-    // Tiene in memoria solo le pagine vicine; prepara in anticipo le adiacenti.
+    // Tiene in memoria solo le pagine vicine; prepara in anticipo quelle utili.
     const prune = () => {
-      for (const [i, t] of Array.from(textures)) if (Math.abs(i - index) > 2) { renderer?.deleteTexture(t); textures.delete(i) }
-      for (const i of Array.from(bitmaps.keys())) if (Math.abs(i - index) > 2) bitmaps.delete(i)
+      const keep = spread ? 4 : 2
+      for (const [i, t] of Array.from(textures)) {
+        if (i !== pageCount() && Math.abs(i - index) > keep) { renderer?.deleteTexture(t); textures.delete(i) }
+      }
+      for (const i of Array.from(bitmaps.keys())) if (Math.abs(i - index) > keep) bitmaps.delete(i)
     }
     let warmTimer = 0
     const warm = () => {
       clearTimeout(warmTimer)
       warmTimer = window.setTimeout(() => {
-        for (const i of [index + 1, index - 1]) { if (renderer) texture(i); else bitmap(i) }
+        const want = spread ? [index + 2, index + 3, index - 1, index - 2] : [index + 1, index - 1]
+        for (const i of want) { if (i < 0 || i > pageCount()) continue; if (renderer) texture(i); else bitmap(i) }
         draw()
       }, 60)
+    }
+
+    // ── Scena
+    const leftRect  = (): Rect => ({ x: 0, y: 0, w: pageW, h: H })
+    const rightRect = (): Rect => ({ x: spineX, y: 0, w: pageW, h: H })
+    const GUTTER_SINGLE = 0.06, GUTTER_SPREAD = 0.13
+
+    const buildScene = (): Scene | null => {
+      if (!layout || !renderer) return null
+      const sheet = (rect: Rect, i: number, gutter: 'left' | 'right', kind: 0 | 1 | 2 = 0): Sheet | null => {
+        const t = texture(i)
+        return t ? { rect, front: t, gutter, gutterK: spread ? GUTTER_SPREAD : GUTTER_SINGLE, kind } : null
+      }
+      const only = <T,>(xs: (T | null)[]) => xs.filter((x): x is T => !!x)
+
+      if (!turn) {
+        const statics = spread
+          ? only([sheet(leftRect(), index, 'right'), sheet(rightRect(), index + 1, 'left')])
+          : only([sheet(rightRect(), index, 'left')])
+        return { statics, moving: null, shadow: 0 }
+      }
+
+      const fwd = turn.kind === 'forward'
+      const curl = solveCurl(turn.P0, turn.F, pageW)
+      const prog = Math.max(0, Math.min(1, (turn.P0.x - turn.F.x) / (2 * pageW)))
+      const shadow = Math.min(1, prog * 7, (1 - prog) * 7)
+      // Il foglio che si muove: la destra che gira (avanti) o la sinistra che
+      // torna (indietro). In doppia pagina il retro è la pagina vera.
+      const frontIdx = fwd ? index + (spread ? 1 : 0) : index - 1
+      const backIdx  = fwd ? index + 2 : index
+      const movingSheet = sheet(rightRect(), frontIdx, 'left')
+      if (!movingSheet) return null
+      const moving = { ...movingSheet, back: spread ? texture(backIdx) : null, curl }
+
+      const statics = spread
+        ? only([
+            sheet(leftRect(),  fwd ? index : index - 2, 'right', 2),
+            sheet(rightRect(), fwd ? index + 3 : index + 1, 'left', 1),
+          ])
+        : only([sheet(rightRect(), fwd ? index + 1 : index, 'left', 1)])
+      return { statics, moving, shadow }
     }
 
     // ── Disegno
@@ -143,17 +201,8 @@ export default function CurlMenu({ data }: { data: MenuData }) {
       raf = 0
       if (!layout) return
       if (renderer) {
-        if (turn) {
-          const front = texture(turn.kind === 'forward' ? index : index - 1)
-          const bottom = texture(turn.kind === 'forward' ? index + 1 : index)
-          const c = solveCurl(turn.P0, turn.F, W)
-          const prog = Math.max(0, Math.min(1, (turn.P0.x - turn.F.x) / (2 * W)))
-          const shadow = Math.min(1, prog * 7, (1 - prog) * 7)
-          if (front) renderer.render({ front, bottom, curl: c, shadow })
-        } else {
-          const front = texture(index)
-          if (front) renderer.render({ front, bottom: null, curl: null, shadow: 0 })
-        }
+        const scene = buildScene()
+        if (scene) renderer.render(scene)
       } else if (ctx2d) {
         // Ripiego: la pagina scorre via orizzontalmente, senza 3D.
         ctx2d.setTransform(dpr, 0, 0, dpr, 0, 0)
@@ -175,10 +224,14 @@ export default function CurlMenu({ data }: { data: MenuData }) {
     }
     const request = () => { if (!raf) raf = requestAnimationFrame(draw) }
 
-    // ── Misure, impaginazione, resize (mantiene la pagina del primo piatto visto)
+    // ── Misure, impaginazione, resize (mantiene il primo piatto visto)
     const relayout = () => {
       const anchor = layout?.pages[index]?.anchor ?? null
       W = window.innerWidth; H = window.innerHeight
+      // Doppia pagina come Libri: schermo largo e in orizzontale (solo con WebGL).
+      spread = !!renderer && W >= 700 && W / H >= 1.15
+      pageW = spread ? W / 2 : W
+      spineX = spread ? W / 2 : 0
       dpr = Math.min(window.devicePixelRatio || 1, 3)
       if (renderer) {
         const max = renderer.maxTexture
@@ -189,16 +242,17 @@ export default function CurlMenu({ data }: { data: MenuData }) {
       renderer?.resize(W, H, canvas.width, canvas.height)
       for (const t of Array.from(textures.values())) renderer?.deleteTexture(t)
       textures.clear(); bitmaps.clear()
-      layout = layoutMenu(sctx, data, { w: W, h: H, insets: insets() })
+      layout = layoutMenu(sctx, data, { w: pageW, h: H, insets: insets() })
       const found = anchor ? layout.pages.findIndex(p => p.anchor === anchor) : -1
       index = found >= 0 ? found : Math.min(index, layout.pages.length - 1)
+      if (spread) index -= index % 2
       turn = null; anim = null; drag = null
       draw(); warm()
     }
 
     // ── Animazione di rilascio
     const easeOut = (x: number) => 1 - Math.pow(1 - x, 3)
-    const step = (now: number) => {
+    const tick = (now: number) => {
       if (!anim) return
       const k = Math.min(1, (now - anim.t0) / anim.dur)
       const e = easeOut(k)
@@ -206,28 +260,29 @@ export default function CurlMenu({ data }: { data: MenuData }) {
         x: anim.from.x + (anim.to.x - anim.from.x) * e,
         y: anim.from.y + (anim.to.y - anim.from.y) * e - Math.sin(Math.PI * e) * anim.arc,
       }
-      anim.turn.F = constrain(anim.turn.P0, raw, H)
+      anim.turn.F = constrain(anim.turn.P0, raw, spineX, H)
       turn = anim.turn
-      if (k < 1) { draw(); requestAnimationFrame(step); return }
+      if (k < 1) { draw(); requestAnimationFrame(tick); return }
       finish()
     }
     const finish = () => {
       if (!anim) return
       const { turn: t, commit } = anim
-      if (commit) index += t.kind === 'forward' ? 1 : -1
+      if (commit) index += (t.kind === 'forward' ? 1 : -1) * step()
       anim = null; turn = null
       draw(); prune(); warm()
     }
+    const turnedX = () => 2 * spineX - W     // F.x con il foglio girato del tutto
     const animate = (t: Turn, commit: boolean, velocity = 0, arc = 0) => {
-      const fullyTurned = { x: -t.P0.x, y: t.P0.y }
+      const fullyTurned = { x: turnedX(), y: t.P0.y }
       const flat = { x: t.P0.x, y: t.P0.y }
       const target = (t.kind === 'forward') === commit ? fullyTurned : flat
       const dist = Math.hypot(target.x - t.F.x, target.y - t.F.y)
       // Durata: proporzionale alla strada, più breve se il dito era veloce.
-      const base = Math.max(170, Math.min(520, (dist / W) * 430))
+      const base = Math.max(170, Math.min(560, (dist / pageW) * 430))
       const dur = Math.max(140, base / (1 + Math.min(2.5, Math.abs(velocity) * 0.9)))
-      anim = { turn: t, from: { ...t.F }, to: target, t0: performance.now(), dur: arc ? Math.max(dur, 420) : dur, commit, arc }
-      requestAnimationFrame(step)
+      anim = { turn: t, from: { ...t.F }, to: target, t0: performance.now(), dur: arc ? Math.max(dur, 460) : dur, commit, arc }
+      requestAnimationFrame(tick)
     }
     const skipAnim = () => {
       if (!anim) return
@@ -237,23 +292,27 @@ export default function CurlMenu({ data }: { data: MenuData }) {
 
     // ── Gesti
     const pos = (e: PointerEvent): Vec => ({ x: e.clientX, y: e.clientY })
-    const pageCount = () => layout?.pages.length ?? 0
-    // Il dito tiene la piega: arrivato al bordo opposto dello schermo la pagina
-    // è girata del tutto, qualunque sia il punto da cui è partito il gesto.
-    // (Piega sotto il dito ⇔ F.x ≈ 2·dito − W; il guadagno si adatta alla
-    // distanza che il dito ha davanti, con un tetto per i gesti a metà pagina.)
+
+    // Il dito tiene la piega: la piega sta sotto il dito (F.x ≈ 2·dito − W) e
+    // il foglio è girato del tutto quando il dito arriva al dorso / al bordo.
+    // Il guadagno si adatta alla strada che il dito ha davanti (tetto 3×).
     const turnFromDrag = (d: Drag, p: Vec): Turn => {
       const y0 = Math.max(0, Math.min(H, d.start.y))
       const P0 = { x: W, y: y0 }
       const dx = p.x - d.start.x, dy = p.y - d.start.y
       const fx = d.mode === 'forward'
-        ? W + dx * Math.min(3, (2 * W) / Math.max(1, d.start.x))
-        : -W + dx * Math.min(3, (2 * W) / Math.max(1, W - d.start.x))
-      return { kind: d.mode === 'forward' ? 'forward' : 'back', P0, F: constrain(P0, { x: fx, y: y0 + dy }, H) }
+        ? W + dx * Math.min(3, (2 * pageW) / Math.max(1, d.start.x - spineX))
+        : turnedX() + dx * Math.min(3, (2 * pageW) / Math.max(1, W - d.start.x))
+      return { kind: d.mode === 'forward' ? 'forward' : 'back', P0, F: constrain(P0, { x: fx, y: y0 + dy }, spineX, H) }
     }
 
     // Presa in basso → l'angolo sale verso il centro (e viceversa).
     const tapArc = (y0: number) => (y0 > H / 2 ? 1 : -1) * H * 0.07
+    const turnBy = (kind: 'forward' | 'back', y: number) => {
+      const y0 = Math.max(H * 0.15, Math.min(H * 0.85, y))
+      const F = kind === 'forward' ? { x: W - 1, y: y0 } : { x: turnedX() + 1, y: y0 }
+      animate({ kind, P0: { x: W, y: y0 }, F }, true, 0, tapArc(y0))
+    }
 
     const onDown = (e: PointerEvent) => {
       if (!layout || drag) return
@@ -273,11 +332,12 @@ export default function CurlMenu({ data }: { data: MenuData }) {
         const dx = p.x - drag.start.x, dy = p.y - drag.start.y
         if (Math.hypot(dx, dy) < 8) return
         if (Math.abs(dy) > Math.abs(dx) * 1.4) { drag.mode = 'none'; return }
-        if (dx < 0 && index < pageCount() - 1) drag.mode = 'forward'
-        else if (dx > 0 && index > 0) drag.mode = 'back'
+        if (dx < 0 && canForward()) drag.mode = 'forward'
+        else if (dx > 0 && canBack()) drag.mode = 'back'
         else { drag.mode = 'none'; return }
-        // Il gesto riparte da qui: niente salto iniziale.
-        drag.start = { x: p.x, y: drag.start.y }
+        // Il gesto riparte da qui (x E y): nessun salto, nessuna piega storta
+        // nei primi fotogrammi.
+        drag.start = { x: p.x, y: p.y }
       }
       if (drag.mode === 'none') return
       turn = turnFromDrag(drag, p)
@@ -298,18 +358,16 @@ export default function CurlMenu({ data }: { data: MenuData }) {
       drag = null
       const moved = Math.hypot(d.last.x - d.start.x, d.last.y - d.start.y)
       if (d.mode === 'undecided' && moved < 8 && e.timeStamp - d.startedAt < 400) {
-        // Tocco: destra = avanti, sinistra = indietro (il centro non fa nulla).
-        const y0 = Math.max(H * 0.15, Math.min(H * 0.85, d.start.y))
-        if (d.start.x > W * 0.6 && index < pageCount() - 1) {
-          animate({ kind: 'forward', P0: { x: W, y: y0 }, F: { x: W - 1, y: y0 } }, true, 0, tapArc(y0))
-        } else if (d.start.x < W * 0.4 && index > 0) {
-          animate({ kind: 'back', P0: { x: W, y: y0 }, F: { x: -W + 1, y: y0 } }, true, 0, tapArc(y0))
-        }
+        // Tocco: destra = avanti, sinistra = indietro.
+        const fwdZone = spread ? d.start.x > W * 0.55 : d.start.x > W * 0.6
+        const backZone = spread ? d.start.x < W * 0.45 : d.start.x < W * 0.4
+        if (fwdZone && canForward()) turnBy('forward', d.start.y)
+        else if (backZone && canBack()) turnBy('back', d.start.y)
         return
       }
       if (!turn || (d.mode !== 'forward' && d.mode !== 'back')) { turn = null; request(); return }
       const v = velocityX(d)
-      const prog = (turn.P0.x - turn.F.x) / (2 * W)   // 0 = piatta, 1 = girata
+      const prog = (turn.P0.x - turn.F.x) / (2 * pageW)   // 0 = piatta, 1 = girata
       const commit = turn.kind === 'forward'
         ? v < -0.35 || (prog > 0.33 && v < 0.25)
         : v > 0.35 || (prog < 0.67 && v > -0.25)
@@ -324,12 +382,8 @@ export default function CurlMenu({ data }: { data: MenuData }) {
 
     const onKey = (e: KeyboardEvent) => {
       if (anim || drag) return
-      const y0 = H * 0.7
-      if ((e.key === 'ArrowRight' || e.key === ' ') && index < pageCount() - 1) {
-        animate({ kind: 'forward', P0: { x: W, y: y0 }, F: { x: W - 1, y: y0 } }, true, 0, tapArc(y0))
-      } else if (e.key === 'ArrowLeft' && index > 0) {
-        animate({ kind: 'back', P0: { x: W, y: y0 }, F: { x: -W + 1, y: y0 } }, true, 0, tapArc(y0))
-      }
+      if ((e.key === 'ArrowRight' || e.key === ' ') && canForward()) turnBy('forward', H * 0.7)
+      else if (e.key === 'ArrowLeft' && canBack()) turnBy('back', H * 0.7)
     }
 
     // ── Contesto WebGL perso (es. app in background su iOS): si ricrea tutto.
