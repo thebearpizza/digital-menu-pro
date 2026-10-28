@@ -4,9 +4,10 @@
 //
 //  • Si apre salendo dal basso: una scheda quasi a tutto schermo (staccata ai
 //    lati e in alto, prosegue sotto il fondo dello schermo), il menu si scurisce.
-//  • Scorrendo verso il basso la scheda si allarga fino a tutto schermo;
-//    scorrendo verso l'alto si rimpicciolisce subito, ovunque si sia nel testo
-//    (come le barre di Safari): un solo movimento, nessun doppio passaggio.
+//  • Lo scorrimento decide la misura, sempre agli stessi punti: nei primi
+//    FREE px il testo scorre e la scheda resta staccata; tra FREE e
+//    FREE + EXPAND si allarga; oltre resta a tutto schermo finché non si torna
+//    lì. Lasciata a metà della corsa, la calamita la porta al punto più vicino.
 //  • In cima, tirando ancora verso il basso la scheda segue il dito e, lasciata
 //    oltre la soglia (o con un gesto deciso), si chiude.
 //  • Swipe orizzontale: piatto precedente/successivo del menu, con l'effetto
@@ -32,7 +33,8 @@ import { PHOTO_ASPECT, frameFor, frameStyle } from '@/lib/photoFrame'
 import { t } from './i18n'
 import type { Lang } from '@/lib/translations'
 
-const EXPAND = 96          // px di scorrimento per passare da staccata a tutto schermo
+const FREE   = 70          // px di scorrimento libero in cima: la scheda resta staccata
+const EXPAND = 170         // px di corsa per passare da staccata a tutto schermo
 const CLOSE_PULL = 110     // px di trascinamento oltre la cima per chiudere
 const DIM = 0.22           // scurimento della pagina sotto durante lo "Scivola"
 const VEIL = 0.55          // velo della pagina che scorre sopra un'altra (resta vetro)
@@ -160,6 +162,7 @@ export default function DishCard({ dish: first, style, lang, sequence, siblings,
   const cardRef     = useRef<HTMLDivElement>(null)
   const barRef      = useRef<HTMLDivElement>(null)
   const probeRef    = useRef<HTMLDivElement>(null)
+  const safeCache   = useRef({ w: 0, h: 0, top: 0 })
   const pages = useRef(new Map<string, { root: HTMLDivElement; scroller: HTMLDivElement; dim: HTMLDivElement; veil: HTMLDivElement; rubbed?: boolean }>())
 
   const [initial] = useState<Entry>(() => entryFor(first))
@@ -200,8 +203,12 @@ export default function DishCard({ dish: first, style, lang, sequence, siblings,
     if (!card || !bd || !bar || !probe) return
     const s = st.current
     const W = window.innerWidth, H = window.innerHeight
-    const cs = getComputedStyle(probe)
-    const safeTop = parseFloat(cs.paddingTop) || 0
+    // Area sicura in alto: letta solo quando cambia la misura dello schermo
+    // (getComputedStyle a ogni fotogramma costa durante lo scorrimento).
+    if (safeCache.current.w !== W || safeCache.current.h !== H) {
+      safeCache.current = { w: W, h: H, top: parseFloat(getComputedStyle(probe).paddingTop) || 0 }
+    }
+    const safeTop = safeCache.current.top
     const wide = W >= 700
     const p = smooth(s.q)
     const cardW = wide ? Math.min(760, W - 64) : W
@@ -434,9 +441,10 @@ export default function DishCard({ dish: first, style, lang, sequence, siblings,
      *  (rimbalzo di Safari + trascinamento insieme facevano scatti). */
     const setTopBounce = (sc: HTMLElement | null, on: boolean) => { if (sc) sc.style.overscrollBehaviorY = on ? 'contain' : 'none' }
 
-    // Scorrimento: la direzione allarga/rimpicciolisce (mai oltre quanto
-    // permette la distanza dalla cima: in cima la scheda è sempre staccata).
-    let lastDir = 0, settleTimer = 0
+    // Scorrimento: la posizione decide la misura (staccata fino a FREE px, a
+    // tutto schermo da FREE + EXPAND in giù): attacco e stacco sempre agli
+    // stessi punti.
+    let settleTimer = 0
     const onScroll = (e: Event) => {
       const sc = activeScroller()
       if (!sc || e.target !== sc) return
@@ -444,30 +452,25 @@ export default function DishCard({ dish: first, style, lang, sequence, siblings,
       if (s.trans) return
       const max = Math.max(0, sc.scrollHeight - sc.clientHeight)
       const top = Math.max(0, Math.min(max, sc.scrollTop))   // ignora i rimbalzi
-      const d = top - s.lastTop
       s.lastTop = top
       if (s.tweens.has('snap')) return                       // la calamita guida da sola
-      if (d) lastDir = Math.sign(d)
-      s.q = Math.min(clamp01(s.q + d / EXPAND), top / EXPAND)
+      s.q = clamp01((top - FREE) / EXPAND)
       schedule()
       clearTimeout(settleTimer); settleTimer = window.setTimeout(settle, 110)
     }
 
-    // Calamita (come iOS): lasciata a metà dell'allargamento, la scheda
-    // finisce il movimento da sola, nella direzione in cui si stava andando,
-    // e il contenuto scorre insieme dello spazio che mancava (come se il dito
-    // avesse finito il gesto). Scorrimento e allargamento restano sempre
-    // legati 1:1, così la scheda si attacca e si stacca sempre allo stesso
-    // punto dello scorrimento (in cima: staccata a 0, attaccata a EXPAND).
+    // Calamita: lasciata a metà della corsa (tra FREE e FREE + EXPAND), la
+    // scheda va al punto più vicino, staccata o attaccata, e il contenuto
+    // scorre insieme fino a quel punto. Fuori dalla corsa non fa nulla.
     const settle = () => {
       const sc = activeScroller()
       if (!sc || touch || s.trans || s.closing || s.tweens.has('snap')) return
       if (s.q <= 0.001 || s.q >= 0.999) return
-      const open = lastDir ? lastDir > 0 : s.q > 0.5
+      const open = s.q >= 0.5
       const q0 = s.q, top0 = Math.max(0, sc.scrollTop)
       const max = Math.max(0, sc.scrollHeight - sc.clientHeight)
-      const topTo = Math.max(0, Math.min(max, top0 + (open ? 1 - q0 : -q0) * EXPAND))
-      const dur = 260 + 160 * (open ? 1 - q0 : q0)
+      const topTo = Math.max(0, Math.min(max, open ? FREE + EXPAND : FREE))
+      const dur = 300 + 200 * (open ? 1 - q0 : q0)
       tween('snap', 0, 1, dur, easeOutCubic, v => {
         if (topTo !== top0) sc.scrollTop = top0 + (topTo - top0) * v
         s.q = q0 + ((open ? 1 : 0) - q0) * v
@@ -483,6 +486,9 @@ export default function DishCard({ dish: first, style, lang, sequence, siblings,
       touch = { x0: t0.clientX, y0: t0.clientY, sx: t0.clientX, sy: t0.clientY, axis: null, armed: atTop, pulling: false, last: [{ y: t0.clientY, t: e.timeStamp }], bounceClose: false }
       setTopBounce(sc, !atTop)
       s.tweens.delete('pull')
+      // Scheda ancora spostata (ripresa mentre torna, o un rilascio perso):
+      // il trascinamento continua da dove si trova.
+      if (s.pull > 0.5) { touch.pulling = true; touch.y0 = t0.clientY - s.pull }
       s.tweens.delete('snap')   // il dito riprende la scheda
       clearTimeout(settleTimer)
     }
@@ -711,7 +717,7 @@ function Page({ layer, lang, siblings, onLink, register }: {
       <div data-scroller className="absolute inset-0 overflow-y-auto"
         style={{ overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch', touchAction: 'pan-y',
           background: `linear-gradient(180deg, transparent calc(100% - 150px), ${rgbaVar(SURFACE)} calc(100% - 40px))` }}>
-        <div style={{ position: 'relative', minHeight: `calc(100% + ${EXPAND}px)`, display: 'flex', flexDirection: 'column' }}>
+        <div style={{ position: 'relative', minHeight: `calc(100% + ${FREE + EXPAND}px)`, display: 'flex', flexDirection: 'column' }}>
           {/* Vetro sopra la cima: nel rimbalzo di iOS si vede la stessa lastra e
               non il menu scurito dietro (sopra l'inizio non si può scorrere,
               quindi non allunga la pagina). */}

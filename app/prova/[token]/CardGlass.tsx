@@ -110,6 +110,13 @@ export default function CardGlass({ barRef, cardRef, base, frosted, glass, onSta
           a *= frost
         }
         it.a = a
+        // Parti basse: conta solo il pezzo sotto la tela (che copra tutta la
+        // tela o quasi non cambia nulla mentre scorre: niente ridisegno).
+        if (!it.img) {
+          const x0 = Math.max(0, it.x), y0 = Math.max(0, it.y)
+          const x1 = Math.min(W, it.x + it.w), y1 = Math.min(H, it.y + it.h)
+          it.x = Math.round(x0); it.y = Math.round(y0); it.w = Math.round(x1 - x0); it.h = Math.round(y1 - y0)
+        }
         if (a > 0.01) under.push(it)
       })
       const sig = JSON.stringify([W, H, rects, under.map(u => [u.img?.src ?? 0, u.x, u.y, u.w, u.h, u.clip, u.rad, u.a.toFixed(3)]), base, frosted, glass])

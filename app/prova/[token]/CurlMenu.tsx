@@ -17,6 +17,7 @@
 import { forwardRef, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { CurlRenderer, constrain, solveCurl, type Rect, type Scene, type Sheet, type Vec } from './curl'
 import AdminReturn from './AdminReturn'
+import FpsMeter from './FpsMeter'
 import { useRouter } from 'next/navigation'
 import { layoutMenu, mediaViews, SANS, type Dish, type Layout, type MenuData, type MediaView, type Insets } from './typeset'
 import { parseMedia } from '@/lib/menuMedia'
@@ -888,6 +889,7 @@ export default function CurlMenu({ data: base, style: initialStyle, preview = fa
   return (
     <div ref={rootRef} className="fixed inset-0 overflow-hidden" style={{ background: style.page.paper, overscrollBehavior: 'none' }}>
       {!preview && <AdminReturn />}
+      <FpsMeter />
       <div ref={stageRef} className="absolute inset-0 overflow-hidden">
         {/* Sonda invisibile: legge le aree sicure (notch, barra home) in px. */}
         <div ref={probeRef} aria-hidden className="pointer-events-none fixed inset-0 invisible"
