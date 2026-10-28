@@ -9,7 +9,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import {
-  CUSTOM_PREFIX, PAPER_TEXTURES, bool, fontsUrlFor, facesFor, hex, num, obj, parseCustomFonts, pick, text,
+  CUSTOM_PREFIX, PAPER_TEXTURES, bool, colorRef, fontsUrlFor, facesFor, hex, num, obj, parseCustomFonts, pick, text,
   ORNAMENTS, type ColorRef, type CustomFont, type Ornament, type PaperTextureKind, type TextStyle, type Weight,
 } from './menuStyle'
 
@@ -56,12 +56,20 @@ export interface LandingStyle {
   chooseLabel: { show: boolean; text: TextStyle }
   buttons: {
     style:  'glass' | 'solid' | 'outline' | 'minimal'
-    tint:   'light' | 'dark'           // vetro chiaro o fumé
+    tint:   'light' | 'dark'           // vetro chiaro o fumé (vetro dei browser senza WebGL)
+    /** Vetro "liquido" (rifrazione vera): vale per pulsanti, lingua e social. */
+    glass:  GlassLook
     fill:   string                     // colore pieno (stile 'solid')
-    radius: number                     // 0 – 40
-    height: number                     // 44 – 96
+    radius: number                     // 0 – 48
+    height: number                     // 44 – 110
     width:  number                     // larghezza massima 240 – 560
     gap:    number                     // 0 – 28
+    paddingX: number                   // spazio ai lati del testo: 8 – 48
+    border: { width: number; color: ColorRef }   // bordo: 0 – 4 px
+    shadow: number                     // ombra dei pulsanti pieni/bordati: 0 – 1
+    content: 'stack' | 'split'         // orario sotto il nome, oppure nome a sinistra e orario a destra
+    arrow:  'none' | 'chevron' | 'arrow'
+    press:  'liquid' | 'scale' | 'none'
     name:   TextStyle
     hours:  { show: boolean; text: TextStyle }
   }
@@ -71,6 +79,34 @@ export interface LandingStyle {
   motion:   { entrance: 'rise' | 'fade' | 'none' }
   customFonts: CustomFont[]
 }
+
+/** Il vetro liquido: lente (rifrazione, spessore del bordo, dispersione),
+ *  smerigliatura, colore, luce e ombra. */
+export interface GlassLook {
+  frost:      number   // 0 – 1
+  refraction: number   // 0 – 1
+  bezel:      number   // 0 – 1
+  dispersion: number   // 0 – 1
+  tint:       string
+  tintAmount: number   // 0 – 1
+  brightness: number   // -1 – 1
+  saturation: number   // 0 – 2
+  highlight:  number   // 0 – 1
+  lightAngle: number   // 0 – 360
+  shadow:     number   // 0 – 1
+}
+export const GLASS_PRESETS: { name: string; desc: string; look: GlassLook }[] = [
+  { name: 'Cristallo', desc: 'Limpido, lente forte',
+    look: { frost: 0.08, refraction: 0.85, bezel: 0.6, dispersion: 0.45, tint: '#ffffff', tintAmount: 0.06, brightness: 0.06, saturation: 1.3, highlight: 0.8, lightAngle: 135, shadow: 0.45 } },
+  { name: 'Chiaro', desc: 'Vetro di iPhone, appena smerigliato',
+    look: { frost: 0.35, refraction: 0.6, bezel: 0.55, dispersion: 0.3, tint: '#ffffff', tintAmount: 0.16, brightness: 0.1, saturation: 1.25, highlight: 0.7, lightAngle: 135, shadow: 0.4 } },
+  { name: 'Fumé', desc: 'Scuro e profondo',
+    look: { frost: 0.4, refraction: 0.55, bezel: 0.5, dispersion: 0.25, tint: '#15120f', tintAmount: 0.38, brightness: -0.08, saturation: 1.2, highlight: 0.55, lightAngle: 135, shadow: 0.55 } },
+  { name: 'Ghiaccio', desc: 'Molto smerigliato, freddo',
+    look: { frost: 0.85, refraction: 0.35, bezel: 0.45, dispersion: 0.15, tint: '#eef4f8', tintAmount: 0.3, brightness: 0.14, saturation: 0.9, highlight: 0.6, lightAngle: 120, shadow: 0.35 } },
+  { name: 'Ambra', desc: 'Caldo, dorato',
+    look: { frost: 0.3, refraction: 0.6, bezel: 0.55, dispersion: 0.3, tint: '#b8862f', tintAmount: 0.3, brightness: 0.02, saturation: 1.35, highlight: 0.7, lightAngle: 135, shadow: 0.45 } },
+]
 
 const T = (font: string, size: number, weight: Weight, color: ColorRef, o: Partial<TextStyle> = {}): TextStyle =>
   ({ font, size, weight, italic: false, color, upper: false, tracking: 0, ...o })
@@ -94,7 +130,8 @@ export const DEFAULT_LANDING: LandingStyle = {
   ornament: 'diamond',
   chooseLabel: { show: true, text: T(SANS, 10.5, 600, 'soft', { upper: true, tracking: 0.24 }) },
   buttons: {
-    style: 'glass', tint: 'light', fill: '#1d1915', radius: 22, height: 62, width: 380, gap: 10,
+    style: 'glass', tint: 'light', glass: GLASS_PRESETS[1].look, fill: '#1d1915', radius: 22, height: 62, width: 380, gap: 10,
+    paddingX: 20, border: { width: 0, color: 'ink' }, shadow: 0.4, content: 'stack', arrow: 'none', press: 'liquid',
     name: T(SERIF, 23, 500, 'ink'),
     hours: { show: true, text: T(SANS, 10.5, 600, 'accent', { tracking: 0.16 }) },
   },
@@ -103,6 +140,16 @@ export const DEFAULT_LANDING: LandingStyle = {
   legal: { text: T(SANS, 10.5, 400, 'soft') },
   motion: { entrance: 'rise' },
   customFonts: [],
+}
+
+function parseGlass(v: unknown, d: GlassLook): GlassLook {
+  const g = obj(v)
+  return {
+    frost: num(g.frost, 0, 1, d.frost), refraction: num(g.refraction, 0, 1, d.refraction), bezel: num(g.bezel, 0, 1, d.bezel),
+    dispersion: num(g.dispersion, 0, 1, d.dispersion), tint: hex(g.tint, d.tint), tintAmount: num(g.tintAmount, 0, 1, d.tintAmount),
+    brightness: num(g.brightness, -1, 1, d.brightness), saturation: num(g.saturation, 0, 2, d.saturation),
+    highlight: num(g.highlight, 0, 1, d.highlight), lightAngle: num(g.lightAngle, 0, 360, d.lightAngle), shadow: num(g.shadow, 0, 1, d.shadow),
+  }
 }
 
 const isUrl = (u: unknown): u is string => typeof u === 'string' && /^https:\/\//.test(u)
@@ -158,10 +205,17 @@ export function parseLanding(raw: unknown): LandingStyle {
       style: pick(bt.style, ['glass', 'solid', 'outline', 'minimal'] as const, d.buttons.style),
       tint: pick(bt.tint, ['light', 'dark'] as const, d.buttons.tint),
       fill: hex(bt.fill, d.buttons.fill),
-      radius: num(bt.radius, 0, 40, d.buttons.radius),
-      height: num(bt.height, 44, 96, d.buttons.height),
+      glass: parseGlass(bt.glass, bt.tint === 'dark' ? GLASS_PRESETS[2].look : d.buttons.glass),
+      radius: num(bt.radius, 0, 48, d.buttons.radius),
+      height: num(bt.height, 44, 110, d.buttons.height),
       width: num(bt.width, 240, 560, d.buttons.width),
       gap: num(bt.gap, 0, 28, d.buttons.gap),
+      paddingX: num(bt.paddingX, 8, 48, d.buttons.paddingX),
+      border: { width: num(obj(bt.border).width, 0, 4, d.buttons.border.width), color: colorRef(obj(bt.border).color, d.buttons.border.color) },
+      shadow: num(bt.shadow, 0, 1, d.buttons.shadow),
+      content: pick(bt.content, ['stack', 'split'] as const, d.buttons.content),
+      arrow: pick(bt.arrow, ['none', 'chevron', 'arrow'] as const, d.buttons.arrow),
+      press: pick(bt.press, ['liquid', 'scale', 'none'] as const, d.buttons.press),
       name: tx(bt.name, d.buttons.name),
       hours: { show: bool(hr.show, d.buttons.hours.show), text: tx(hr.text, d.buttons.hours.text) },
     },
@@ -184,6 +238,7 @@ export function initialLanding(media: LandingMedia[], logo: string | null): Land
     st.background.media = media
     st.colors = { ...ON_MEDIA }
     st.buttons.tint = 'dark'
+    st.buttons.glass = { ...GLASS_PRESETS[2].look }
     st.description.text.color = 'soft'
     st.buttons.hours.text.color = 'soft'
   }

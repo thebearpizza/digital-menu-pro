@@ -35,6 +35,7 @@ import { loadCustomFonts, loadFontCss, loadStyleAssets } from './fonts'
 import { warmImage, whenIdle } from './preload'
 import { paintPaper } from './paper'
 import { drawOrnament } from './typeset'
+import GlassStage, { type StageBackground } from './GlassStage'
 
 const LANG_KEY = 'dmp-menu-lang'
 
@@ -89,6 +90,11 @@ export default function Landing({ token, restaurant, menus, style: initialStyle,
   const [introOn, setIntroOn] = useState(false)
   const introRef = useRef<HTMLVideoElement>(null)
   const introBusy = useRef(false)
+  // Vetro liquido: chi gestisce lo sfondo lo descrive qui; il palco WebGL lo
+  // disegna con le lenti. glOn = palco attivo (altrimenti vetro dei browser).
+  const rootRef = useRef<HTMLDivElement>(null)
+  const bgRef = useRef<(() => StageBackground) | null>(null)
+  const [glOn, setGlOn] = useState(false)
 
   // Anteprima: lo stile arriva a ogni modifica dalla Personalizzazione.
   useEffect(() => {
@@ -263,24 +269,35 @@ export default function Landing({ token, restaurant, menus, style: initialStyle,
       <div data-pick="l-buttons" className="flex flex-col" style={{ gap: B.style === 'minimal' ? 0 : B.gap }}>
         {menus.map((m, i) => (
           <MenuButton key={m.id} st={st} name={menuName(m.name, m.translations, lang)} hours={B.hours.show ? m.hours ?? null : null}
-            first={i === 0} left={left} onClick={() => open(m)} move={move(3 + i)} fade={fade(3 + i)} />
+            first={i === 0} left={left} gl={glOn} onClick={() => open(m)} move={move(3 + i)} fade={fade(3 + i)} />
         ))}
       </div>
     </section>
   )
 
   return (
-    <div className="fixed inset-0 overflow-hidden" style={{ background: base }} onClickCapture={onPickCapture}>
+    <div ref={rootRef} className="fixed inset-0 overflow-hidden" style={{ background: base }} onClickCapture={onPickCapture}>
       <div data-pick="l-background" className="absolute inset-0">
-        {onMedia ? <Media st={st} introRef={introRef} introOn={introOn} /> : <PaperCanvas st={st} />}
+        {onMedia ? <Media st={st} introRef={introRef} introOn={introOn} bgRef={bgRef} /> : <PaperCanvas st={st} bgRef={bgRef} />}
       </div>
+      {/* Vetro liquido: sfondo e lenti disegnati in WebGL (sotto i testi). */}
+      <GlassStage rootRef={rootRef} background={bgRef} glass={B.glass} liquidPress={B.press === 'liquid'} onState={setGlOn} />
 
       {/* Lingua */}
       <div data-nopick className="fixed" style={{ top: 'calc(env(safe-area-inset-top) + 12px)', right: 'max(14px, env(safe-area-inset-right))', zIndex: 20 }}>
         <GlassTint.Provider value={onMedia || lum(bg.paper) < 0.45 ? 'dark' : 'light'}>
-          <GlassButton hidden={!shown} label={`${t('language', lang)}: ${LANG_LABELS[lang]}`} expanded={langOpen} onClick={() => setLangOpen(o => !o)}>
-            <Flag lang={lang} />
-          </GlassButton>
+          {glOn ? (
+            <button type="button" data-glass="" data-radius="20" aria-label={`${t('language', lang)}: ${LANG_LABELS[lang]}`} aria-expanded={langOpen}
+              onClick={() => setLangOpen(o => !o)} className="flex items-center justify-center"
+              style={{ width: 40, height: 40, borderRadius: 20, opacity: shown ? 1 : 0, transform: `scale(${shown ? 1 : 0.7})`,
+                transition: `transform 320ms ${SPRING}, opacity 220ms ease`, pointerEvents: shown ? 'auto' : 'none', WebkitTapHighlightColor: 'transparent' }}>
+              <Flag lang={lang} />
+            </button>
+          ) : (
+            <GlassButton hidden={!shown} label={`${t('language', lang)}: ${LANG_LABELS[lang]}`} expanded={langOpen} onClick={() => setLangOpen(o => !o)}>
+              <Flag lang={lang} />
+            </GlassButton>
+          )}
         </GlassTint.Provider>
       </div>
       <div data-nopick>
@@ -294,7 +311,7 @@ export default function Landing({ token, restaurant, menus, style: initialStyle,
       </div>
 
       <main className="relative h-full overflow-y-auto flex flex-col"
-        style={{ pointerEvents: introOn ? 'none' : undefined, alignItems: left ? 'flex-start' : 'center', padding: 'calc(env(safe-area-inset-top) + 64px) 22px calc(env(safe-area-inset-bottom) + 18px)', overscrollBehavior: 'contain' }}>
+        style={{ zIndex: 3, pointerEvents: introOn ? 'none' : undefined, alignItems: left ? 'flex-start' : 'center', padding: 'calc(env(safe-area-inset-top) + 64px) 22px calc(env(safe-area-inset-bottom) + 18px)', overscrollBehavior: 'contain' }}>
         {st.layout.header === 'center' && <div className="flex-1" style={{ minHeight: 12 }} />}
         {header}
         <GlassTint.Provider value={glassTint}>
@@ -309,12 +326,13 @@ export default function Landing({ token, restaurant, menus, style: initialStyle,
             <div data-pick="l-socials" className="flex" style={{ gap: 10, marginBottom: 18, justifyContent: left ? 'flex-start' : 'center' }}>
               {restaurant.socials.map(sc => (
                 <a key={sc.kind} href={sc.url} target="_blank" rel="noopener noreferrer" aria-label={sc.kind}
+                  data-glass={st.socials.style === 'glass' && glOn ? '' : undefined} data-radius="20"
                   className="relative flex items-center justify-center active:scale-95 transition-transform"
                   style={{
-                    ...(st.socials.style === 'glass' ? glassSurface('light', onMedia || lum(bg.paper) < 0.45 ? 'dark' : 'light') : {}),
+                    ...(st.socials.style === 'glass' && !glOn ? glassSurface('light', onMedia || lum(bg.paper) < 0.45 ? 'dark' : 'light') : {}),
                     width: 40, height: 40, borderRadius: 20, color: st.colors.ink, ...fade(3 + menus.length),
                   }}>
-                  {st.socials.style === 'glass' && <GlassSheen />}
+                  {st.socials.style === 'glass' && !glOn && <GlassSheen />}
                   <SocialIcon kind={sc.kind} />
                 </a>
               ))}
@@ -335,38 +353,65 @@ export default function Landing({ token, restaurant, menus, style: initialStyle,
 
 // ── Pulsante di un menu ──────────────────────────────────────────────────────
 
-function MenuButton({ st, name, hours, first, left, onClick, move, fade }: {
-  st: LandingStyle; name: string; hours: string | null; first: boolean; left: boolean; onClick: () => void
+function MenuButton({ st, name, hours, first, left, gl, onClick, move, fade }: {
+  st: LandingStyle; name: string; hours: string | null; first: boolean; left: boolean
+  /** Vetro liquido attivo (lo disegna il palco WebGL: qui solo testo). */
+  gl: boolean
+  onClick: () => void
   move: React.CSSProperties; fade: React.CSSProperties
 }) {
   const [pressed, setPressed] = useState(false)
   const release = () => setPressed(false)
   const B = st.buttons
   const dark = B.tint === 'dark'
+  const ink = landingColor(B.name.color, st)
+  const borderColor = landingColor(B.border.color, st)
+  const sh = B.shadow
   const surface: React.CSSProperties =
-    B.style === 'glass' ? (dark
-      ? { ...glassSurface('light', 'dark'), background: 'linear-gradient(180deg, rgba(30,24,18,0.30), rgba(30,24,18,0.18))', backdropFilter: 'blur(18px) saturate(1.6)', WebkitBackdropFilter: 'blur(18px) saturate(1.6)' }
-      : { ...glassSurface(), background: 'linear-gradient(180deg, rgba(255,255,255,0.62), rgba(255,255,255,0.42))' })
-    : B.style === 'solid' ? { background: B.fill, boxShadow: '0 6px 18px rgba(20,14,8,0.16), 0 1px 3px rgba(20,14,8,0.12)' }
-    : B.style === 'outline' ? { boxShadow: `inset 0 0 0 1.2px ${rgba(landingColor(B.name.color, st), 0.7)}` }
-    : { borderTop: first ? 'none' : `1px solid ${rgba(landingColor(B.name.color, st), 0.22)}`, borderRadius: 0 }
+    B.style === 'glass' ? (gl ? {}
+      : dark
+        ? { ...glassSurface('light', 'dark'), background: 'linear-gradient(180deg, rgba(30,24,18,0.30), rgba(30,24,18,0.18))', backdropFilter: 'blur(18px) saturate(1.6)', WebkitBackdropFilter: 'blur(18px) saturate(1.6)' }
+        : { ...glassSurface(), background: 'linear-gradient(180deg, rgba(255,255,255,0.62), rgba(255,255,255,0.42))' })
+    : B.style === 'solid' ? { background: B.fill, boxShadow: sh ? `0 ${6 * sh}px ${18 * sh}px rgba(20,14,8,${0.32 * sh}), 0 1px 3px rgba(20,14,8,${0.2 * sh})` : 'none' }
+    : B.style === 'outline' ? { boxShadow: `inset 0 0 0 ${Math.max(1, B.border.width || 1.2)}px ${rgba(B.border.width ? borderColor : ink, B.border.width ? 1 : 0.7)}${sh ? `, 0 ${6 * sh}px ${18 * sh}px rgba(0,0,0,${0.22 * sh})` : ''}` }
+    : { borderTop: first ? 'none' : `1px solid ${rgba(ink, 0.22)}`, borderRadius: 0 }
+  // Bordo scelto (pieno e vetro; il bordato lo ha già nel suo contorno).
+  const border = B.border.width && (B.style === 'solid' || B.style === 'glass') ? { outline: `${B.border.width}px solid ${borderColor}`, outlineOffset: -B.border.width } : {}
   // Sul colore pieno il testo si adatta (chiaro su fondo scuro, e viceversa)
   // se il ristoratore ha lasciato i colori della pagina.
   const solidText = B.style === 'solid' && (B.name.color === 'ink' || B.name.color === 'soft')
     ? (lum(B.fill) < 0.5 ? '#ffffff' : '#1d1915') : null
   const nameCss = { ...css(B.name, st), ...(solidText ? { color: solidText } : {}) }
   const hoursCss = { ...css(B.hours.text, st), ...(solidText ? { color: rgba(solidText, 0.72) } : {}) }
+  const split = B.content === 'split'
+  const scale = pressed ? (B.press === 'scale' ? 0.965 : B.press === 'liquid' ? 0.99 : 1) : 1
+  const arrow = B.arrow === 'none' ? null : (
+    <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden className="relative shrink-0" style={{ color: nameCss.color as string, opacity: 0.75 }}>
+      {B.arrow === 'chevron'
+        ? <path d="M5 2.5L9.5 7 5 11.5" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+        : <path d="M2 7h9.5M7.5 3l4 4-4 4" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />}
+    </svg>
+  )
   return (
     <div style={move}>
       <button type="button" onClick={onClick}
         onPointerDown={() => setPressed(true)} onPointerUp={release} onPointerLeave={release} onPointerCancel={release}
-        className="relative w-full flex flex-col justify-center"
-        style={{ ...surface, alignItems: left ? 'flex-start' : 'center', minHeight: B.height, padding: '11px 20px',
+        data-glass={B.style === 'glass' && gl ? '' : undefined} data-radius={B.radius} data-pressed={pressed ? '1' : '0'}
+        className="relative w-full flex items-center"
+        style={{ ...surface, ...border, minHeight: B.height, padding: `11px ${B.paddingX}px`, gap: 12,
           borderRadius: B.style === 'minimal' ? 0 : B.radius, WebkitTapHighlightColor: 'transparent',
-          ...fade, transform: `scale(${pressed ? 0.975 : 1})`, transition: `transform 300ms ${SPRING}, ${fade.transition ?? 'none'}` }}>
-        {B.style === 'glass' && <GlassSheen />}
-        <span className="relative" style={{ ...nameCss, lineHeight: 1.15, textAlign: left ? 'left' : 'center' }}>{name}</span>
-        {hours && <span className="relative" style={{ ...hoursCss, marginTop: 4 }}>{hours}</span>}
+          ...fade, transform: `scale(${scale})`, transition: `transform 300ms ${SPRING}, ${fade.transition ?? 'none'}` }}>
+        {B.style === 'glass' && !gl && <GlassSheen />}
+        {split ? (<>
+          <span className="relative flex-1 min-w-0 text-left" style={{ ...nameCss, lineHeight: 1.15 }}>{name}</span>
+          {hours && <span className="relative shrink-0" style={hoursCss}>{hours}</span>}
+        </>) : (
+          <span className="relative flex-1 min-w-0 flex flex-col" style={{ alignItems: left ? 'flex-start' : 'center' }}>
+            <span style={{ ...nameCss, lineHeight: 1.15, textAlign: left ? 'left' : 'center' }}>{name}</span>
+            {hours && <span style={{ ...hoursCss, marginTop: 4 }}>{hours}</span>}
+          </span>
+        )}
+        {arrow}
       </button>
     </div>
   )
@@ -375,9 +420,15 @@ function MenuButton({ st, name, hours, first, left, onClick, move, fade }: {
 // ── Sfondi ───────────────────────────────────────────────────────────────────
 
 /** Carta (o gradiente) con luce e superficie, come le pagine del menu. */
-function PaperCanvas({ st }: { st: LandingStyle }) {
+function PaperCanvas({ st, bgRef }: { st: LandingStyle; bgRef: React.MutableRefObject<(() => StageBackground) | null> }) {
   const ref = useRef<HTMLCanvasElement>(null)
+  const version = useRef(0)
   const bg = st.background
+  // Per il vetro liquido: la carta è già a misura di schermo.
+  bgRef.current = () => ({
+    layers: ref.current ? [{ source: ref.current, alpha: 1, scale: 1, cover: false, dynamic: false, version: version.current }] : [],
+    veil: 0, blur: 0, base: bg.paper,
+  })
   useEffect(() => {
     const cv = ref.current
     if (!cv) return
@@ -399,6 +450,7 @@ function PaperCanvas({ st }: { st: LandingStyle }) {
       r.addColorStop(1, dark ? 'rgba(0,0,0,0.22)' : 'rgba(150,130,100,0.12)')
       c.fillStyle = r; c.fillRect(0, 0, W, H)
       paintPaper(c, bg.texture, bg.textureStrength, W, H)
+      version.current++
     }
     paint()
     window.addEventListener('resize', paint)
@@ -410,13 +462,22 @@ function PaperCanvas({ st }: { st: LandingStyle }) {
 /** Foto e video a tutto schermo: si alternano in dissolvenza; le foto con un
  *  lento zoom, i video muti in loop (o a boomerang). Titolo e sottotitolo al
  *  centro. Intro: immagine ferma e il video pronto, che parte su richiesta. */
-function Media({ st, introRef, introOn }: { st: LandingStyle; introRef: React.RefObject<HTMLVideoElement>; introOn: boolean }) {
+function Media({ st, introRef, introOn, bgRef }: {
+  st: LandingStyle; introRef: React.RefObject<HTMLVideoElement>; introOn: boolean
+  bgRef: React.MutableRefObject<(() => StageBackground) | null>
+}) {
   const bg = st.background
   const iv = introVideo(st)
   const list = iv ? [iv] : bg.media
   const [i, setI] = useState(0)
   const [playing, setPlaying] = useState(false)
   useEffect(() => { if (!introOn) setPlaying(false) }, [introOn])
+  // Per il vetro liquido: gli stessi strati, tempi e zoom della pagina HTML.
+  const els = useRef(new Map<string, HTMLImageElement | HTMLVideoElement>())
+  const setEl = (id: string) => (el: HTMLImageElement | HTMLVideoElement | null) => { if (el) els.current.set(id, el); else els.current.delete(id) }
+  const timing = useRef({ cur: 0, since: performance.now(), prev: -1, prevSince: 0 })
+  const playingAt = useRef(0)
+  const veilAt = useRef({ on: introOn, at: 0 })
   useEffect(() => {
     if (list.length < 2) return
     const tm = window.setInterval(() => setI(v => (v + 1) % list.length), bg.interval * 1000)
@@ -424,6 +485,38 @@ function Media({ st, introRef, introOn }: { st: LandingStyle; introRef: React.Re
   }, [list.length, bg.interval])
   const k0 = i % Math.max(1, list.length)
   const cur = list[k0]
+  if (timing.current.cur !== k0) timing.current = { cur: k0, since: performance.now(), prev: timing.current.cur, prevSince: timing.current.since }
+  if (veilAt.current.on !== introOn) veilAt.current = { on: introOn, at: performance.now() }
+  bgRef.current = () => {
+    const now = performance.now()
+    const zoom = bg.blur > 0 ? 1.06 : 1
+    const kb = (since: number) => {
+      if (!bg.kenBurns) return 1
+      const x = Math.min(1, (now - since) / ((bg.interval + 2) * 1000))
+      return 1 + 0.09 * (1 - Math.pow(1 - x, 3))
+    }
+    const layers: StageBackground['layers'] = []
+    if (iv) {
+      const stillEl = els.current.get('still'), v = introRef.current
+      if (stillEl) layers.push({ source: stillEl, alpha: 1, scale: zoom, cover: true, dynamic: false })
+      if (v) {
+        const a = !stillEl ? 1 : playingAt.current ? Math.min(1, (now - playingAt.current) / 350) : 0
+        if (a > 0) layers.push({ source: v, alpha: a, scale: zoom, cover: true, dynamic: true })
+      }
+    } else {
+      const tm = timing.current
+      const x = tm.prev >= 0 ? Math.min(1, (now - tm.since) / 1400) : 1
+      const add = (idx: number, since: number, alpha: number) => {
+        const m = list[idx], el = m && els.current.get(m.id)
+        if (el) layers.push({ source: el, alpha, scale: zoom * (m.video ? 1 : kb(since)), cover: true, dynamic: m.video })
+      }
+      if (tm.prev >= 0 && tm.prev !== tm.cur && x < 1) add(tm.prev, tm.prevSince, 1 - x)
+      add(tm.cur, tm.since, x)
+    }
+    const va = veilAt.current
+    const vk = va.at === 0 ? (va.on ? 0 : 1) : va.on ? 1 - Math.min(1, (now - va.at) / 600) : Math.min(1, (now - va.at) / 600)
+    return { layers, veil: bg.overlay * vk, blur: bg.blur, base: '#14110e' }
+  }
   const blur = bg.blur > 0 ? { filter: `blur(${bg.blur}px)`, transform: 'scale(1.06)' } : {}
   // Immagine ferma dell'intro: quella scelta, altrimenti il primo fotogramma utile.
   const still = iv ? bg.introImage ?? iv.poster : null
@@ -435,12 +528,13 @@ function Media({ st, introRef, introOn }: { st: LandingStyle; introRef: React.Re
         <div aria-hidden className="absolute inset-0 overflow-hidden">
           <div className="absolute inset-0" style={blur}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            {still && <img src={still} alt="" className="absolute inset-0 w-full h-full" style={{ objectFit: 'cover' }} />}
+            {still && <img ref={setEl('still')} src={still} alt="" crossOrigin="anonymous" className="absolute inset-0 w-full h-full" style={{ objectFit: 'cover' }} />}
             {/* Il video resta sotto l'immagine finché non scorre davvero
                 (niente fotogramma nero o fermo a vista). */}
-            <video ref={introRef} src={iv.url} muted playsInline preload="auto" className="absolute inset-0 w-full h-full"
+            <video ref={introRef} src={iv.url} muted playsInline preload="auto" crossOrigin="anonymous" className="absolute inset-0 w-full h-full"
               onLoadedMetadata={e => { try { e.currentTarget.currentTime = iv.startAt } catch { /* ok */ } }}
-              onPlaying={() => setPlaying(true)}
+              onPlaying={() => { playingAt.current = performance.now(); setPlaying(true) }}
+              onPause={() => { playingAt.current = 0 }}
               style={{ objectFit: 'cover', opacity: playing || !still ? 1 : 0, transition: 'opacity 350ms ease' }} />
           </div>
         </div>
@@ -449,10 +543,10 @@ function Media({ st, introRef, introOn }: { st: LandingStyle; introRef: React.Re
           <div className="absolute inset-0" style={blur}>
             {b.video
               // Il poster resta visibile se il video non parte (es. formato non supportato).
-              ? <video src={bg.videoMode === 'boomerang' ? b.boomerang ?? b.url : b.url} poster={b.poster ?? undefined}
-                  muted playsInline autoPlay loop preload="auto" className="w-full h-full" style={{ objectFit: 'cover' }} />
+              ? <video ref={setEl(b.id)} src={bg.videoMode === 'boomerang' ? b.boomerang ?? b.url : b.url} poster={b.poster ?? undefined}
+                  muted playsInline autoPlay loop preload="auto" crossOrigin="anonymous" className="w-full h-full" style={{ objectFit: 'cover' }} />
               // eslint-disable-next-line @next/next/no-img-element
-              : <img key={k === k0 ? `on-${i}` : 'off'} src={b.url} alt="" className="w-full h-full"
+              : <img ref={setEl(b.id)} key={k === k0 ? `on-${i}` : 'off'} src={b.url} alt="" crossOrigin="anonymous" className="w-full h-full"
                   style={{ objectFit: 'cover', animation: k === k0 && bg.kenBurns ? `lito-kb ${bg.interval + 2}s ease-out forwards` : 'none' }} />}
           </div>
         </div>
@@ -465,13 +559,13 @@ function Media({ st, introRef, introOn }: { st: LandingStyle; introRef: React.Re
       }} />
       {st.captions.show && !introOn && (cur?.title || cur?.subtitle) && (
         <div key={cur.id} data-pick="l-captions" className="absolute left-0 right-0 text-center"
-          style={{ top: '38%', padding: '0 28px', animation: 'lito-cap 900ms ease both' }}>
+          style={{ top: '38%', padding: '0 28px', animation: 'lito-cap 900ms ease both', zIndex: 2 }}>
           {cur.title && <p style={{ ...css(st.captions.title, st), lineHeight: 1.15, textShadow: '0 2px 16px rgba(0,0,0,0.45)' }}>{cur.title}</p>}
           {cur.subtitle && <p style={{ ...css(st.captions.subtitle, st), marginTop: 8, textShadow: '0 1px 10px rgba(0,0,0,0.5)' }}>{cur.subtitle}</p>}
         </div>
       )}
       {list.length > 1 && (
-        <div aria-hidden className="absolute left-0 right-0 flex justify-center pointer-events-none" style={{ top: 'calc(38% + 86px)', gap: 6 }}>
+        <div aria-hidden className="absolute left-0 right-0 flex justify-center pointer-events-none" style={{ top: 'calc(38% + 86px)', gap: 6, zIndex: 2 }}>
           {list.map((b, k) => (
             <span key={b.id} style={{ width: k === k0 ? 16 : 6, height: 6, borderRadius: 3, background: k === k0 ? '#fff' : 'rgba(255,255,255,0.5)', transition: `width 500ms ${SPRING}, background 300ms ease` }} />
           ))}
