@@ -464,8 +464,10 @@ export default function LandingEditor({ restaurantId, token, initialStyle, menuF
       <div className="flex flex-col lg:flex-row gap-6 lg:items-start">
         <div className="lg:order-2 lg:sticky lg:top-20 shrink-0 flex flex-col items-center gap-3">
           <PhoneFrame>
-            <iframe ref={frameRef} title="Anteprima della pagina d'apertura" src={`/prova/${token}?preview=1`}
-              className="block border-0" style={{ width: 390, height: 844 }} />
+            {size => (
+              <iframe ref={frameRef} title="Anteprima della pagina d'apertura" src={`/prova/${token}?preview=1`}
+                className="block border-0" style={{ width: size.w, height: size.h }} />
+            )}
           </PhoneFrame>
           <p className="text-xs text-gray-400 text-center max-w-[300px]">Tocca un elemento nell&apos;anteprima per aprire il suo pannello.</p>
         </div>

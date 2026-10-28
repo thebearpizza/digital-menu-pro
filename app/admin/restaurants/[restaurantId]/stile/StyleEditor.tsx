@@ -640,9 +640,9 @@ export default function StyleEditor({ restaurantId, token, menus }: Props) {
         {/* Anteprima */}
         <div className="lg:order-2 lg:sticky lg:top-20 shrink-0 flex flex-col items-center gap-3">
           <PhoneFrame>
-            {menuId && (
+            {size => menuId && (
               <iframe ref={frameRef} title="Anteprima del menu" src={`/prova/${token}?menu=${menuId}&preview=1`}
-                className="block border-0" style={{ width: 390, height: 844 }} />
+                className="block border-0" style={{ width: size.w, height: size.h }} />
             )}
           </PhoneFrame>
           {menus.length > 1 && (
