@@ -212,6 +212,7 @@ function CropModal({
   initial,
   aspect = CROP_ASPECT,
   round = false,
+  hint,
   note,
   busy,
   onConfirm,
@@ -223,6 +224,8 @@ function CropModal({
   aspect?: number
   /** Riquadro tondo (foto tonda nella scheda). */
   round?: boolean
+  /** Senza `initial`: inquadratura salvata o vecchio ritaglio da cui partire. */
+  hint?: { frame: PhotoFrame | null; focus: Rect | null }
   note?: string
   busy: boolean
   onConfirm: (rect: CropRect) => void
@@ -244,8 +247,9 @@ function CropModal({
     const el = imgRef.current
     if (!el || !el.naturalWidth) return
     setDims({ w: el.clientWidth, h: el.clientHeight })
-    // Senza inquadratura salvata: il riquadro più grande, centrato.
-    setRect(prev => prev ?? initial ?? frameFor(el.naturalWidth / el.naturalHeight, aspect, null, null))
+    // Senza riquadro di partenza: dall'inquadratura salvata o dal centro del
+    // vecchio ritaglio, altrimenti il più grande possibile, centrato.
+    setRect(prev => prev ?? initial ?? frameFor(el.naturalWidth / el.naturalHeight, aspect, hint?.frame ?? null, hint?.focus ?? null))
   }
 
   useEffect(() => {
@@ -549,13 +553,7 @@ export default function DishForm({
   function handleFrame() {
     const src = origUrl || imageUrl
     if (!src) return
-    const img = new window.Image()
-    img.onload = () => {
-      const focus = origUrl && imageCrop ? imageCrop : null
-      setCropState({ src, initial: frameFor(img.naturalWidth / img.naturalHeight, aspect, photoFrame, focus), mode: 'frame' })
-    }
-    img.onerror = () => setCropState({ src, initial: null, mode: 'frame' })
-    img.src = src
+    setCropState({ src, initial: null, mode: 'frame' })
   }
 
   async function handleCropConfirm(rect: CropRect) {
@@ -905,6 +903,7 @@ export default function DishForm({
           initial={cropState.initial}
           aspect={cropState.mode === 'frame' ? aspect : undefined}
           round={cropState.mode === 'frame' && shape === 'circle'}
+          hint={cropState.mode === 'frame' ? { frame: photoFrame, focus: origUrl ? imageCrop : null } : undefined}
           note={cropState.mode === 'frame'
             ? `Il riquadro è ciò che si vedrà nella scheda del piatto del nuovo menu (foto ${PHOTO_LABEL[shape]}, come nello stile del menu).`
             : undefined}

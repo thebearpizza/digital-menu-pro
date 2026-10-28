@@ -135,11 +135,22 @@ uniform vec2  uSheetS;
 uniform float uGutter;    // ombra del dorso: 0 bordo sinistro, 1 bordo destro
 uniform float uGutterK;   // intensità ombra del dorso
 uniform vec3  uPaper;
+uniform sampler2D uVid;   // video sotto la pagina (pagine foto/video)
+uniform float uHasVid;
+uniform vec4  uVidMap;    // uv del foglio → uv del video (ritaglio "cover")
 varying vec2  vUV;
 varying vec2  vP;
 varying vec3  vN;
 varying float vD;
 const float PI = 3.14159265;
+
+// Fronte della pagina: con un video, la pagina (testi e sfumature) sta sopra
+// il video dove è opaca.
+vec3 frontColor(vec4 tex) {
+  if (uHasVid < 0.5) return tex.rgb;
+  vec3 v = texture2D(uVid, vUV * uVidMap.xy + uVidMap.zw).rgb;
+  return mix(v, tex.rgb, tex.a);
+}
 
 // Distanza dal foglio che si sfoglia (0 se dentro).
 float outsideSheet(vec2 q) {
@@ -174,13 +185,13 @@ void main() {
     float shade = mix(0.74, 1.0, clamp(diff, 0.0, 1.05));
     vec3 Hh = normalize(L + V);
     float spec = pow(clamp(dot(N, Hh), 0.0, 1.0), 40.0) * 0.10 * smoothstep(0.0, 0.25, 1.0 - N.z);
-    col = tex.rgb * shade + spec;
+    col = frontColor(tex) * shade + spec;
   } else {
     // Retro: pagina vera (doppia pagina) o carta. Il testo del fronte
     // traspare a specchio, come nella carta vera: scurisce il retro dove sul
     // fronte c'è inchiostro (quanto, lo sceglie il ristoratore).
     vec3 base = uHasBack > 0.5 ? texture2D(uBack, vec2(1.0 - vUV.x, vUV.y)).rgb : uPaper;
-    vec3 ink = clamp(tex.rgb / max(uPaper, vec3(0.04)), 0.0, 1.5);
+    vec3 ink = clamp(frontColor(tex) / max(uPaper, vec3(0.04)), 0.0, 1.5);
     vec3 back = base * mix(vec3(1.0), ink, uThrough);
     vec3 Nb = -N;
     float diff = clamp(dot(Nb, L), 0.0, 1.0) / flatDiff;
@@ -224,6 +235,9 @@ export interface Sheet {
   /** Bordo del dorso del foglio. */
   gutter:  'left' | 'right'
   gutterK: number
+  /** Video sotto la pagina (pagina foto/video "dal vivo"): texture e
+   *  mappa uv del foglio → uv del video [sx, sy, ox, oy]. */
+  video?:  { tex: WebGLTexture; map: [number, number, number, number] } | null
 }
 
 export interface Scene {
@@ -272,7 +286,7 @@ export class CurlRenderer {
     this.paper = hexToRgb(paperHex)
     this.prog = link(gl, VS, FS)
     for (const n of ['uScreen', 'uOrigin', 'uPage', 'uCurl', 'uAxis', 'uDir', 'uR', 'uPersp', 'uTex', 'uBack', 'uHasBack',
-      'uShadow', 'uThrough', 'uKind', 'uSheetO', 'uSheetS', 'uGutter', 'uGutterK', 'uPaper']) {
+      'uShadow', 'uThrough', 'uKind', 'uSheetO', 'uSheetS', 'uGutter', 'uGutterK', 'uPaper', 'uVid', 'uHasVid', 'uVidMap']) {
       this.u[n] = gl.getUniformLocation(this.prog, n)
     }
     this.buf = gl.createBuffer()!
@@ -401,6 +415,29 @@ export class CurlRenderer {
 
   deleteTexture(t: WebGLTexture) { this.gl.deleteTexture(t) }
 
+  /** Texture per un video (aggiornata a ogni fotogramma con updateVideo). */
+  createVideoTexture(): WebGLTexture {
+    const gl = this.gl
+    const t = gl.createTexture()!
+    gl.bindTexture(gl.TEXTURE_2D, t)
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([22, 18, 14, 255]))
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+    return t
+  }
+
+  /** Fotogramma attuale del video nella sua texture (false se non si può). */
+  updateVideo(t: WebGLTexture, video: HTMLVideoElement): boolean {
+    const gl = this.gl
+    if (video.readyState < 2 || !video.videoWidth) return false
+    gl.bindTexture(gl.TEXTURE_2D, t)
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false)
+    try { gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, video) } catch { return false }
+    return true
+  }
+
   render(scene: Scene) {
     this.last = scene
     // Con elementi in vetro sullo schermo: scena nella lastra, poi il vetro.
@@ -434,6 +471,7 @@ export class CurlRenderer {
     gl.uniform3f(this.u.uPaper, this.paper[0], this.paper[1], this.paper[2])
     gl.uniform1i(this.u.uTex, 0)
     gl.uniform1i(this.u.uBack, 1)
+    gl.uniform1i(this.u.uVid, 2)
 
     const m = scene.moving
     const c = m?.curl ?? null
@@ -454,6 +492,10 @@ export class CurlRenderer {
       gl.uniform1f(this.u.uGutter, s.gutter === 'left' ? 0 : 1)
       gl.uniform1f(this.u.uGutterK, s.gutterK)
       gl.uniform1f(this.u.uHasBack, s.back ? 1 : 0)
+      gl.uniform1f(this.u.uHasVid, s.video ? 1 : 0)
+      if (s.video) gl.uniform4f(this.u.uVidMap, ...s.video.map)
+      gl.activeTexture(gl.TEXTURE2)
+      gl.bindTexture(gl.TEXTURE_2D, s.video?.tex ?? s.front)
       gl.activeTexture(gl.TEXTURE1)
       gl.bindTexture(gl.TEXTURE_2D, s.back ?? s.front)
       gl.activeTexture(gl.TEXTURE0)

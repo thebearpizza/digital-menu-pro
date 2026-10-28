@@ -53,6 +53,18 @@ export interface MenuData {
   allergenLegend?: { id: number; n: number; name: string }[] | null
   /** Parole stampate sulle pagine, nella lingua scelta. */
   labels:         { allergens: string; cont: string; allergenNote: string }
+  /** Pagine intere con foto/video (categorie e promo), col piatto collegato. */
+  media?:         MediaView[]
+}
+
+export type MediaView = import('@/lib/menuMedia').MediaPage & { dish: Dish | null }
+
+/** Pagine foto/video da mostrare: attive, con qualcosa da vedere (foto/video
+ *  caricato o foto del piatto collegato). Il piatto collegato dev'essere tra
+ *  quelli visibili ora. */
+export function mediaViews(pages: import('@/lib/menuMedia').MediaPage[], dishes: Dish[]): MediaView[] {
+  return pages.filter(p => p.show).map(p => ({ ...p, dish: p.dishId ? dishes.find(d => d.id === p.dishId) ?? null : null }))
+    .filter(p => p.url || p.dish?.image)
 }
 
 export interface Insets { top: number; right: number; bottom: number; left: number }
@@ -184,6 +196,8 @@ interface Placed { block: Block; y: number; h: number }
 export interface Page {
   index:   number
   items:   Placed[]
+  /** Pagina intera con foto/video (categoria o promo): niente testo del menu. */
+  media?:  MediaView
   /** Primo piatto della pagina: serve a ritrovare la pagina dopo un resize. */
   anchor:  string | null
 }
@@ -205,11 +219,17 @@ export interface Layout {
 /** Elementi del menu che si possono toccare nell'anteprima per modificarli. */
 export type PickTarget =
   | 'paper' | 'restaurant' | 'title' | 'runningHead' | 'category' | 'name' | 'price'
-  | 'description' | 'allergens' | 'pageNumber' | 'text'
+  | 'description' | 'allergens' | 'pageNumber' | 'text' | 'media'
 
 const TEXT_GAP = 14
 
-export interface Assets { background: HTMLImageElement | null }
+export interface Assets {
+  background: HTMLImageElement | null
+  /** Foto/video delle pagine foto/video, già pronti (null = non ancora).
+   *  Un video restituito qui è "dal vivo": la pagina si disegna trasparente
+   *  dove c'è il video, che il motore del giro pagina mette sotto. */
+  media?: (url: string) => HTMLImageElement | HTMLVideoElement | null
+}
 
 export function layoutMenu(ctx: Ctx, data: MenuData, vp: Viewport, style: MenuStyle = DEFAULT_STYLE, assets: Assets = { background: null }): Layout {
   const st = style
@@ -357,6 +377,22 @@ export function layoutMenu(ctx: Ctx, data: MenuData, vp: Viewport, style: MenuSt
   let cur: Placed[] = []
   let y = m.top
   const newPage = () => { pages.push({ index: pages.length, items: cur, anchor: null }); cur = []; y = m.top }
+  // Pagine foto/video: sempre intere. Se la pagina in corso ha solo il titolo
+  // del menu, la pagina foto/video va prima di lei (il titolo resta sopra la
+  // categoria); altrimenti la pagina in corso si chiude.
+  const mediaPages = data.media ?? []
+  /** Inserisce le pagine; restituisce l'indice della prima (-1 se nessuna). */
+  const putMedia = (list: MediaView[]): number => {
+    if (!list.length) return -1
+    const onlyHead = cur.length > 0 && cur.every(it => it.block.kind === 'head')
+    if (cur.length && !onlyHead) newPage()
+    const first = pages.length
+    for (const mp of list) pages.push({ index: pages.length, items: [], anchor: `media:${mp.id}`, media: mp })
+    return first
+  }
+  const mediaAt = (where: MediaView['where'], cat?: string) =>
+    mediaPages.filter(mp => mp.where === where && (cat === undefined || mp.category === cat))
+  putMedia(mediaAt('start'))
   const room = () => m.bottom - y
   const contHead = (name: string) => {
     cur.push({ block: { kind: 'cat', name, cont: st.category.continued }, y, h: CAT_H }); y += CAT_H + CAT_AFTER
@@ -391,6 +427,11 @@ export function layoutMenu(ctx: Ctx, data: MenuData, vp: Viewport, style: MenuSt
   for (let ci = 0; ci < data.categories.length; ci++) {
     const cat = data.categories[ci]
     if (!cat.dishes.length) continue
+    // Prima della categoria: le sue foto/video, poi le promo legate a lei.
+    // Dalla barra delle categorie si arriva alla foto/video della categoria.
+    const catMedia = mediaAt('before', cat.name).filter(mp => mp.kind === 'category')
+    const firstMedia = putMedia(catMedia)
+    putMedia(mediaAt('before', cat.name).filter(mp => mp.kind === 'promo'))
     const dishes = cat.dishes.map(measureDish)
     // Titolo + primo piatto devono stare insieme.
     const firstH = dishes.length ? dishHeight(dishes[0]) : 0
@@ -398,7 +439,7 @@ export function layoutMenu(ctx: Ctx, data: MenuData, vp: Viewport, style: MenuSt
     const before = afterHead ? 0 : CAT_BEFORE
     if (before + CAT_H + CAT_AFTER + Math.min(firstH, m.bottom - m.top - CAT_H - CAT_AFTER) > room()) newPage()
     y += cur.length && cur[cur.length - 1].block.kind !== 'head' ? CAT_BEFORE : 0
-    categoryStarts.push({ index: ci, name: cat.name, page: pages.length })
+    categoryStarts.push({ index: ci, name: cat.name, page: firstMedia >= 0 ? firstMedia : pages.length })
     cur.push({ block: { kind: 'cat', name: cat.name, cont: false }, y, h: CAT_H }); y += CAT_H + CAT_AFTER
 
     for (let i = 0; i < dishes.length; i++) {
@@ -434,7 +475,9 @@ export function layoutMenu(ctx: Ctx, data: MenuData, vp: Viewport, style: MenuSt
         contHead(cat.name)
       }
     }
+    putMedia(mediaAt('after', cat.name))
   }
+  putMedia(mediaAt('end'))
   // Pagina informativa in fondo.
   if (infoPieces.length && data.info!.position === 'last') {
     if (cur.length) newPage()
@@ -467,6 +510,7 @@ export function layoutMenu(ctx: Ctx, data: MenuData, vp: Viewport, style: MenuSt
 
   if (cur.length) newPage()
   for (const p of pages) {
+    if (p.media) continue   // àncora già data (media:<id>)
     const d = p.items.find(it => it.block.kind === 'dish')
     // Àncora per ritrovare la pagina (resize, lingua): primo piatto, oppure
     // il tipo di pagina di testo.
@@ -490,6 +534,7 @@ export function layoutMenu(ctx: Ctx, data: MenuData, vp: Viewport, style: MenuSt
   const paint = (c: Ctx, index: number) => {
     const page = pages[index] as Page | undefined
     const { w, h } = vp
+    if (page?.media) { paintMedia(c, page.media); return }
     // Carta: tinta scelta, luce appena più chiara al centro, superficie.
     c.fillStyle = st.page.paper
     c.fillRect(0, 0, w, h)
@@ -549,6 +594,95 @@ export function layoutMenu(ctx: Ctx, data: MenuData, vp: Viewport, style: MenuSt
         paintDish(c, b, it.y)
       }
       prev = it
+    }
+  }
+
+  // ── Pagina foto/video: immagine a tutta pagina, sfumatura scura in basso e
+  // testi chiari (etichetta, titolo, descrizione, prezzi). Con un video dal
+  // vivo la pagina resta trasparente sotto i testi: il video lo mette il
+  // motore del giro pagina.
+  function paintMedia(c: Ctx, mp: MediaView) {
+    const { w, h } = vp
+    const src = mp.url ?? mp.dish?.image ?? null
+    const live = src ? assets.media?.(src) ?? null : null
+    const still = live instanceof HTMLVideoElement ? null
+      : live ?? (mp.poster ? assets.media?.(mp.poster) ?? null : null) as HTMLImageElement | null
+    if (live instanceof HTMLVideoElement) c.clearRect(0, 0, w, h)
+    else {
+      c.fillStyle = '#16120e'
+      c.fillRect(0, 0, w, h)
+      if (still instanceof HTMLImageElement && still.naturalWidth) {
+        // Foto del piatto collegato: con la sua inquadratura (centro), le altre al centro.
+        const iw = still.naturalWidth, ih = still.naturalHeight
+        const k = Math.max(w / iw, h / ih)
+        const fr = !mp.url ? (mp.dish?.frame ?? mp.dish?.focus ?? null) : null
+        const cx = fr ? (fr.x + fr.w / 2) * iw * k : (iw * k) / 2
+        const cy = fr ? (fr.y + fr.h / 2) * ih * k : (ih * k) / 2
+        const ox = Math.max(w - iw * k, Math.min(0, w / 2 - cx))
+        const oy = Math.max(h - ih * k, Math.min(0, h / 2 - cy))
+        c.drawImage(still, ox, oy, iw * k, ih * k)
+      }
+    }
+    const title = mp.title ?? (mp.kind === 'category' ? mp.category : mp.dish?.name ?? null)
+    const hasText = !!(title || mp.description || mp.badge || mp.promoPrice !== null || mp.price !== null)
+    // Sfumatura: in alto appena (barre del telefono), in basso sotto i testi.
+    const top = c.createLinearGradient(0, 0, 0, h * 0.22)
+    top.addColorStop(0, 'rgba(0,0,0,0.28)'); top.addColorStop(1, 'rgba(0,0,0,0)')
+    c.fillStyle = top; c.fillRect(0, 0, w, h * 0.22)
+    if (hasText) {
+      const g = c.createLinearGradient(0, h * 0.42, 0, h)
+      g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(0.55, 'rgba(0,0,0,0.42)'); g.addColorStop(1, 'rgba(0,0,0,0.74)')
+      c.fillStyle = g; c.fillRect(0, h * 0.42, w, h * 0.58)
+    }
+    if (!hasText) return
+    const WHITE = '#ffffff', SOFT_W = 'rgba(255,255,255,0.84)'
+    const left = m.x0, cw = m.cw, cx = left + cw / 2
+    const T = { ...rt(D.name, mp.kind === 'category' ? 1.75 : 1.55), color: WHITE }
+    const Dsc = { ...rt(D.description, 1.02), color: SOFT_W }
+    const B = { ...fit(st.category.text, tx(rt(st.category.text), mp.badge ?? ''), cw * 0.62), color: WHITE }
+    const P = { ...rt(D.price, 1.35), color: WHITE }
+    const Po = { ...rt(D.price, 1), color: SOFT_W }
+    const titleLines = title ? wrap(tx(T, title), cw, t => measure(c, T, t)).slice(0, 3) : []
+    const descLines = mp.description ? wrap(mp.description, cw * 0.92, t => measure(c, Dsc, t)).slice(0, 4) : []
+    const list = mp.price ?? mp.dish?.price ?? null
+    const promo = mp.promoPrice
+    const fmt = (v: number) => formatPrice(v, D.priceSymbol, D.priceDecimals)
+    // Dal basso verso l'alto.
+    let yb = m.bottom - 6 * s
+    if (promo !== null || (mp.kind === 'promo' && list !== null)) {
+      const main = fmt(promo ?? list!)
+      const old = promo !== null && list !== null && list !== promo && mp.priceMode === 'strikethrough' ? fmt(list) : null
+      const mw = measure(c, P, main), ow = old ? measure(c, Po, old) : 0, gap = old ? 12 * s : 0
+      let x = cx - (mw + ow + gap) / 2
+      if (old) {
+        draw(c, Po, old, x, yb - (P.size - Po.size) * 0.15, 'left')
+        c.strokeStyle = SOFT_W; c.lineWidth = Math.max(1, 1.2 * s)
+        c.beginPath(); c.moveTo(x - 1, yb - Po.size * 0.36); c.lineTo(x + ow + 1, yb - Po.size * 0.36); c.stroke()
+        x += ow + gap
+      }
+      draw(c, P, main, x, yb, 'left')
+      yb -= P.size + 16 * s
+    }
+    for (let i = descLines.length - 1; i >= 0; i--) {
+      draw(c, Dsc, descLines[i], cx, yb, 'center')
+      yb -= Dsc.size * 1.32
+    }
+    if (descLines.length) yb -= 8 * s
+    for (let i = titleLines.length - 1; i >= 0; i--) {
+      draw(c, T, titleLines[i], cx, yb, 'center')
+      yb -= T.size * 1.08
+    }
+    if (mp.badge) {
+      yb -= 10 * s
+      const label = tx(B, mp.badge)
+      const bw = measure(c, B, label) + 26 * s, bh = B.size + 16 * s
+      const bx = cx - bw / 2, by = yb - bh + 4 * s
+      c.strokeStyle = 'rgba(255,255,255,0.75)'; c.lineWidth = Math.max(1, 1 * s)
+      c.beginPath()
+      const r = bh / 2
+      c.moveTo(bx + r, by); c.arcTo(bx + bw, by, bx + bw, by + bh, r); c.arcTo(bx + bw, by + bh, bx, by + bh, r)
+      c.arcTo(bx, by + bh, bx, by, r); c.arcTo(bx, by, bx + bw, by, r); c.closePath(); c.stroke()
+      draw(c, B, label, cx, by + bh / 2 + B.size * 0.36, 'center')
     }
   }
 
@@ -701,6 +835,7 @@ export function layoutMenu(ctx: Ctx, data: MenuData, vp: Viewport, style: MenuSt
   // dello spazio tra un piatto e l'altro (nessun buco tra due piatti vicini).
   const hit = (pageIndex: number, x: number, y: number): Dish | null => {
     const page = pages[pageIndex]
+    if (page?.media) return page.media.dish   // promo collegata: tutta la pagina
     if (!page || x < m.x0 - 16 * s || x > m.x0 + m.cw + 16 * s) return null
     const pad = GAP / 2
     for (const it of page.items) {
@@ -714,6 +849,7 @@ export function layoutMenu(ctx: Ctx, data: MenuData, vp: Viewport, style: MenuSt
   const pick = (pageIndex: number, x: number, y: number): PickTarget => {
     const page = pages[pageIndex]
     if (!page) return 'paper'
+    if (page.media) return 'media'
     if (st.pageNumber.show && Math.abs(y - m.footY + PNUM.size * 0.4) < 14 * s) return 'pageNumber'
     if (pageIndex > 0 && st.runningHead.show && Math.abs(y - m.headY + RUN.size * 0.4) < 14 * s) return 'runningHead'
     const pad = GAP / 2
@@ -753,6 +889,8 @@ export function layoutMenu(ctx: Ctx, data: MenuData, vp: Viewport, style: MenuSt
 
   const dishesOn = (pageIndex: number): Dish[] => {
     const out: Dish[] = []
+    const md = pages[pageIndex]?.media?.dish
+    if (md) out.push(md)
     for (const it of pages[pageIndex]?.items ?? []) {
       if (it.block.kind !== 'dish') continue
       out.push(it.block.dish)

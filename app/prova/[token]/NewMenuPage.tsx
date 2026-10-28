@@ -2,12 +2,13 @@ import { notFound } from 'next/navigation'
 import type { Metadata } from 'next'
 import { createClient } from '@/lib/supabase/server'
 import CurlMenu from './CurlMenu'
-import { PAPER, type Dish, type MenuData } from './typeset'
+import { PAPER, mediaViews, type Dish, type MenuData } from './typeset'
 import { ALLERGENS, allergenName, allergenNumber, type AllergenCatalog } from '@/lib/allergens'
 import { isCategoryOpenNow, isMenuOpenNow, isWindowOpenNow, scheduleLabel, type CategorySchedules } from '@/lib/menuSchedule'
 import { parseRichText } from './richText'
 import { parseStyle } from '@/lib/menuStyle'
 import { parseFrame, parseRect } from '@/lib/photoFrame'
+import { fromOldAds, parseMedia } from '@/lib/menuMedia'
 import Landing, { type SocialKind } from './Landing'
 import { initialLanding, parseLanding, type LandingMedia } from '@/lib/landingStyle'
 import type { DishTranslations, MenuTranslations } from '@/lib/translations'
@@ -59,7 +60,7 @@ export default async function NewMenuPage({ token, searchParams, base, live }: {
   if (!restaurant) notFound()
 
   const { data: allMenus } = await supabase
-    .from('menus').select('id, name, category_order, translations, schedule_enabled, schedule_from, schedule_until, category_schedules, text_content, menu_style')
+    .from('menus').select('id, name, category_order, translations, schedule_enabled, schedule_from, schedule_until, category_schedules, text_content, menu_style, media_pages')
     .eq('restaurant_id', restaurant.id).eq('is_active', true)
     .order('sort_order', { ascending: true })
   // Programmazione oraria: fuori fascia un menu non si vede (come nel menu pubblico).
@@ -195,6 +196,9 @@ export default async function NewMenuPage({ token, searchParams, base, live }: {
     info: infoPage(menu.text_content),
     allergenLegend: allergenLegendOf(menu.text_content, catalog),
     labels: { allergens: 'Allergeni', cont: 'segue', allergenNote: '' },
+    media: mediaViews(menu.media_pages === null || menu.media_pages === undefined
+      ? fromOldAds((restaurant as Row).theme_config, menu.id as string)
+      : parseMedia(menu.media_pages), dishes.map(d => toDish(d as Row, true))),
   }
 
   // Traduzioni (generate dal gestionale): la lingua si sceglie sul telefono.

@@ -90,5 +90,12 @@ export function localize(base: MenuData, i18n: I18nData, lang: Lang): MenuData {
       name:   categoryName(c.name, i18n.menu, lang),
       dishes: c.dishes.map(d => dish(d, i18n.menu)),
     })),
+    // Pagine foto/video: la categoria di riferimento segue i nomi tradotti;
+    // titoli e descrizioni scritti dal ristoratore restano come sono.
+    media: base.media?.map(mp => ({
+      ...mp,
+      category: mp.category ? categoryName(mp.category, i18n.menu, lang) : null,
+      dish:     mp.dish ? dish(mp.dish, i18n.menu) : null,
+    })),
   }
 }

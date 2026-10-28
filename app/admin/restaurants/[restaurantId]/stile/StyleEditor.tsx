@@ -28,12 +28,14 @@ import {
   BackgroundField, Choice, ColorField, FieldShell, FontsManager, GlassControls, OrnamentField, PaperSwatch, PhoneFrame, Slider,
   TextStyleField, Toggle, cssOf, lum, pct, px,
 } from './controls'
-import { saveMenuStyles } from './actions'
+import { saveMenuMedia, saveMenuStyles } from './actions'
+import MediaPanel, { type MediaDish } from './MediaPanel'
+import type { MediaPage } from '@/lib/menuMedia'
 import StyleNav from './StyleNav'
 
 type PanelId =
   | 'presets' | 'paper' | 'fonts' | 'head' | 'runningHead' | 'category' | 'dish' | 'price' | 'description'
-  | 'allergens' | 'pageNumber' | 'textPages' | 'card' | 'chrome' | 'effects'
+  | 'allergens' | 'pageNumber' | 'textPages' | 'card' | 'chrome' | 'effects' | 'media'
 
 const PANELS: { id: PanelId; title: string; sub: string }[] = [
   { id: 'presets',     title: 'Stili pronti',         sub: 'Un punto di partenza completo' },
@@ -48,6 +50,7 @@ const PANELS: { id: PanelId; title: string; sub: string }[] = [
   { id: 'allergens',   title: 'Allergeni',            sub: 'Numeri sotto i piatti' },
   { id: 'pageNumber',  title: 'Numeri di pagina',     sub: 'In fondo alle pagine' },
   { id: 'textPages',   title: 'Pagine di testo',      sub: 'Pagina informativa e legenda allergeni' },
+  { id: 'media',       title: 'Foto e video',         sub: 'Pagine intere: categorie e promo' },
   { id: 'card',        title: 'Scheda del piatto',    sub: 'Quella che si apre toccando un piatto' },
   { id: 'chrome',      title: 'Comandi e vetro',      sub: 'Barra, categorie, lingua: vetro liquido; aiuti' },
   { id: 'effects',     title: 'Effetto sfoglio',      sub: 'Ombre e velocità della pagina' },
@@ -57,6 +60,7 @@ const PANELS: { id: PanelId; title: string; sub: string }[] = [
 const PICK_PANEL: Record<PickTarget, PanelId> = {
   paper: 'paper', restaurant: 'head', title: 'head', runningHead: 'runningHead', category: 'category',
   name: 'dish', price: 'price', description: 'description', allergens: 'allergens', pageNumber: 'pageNumber', text: 'textPages',
+  media: 'media',
 }
 
 // Tavolozze pronte (carta, testo, secondario, accento).
@@ -187,8 +191,9 @@ const FONT_SAMPLE_URL = '/api/gfonts/css2?' +
 interface Props {
   restaurantId: string
   token:        string
-  /** Menu attivi del ristorante, ognuno con il suo stile attuale. */
-  menus:        { id: string; name: string; style: MenuStyle }[]
+  /** Menu attivi del ristorante, ognuno con il suo stile attuale, le sue
+   *  pagine foto/video, categorie e piatti (per collegare le promo). */
+  menus:        { id: string; name: string; style: MenuStyle; media: MediaPage[]; categories: string[]; dishes: MediaDish[] }[]
 }
 
 type Flat = Record<string, unknown>
@@ -231,7 +236,15 @@ export default function StyleEditor({ restaurantId, token, menus }: Props) {
   const [saving, startSaving] = useTransition()
   const frameRef = useRef<HTMLIFrameElement>(null)
   const panelRefs = useRef(new Map<PanelId, HTMLElement>())
-  const dirty = useMemo(() => JSON.stringify(style) !== JSON.stringify(saved), [style, saved])
+  const styleDirty = useMemo(() => JSON.stringify(style) !== JSON.stringify(saved), [style, saved])
+  // Pagine foto/video del menu scelto (si salvano solo per lui).
+  const [mediaSavedBy, setMediaSavedBy] = useState<Record<string, MediaPage[]>>(() => Object.fromEntries(menus.map(m => [m.id, m.media])))
+  const mediaSaved = useMemo(() => mediaSavedBy[menuId] ?? [], [mediaSavedBy, menuId])
+  const [media, setMedia] = useState<MediaPage[]>(mediaSaved)
+  const [mediaOpen, setMediaOpen] = useState<string | null>(null)
+  const mediaDirty = useMemo(() => JSON.stringify(media) !== JSON.stringify(mediaSaved), [media, mediaSaved])
+  const dirty = styleDirty || mediaDirty
+  const current = menus.find(m => m.id === menuId)
 
   // Caratteri caricati: riconosciuti dai campioni e dall'elenco di scelta.
   registerCustomFonts(style.customFonts)
@@ -251,10 +264,11 @@ export default function StyleEditor({ restaurantId, token, menus }: Props) {
   // Anteprima: riceve lo stile a ogni modifica; ci dice cosa è stato toccato.
   const post = useCallback((msg: unknown) => frameRef.current?.contentWindow?.postMessage(msg, window.location.origin), [])
   useEffect(() => { post({ type: 'lito-style', style }) }, [style, post])
+  useEffect(() => { post({ type: 'lito-media', pages: media, focus: mediaOpen }) }, [media, mediaOpen, post])
   // Pannello della scheda aperto: l'anteprima mostra la scheda di un piatto.
   useEffect(() => { post({ type: 'lito-card', open: open === 'card' }) }, [open, post])
-  const live = useRef({ style, open })
-  live.current = { style, open }
+  const live = useRef({ style, open, media })
+  live.current = { style, open, media }
   useEffect(() => {
     let clear = 0
     const onMsg = (e: MessageEvent) => {
@@ -262,6 +276,7 @@ export default function StyleEditor({ restaurantId, token, menus }: Props) {
       const msg = e.data as { type?: string; target?: PickTarget }
       if (msg?.type === 'lito-preview-ready') {
         post({ type: 'lito-style', style: live.current.style })
+        post({ type: 'lito-media', pages: live.current.media, focus: null })
         if (live.current.open === 'card') post({ type: 'lito-card', open: true })
       }
       if (msg?.type === 'lito-pick' && msg.target) {
@@ -287,8 +302,19 @@ export default function StyleEditor({ restaurantId, token, menus }: Props) {
   /** Modifica dello stile: si lavora su una copia. */
   const edit = useCallback((fn: (s: MenuStyle) => void) => setStyle(prev => { const n = structuredClone(prev); fn(n); return n }), [])
 
-  /** Salva il menu scelto più gli altri indicati (solo le modifiche fatte). */
+  /** Salva il menu scelto più gli altri indicati (solo le modifiche fatte);
+   *  le pagine foto/video solo del menu scelto. */
   const save = (others: string[]) => startSaving(async () => {
+    if (mediaDirty) {
+      const r = await saveMenuMedia(restaurantId, menuId, media)
+      if (!r.ok) { setMessage({ ok: false, text: r.error }); window.setTimeout(() => setMessage(null), 3000); return }
+      setMediaSavedBy(prev => ({ ...prev, [menuId]: media }))
+      if (!styleDirty) {
+        setMessage({ ok: true, text: 'Foto e video salvati.' })
+        window.setTimeout(() => setMessage(null), 3000)
+        return
+      }
+    }
     const updates = [
       { menuId, style },
       ...others.map(id => ({ menuId: id, style: applyChanges(savedBy[id] ?? DEFAULT_STYLE, saved, style) })),
@@ -303,7 +329,8 @@ export default function StyleEditor({ restaurantId, token, menus }: Props) {
     } else setMessage({ ok: false, text: res.error })
     window.setTimeout(() => setMessage(null), 3000)
   })
-  const askSave = () => (menus.length > 1 ? setApplyOpen(true) : save([]))
+  // La scelta dei menu a cui applicare riguarda solo lo stile.
+  const askSave = () => (menus.length > 1 && styleDirty ? setApplyOpen(true) : save([]))
 
   /** Cambio del menu da modificare (le modifiche non salvate si perdono). */
   const switchMenu = (id: string) => {
@@ -311,6 +338,8 @@ export default function StyleEditor({ restaurantId, token, menus }: Props) {
     if (dirty && !window.confirm('Le modifiche non salvate a questo menu andranno perse. Continuare?')) return
     setMenuId(id)
     setStyle(savedBy[id] ?? DEFAULT_STYLE)
+    setMedia(mediaSavedBy[id] ?? [])
+    setMediaOpen(null)
   }
   // Stili pronti e "Stile base" tengono i caratteri caricati.
   const replaceAll = (st: MenuStyle) => setStyle(prev => ({ ...structuredClone(st), customFonts: prev.customFonts }))
@@ -568,6 +597,10 @@ export default function StyleEditor({ restaurantId, token, menus }: Props) {
         <Toggle label="Istruzioni dei gesti alla prima apertura" value={st.chrome.hints} onChange={v => edit(s => { s.chrome.hints = v })} />
         <Toggle label="Invito a sfogliare (il foglio si solleva da solo)" hint="Non si vede nell'anteprima." value={st.chrome.peek} onChange={v => edit(s => { s.chrome.peek = v })} />
       </>)
+      case 'media': return (
+        <MediaPanel restaurantId={restaurantId} value={media} categories={current?.categories ?? []} dishes={current?.dishes ?? []}
+          openId={mediaOpen} onOpen={setMediaOpen} onChange={setMedia} />
+      )
       case 'effects': return (<>
         <Slider label="Ombre della pagina che gira" value={st.effects.shadow} min={0} max={1.6} step={0.05} format={pct} onChange={v => edit(s => { s.effects.shadow = v })} />
         <Slider label="Testo che traspare girando la pagina" hint="Sul retro del foglio che gira si intravede il testo a specchio, come nella carta vera."
@@ -591,7 +624,7 @@ export default function StyleEditor({ restaurantId, token, menus }: Props) {
           <button type="button" onClick={() => replaceAll(DEFAULT_STYLE)} className="hidden sm:inline text-sm text-gray-500 hover:text-gray-800 px-3 py-2">
             Stile base
           </button>
-          <button type="button" onClick={() => setStyle(saved)} disabled={!dirty} className="text-sm text-gray-600 hover:text-gray-900 px-3 py-2 disabled:opacity-40">
+          <button type="button" onClick={() => { setStyle(saved); setMedia(mediaSaved) }} disabled={!dirty} className="text-sm text-gray-600 hover:text-gray-900 px-3 py-2 disabled:opacity-40">
             Annulla
           </button>
           <button type="button" onClick={askSave} disabled={!dirty || saving}

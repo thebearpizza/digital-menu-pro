@@ -18,7 +18,8 @@ import { forwardRef, useCallback, useContext, useEffect, useMemo, useRef, useSta
 import { CurlRenderer, constrain, solveCurl, type Rect, type Scene, type Sheet, type Vec } from './curl'
 import AdminReturn from './AdminReturn'
 import { useRouter } from 'next/navigation'
-import { layoutMenu, SANS, type Dish, type Layout, type MenuData, type Insets } from './typeset'
+import { layoutMenu, mediaViews, SANS, type Dish, type Layout, type MenuData, type MediaView, type Insets } from './typeset'
+import { parseMedia } from '@/lib/menuMedia'
 import { parseStyle, registerCustomFonts, type MenuStyle } from '@/lib/menuStyle'
 import { isLang, type Lang } from '@/lib/translations'
 import DishCard from './DishCard'
@@ -113,7 +114,9 @@ export default function CurlMenu({ data: base, style: initialStyle, preview = fa
     setLangState(l)
     try { localStorage.setItem(LANG_KEY, l) } catch { /* memoria non disponibile */ }
   }, [])
-  const data = useMemo(() => localize(base, i18n, lang), [base, i18n, lang])
+  // Anteprima della Personalizzazione: pagine foto/video in modifica.
+  const [mediaOverride, setMediaOverride] = useState<MediaView[] | null>(null)
+  const data = useMemo(() => localize(mediaOverride ? { ...base, media: mediaOverride } : base, i18n, lang), [base, i18n, lang, mediaOverride])
   const dataRef = useRef(data)
   dataRef.current = data
 
@@ -127,23 +130,32 @@ export default function CurlMenu({ data: base, style: initialStyle, preview = fa
   styleRef.current = style
   // Sfondo delle pagine già caricato (serve all'impaginazione).
   const assetsRef = useRef<{ background: HTMLImageElement | null }>({ background: null })
+  const mediaFocus = useRef<string | null>(null)
   useEffect(() => {
     if (!preview) return
     const onMsg = (e: MessageEvent) => {
       if (e.origin !== window.location.origin) return
-      const msg = e.data as { type?: string; style?: MenuStyle; open?: boolean }
+      const msg = e.data as { type?: string; style?: MenuStyle; open?: boolean; pages?: unknown; focus?: string | null }
       if (msg?.type === 'lito-style' && msg.style) setStyle(parseStyle(msg.style))   // ripulito; registra i caratteri caricati
+      // Pagine foto/video in modifica: si vedono subito; `focus` = quella
+      // aperta nel pannello, su cui si va.
+      if (msg?.type === 'lito-media') {
+        setMediaOverride(mediaViews(parseMedia(msg.pages), base.categories.flatMap(c => c.dishes)))
+        mediaFocus.current = msg.focus ?? null
+      }
       // Pannello "Scheda del piatto" della Personalizzazione: mostra la scheda
       // di un piatto (meglio se con foto e descrizione).
       if (msg?.type === 'lito-card') {
-        const all = data.categories.flatMap(c => c.dishes)
+        const all = dataRef.current.categories.flatMap(c => c.dishes)
         setCard(msg.open ? all.find(d => d.image && d.description) ?? all.find(d => d.image) ?? all[0] ?? null : null)
       }
     }
     window.addEventListener('message', onMsg)
     window.parent?.postMessage({ type: 'lito-preview-ready' }, window.location.origin)
     return () => window.removeEventListener('message', onMsg)
-  }, [preview, data])
+    // Solo al montaggio: "pronta" una volta (rimandata a ogni cambio di dati,
+    // farebbe rimandare stile e pagine all'infinito).
+  }, [preview, base])
 
   // Barra dei comandi (Menu, categorie, lingua): nascosta; si apre scorrendo
   // verso l'alto e segue il dito; si chiude scorrendo in giù, girando pagina o
@@ -215,6 +227,7 @@ export default function CurlMenu({ data: base, style: initialStyle, preview = fa
       const a = layout.pages[index]?.anchor
       if (a) anchorRef.current = a
       setPageInfo({ index, spread, starts: layout.categoryStarts })
+      playback()
       peekIdle()
     }
     let dpr = 1
@@ -223,6 +236,91 @@ export default function CurlMenu({ data: base, style: initialStyle, preview = fa
     let pageW = 0, spineX = 0
     const textures = new Map<number, WebGLTexture>()
     const bitmaps  = new Map<number, HTMLCanvasElement>()   // solo ripiego 2D
+
+    // ── Pagine foto/video: foto e video caricati una volta (con CORS: vanno
+    // nelle texture). Il video gira solo quando la sua pagina è a vista; il
+    // fotogramma va direttamente nella sua texture, sotto la pagina.
+    const mediaEls = new Map<string, HTMLImageElement | HTMLVideoElement>()
+    const videoTex = new Map<string, WebGLTexture>()
+    const isVideoUrl = (mp: MediaView, url: string) => mp.video && url === mp.url
+    const getMedia = (url: string): HTMLImageElement | HTMLVideoElement | null => {
+      const el = mediaEls.get(url)
+      if (!el) return null
+      if (el instanceof HTMLVideoElement) return renderer && el.readyState >= 2 ? el : null
+      return el.complete && el.naturalWidth ? el : null
+    }
+    /** Ridisegna le pagine che usano `url` (foto o video appena pronti). */
+    const invalidate = (url: string) => {
+      if (!layout) return
+      layout.pages.forEach((p, i) => {
+        const mp = p.media
+        if (!mp || ((mp.url ?? mp.dish?.image) !== url && mp.poster !== url)) return
+        const t = textures.get(i)
+        if (t) { renderer?.deleteTexture(t); textures.delete(i) }
+        bitmaps.delete(i)
+      })
+      request()
+    }
+    const syncMedia = () => {
+      if (!layout) return
+      for (const p of layout.pages) {
+        const mp = p.media
+        if (!mp) continue
+        const src = mp.url ?? mp.dish?.image ?? null
+        const want: { url: string; video: boolean }[] = []
+        // Senza WebGL il video non si può mostrare: resta l'immagine d'attesa.
+        if (src && !(isVideoUrl(mp, src) && !renderer)) want.push({ url: src, video: isVideoUrl(mp, src) })
+        if (mp.poster) want.push({ url: mp.poster, video: false })
+        for (const w of want) {
+          if (mediaEls.has(w.url)) continue
+          if (w.video) {
+            const v = document.createElement('video')
+            v.muted = true; v.loop = true; v.playsInline = true; v.preload = 'auto'; v.crossOrigin = 'anonymous'
+            v.setAttribute('playsinline', ''); v.setAttribute('muted', '')
+            v.addEventListener('loadeddata', () => invalidate(w.url), { once: true })
+            v.src = w.url
+            mediaEls.set(w.url, v)
+          } else {
+            const im = new Image()
+            im.crossOrigin = 'anonymous'; im.decoding = 'async'
+            im.onload = () => invalidate(w.url)
+            im.onerror = () => { mediaEls.delete(w.url) }   // si riprova alla prossima impaginazione
+            im.src = w.url
+            mediaEls.set(w.url, im)
+          }
+        }
+      }
+    }
+    /** Video a vista: in riproduzione; gli altri in pausa. */
+    const playback = () => {
+      if (!layout) return
+      const near = new Set<string>()
+      for (let i = index - 1; i <= index + (spread ? 3 : 1); i++) {
+        const mp = layout.pages[i]?.media
+        if (mp?.video && mp.url) near.add(mp.url)
+      }
+      mediaEls.forEach((el, url) => {
+        if (!(el instanceof HTMLVideoElement)) return
+        if (near.has(url)) { if (el.paused) el.play().catch(() => undefined) }
+        else if (!el.paused) el.pause()
+      })
+    }
+    let liveVideo = false
+    /** Video sotto la pagina i (se è una pagina video pronta): texture
+     *  aggiornata al fotogramma attuale e ritaglio "cover". */
+    const videoFor = (i: number, rect: Rect): Sheet['video'] => {
+      const mp = layout?.pages[i]?.media
+      if (!mp?.video || !mp.url || !renderer) return null
+      const v = getMedia(mp.url)
+      if (!(v instanceof HTMLVideoElement)) return null
+      let t = videoTex.get(mp.url)
+      if (!t) { t = renderer.createVideoTexture(); videoTex.set(mp.url, t) }
+      renderer.updateVideo(t, v)
+      if (!v.paused) liveVideo = true
+      const A = rect.w / rect.h, va = v.videoWidth / v.videoHeight
+      const map: [number, number, number, number] = va > A ? [A / va, 1, (1 - A / va) / 2, 0] : [1, va / A, 0, (1 - va / A) / 2]
+      return { tex: t, map }
+    }
 
     let drag: Drag | null = null
     let turn: Turn | null = null
@@ -296,7 +394,7 @@ export default function CurlMenu({ data: base, style: initialStyle, preview = fa
       if (!layout || !renderer) return null
       const sheet = (rect: Rect, i: number, gutter: 'left' | 'right', kind: 0 | 1 | 2 = 0): Sheet | null => {
         const t = texture(i)
-        return t ? { rect, front: t, gutter, gutterK: spread ? GUTTER_SPREAD : GUTTER_SINGLE, kind } : null
+        return t ? { rect, front: t, gutter, gutterK: spread ? GUTTER_SPREAD : GUTTER_SINGLE, kind, video: videoFor(i, rect) } : null
       }
       const only = <T,>(xs: (T | null)[]) => xs.filter((x): x is T => !!x)
 
@@ -377,8 +475,11 @@ export default function CurlMenu({ data: base, style: initialStyle, preview = fa
         else if (!turn) restoreHint()
       }
       if (renderer) {
+        liveVideo = false
         const scene = buildScene()
         if (scene) renderer.render(scene)
+        // Un video a vista: si continua a disegnare a ogni fotogramma.
+        if (liveVideo) request()
       } else if (ctx2d) {
         // Ripiego: la pagina scorre via orizzontalmente, senza 3D.
         ctx2d.setTransform(dpr, 0, 0, dpr, 0, 0)
@@ -420,8 +521,12 @@ export default function CurlMenu({ data: base, style: initialStyle, preview = fa
       textures.clear(); bitmaps.clear()
       renderer?.setPaper(styleRef.current.page.paper)
       html.style.backgroundColor = styleRef.current.page.paper
-      layout = layoutMenu(sctx, dataRef.current, { w: pageW, h: H, insets: insets() }, styleRef.current, assetsRef.current)
-      const found = anchor ? layout.pages.findIndex(p => p.anchor === anchor) : -1
+      layout = layoutMenu(sctx, dataRef.current, { w: pageW, h: H, insets: insets() }, styleRef.current, { ...assetsRef.current, media: getMedia })
+      syncMedia()
+      // Anteprima: la pagina foto/video aperta nel pannello si mostra subito.
+      const focusIdx = mediaFocus.current ? layout.pages.findIndex(p => p.anchor === `media:${mediaFocus.current}`) : -1
+      mediaFocus.current = null
+      const found = focusIdx >= 0 ? focusIdx : anchor ? layout.pages.findIndex(p => p.anchor === anchor) : -1
       index = found >= 0 ? found : Math.min(index, layout.pages.length - 1)
       if (spread) index -= index % 2
       peeking = false
@@ -664,6 +769,7 @@ export default function CurlMenu({ data: base, style: initialStyle, preview = fa
       setLiquid(!!renderer?.liquid)
       glassSig = ''
       textures.clear()
+      videoTex.clear()
       relayout()
     }
 
@@ -747,6 +853,8 @@ export default function CurlMenu({ data: base, style: initialStyle, preview = fa
       window.removeEventListener('resize', onResize)
       window.removeEventListener('keydown', onKey)
       for (const t of Array.from(textures.values())) renderer?.deleteTexture(t)
+      for (const t of Array.from(videoTex.values())) renderer?.deleteTexture(t)
+      mediaEls.forEach(el => { if (el instanceof HTMLVideoElement) { el.pause(); el.removeAttribute('src'); el.load() } })
     }
   }, [token])
 
