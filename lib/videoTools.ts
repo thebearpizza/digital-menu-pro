@@ -91,50 +91,70 @@ export async function usefulFrame(source: File | string): Promise<{ time: number
   }
 }
 
-/** Il browser sa preparare il boomerang? (WebCodecs con H.264) */
-export const canMakeBoomerang = () => typeof window !== 'undefined' && 'VideoEncoder' in window && 'VideoFrame' in window
+/** Il browser sa creare video? (WebCodecs) */
+export const canEncodeVideo = () => typeof window !== 'undefined' && 'VideoEncoder' in window && 'VideoFrame' in window
+export const canMakeBoomerang = canEncodeVideo
 
-const MAX_SECONDS = 10   // oltre, il file raddoppiato diventa troppo pesante
+export type EncodeResult = { blob: Blob } | { error: string }
 
-/** Video → MP4 andata e ritorno. `onProgress` 0–1. Null se non si può. */
+/** Video → MP4 H.264 andata e ritorno (al massimo 10 s di video). */
+export const makeBoomerang = (source: File | string, onProgress?: (p: number) => void) =>
+  encodeVideo(source, { boomerang: true, maxSeconds: 10 }, onProgress)
+
+/** Video → MP4 H.264 leggero (al massimo 30 s, lato lungo 1280 px, senza
+ *  audio): parte su tutti i telefoni. I video di iPhone e Mac (.mov HEVC) e i
+ *  .webm su molti telefoni non si vedrebbero. */
+export const toH264 = (source: File | string, onProgress?: (p: number) => void) =>
+  encodeVideo(source, { boomerang: false, maxSeconds: 30 }, onProgress)
+
 type FrameCb = (now: number, meta: { mediaTime: number }) => void
 type VideoWithRvfc = HTMLVideoElement & { requestVideoFrameCallback?: (cb: FrameCb) => number }
 
-/** Video → MP4 andata e ritorno. `onProgress` 0–1. Null se non si può.
+// H.264 dal profilo più alto al più semplice, livelli che coprono il 720p e il 1080p.
+const CODECS = ['avc1.640028', 'avc1.4d0028', 'avc1.42e028', 'avc1.64001f', 'avc1.4d001f', 'avc1.42e01f']
+
+/** Codifica un video in MP4 H.264.
  *
- *  Andata: il video si riproduce una volta e ogni fotogramma mostrato viene
- *  codificato con il suo tempo vero (velocità originale, qualunque sia la
- *  frequenza del video) e messo da parte in JPEG. Ritorno: gli stessi
- *  fotogrammi al contrario, senza ripetere gli estremi (niente fermo-immagine).
- *  Riprodurre invece di saltare da un fotogramma all'altro è più veloce e
- *  preciso: molti video (es. quelli registrati nel browser) non hanno l'indice
- *  per saltare con esattezza. */
-export async function makeBoomerang(source: File | string, onProgress?: (p: number) => void): Promise<Blob | null> {
-  if (!canMakeBoomerang()) return null
+ *  Lettura dei fotogrammi: il video si riproduce una volta (fuori vista ma
+ *  nella pagina: Safari non mostra fotogrammi di un video staccato) e ogni
+ *  fotogramma mostrato viene codificato con il suo tempo vero. Se il browser
+ *  non segnala i fotogrammi, si passa da un fotogramma all'altro saltando.
+ *  Boomerang: i fotogrammi dell'andata si tengono in JPEG e si ricodificano
+ *  al contrario, senza ripetere gli estremi (niente fermo-immagine). */
+export async function encodeVideo(
+  source: File | string, opts: { boomerang: boolean; maxSeconds: number }, onProgress?: (p: number) => void,
+): Promise<EncodeResult> {
+  if (!canEncodeVideo()) return { error: 'Questo browser non sa creare video: apri la pagina da Chrome o da Safari aggiornati.' }
   const { Muxer, ArrayBufferTarget } = await import('mp4-muxer')
   const { url, revoke } = srcOf(source)
+  // Il video sta nella pagina, piccolissimo e quasi trasparente.
+  const holder = document.createElement('div')
+  holder.style.cssText = 'position:fixed;right:0;bottom:0;width:2px;height:2px;opacity:0.01;pointer-events:none;overflow:hidden;z-index:-1'
+  document.body.appendChild(holder)
   try {
-    const v = await loadVideo(url) as VideoWithRvfc
-    if (!v.requestVideoFrameCallback) return null
-    const dur = Math.min(MAX_SECONDS, await knownDuration(v))
-    if (dur < 0.5) return null
-    // Lato lungo al massimo 1280 px, misure pari (richiesto da H.264).
+    let v: VideoWithRvfc
+    try { v = await loadVideo(url) } catch { return { error: 'Il video non si apre in questo browser.' } }
+    v.style.cssText = 'width:2px;height:2px'
+    holder.appendChild(v)
+    const dur = Math.min(opts.maxSeconds, await knownDuration(v))
+    if (dur < 0.5) return { error: 'Non riesco a leggere la durata del video.' }
     const k = Math.min(1, 1280 / Math.max(v.videoWidth, v.videoHeight))
     const even = (x: number) => Math.max(2, Math.round((x * k) / 2) * 2)
     const width = even(v.videoWidth), height = even(v.videoHeight)
-    const config = { width, height, bitrate: 3_000_000, framerate: 30 }
-
-    // Profilo H.264 supportato (High → Main → Baseline).
+    const base = { width, height, bitrate: 3_000_000, framerate: 30, avc: { format: 'avc' as const } }
     let codec: string | null = null
     for (const c of CODECS) {
-      try { if ((await VideoEncoder.isConfigSupported({ codec: c, ...config })).supported) { codec = c; break } } catch { /* prossimo */ }
+      try { if ((await VideoEncoder.isConfigSupported({ codec: c, ...base })).supported) { codec = c; break } } catch { /* prossimo */ }
     }
-    if (!codec) return null
+    if (!codec) return { error: 'Questo browser non sa codificare video H.264.' }
 
-    const muxer = new Muxer({ target: new ArrayBufferTarget(), video: { codec: MUX_CODEC, width, height }, fastStart: 'in-memory' })
-    let failed = false
-    const encoder = new VideoEncoder({ output: (chunk, meta) => muxer.addVideoChunk(chunk, meta), error: () => { failed = true } })
-    encoder.configure({ codec, ...config })
+    const muxer = new Muxer({ target: new ArrayBufferTarget(), video: { codec: 'avc', width, height }, fastStart: 'in-memory' })
+    let failure: string | null = null
+    const encoder = new VideoEncoder({
+      output: (chunk, meta) => { try { muxer.addVideoChunk(chunk, meta) } catch (e) { failure = `scrittura MP4: ${(e as Error).message}` } },
+      error: e => { failure = `codifica: ${e.message}` },
+    })
+    encoder.configure({ codec, ...base })
     const canvas = document.createElement('canvas')
     canvas.width = width; canvas.height = height
     const c = canvas.getContext('2d')!
@@ -145,58 +165,76 @@ export async function makeBoomerang(source: File | string, onProgress?: (p: numb
       frame.close()
       count++
     }
-
-    // ── Andata
+    const share = opts.boomerang ? 0.5 : 1
     const kept: Promise<{ t: number; jpg: Blob | null }>[] = []
-    let t0 = -1, last = 0
-    await new Promise<void>(resolve => {
-      let done = false
-      const finish = () => { if (done) return; done = true; v.pause(); resolve() }
-      const onFrame: FrameCb = (_now, meta) => {
-        if (done) return
-        if (t0 < 0) t0 = meta.mediaTime
-        const t = meta.mediaTime - t0
-        if (t > dur || failed) { finish(); return }
-        if (t > last || count === 0) {
-          c.drawImage(v, 0, 0, width, height)
-          encode(canvas, t)
-          last = t
-          kept.push(new Promise(r => canvas.toBlob(b => r({ t, jpg: b }), 'image/jpeg', 0.9)))
-          onProgress?.(0.5 * Math.min(1, t / dur))
+    let last = -1
+    const take = async (t: number) => {
+      if (t <= last) return
+      c.drawImage(v, 0, 0, width, height)
+      encode(canvas, t)
+      last = t
+      if (opts.boomerang) kept.push(new Promise(r => canvas.toBlob(b => r({ t, jpg: b }), 'image/jpeg', 0.9)))
+      onProgress?.(share * Math.min(1, t / dur))
+      while (encoder.encodeQueueSize > 8) await new Promise(r => setTimeout(r, 5))
+    }
+
+    // ── Andata: riproduzione con segnale di ogni fotogramma…
+    let played = false
+    if (v.requestVideoFrameCallback) {
+      played = await new Promise<boolean>(resolve => {
+        let done = false, t0 = -1
+        const finish = (ok: boolean) => { if (done) return; done = true; v.pause(); resolve(ok) }
+        const onFrame: FrameCb = (_now, meta) => {
+          if (done) return
+          if (t0 < 0) t0 = meta.mediaTime
+          const t = meta.mediaTime - t0
+          if (t > dur || failure) { finish(true); return }
+          void take(t)
+          v.requestVideoFrameCallback!(onFrame)
         }
         v.requestVideoFrameCallback!(onFrame)
+        v.addEventListener('ended', () => finish(count > 2), { once: true })
+        // Nessun fotogramma segnalato in 2,5 s: si passa al metodo a salti.
+        window.setTimeout(() => { if (count === 0) finish(false) }, 2500)
+        window.setTimeout(() => finish(count > 2), (dur + 10) * 1000)
+        v.currentTime = 0
+        v.play().catch(() => finish(false))
+      })
+    }
+    // …oppure fotogramma per fotogramma, saltando.
+    if (!played) {
+      if (count > 0) return { error: 'La lettura del video si è interrotta: riprova.' }
+      for (let i = 0; i < Math.floor(dur * 30); i++) {
+        if (failure) break
+        await seek(v, i / 30)
+        await take(i / 30)
       }
-      v.requestVideoFrameCallback!(onFrame)
-      v.addEventListener('ended', finish, { once: true })
-      window.setTimeout(finish, (dur + 8) * 1000)   // video che si blocca
-      v.currentTime = 0
-      v.play().catch(finish)
-    })
-    const frames = (await Promise.all(kept)).filter(f => f.jpg).sort((a, b) => a.t - b.t)
-    if (frames.length < 3 || failed) return null
+    }
+    if (failure) return { error: `Errore di ${failure}` }
+    if (count < 3) return { error: 'Non riesco a leggere i fotogrammi del video.' }
 
     // ── Ritorno (dal penultimo al secondo fotogramma)
-    const T = frames[frames.length - 1].t
-    for (let i = frames.length - 2; i >= 1; i--) {
-      if (failed) return null
-      const bmp = await createImageBitmap(frames[i].jpg!)
-      encode(bmp, T + (T - frames[i].t))
-      bmp.close()
-      while (encoder.encodeQueueSize > 8) await new Promise(r => setTimeout(r, 5))
-      onProgress?.(0.5 + 0.5 * (1 - i / (frames.length - 1)))
+    if (opts.boomerang) {
+      const frames = (await Promise.all(kept)).filter(f => f.jpg).sort((a, b) => a.t - b.t)
+      const T = frames[frames.length - 1].t
+      for (let i = frames.length - 2; i >= 1; i--) {
+        if (failure) break
+        const bmp = await createImageBitmap(frames[i].jpg!)
+        encode(bmp, T + (T - frames[i].t))
+        bmp.close()
+        while (encoder.encodeQueueSize > 8) await new Promise(r => setTimeout(r, 5))
+        onProgress?.(0.5 + 0.5 * (1 - i / (frames.length - 1)))
+      }
     }
     await encoder.flush()
     encoder.close()
-    if (failed) return null
+    if (failure) return { error: `Errore di ${failure}` }
     muxer.finalize()
-    return new Blob([(muxer.target as InstanceType<typeof ArrayBufferTarget>).buffer], { type: 'video/mp4' })
-  } catch {
-    return null
+    return { blob: new Blob([(muxer.target as InstanceType<typeof ArrayBufferTarget>).buffer], { type: 'video/mp4' }) }
+  } catch (e) {
+    return { error: `Errore imprevisto: ${(e as Error)?.message ?? e}` }
   } finally {
+    holder.remove()
     revoke()
   }
 }
-
-// H.264 (High → Main → Baseline): si riproduce ovunque, iPhone compresi.
-const CODECS = ['avc1.640028', 'avc1.4d0028', 'avc1.42e01f']
-const MUX_CODEC = 'avc' as const

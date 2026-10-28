@@ -21,7 +21,7 @@ import {
 } from './controls'
 import { saveLandingStyle } from './actions'
 import StyleNav from './StyleNav'
-import { canMakeBoomerang, makeBoomerang, usefulFrame } from '@/lib/videoTools'
+import { canEncodeVideo, makeBoomerang, toH264, usefulFrame } from '@/lib/videoTools'
 
 type PanelId =
   | 'presets' | 'background' | 'colors' | 'layout' | 'logo' | 'description' | 'buttons' | 'captions'
@@ -169,13 +169,29 @@ export default function LandingEditor({ restaurantId, token, initialStyle, menuF
   const tried = useRef(new Set<string>())
   const patchMedia = useCallback((id: string, patch: Partial<LandingMedia>) =>
     edit(s => { const m = s.background.media.find(x => x.id === id); if (m) Object.assign(m, patch) }), [edit])
-  const bgKind = style.background.kind, videoMode = style.background.videoMode, mediaKey = JSON.stringify(style.background.media.map(m => [m.id, !!m.poster, m.startAt, !!m.boomerang]))
+  const bgKind = style.background.kind, videoMode = style.background.videoMode, mediaKey = JSON.stringify(style.background.media.map(m => [m.id, m.url, !!m.poster, m.startAt, !!m.boomerang]))
   useEffect(() => {
     if (bgKind !== 'media') return
     const say = (id: string, text: string | null) => setJobs(j => { const n = { ...j }; if (text) n[id] = text; else delete n[id]; return n })
     for (const m of live.current.background.media) {
       if (!m.video) continue
-      const posterKey = `${m.id}:poster`, boomKey = `${m.id}:boom`
+      const posterKey = `${m.id}:poster`, boomKey = `${m.id}:boom`, convKey = `${m.id}:conv`
+      // Video non MP4 (es. .mov di iPhone, .webm del vecchio editor): si
+      // convertono in MP4 H.264, che parte su tutti i telefoni.
+      if (!/\.mp4(\?|$)/i.test(m.url) && !tried.current.has(convKey) && canEncodeVideo()) {
+        tried.current.add(convKey)
+        ;(async () => {
+          say(m.id, 'Converto il video per tutti i telefoni… 0%')
+          const r = await toH264(m.url, p => say(m.id, `Converto il video per tutti i telefoni… ${Math.round(p * 100)}%`))
+          if ('error' in r) { say(m.id, `Conversione non riuscita (${r.error}) Il video resta com'è: su alcuni telefoni potrebbe non vedersi.`); return }
+          const url = await uploadAsset(restaurantId, 'landing', new File([r.blob], 'video.mp4', { type: 'video/mp4' }), 'mp4')
+          // Il boomerang (se c'era) va rifatto dal video nuovo.
+          tried.current.delete(boomKey)
+          patchMedia(m.id, { url, boomerang: null })
+          say(m.id, null)
+        })().catch(() => say(m.id, 'Conversione del video non riuscita.'))
+        continue
+      }
       // Anche i video che hanno già un'immagine d'attesa ma nessun punto di
       // partenza calcolato (es. quelli del vecchio tema): servono all'intro.
       const needPoster = (!m.poster || m.startAt === 0) && !tried.current.has(posterKey)
@@ -192,12 +208,11 @@ export default function LandingEditor({ restaurantId, token, initialStyle, menuF
             patchMedia(m.id, { poster, startAt: f.time })
           }
           if (needBoom) {
-            if (!canMakeBoomerang()) { say(m.id, 'Questo browser non sa preparare il boomerang: apri la pagina da Chrome o da Safari aggiornati. Intanto il video va in loop.'); return }
             say(m.id, 'Preparo il boomerang… 0%')
-            const blob = await makeBoomerang(m.url, p => say(m.id, `Preparo il boomerang… ${Math.round(p * 100)}%`))
-            if (!blob) { say(m.id, 'Boomerang non riuscito con questo video: va in loop.'); return }
+            const r = await makeBoomerang(m.url, p => say(m.id, `Preparo il boomerang… ${Math.round(p * 100)}%`))
+            if ('error' in r) { say(m.id, `Boomerang non riuscito (${r.error}) Intanto il video va in loop.`); return }
             say(m.id, 'Carico il boomerang…')
-            const url = await uploadAsset(restaurantId, 'landing', new File([blob], 'boomerang.mp4', { type: 'video/mp4' }), 'mp4')
+            const url = await uploadAsset(restaurantId, 'landing', new File([r.blob], 'boomerang.mp4', { type: 'video/mp4' }), 'mp4')
             patchMedia(m.id, { boomerang: url })
           }
           say(m.id, null)
@@ -511,16 +526,27 @@ function MediaManager({ restaurantId, media, jobs, onSet }: {
       const raw = files[k]
       setBusy(`Caricamento ${k + 1} di ${files.length}…`)
       try {
-        const video = raw.type.startsWith('video/')
-        if (video && raw.size > MAX_VIDEO_BYTES) { setErr(`${raw.name}: video troppo grande (massimo 20 MB).`); continue }
-        const file = video ? raw : await compressImageFile(raw)
+        const video = raw.type.startsWith('video/') || /\.(mov|mp4|m4v|webm)$/i.test(raw.name)
+        // Video: si converte qui in MP4 H.264 leggero (parte su tutti i
+        // telefoni; i .mov di iPhone in HEVC su molti Android no). Se il
+        // browser non sa farlo, si carica l'originale (massimo 20 MB).
+        let file: File = raw
+        if (video) {
+          const r = canEncodeVideo()
+            ? await toH264(raw, p => setBusy(`Video ${k + 1} di ${files.length}: lo preparo per tutti i telefoni… ${Math.round(p * 100)}%`))
+            : { error: 'questo browser non sa convertire video' }
+          if ('blob' in r) file = new File([r.blob], 'video.mp4', { type: 'video/mp4' })
+          else setErr(`${raw.name}: ${r.error} Caricato com'è: su alcuni telefoni potrebbe non vedersi.`)
+          if (file.size > MAX_VIDEO_BYTES) { setErr(`${raw.name}: video troppo grande anche dopo la conversione (massimo 20 MB): usane uno più corto.`); continue }
+        } else file = await compressImageFile(raw)
         const ext = (file.name.split('.').pop() || (video ? 'mp4' : 'jpg')).toLowerCase()
+        setBusy(`Caricamento ${k + 1} di ${files.length}…`)
         const url = await uploadAsset(restaurantId, 'landing', file, ext)
         // Video: immagine d'attesa e punto di partenza dal primo fotogramma
         // utile (saltato l'inizio nero o in dissolvenza).
         let poster: string | null = null, startAt = 0
         if (video) {
-          const f = await usefulFrame(raw)
+          const f = await usefulFrame(file)
           startAt = f.time
           if (f.image) poster = await uploadAsset(restaurantId, 'landing', new File([f.image], 'poster.jpg', { type: 'image/jpeg' }), 'jpg')
         }
@@ -538,7 +564,7 @@ function MediaManager({ restaurantId, media, jobs, onSet }: {
   }
 
   return (
-    <FieldShell label="Foto e video" hint="Si alternano in dissolvenza. Video muti in loop (massimo 20 MB, meglio MP4 corti).">
+    <FieldShell label="Foto e video" hint="Si alternano in dissolvenza. I video (anche .mov di iPhone) vengono preparati qui per partire su tutti i telefoni: senza audio, meglio brevi (al massimo 30 secondi).">
       <div className="space-y-2">
         {media.map((m, i) => (
           <div key={m.id} className="flex gap-3 border border-gray-200 p-2" style={{ borderRadius: 12 }}>
