@@ -21,6 +21,7 @@ import FpsMeter from './FpsMeter'
 import { useRouter } from 'next/navigation'
 import { layoutMenu, mediaViews, SANS, type Dish, type Layout, type MenuData, type MediaView, type Insets } from './typeset'
 import { parseMedia } from '@/lib/menuMedia'
+import { parseRichText } from './richText'
 import { parseStyle, registerCustomFonts, type MenuStyle } from '@/lib/menuStyle'
 import { isLang, type Lang } from '@/lib/translations'
 import DishCard from './DishCard'
@@ -48,6 +49,8 @@ interface Props {
   base?:  '/m' | '/prova'
   /** Menu vero sul QR: aperture del menu e dei piatti nelle statistiche. */
   track?: { restaurantId: string; menuId: string } | null
+  /** Anteprima: tutti gli allergeni (pagina allergeni accesa dal pannello). */
+  legendAll?: MenuData['allergenLegend']
 }
 
 /** Statistiche (come il vecchio menu): invio senza attendere risposta. */
@@ -90,7 +93,7 @@ type Anim = {
   arc:    number
 }
 
-export default function CurlMenu({ data: base, style: initialStyle, preview = false, i18n, token, base: basePath = '/prova', track = null }: Props) {
+export default function CurlMenu({ data: base0, style: initialStyle, preview = false, i18n, token, base: basePath = '/prova', track = null, legendAll }: Props) {
   const router = useRouter()
   const trackRef = useRef(track)
   trackRef.current = track
@@ -115,8 +118,10 @@ export default function CurlMenu({ data: base, style: initialStyle, preview = fa
     setLangState(l)
     try { localStorage.setItem(LANG_KEY, l) } catch { /* memoria non disponibile */ }
   }, [])
-  // Anteprima della Personalizzazione: pagine foto/video in modifica.
+  // Anteprima della Personalizzazione: pagine foto/video e pagine di testo in modifica.
   const [mediaOverride, setMediaOverride] = useState<MediaView[] | null>(null)
+  const [textOverride, setTextOverride] = useState<Pick<MenuData, 'info' | 'allergenLegend'> | null>(null)
+  const base = useMemo(() => (textOverride ? { ...base0, ...textOverride } : base0), [base0, textOverride])
   const data = useMemo(() => localize(mediaOverride ? { ...base, media: mediaOverride } : base, i18n, lang), [base, i18n, lang, mediaOverride])
   const dataRef = useRef(data)
   dataRef.current = data
@@ -140,9 +145,20 @@ export default function CurlMenu({ data: base, style: initialStyle, preview = fa
       if (msg?.type === 'lito-style' && msg.style) setStyle(parseStyle(msg.style))   // ripulito; registra i caratteri caricati
       // Pagine foto/video in modifica: si vedono subito; `focus` = quella
       // aperta nel pannello, su cui si va.
+      // Pagine di testo in modifica (pagina informativa e allergeni).
+      if (msg?.type === 'lito-text') {
+        const tp = (e.data as { pages?: { info?: { enabled?: boolean; position?: string; body?: string; align?: string }; allergen?: { enabled?: boolean } } }).pages
+        const info = tp?.info
+        const blocks = info?.enabled ? parseRichText(info.body, info.align === 'center' || info.align === 'right' ? info.align : 'left') : []
+        setTextOverride({
+          info: blocks.length ? { position: info?.position === 'last' ? 'last' : 'first', blocks } : null,
+          allergenLegend: tp?.allergen?.enabled ? legendAll ?? null : null,
+        })
+        if (msg.focus) mediaFocus.current = msg.focus
+      }
       if (msg?.type === 'lito-media') {
-        setMediaOverride(mediaViews(parseMedia(msg.pages), base.categories.flatMap(c => c.dishes)))
-        mediaFocus.current = msg.focus ?? null
+        setMediaOverride(mediaViews(parseMedia(msg.pages), base0.categories.flatMap(c => c.dishes)))
+        mediaFocus.current = msg.focus ? `media:${msg.focus}` : null
       }
       // Pannello "Scheda del piatto" della Personalizzazione: mostra la scheda
       // di un piatto (meglio se con foto e descrizione).
@@ -156,7 +172,7 @@ export default function CurlMenu({ data: base, style: initialStyle, preview = fa
     return () => window.removeEventListener('message', onMsg)
     // Solo al montaggio: "pronta" una volta (rimandata a ogni cambio di dati,
     // farebbe rimandare stile e pagine all'infinito).
-  }, [preview, base])
+  }, [preview, base0, legendAll])
 
   // Barra dei comandi (Menu, categorie, lingua): nascosta; si apre scorrendo
   // verso l'alto e segue il dito; si chiude scorrendo in giù, girando pagina o
@@ -525,7 +541,8 @@ export default function CurlMenu({ data: base, style: initialStyle, preview = fa
       layout = layoutMenu(sctx, dataRef.current, { w: pageW, h: H, insets: insets() }, styleRef.current, { ...assetsRef.current, media: getMedia })
       syncMedia()
       // Anteprima: la pagina foto/video aperta nel pannello si mostra subito.
-      const focusIdx = mediaFocus.current ? layout.pages.findIndex(p => p.anchor === `media:${mediaFocus.current}`) : -1
+      // (àncora: media:<id>, 'info' o 'allergens')
+      const focusIdx = mediaFocus.current ? layout.pages.findIndex(p => p.anchor === mediaFocus.current) : -1
       mediaFocus.current = null
       const found = focusIdx >= 0 ? focusIdx : anchor ? layout.pages.findIndex(p => p.anchor === anchor) : -1
       index = found >= 0 ? found : Math.min(index, layout.pages.length - 1)

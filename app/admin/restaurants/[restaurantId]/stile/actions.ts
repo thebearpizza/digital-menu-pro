@@ -75,3 +75,42 @@ export async function saveMenuMedia(restaurantId: string, menuId: string, pages:
   if (error) return { ok: false, error: 'Salvataggio non riuscito, riprova.' }
   return { ok: true }
 }
+
+/** Pagine di testo del nuovo menu (pagina informativa e allergeni) di un
+ *  menu. Si aggiornano solo questi campi: il resto di menus.text_content
+ *  (caratteri e testo del vecchio menu PDF) resta com'è. */
+export interface MenuTextPages {
+  info:     { enabled: boolean; position: 'first' | 'last'; body: string; align: 'left' | 'center' | 'right' }
+  allergen: { enabled: boolean }
+}
+
+export async function saveMenuText(restaurantId: string, menuId: string, pages: MenuTextPages): Promise<{ ok: true } | { ok: false; error: string }> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { ok: false, error: 'Sessione scaduta: accedi di nuovo.' }
+  const { data: own } = await supabase.from('restaurants').select('id').eq('id', restaurantId).eq('owner_id', user.id).maybeSingle()
+  if (!own) return { ok: false, error: 'Ristorante non trovato.' }
+  const { data: menu } = await supabase.from('menus').select('text_content').eq('id', menuId).eq('restaurant_id', restaurantId).maybeSingle()
+  if (!menu) return { ok: false, error: 'Menu non trovato.' }
+  const old = (menu.text_content ?? {}) as Record<string, Record<string, unknown> | undefined>
+  const info = pages.info
+  const next = {
+    ...old,
+    info: {
+      ...defaultTextPage('first'), ...(old.info ?? {}),
+      enabled: !!info.enabled,
+      position: info.position === 'last' ? 'last' : 'first',
+      body: typeof info.body === 'string' ? info.body.slice(0, 20000) : '',
+      align: info.align === 'center' || info.align === 'right' ? info.align : 'left',
+    },
+    allergen: { ...defaultTextPage('last'), ...(old.allergen ?? {}), enabled: !!pages.allergen.enabled },
+  }
+  const { error } = await supabase.from('menus').update({ text_content: next }).eq('id', menuId).eq('restaurant_id', restaurantId)
+  if (error) return { ok: false, error: 'Salvataggio non riuscito, riprova.' }
+  return { ok: true }
+}
+
+/** Campi del vecchio menu PDF per una pagina mai salvata (stessi valori base). */
+function defaultTextPage(position: 'first' | 'last') {
+  return { enabled: false, position, body: '', font: 'Helvetica', fontSize: position === 'first' ? 12 : 11, align: 'left', color: '#1a1a1a', bold: false, italic: false, lineHeight: position === 'first' ? 1.6 : 1.5 }
+}

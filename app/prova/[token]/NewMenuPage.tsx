@@ -216,7 +216,9 @@ export default async function NewMenuPage({ token, searchParams, base, live }: {
   return <CurlMenu key={menu.id} data={data} i18n={i18n} token={token} base={base}
     // Stile del menu, se ne ha uno suo; altrimenti quello del ristorante.
     style={parseStyle(menu.menu_style ?? (restaurant as Row).menu_style)} preview={preview}
-    track={counted ? { restaurantId: restaurant.id as string, menuId: menu.id as string } : null} />
+    track={counted ? { restaurantId: restaurant.id as string, menuId: menu.id as string } : null}
+    // Anteprima: elenco completo degli allergeni (la pagina si può accendere dal pannello).
+    legendAll={preview ? fullLegend(catalog) : undefined} />
 }
 
 // ── Pagine di testo del menu ─────────────────────────────────────────────────
@@ -234,7 +236,10 @@ function infoPage(tc: unknown): MenuData['info'] {
  *  scritto a mano nel gestionale non serve più. */
 function allergenLegendOf(tc: unknown, catalog: AllergenCatalog): MenuData['allergenLegend'] {
   const page = (tc as { allergen?: TextPage } | null)?.allergen
-  if (!page?.enabled) return null
+  return page?.enabled ? fullLegend(catalog) : null
+}
+
+function fullLegend(catalog: AllergenCatalog): NonNullable<MenuData['allergenLegend']> {
   return ALLERGENS
     .map(a => ({ id: a.id, n: allergenNumber(a.id, catalog), name: allergenName(a.id, 'it', catalog) }))
     .sort((a, b) => a.n - b.n)

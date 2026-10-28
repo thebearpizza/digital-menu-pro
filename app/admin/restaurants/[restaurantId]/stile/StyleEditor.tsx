@@ -28,14 +28,15 @@ import {
   BackgroundField, Choice, ColorField, FieldShell, FontsManager, GlassControls, OrnamentField, PaperSwatch, PhoneFrame, Slider,
   TextStyleField, Toggle, cssOf, lum, pct, px,
 } from './controls'
-import { saveMenuMedia, saveMenuStyles } from './actions'
+import { saveMenuMedia, saveMenuStyles, saveMenuText, type MenuTextPages } from './actions'
+import TextPageEditor from './TextPageEditor'
 import MediaPanel, { type MediaDish } from './MediaPanel'
 import type { MediaPage } from '@/lib/menuMedia'
 import StyleNav from './StyleNav'
 
 type PanelId =
   | 'presets' | 'paper' | 'fonts' | 'head' | 'runningHead' | 'category' | 'dish' | 'price' | 'description'
-  | 'allergens' | 'pageNumber' | 'textPages' | 'card' | 'chrome' | 'effects' | 'media'
+  | 'allergens' | 'pageNumber' | 'infoPage' | 'allergenPage' | 'card' | 'chrome' | 'effects' | 'media'
 
 const PANELS: { id: PanelId; title: string; sub: string }[] = [
   { id: 'presets',     title: 'Stili pronti',         sub: 'Un punto di partenza completo' },
@@ -49,7 +50,8 @@ const PANELS: { id: PanelId; title: string; sub: string }[] = [
   { id: 'description', title: 'Descrizione',          sub: 'Testo sotto il nome del piatto' },
   { id: 'allergens',   title: 'Allergeni',            sub: 'Numeri sotto i piatti' },
   { id: 'pageNumber',  title: 'Numeri di pagina',     sub: 'In fondo alle pagine' },
-  { id: 'textPages',   title: 'Pagine di testo',      sub: 'Pagina informativa e legenda allergeni' },
+  { id: 'infoPage',    title: 'Pagina informativa',   sub: 'Testo, posizione e caratteri' },
+  { id: 'allergenPage', title: 'Pagina allergeni',    sub: 'Legenda dei 14 allergeni in fondo al menu' },
   { id: 'media',       title: 'Foto e video',         sub: 'Pagine intere: categorie e promo' },
   { id: 'card',        title: 'Scheda del piatto',    sub: 'Quella che si apre toccando un piatto' },
   { id: 'chrome',      title: 'Comandi e vetro',      sub: 'Barra, categorie, lingua: vetro liquido; aiuti' },
@@ -59,8 +61,8 @@ const PANELS: { id: PanelId; title: string; sub: string }[] = [
 // Toccando un elemento nell'anteprima si apre il suo pannello.
 const PICK_PANEL: Record<PickTarget, PanelId> = {
   paper: 'paper', restaurant: 'head', title: 'head', runningHead: 'runningHead', category: 'category',
-  name: 'dish', price: 'price', description: 'description', allergens: 'allergens', pageNumber: 'pageNumber', text: 'textPages',
-  media: 'media',
+  name: 'dish', price: 'price', description: 'description', allergens: 'allergens', pageNumber: 'pageNumber', text: 'infoPage',
+  legend: 'allergenPage', media: 'media',
 }
 
 // Tavolozze pronte (carta, testo, secondario, accento).
@@ -193,7 +195,7 @@ interface Props {
   token:        string
   /** Menu attivi del ristorante, ognuno con il suo stile attuale, le sue
    *  pagine foto/video, categorie e piatti (per collegare le promo). */
-  menus:        { id: string; name: string; style: MenuStyle; media: MediaPage[]; categories: string[]; dishes: MediaDish[] }[]
+  menus:        { id: string; name: string; style: MenuStyle; media: MediaPage[]; categories: string[]; dishes: MediaDish[]; text: MenuTextPages }[]
 }
 
 type Flat = Record<string, unknown>
@@ -243,7 +245,12 @@ export default function StyleEditor({ restaurantId, token, menus }: Props) {
   const [media, setMedia] = useState<MediaPage[]>(mediaSaved)
   const [mediaOpen, setMediaOpen] = useState<string | null>(null)
   const mediaDirty = useMemo(() => JSON.stringify(media) !== JSON.stringify(mediaSaved), [media, mediaSaved])
-  const dirty = styleDirty || mediaDirty
+  // Pagine di testo del menu scelto (si salvano solo per lui).
+  const [textSavedBy, setTextSavedBy] = useState<Record<string, MenuTextPages>>(() => Object.fromEntries(menus.map(m => [m.id, m.text])))
+  const textSaved = useMemo(() => textSavedBy[menuId] ?? EMPTY_TEXT, [textSavedBy, menuId])
+  const [text, setText] = useState<MenuTextPages>(textSaved)
+  const textDirty = useMemo(() => JSON.stringify(text) !== JSON.stringify(textSaved), [text, textSaved])
+  const dirty = styleDirty || mediaDirty || textDirty
   const current = menus.find(m => m.id === menuId)
 
   // Caratteri caricati: riconosciuti dai campioni e dall'elenco di scelta.
@@ -265,10 +272,14 @@ export default function StyleEditor({ restaurantId, token, menus }: Props) {
   const post = useCallback((msg: unknown) => frameRef.current?.contentWindow?.postMessage(msg, window.location.origin), [])
   useEffect(() => { post({ type: 'lito-style', style }) }, [style, post])
   useEffect(() => { post({ type: 'lito-media', pages: media, focus: mediaOpen }) }, [media, mediaOpen, post])
+  // Pagine di testo: si vedono mentre si scrive; col pannello aperto l'anteprima va lì.
+  useEffect(() => {
+    post({ type: 'lito-text', pages: text, focus: open === 'infoPage' ? 'info' : open === 'allergenPage' ? 'allergens' : null })
+  }, [text, open, post])
   // Pannello della scheda aperto: l'anteprima mostra la scheda di un piatto.
   useEffect(() => { post({ type: 'lito-card', open: open === 'card' }) }, [open, post])
-  const live = useRef({ style, open, media })
-  live.current = { style, open, media }
+  const live = useRef({ style, open, media, text })
+  live.current = { style, open, media, text }
   useEffect(() => {
     let clear = 0
     const onMsg = (e: MessageEvent) => {
@@ -277,6 +288,7 @@ export default function StyleEditor({ restaurantId, token, menus }: Props) {
       if (msg?.type === 'lito-preview-ready') {
         post({ type: 'lito-style', style: live.current.style })
         post({ type: 'lito-media', pages: live.current.media, focus: null })
+        post({ type: 'lito-text', pages: live.current.text, focus: null })
         if (live.current.open === 'card') post({ type: 'lito-card', open: true })
       }
       if (msg?.type === 'lito-pick' && msg.target) {
@@ -305,6 +317,16 @@ export default function StyleEditor({ restaurantId, token, menus }: Props) {
   /** Salva il menu scelto più gli altri indicati (solo le modifiche fatte);
    *  le pagine foto/video solo del menu scelto. */
   const save = (others: string[]) => startSaving(async () => {
+    if (textDirty) {
+      const r = await saveMenuText(restaurantId, menuId, text)
+      if (!r.ok) { setMessage({ ok: false, text: r.error }); window.setTimeout(() => setMessage(null), 3000); return }
+      setTextSavedBy(prev => ({ ...prev, [menuId]: text }))
+      if (!styleDirty && !mediaDirty) {
+        setMessage({ ok: true, text: 'Pagine di testo salvate.' })
+        window.setTimeout(() => setMessage(null), 3000)
+        return
+      }
+    }
     if (mediaDirty) {
       const r = await saveMenuMedia(restaurantId, menuId, media)
       if (!r.ok) { setMessage({ ok: false, text: r.error }); window.setTimeout(() => setMessage(null), 3000); return }
@@ -340,6 +362,7 @@ export default function StyleEditor({ restaurantId, token, menus }: Props) {
     setStyle(savedBy[id] ?? DEFAULT_STYLE)
     setMedia(mediaSavedBy[id] ?? [])
     setMediaOpen(null)
+    setText(textSavedBy[id] ?? EMPTY_TEXT)
   }
   // Stili pronti e "Stile base" tengono i caratteri caricati.
   const replaceAll = (st: MenuStyle) => setStyle(prev => ({ ...structuredClone(st), customFonts: prev.customFonts }))
@@ -519,11 +542,31 @@ export default function StyleEditor({ restaurantId, token, menus }: Props) {
           {T('Testo dei numeri', s => s.pageNumber.text, [7, 16], undefined, true)}
         </>)}
       </>)
-      case 'textPages': return (<>
-        {T('Titoli', s => s.textPages.title, [16, 44], 'I sottotitoli sono un po\' più piccoli.')}
-        {T('Testo', s => s.textPages.body, [11, 24], 'Anche i nomi della legenda allergeni.')}
-        <Slider label="Interlinea" value={st.textPages.lineHeight} min={0.85} max={1.4} step={0.01} format={pct} onChange={v => edit(s => { s.textPages.lineHeight = v })} />
-        <Slider label="Spazio tra i paragrafi" value={st.textPages.paraGap} min={0} max={30} step={1} format={px} onChange={v => edit(s => { s.textPages.paraGap = v })} />
+      case 'infoPage': return (<>
+        <p className="text-[11px] text-gray-400 -mt-1">Vale per il menu scelto in alto. Sta sempre in una sola pagina: se il testo è lungo, caratteri e spazi si riducono quanto basta.</p>
+        <Toggle label="Mostra la pagina informativa" value={text.info.enabled} onChange={v => setText(t => ({ ...t, info: { ...t.info, enabled: v } }))} />
+        {text.info.enabled && (<>
+          <Choice label="Dove" value={text.info.position} onChange={v => setText(t => ({ ...t, info: { ...t.info, position: v } }))}
+            options={[{ value: 'first', label: 'All\'inizio, sotto il titolo del menu' }, { value: 'last', label: 'Alla fine, in una pagina sua' }]} />
+          <FieldShell label="Testo">
+            <TextPageEditor value={text.info.body} onChange={html => setText(t => ({ ...t, info: { ...t.info, body: html } }))} />
+          </FieldShell>
+          <Sub>Caratteri</Sub>
+          {T('Titoli', s => s.textPages.title, [16, 44], 'I sottotitoli sono un po\' più piccoli.')}
+          {T('Testo', s => s.textPages.body, [11, 24])}
+          <Slider label="Interlinea" value={st.textPages.lineHeight} min={0.85} max={1.4} step={0.01} format={pct} onChange={v => edit(s => { s.textPages.lineHeight = v })} />
+          <Slider label="Spazio tra i paragrafi" value={st.textPages.paraGap} min={0} max={30} step={1} format={px} onChange={v => edit(s => { s.textPages.paraGap = v })} />
+        </>)}
+      </>)
+      case 'allergenPage': return (<>
+        <p className="text-[11px] text-gray-400 -mt-1">Vale per il menu scelto in alto. L&apos;elenco si crea da solo con i nomi e i numeri degli allergeni del tuo account, tradotto nelle lingue del menu. Sta sempre in una sola pagina.</p>
+        <Toggle label="Mostra la pagina allergeni in fondo al menu" value={text.allergen.enabled} onChange={v => setText(t => ({ ...t, allergen: { enabled: v } }))} />
+        {text.allergen.enabled && (<>
+          <Sub>Caratteri</Sub>
+          {T('Nomi degli allergeni', s => s.textPages.legendName, [10, 26])}
+          {T('Numeri', s => s.textPages.legendNum, [7, 18], undefined, true)}
+          <p className="text-[11px] text-gray-400">Il titolo &quot;Allergeni&quot; usa lo stile delle categorie; la nota sotto il titolo lo stile del testo della pagina informativa.</p>
+        </>)}
       </>)
       case 'card': return (<>
         <p className="text-[11px] text-gray-400 -mt-1">L&apos;anteprima mostra la scheda di un piatto finché questo pannello è aperto. I caratteri sono quelli dei piatti.</p>
@@ -627,7 +670,7 @@ export default function StyleEditor({ restaurantId, token, menus }: Props) {
           <button type="button" onClick={() => replaceAll(DEFAULT_STYLE)} className="hidden sm:inline text-sm text-gray-500 hover:text-gray-800 px-3 py-2">
             Stile base
           </button>
-          <button type="button" onClick={() => { setStyle(saved); setMedia(mediaSaved) }} disabled={!dirty} className="text-sm text-gray-600 hover:text-gray-900 px-3 py-2 disabled:opacity-40">
+          <button type="button" onClick={() => { setStyle(saved); setMedia(mediaSaved); setText(textSaved) }} disabled={!dirty} className="text-sm text-gray-600 hover:text-gray-900 px-3 py-2 disabled:opacity-40">
             Annulla
           </button>
           <button type="button" onClick={askSave} disabled={!dirty || saving}
@@ -771,3 +814,5 @@ const CARD_COLORS = (paper: string) => [
   { name: 'Fumo',    surface: '#2a2622', box: '#4a433c', dark: true },
   { name: 'Notte',   surface: '#141618', box: '#2c3034', dark: true },
 ]
+
+const EMPTY_TEXT: MenuTextPages = { info: { enabled: false, position: 'first', body: '', align: 'left' }, allergen: { enabled: false } }

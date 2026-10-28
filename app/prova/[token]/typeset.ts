@@ -219,7 +219,7 @@ export interface Layout {
 /** Elementi del menu che si possono toccare nell'anteprima per modificarli. */
 export type PickTarget =
   | 'paper' | 'restaurant' | 'title' | 'runningHead' | 'category' | 'name' | 'price'
-  | 'description' | 'allergens' | 'pageNumber' | 'text' | 'media'
+  | 'description' | 'allergens' | 'pageNumber' | 'text' | 'legend' | 'media'
 
 const TEXT_GAP = 14
 
@@ -321,14 +321,15 @@ export function layoutMenu(ctx: Ctx, data: MenuData, vp: Viewport, style: MenuSt
     : k === 'h3' ? { t: { ...TP.body, italic: true, color: 'soft' }, lh: 1.32 * LHK, after: PG }
     : { t: TP.body, lh: 1.36 * LHK, after: PG }
   type Piece = { block: Block | null; h: number }   // null = spazio vuoto
-  const textPieces = (blocks: TextBlock[], from: TextLineBlock['from']): Piece[] => {
+  /** k: riduzione (testo e spazi) per far stare il testo in una pagina. */
+  const textPieces = (blocks: TextBlock[], from: TextLineBlock['from'], k = 1): Piece[] => {
     const out: Piece[] = []
     for (const b of blocks) {
-      if (b.kind === 'gap') { out.push({ block: null, h: TEXT_GAP * s }); continue }
+      if (b.kind === 'gap') { out.push({ block: null, h: TEXT_GAP * s * k }); continue }
       const ts = textStyleOf(b.kind)
-      const base = rt(ts.t)
+      const base = rt(ts.t, k)
       const size = base.size
-      const fontOf = (r: TextRun) => cssFont({ ...ts.t, italic: ts.t.italic || !!r.italic, weight: r.bold ? 700 : ts.t.weight }, s)
+      const fontOf = (r: TextRun) => cssFont({ ...ts.t, italic: ts.t.italic || !!r.italic, weight: r.bold ? 700 : ts.t.weight }, s * k)
       // Parole con il loro carattere; '\n' = a capo forzato.
       const words: { text: string; font: string; br: boolean; space: boolean }[] = []
       for (const r of b.runs) {
@@ -363,7 +364,7 @@ export function layoutMenu(ctx: Ctx, data: MenuData, vp: Viewport, style: MenuSt
         pendingSpace = wd.space ? ctx.measureText(' ').width : 0
       }
       flush()
-      if (out.length) out[out.length - 1].h += ts.after * s
+      if (out.length) out[out.length - 1].h += ts.after * s * k
     }
     // Niente spazi vuoti in testa o in coda.
     while (out.length && !out[0].block) out.shift()
@@ -371,6 +372,13 @@ export function layoutMenu(ctx: Ctx, data: MenuData, vp: Viewport, style: MenuSt
     return out
   }
   const piecesHeight = (ps: Piece[]) => ps.reduce((a, p) => a + p.h, 0)
+  /** Testo che sta per forza in `avail` px (una pagina, mai due): se serve,
+   *  testo e spazi si riducono quanto basta. */
+  const fitPieces = (blocks: TextBlock[], from: TextLineBlock['from'], avail: number): Piece[] => {
+    let k = 1, ps = textPieces(blocks, from, k)
+    while (piecesHeight(ps) > avail && k > 0.36) { k *= 0.95; ps = textPieces(blocks, from, k) }
+    return ps
+  }
 
   // ── Impaginazione
   const pages: Page[] = []
@@ -400,26 +408,25 @@ export function layoutMenu(ctx: Ctx, data: MenuData, vp: Viewport, style: MenuSt
 
   cur.push({ block: { kind: 'head', titleSize: TITLE_FIT.size }, y, h: HEAD_H }); y += HEAD_H
 
-  /** Mette i pezzi di testo a partire da y; se stanno nello spazio rimasto li
-   *  centra (un po' più in alto del centro), altrimenti continua sulle pagine
-   *  successive senza lasciare spazi vuoti in cima. */
+  /** Mette i pezzi di testo (già ridotti per starci) a partire da y, tutti
+   *  nella pagina in corso: centrati un po' più in alto del centro. */
   const placeText = (ps: Piece[]) => {
     if (!ps.length) return
     const total = piecesHeight(ps)
     if (total <= room()) y += (room() - total) * 0.42
     for (const pc of ps) {
-      if (pc.h > room() && cur.length) { newPage(); if (!pc.block) continue }
       if (pc.block) cur.push({ block: pc.block, y, h: pc.h })
       y += pc.h
     }
   }
 
-  // Pagina informativa in testa: sotto il titolo del menu, poi i piatti da
-  // una pagina nuova.
-  const infoPieces = data.info?.blocks.length ? textPieces(data.info.blocks, 'info') : []
-  if (infoPieces.length && data.info!.position === 'first') {
+  // Pagina informativa: sempre in una sola pagina (ridotta se serve). In
+  // testa sta sotto il titolo del menu, poi i piatti da una pagina nuova; in
+  // fondo ha una pagina sua.
+  const infoBlocks = data.info?.blocks.length ? data.info.blocks : null
+  if (infoBlocks && data.info!.position === 'first') {
     y += 10 * s
-    placeText(infoPieces)
+    placeText(fitPieces(infoBlocks, 'info', room()))
     newPage()
   }
 
@@ -482,33 +489,38 @@ export function layoutMenu(ctx: Ctx, data: MenuData, vp: Viewport, style: MenuSt
   }
   putMedia(mediaAt('end'))
   // Pagina informativa in fondo.
-  if (infoPieces.length && data.info!.position === 'last') {
+  if (infoBlocks && data.info!.position === 'last') {
     if (cur.length) newPage()
-    placeText(infoPieces)
+    placeText(fitPieces(infoBlocks, 'info', room()))
   }
 
   // Legenda degli allergeni: ultima pagina, numeri e nomi in colonna centrata.
+  // Sempre in una sola pagina: righe e caratteri si riducono quanto basta.
   const legend = data.allergenLegend ?? []
-  const LEG_NAME = rt({ ...TP.body, size: TP.body.size * 1.03 })
-  const LEG_NUM = rt({ ...st.allergens.text, size: st.allergens.text.size * 1.16, weight: 600 })
+  let legK = 1
+  let LEG_NAME = rt(TP.legendName)
+  let LEG_NUM = rt(TP.legendNum)
   const LEG_LH = 1.62
   if (legend.length) {
     if (cur.length) newPage()
     cur.push({ block: { kind: 'cat', name: data.labels.allergens, cont: false }, y, h: CAT_H }); y += CAT_H + CAT_AFTER
-    placeLegendNote()
+    const note = data.labels.allergenNote
+      ? textPieces([{ kind: 'h3', align: 'center', runs: [{ text: data.labels.allergenNote }] }], 'legend') : []
+    const noteH = note.length ? piecesHeight(note) + 14 * s : 0
+    const rowsH = legend.length * LEG_NAME.size * LEG_LH
+    if (noteH + rowsH > room()) {
+      legK = Math.max(0.4, (room() - noteH) / rowsH)
+      LEG_NAME = rt(TP.legendName, legK)
+      LEG_NUM = rt(TP.legendNum, legK)
+    }
+    for (const pc of note) { if (pc.block) cur.push({ block: pc.block, y, h: pc.h }); y += pc.h }
+    if (note.length) y += 14 * s
     const nameW = Math.max(...legend.map(a => measure(ctx, LEG_NAME, tx(LEG_NAME, a.name))))
-    const col = Math.min(m.cw, nameW + 34 * s)
+    const col = Math.min(m.cw, nameW + 34 * s * legK)
     for (const a of legend) {
       const h = LEG_NAME.size * LEG_LH
-      if (h > room()) { newPage(); contHead(data.labels.allergens) }
       cur.push({ block: { kind: 'legend', n: a.n, name: a.name, col }, y, h }); y += h
     }
-  }
-  function placeLegendNote() {
-    if (!data.labels.allergenNote) return
-    const note = textPieces([{ kind: 'h3', align: 'center', runs: [{ text: data.labels.allergenNote }] }], 'legend')
-    for (const pc of note) { if (pc.block) cur.push({ block: pc.block, y, h: pc.h }); y += pc.h }
-    y += 14 * s
   }
 
   if (cur.length) newPage()
@@ -705,8 +717,8 @@ export function layoutMenu(ctx: Ctx, data: MenuData, vp: Viewport, style: MenuSt
   function paintLegend(c: Ctx, b: LegendBlock, top: number) {
     const left = m.x0 + (m.cw - b.col) / 2
     const base = top + LEG_NAME.size * 0.95
-    draw(c, LEG_NUM, String(b.n), left + 20 * s, base - 1 * s, 'right')
-    draw(c, LEG_NAME, tx(LEG_NAME, b.name), left + 34 * s, base, 'left')
+    draw(c, LEG_NUM, String(b.n), left + 20 * s * legK, base - 1 * s * legK, 'right')
+    draw(c, LEG_NAME, tx(LEG_NAME, b.name), left + 34 * s * legK, base, 'left')
   }
 
   function paintHead(c: Ctx, b: HeadBlock, top: number) {
@@ -861,7 +873,8 @@ export function layoutMenu(ctx: Ctx, data: MenuData, vp: Viewport, style: MenuSt
       if (y < it.y - (b.kind === 'dish' ? pad : 4 * s) || y > it.y + it.h + (b.kind === 'dish' ? pad : 4 * s)) continue
       if (b.kind === 'head') return H.showRestaurant && y < it.y + restBase + 6 * s ? 'restaurant' : 'title'
       if (b.kind === 'cat') return 'category'
-      if (b.kind === 'tline' || b.kind === 'legend') return 'text'
+      if (b.kind === 'legend' || (b.kind === 'tline' && b.from === 'legend')) return 'legend'
+      if (b.kind === 'tline') return 'text'
       let yy = it.y
       if (b.showHead) {
         const nh = nameH(b)

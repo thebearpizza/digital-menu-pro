@@ -4,10 +4,11 @@
 //
 //  • Si apre salendo dal basso: una scheda quasi a tutto schermo (staccata ai
 //    lati e in alto, prosegue sotto il fondo dello schermo), il menu si scurisce.
-//  • Lo scorrimento decide la misura, sempre agli stessi punti: nei primi
-//    FREE px il testo scorre e la scheda resta staccata; tra FREE e
-//    FREE + EXPAND si allarga; oltre resta a tutto schermo finché non si torna
-//    lì. Lasciata a metà della corsa, la calamita la porta al punto più vicino.
+//  • Lo scorrimento decide la misura, sempre agli stessi punti (come le
+//    schede di iOS): in cima la scheda è staccata, nei primi EXPAND px si
+//    allarga, oltre resta a tutto schermo finché non si torna lì. Lasciata a
+//    metà della corsa, la calamita la porta al punto più vicino: attaccata,
+//    oppure staccata e col contenuto di nuovo in cima.
 //  • In cima, tirando ancora verso il basso la scheda segue il dito e, lasciata
 //    oltre la soglia (o con un gesto deciso), si chiude.
 //  • Swipe orizzontale: piatto precedente/successivo del menu, con l'effetto
@@ -33,7 +34,6 @@ import { PHOTO_ASPECT, frameFor, frameStyle } from '@/lib/photoFrame'
 import { t } from './i18n'
 import type { Lang } from '@/lib/translations'
 
-const FREE   = 70          // px di scorrimento libero in cima: la scheda resta staccata
 const EXPAND = 170         // px di corsa per passare da staccata a tutto schermo
 const CLOSE_PULL = 110     // px di trascinamento oltre la cima per chiudere
 const DIM = 0.22           // scurimento della pagina sotto durante lo "Scivola"
@@ -441,9 +441,8 @@ export default function DishCard({ dish: first, style, lang, sequence, siblings,
      *  (rimbalzo di Safari + trascinamento insieme facevano scatti). */
     const setTopBounce = (sc: HTMLElement | null, on: boolean) => { if (sc) sc.style.overscrollBehaviorY = on ? 'contain' : 'none' }
 
-    // Scorrimento: la posizione decide la misura (staccata fino a FREE px, a
-    // tutto schermo da FREE + EXPAND in giù): attacco e stacco sempre agli
-    // stessi punti.
+    // Scorrimento: la posizione decide la misura (staccata in cima, a tutto
+    // schermo da EXPAND px in giù): attacco e stacco sempre agli stessi punti.
     let settleTimer = 0
     const onScroll = (e: Event) => {
       const sc = activeScroller()
@@ -454,12 +453,12 @@ export default function DishCard({ dish: first, style, lang, sequence, siblings,
       const top = Math.max(0, Math.min(max, sc.scrollTop))   // ignora i rimbalzi
       s.lastTop = top
       if (s.tweens.has('snap')) return                       // la calamita guida da sola
-      s.q = clamp01((top - FREE) / EXPAND)
+      s.q = clamp01(top / EXPAND)
       schedule()
       clearTimeout(settleTimer); settleTimer = window.setTimeout(settle, 110)
     }
 
-    // Calamita: lasciata a metà della corsa (tra FREE e FREE + EXPAND), la
+    // Calamita: lasciata a metà della corsa (tra la cima ed EXPAND), la
     // scheda va al punto più vicino, staccata o attaccata, e il contenuto
     // scorre insieme fino a quel punto. Fuori dalla corsa non fa nulla.
     const settle = () => {
@@ -469,7 +468,8 @@ export default function DishCard({ dish: first, style, lang, sequence, siblings,
       const open = s.q >= 0.5
       const q0 = s.q, top0 = Math.max(0, sc.scrollTop)
       const max = Math.max(0, sc.scrollHeight - sc.clientHeight)
-      const topTo = Math.max(0, Math.min(max, open ? FREE + EXPAND : FREE))
+      // Staccata = in cima: il contenuto torna all'inizio.
+      const topTo = Math.max(0, Math.min(max, open ? EXPAND : 0))
       const dur = 300 + 200 * (open ? 1 - q0 : q0)
       tween('snap', 0, 1, dur, easeOutCubic, v => {
         if (topTo !== top0) sc.scrollTop = top0 + (topTo - top0) * v
@@ -717,7 +717,7 @@ function Page({ layer, lang, siblings, onLink, register }: {
       <div data-scroller className="absolute inset-0 overflow-y-auto"
         style={{ overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch', touchAction: 'pan-y',
           background: `linear-gradient(180deg, transparent calc(100% - 150px), ${rgbaVar(SURFACE)} calc(100% - 40px))` }}>
-        <div style={{ position: 'relative', minHeight: `calc(100% + ${FREE + EXPAND}px)`, display: 'flex', flexDirection: 'column' }}>
+        <div style={{ position: 'relative', minHeight: `calc(100% + ${EXPAND}px)`, display: 'flex', flexDirection: 'column' }}>
           {/* Vetro sopra la cima: nel rimbalzo di iOS si vede la stessa lastra e
               non il menu scurito dietro (sopra l'inizio non si può scorrere,
               quindi non allunga la pagina). */}
