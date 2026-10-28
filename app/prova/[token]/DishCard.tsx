@@ -447,17 +447,20 @@ export default function DishCard({ dish: first, style, lang, sequence, siblings,
       clearTimeout(settleTimer); settleTimer = window.setTimeout(settle, 110)
     }
 
-    // Calamita (come Libri): lasciata a metà dell'allargamento, la scheda
-    // finisce il movimento da sola, nella direzione in cui si stava andando.
+    // Calamita (come iOS): lasciata a metà dell'allargamento, la scheda
+    // finisce il movimento da sola, nella direzione in cui si stava andando,
+    // e il contenuto scorre insieme dello spazio che mancava (come se il dito
+    // avesse finito il gesto). Scorrimento e allargamento restano sempre
+    // legati 1:1, così la scheda si attacca e si stacca sempre allo stesso
+    // punto dello scorrimento (in cima: staccata a 0, attaccata a EXPAND).
     const settle = () => {
       const sc = activeScroller()
       if (!sc || touch || s.trans || s.closing || s.tweens.has('snap')) return
       if (s.q <= 0.001 || s.q >= 0.999) return
       const open = lastDir ? lastDir > 0 : s.q > 0.5
       const q0 = s.q, top0 = Math.max(0, sc.scrollTop)
-      // Vicino alla cima si scorre anche il contenuto (in cima = staccata,
-      // da EXPAND in giù = tutto schermo); più in basso cambia solo la scheda.
-      const topTo = top0 < EXPAND ? (open ? EXPAND : 0) : top0
+      const max = Math.max(0, sc.scrollHeight - sc.clientHeight)
+      const topTo = Math.max(0, Math.min(max, top0 + (open ? 1 - q0 : -q0) * EXPAND))
       const dur = 260 + 160 * (open ? 1 - q0 : q0)
       tween('snap', 0, 1, dur, easeOutCubic, v => {
         if (topTo !== top0) sc.scrollTop = top0 + (topTo - top0) * v
