@@ -18,6 +18,12 @@ export type GlassTintKind = 'light' | 'dark'
 export const GlassTint = createContext<GlassTintKind>('light')
 export const glassInk = (tint: GlassTintKind) => (tint === 'dark' ? '#ffffff' : GLASS_INK)
 
+/** Vetro liquido attivo: la superficie la disegna il motore WebGL (pagina
+ *  d'apertura, menu) sotto il testo; gli elementi si segnano con data-glass
+ *  e lasciano trasparente il proprio fondo. Dove sotto non c'è il disegno
+ *  WebGL (es. la scheda del piatto) resta false: vetro dei browser. */
+export const LiquidOn = createContext(false)
+
 /**
  * Stile di base del vetro. Poco velo e poca sfocatura (si intravede ciò che
  * sta sotto, schiarito; saturazione moderata: sulla carta crema di più
@@ -109,26 +115,28 @@ interface ButtonProps {
 export function GlassButton({ label, onClick, children, size = 40, pill = false, hidden = false, expanded }: ButtonProps) {
   const [pressed, setPressed] = useState(false)
   const tint = useContext(GlassTint)
+  const liquid = useContext(LiquidOn)
   const release = () => setPressed(false)
   return (
     <button type="button" aria-label={label} aria-hidden={hidden || undefined} tabIndex={hidden ? -1 : 0}
       aria-expanded={expanded}
       onClick={onClick}
       onPointerDown={() => setPressed(true)} onPointerUp={release} onPointerLeave={release} onPointerCancel={release}
+      data-glass={liquid ? '' : undefined} data-radius={size / 2} data-pressed={pressed ? '1' : '0'}
       className="relative flex items-center justify-center shrink-0"
       style={{
-        ...glassSurface('light', tint),
+        ...(liquid ? {} : glassSurface('light', tint)),
         height: size, minWidth: size, borderRadius: size / 2,
         padding: pill ? '0 15px 0 13px' : 0,
         pointerEvents: hidden ? 'none' : 'auto',
         opacity: hidden ? 0 : 1,
         transform: `scale(${hidden ? 0.7 : pressed ? 1.1 : 1})`,
         transition: `transform 320ms ${SPRING}, opacity 220ms ease, filter 200ms ease`,
-        filter: pressed ? 'brightness(1.06)' : 'none',
+        filter: pressed && !liquid ? 'brightness(1.06)' : 'none',
         color: glassInk(tint),
         WebkitTapHighlightColor: 'transparent',
       }}>
-      <GlassSheen />
+      {!liquid && <GlassSheen />}
       <span className="relative flex items-center justify-center" style={{ gap: 7 }}>{children}</span>
     </button>
   )
@@ -155,6 +163,7 @@ export function GlassMenu({ open, onClose, align, edge, bottom, top, title, chil
   const [mounted, setMounted] = useState(open)
   const [shown, setShown] = useState(false)
   const tint = useContext(GlassTint)
+  const liquid = useContext(LiquidOn)
   useEffect(() => {
     if (open) {
       setMounted(true)
@@ -169,9 +178,9 @@ export function GlassMenu({ open, onClose, align, edge, bottom, top, title, chil
   return (
     <>
       <div className="fixed inset-0" style={{ zIndex: 44 }} onClick={onClose} />
-      <div role="menu" className="fixed overflow-hidden"
+      <div role="menu" className="fixed overflow-hidden" data-glass={liquid ? '' : undefined} data-radius="24" data-panel="1"
         style={{
-          ...glassSurface('panel', tint),
+          ...(liquid ? {} : glassSurface('panel', tint)),
           zIndex: 45, top, bottom: top ? undefined : bottom, [align]: Math.max(12, edge),
           minWidth: 232, maxWidth: 'calc(100vw - 24px)', maxHeight: '60vh', overflowY: 'auto',
           borderRadius: 24, padding: '6px 0',
@@ -180,7 +189,7 @@ export function GlassMenu({ open, onClose, align, edge, bottom, top, title, chil
           opacity: shown ? 1 : 0,
           transition: shown ? `transform 380ms ${SPRING}, opacity 180ms ease` : 'transform 200ms ease, opacity 180ms ease',
         }}>
-        <GlassSheen />
+        {!liquid && <GlassSheen />}
         {title && (
           <div className="relative" style={{ padding: '8px 18px 6px', fontFamily: '"Inter", -apple-system, sans-serif', fontSize: 11, fontWeight: 600, letterSpacing: '0.14em', textTransform: 'uppercase', color: tint === 'dark' ? 'rgba(255,255,255,0.5)' : 'rgba(29,25,21,0.45)' }}>
             {title}

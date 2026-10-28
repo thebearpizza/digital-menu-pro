@@ -32,7 +32,11 @@ export interface GlassParams {
 
 /** Uno strato dello sfondo (al massimo due, per le dissolvenze). */
 export interface BgLayer {
-  source:  HTMLVideoElement | HTMLImageElement | HTMLCanvasElement
+  source?: HTMLVideoElement | HTMLImageElement | HTMLCanvasElement
+  /** In alternativa: una texture già pronta nello stesso contesto (la scena
+   *  del menu disegnata dal motore del giro pagina), capovolta come le
+   *  texture di framebuffer. */
+  texture?: { tex: WebGLTexture; w: number; h: number }
   alpha:   number
   /** Ingrandimento oltre al riempimento (zoom lento, sfocatura). */
   scale:   number
@@ -44,7 +48,9 @@ export interface BgLayer {
   version?: number
 }
 
-export interface GlassRect { x: number; y: number; w: number; h: number; radius: number; alpha: number; press: number }
+/** panel = 1: pannello (menu a tendina) — più smerigliato e velato, per
+ *  leggere bene il testo che ci sta sopra. */
+export interface GlassRect { x: number; y: number; w: number; h: number; radius: number; alpha: number; press: number; panel?: number }
 
 export interface GlassFrame {
   width:  number             // px CSS
@@ -82,7 +88,7 @@ uniform vec4  uVeil;      // alfa del velo a 0%, 32%, 52%, 100% dell'altezza
 uniform float uBgBlur;
 uniform int   uN;
 uniform vec4  uRect[${MAX_RECTS}];
-uniform vec4  uShape[${MAX_RECTS}];   // raggio, alfa, pressione, -
+uniform vec4  uShape[${MAX_RECTS}];   // raggio, alfa, pressione, pannello
 uniform float uFrost;
 uniform float uRefract;
 uniform float uBezel;
@@ -170,7 +176,7 @@ void main() {
     float k = uRefract * (1.0 + 0.6 * press);
     float bend = pow(t, 2.4) * bz * 1.1 * k;
     vec2 q = p + n * bend;                       // lo sfondo arriva da fuori: compresso nel bordo
-    float fr = uFrost * 16.0 + press * 2.0;
+    float fr = max(uFrost, 0.7 * s.w) * 16.0 + press * 2.0;
     float ds = uDisp * 0.35;
     vec3 g;
     g.r = bgAt(q + n * bend * ds, fr).r;
@@ -179,7 +185,7 @@ void main() {
     float l = dot(g, vec3(0.2126, 0.7152, 0.0722));
     g = mix(vec3(l), g, uSat);
     g = g + uBright * 0.18;
-    g = mix(g, uTint, uTintA);
+    g = mix(g, uTint, max(uTintA, 0.42 * s.w));
     // Luce.
     float facing = max(dot(n, uLight), 0.0);
     float away = max(dot(n, -uLight), 0.0);
@@ -208,12 +214,16 @@ export class LiquidGlass {
   private gl: WebGL2RenderingContext
   private prog: WebGLProgram
   private u: Record<string, WebGLUniformLocation | null> = {}
-  private texs = new Map<BgLayer['source'], Tex>()
-  private canvas: HTMLCanvasElement
+  private texs = new Map<NonNullable<BgLayer['source']>, Tex>()
+  private canvas: HTMLCanvasElement | null
+  private buf: WebGLBuffer
 
-  constructor(canvas: HTMLCanvasElement) {
-    this.canvas = canvas
-    const gl = canvas.getContext('webgl2', { antialias: false, premultipliedAlpha: false, alpha: false, preserveDrawingBuffer: false })
+  /** Con una tela: contesto proprio. Con un contesto WebGL2 già esistente
+   *  (il motore del giro pagina): disegna nel suo framebuffer principale. */
+  constructor(target: HTMLCanvasElement | WebGL2RenderingContext) {
+    const own = target instanceof HTMLCanvasElement
+    this.canvas = own ? target : null
+    const gl = own ? target.getContext('webgl2', { antialias: false, premultipliedAlpha: false, alpha: false, preserveDrawingBuffer: false }) : target
     if (!gl) throw new Error('webgl2')
     this.gl = gl
     const sh = (type: number, src: string) => {
@@ -231,12 +241,9 @@ export class LiquidGlass {
     if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog) ?? 'link')
     this.prog = prog
     gl.useProgram(prog)
-    const buf = gl.createBuffer()
-    gl.bindBuffer(gl.ARRAY_BUFFER, buf)
+    this.buf = gl.createBuffer()!
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.buf)
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW)
-    const loc = gl.getAttribLocation(prog, 'aPos')
-    gl.enableVertexAttribArray(loc)
-    gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0)
     for (const n of ['uSize', 'uDpr', 'uBase', 'uTex0', 'uTex1', 'uMap0', 'uMap1', 'uA0', 'uA1', 'uTexel0', 'uTexel1', 'uVeil', 'uBgBlur',
       'uN', 'uRect', 'uShape', 'uFrost', 'uRefract', 'uBezel', 'uDisp', 'uBright', 'uSat', 'uHigh', 'uShadow', 'uTint', 'uTintA', 'uLight']) {
       this.u[n] = gl.getUniformLocation(prog, n)
@@ -247,6 +254,8 @@ export class LiquidGlass {
 
   private texture(layer: BgLayer): Tex | null {
     const gl = this.gl, src = layer.source
+    if (layer.texture) return { tex: layer.texture.tex, w: layer.texture.w, h: layer.texture.h, version: 0, ready: true }
+    if (!src) return null
     let t = this.texs.get(src)
     if (!t) {
       const tex = gl.createTexture()!
@@ -278,6 +287,7 @@ export class LiquidGlass {
 
   /** Mappa schermo (px CSS) → coordinate della tela, e texel per px. */
   private map(t: Tex, layer: BgLayer, W: number, H: number): { map: number[]; texel: number } {
+    if (layer.texture) return { map: [1 / W, -1 / H, 0, 1], texel: t.w / W }   // framebuffer: capovolta
     if (!layer.cover) return { map: [1 / W, 1 / H, 0, 0], texel: t.w / W }
     const sc = Math.max(W / t.w, H / t.h) * layer.scale
     const dw = t.w * sc, dh = t.h * sc
@@ -285,13 +295,25 @@ export class LiquidGlass {
     return { map: [1 / dw, 1 / dh, -ox / dw, -oy / dh], texel: t.w / dw }
   }
 
-  render(f: GlassFrame) {
+  /** Disegna sfondo e lenti. `dprOverride`: densità del framebuffer quando il
+   *  contesto non è nostro (il motore del giro pagina ha la sua). */
+  render(f: GlassFrame, dprOverride?: number) {
     const gl = this.gl
-    const dpr = Math.min(window.devicePixelRatio || 1, 2)
+    const dpr = dprOverride ?? Math.min(window.devicePixelRatio || 1, 2)
     const cw = Math.round(f.width * dpr), ch = Math.round(f.height * dpr)
-    if (this.canvas.width !== cw || this.canvas.height !== ch) { this.canvas.width = cw; this.canvas.height = ch }
+    if (this.canvas && (this.canvas.width !== cw || this.canvas.height !== ch)) { this.canvas.width = cw; this.canvas.height = ch }
+    // Stato pulito: il contesto può essere condiviso con il giro pagina.
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null)
     gl.viewport(0, 0, cw, ch)
+    gl.disable(gl.DEPTH_TEST)
+    gl.disable(gl.BLEND)
     gl.useProgram(this.prog)
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.buf)
+    const loc = gl.getAttribLocation(this.prog, 'aPos')
+    gl.enableVertexAttribArray(loc)
+    gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0)
+    gl.uniform1i(this.u.uTex0, 0)
+    gl.uniform1i(this.u.uTex1, 1)
     gl.uniform2f(this.u.uSize, f.width, f.height)
     gl.uniform1f(this.u.uDpr, dpr)
     gl.uniform3fv(this.u.uBase, hex3(f.base))
@@ -317,7 +339,7 @@ export class LiquidGlass {
 
     const rects = f.rects.slice(0, MAX_RECTS)
     const R = new Float32Array(MAX_RECTS * 4), S = new Float32Array(MAX_RECTS * 4)
-    rects.forEach((r, i) => { R.set([r.x, r.y, r.w, r.h], i * 4); S.set([r.radius, r.alpha, r.press, 0], i * 4) })
+    rects.forEach((r, i) => { R.set([r.x, r.y, r.w, r.h], i * 4); S.set([r.radius, r.alpha, r.press, r.panel ?? 0], i * 4) })
     gl.uniform1i(this.u.uN, rects.length)
     gl.uniform4fv(this.u.uRect, R)
     gl.uniform4fv(this.u.uShape, S)
@@ -345,5 +367,6 @@ export class LiquidGlass {
     this.texs.clear()
     // Niente loseContext: la stessa tela può essere riusata (React la rimonta).
     gl.deleteProgram(this.prog)
+    gl.deleteBuffer(this.buf)
   }
 }

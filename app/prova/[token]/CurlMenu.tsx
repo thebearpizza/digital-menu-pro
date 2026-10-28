@@ -14,7 +14,7 @@
 // del dito); F è il punto dove quel bordo deve trovarsi.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { forwardRef, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { forwardRef, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { CurlRenderer, constrain, solveCurl, type Rect, type Scene, type Sheet, type Vec } from './curl'
 import { useRouter } from 'next/navigation'
 import { layoutMenu, SANS, type Dish, type Layout, type MenuData, type Insets } from './typeset'
@@ -25,7 +25,8 @@ import { loadStyleAssets } from './fonts'
 import { warmImage } from './preload'
 import Chrome, { BAR_HIDE } from './Chrome'
 import { localize, t, type I18nData } from './i18n'
-import { GlassSheen, glassSurface } from './Glass'
+import { GlassSheen, LiquidOn, glassSurface } from './Glass'
+import { readGlassRects } from './GlassStage'
 
 const LANG_KEY = 'dmp-menu-lang'   // stessa chiave del menu pubblico: la lingua scelta vale ovunque
 const HINT_KEY = 'lito-swipe-hint'  // istruzioni dei gesti già viste: non tornano più
@@ -124,6 +125,9 @@ export default function CurlMenu({ data: base, style: initialStyle, preview = fa
   // verso l'alto e segue il dito; si chiude scorrendo in giù, girando pagina o
   // toccando il foglio. Durante il gesto lo stile si scrive direttamente.
   const [chrome, setChrome] = useState(false)
+  // Vetro liquido disponibile (WebGL2): i comandi lasciano il fondo al motore.
+  const [liquid, setLiquid] = useState(false)
+  const rootRef = useRef<HTMLDivElement>(null)
   const chromeOpen = useRef(false)
   const barRef = useRef<HTMLDivElement>(null)
   // Istruzioni dei gesti sulla prima pagina: svaniscono durante il primo
@@ -165,6 +169,7 @@ export default function CurlMenu({ data: base, style: initialStyle, preview = fa
     let renderer: CurlRenderer | null = null
     let ctx2d: CanvasRenderingContext2D | null = null   // ripiego senza WebGL
     try { renderer = new CurlRenderer(canvas, styleRef.current.page.paper) } catch { ctx2d = canvas.getContext('2d') }
+    setLiquid(!!renderer?.liquid)
 
     // Canvas di lavoro per comporre una pagina alla volta.
     const scratch = document.createElement('canvas')
@@ -631,6 +636,8 @@ export default function CurlMenu({ data: base, style: initialStyle, preview = fa
     const onLost = (e: Event) => { e.preventDefault() }
     const onRestored = () => {
       try { renderer = new CurlRenderer(canvas, styleRef.current.page.paper) } catch { renderer = null }
+      setLiquid(!!renderer?.liquid)
+      glassSig = ''
       textures.clear()
       relayout()
     }
@@ -659,6 +666,26 @@ export default function CurlMenu({ data: base, style: initialStyle, preview = fa
     let resizeTimer = 0
     const onResize = () => { clearTimeout(resizeTimer); resizeTimer = window.setTimeout(relayout, 120) }
 
+    // ── Vetro liquido dei comandi (barra, categorie, lingua, istruzioni): il
+    // motore del giro pagina lo disegna sopra la pagina. Qui si seguono gli
+    // elementi in vetro: quando si muovono (barra che sale, menu che si apre,
+    // indicatore che scivola) si ridisegna solo il vetro.
+    const press = new Map<Element, number>()
+    let glassSig = '', glassRaf = 0
+    const glassTick = () => {
+      glassRaf = requestAnimationFrame(glassTick)
+      const root = rootRef.current
+      if (!renderer?.liquid || !root || !layout) return
+      const { rects, moving } = readGlassRects(root, press, true, window.innerHeight)
+      const look = styleRef.current.chrome.glass
+      const sig = JSON.stringify([rects, look])
+      if (sig === glassSig && !moving) return
+      glassSig = sig
+      renderer.setGlass(rects, look)
+      renderer.composite()
+    }
+    glassRaf = requestAnimationFrame(glassTick)
+
     fontsReady
       // Lo stile può essere cambiato nel frattempo (anteprima): si impagina
       // con le risorse dello stile attuale (già in memoria se pronte).
@@ -682,6 +709,7 @@ export default function CurlMenu({ data: base, style: initialStyle, preview = fa
       disposed = true
       html.style.backgroundColor = prevBg
       cancelAnimationFrame(raf)
+      cancelAnimationFrame(glassRaf)
       clearTimeout(warmTimer); clearTimeout(resizeTimer); clearTimeout(jumpTimer); clearTimeout(peekTimer)
       peeking = false
       apiRef.current = null
@@ -725,7 +753,7 @@ export default function CurlMenu({ data: base, style: initialStyle, preview = fa
   }, [pageInfo])
 
   return (
-    <div className="fixed inset-0 overflow-hidden" style={{ background: style.page.paper, overscrollBehavior: 'none' }}>
+    <div ref={rootRef} className="fixed inset-0 overflow-hidden" style={{ background: style.page.paper, overscrollBehavior: 'none' }}>
       <div ref={stageRef} className="absolute inset-0 overflow-hidden">
         {/* Sonda invisibile: legge le aree sicure (notch, barra home) in px. */}
         <div ref={probeRef} aria-hidden className="pointer-events-none fixed inset-0 invisible"
@@ -743,13 +771,17 @@ export default function CurlMenu({ data: base, style: initialStyle, preview = fa
         )}
       </div>
       {status !== 'loading' && (
+        <LiquidOn.Provider value={liquid}>
         <Chrome shown={chrome} barRef={barRef} lang={lang} onLang={setLang}
           onMenus={() => router.push(`/prova/${token}`)}
           categories={pageInfo.starts} active={activeCategory} onJump={p => apiRef.current?.jump(p)}
           tint={style.chrome.tint} accent={style.page.accent} />
+        </LiquidOn.Provider>
       )}
       {hint && style.chrome.hints && !preview && status !== 'loading' && pageInfo.index === 0 && (
-        <SwipeHint ref={hintRef} up={t('swipeUp', lang)} side={t('swipeSide', lang)} />
+        <LiquidOn.Provider value={liquid}>
+          <SwipeHint ref={hintRef} up={t('swipeUp', lang)} side={t('swipeSide', lang)} />
+        </LiquidOn.Provider>
       )}
       {card && <DishCard key={card.id} dish={card} style={style} lang={lang} sequence={sequence} siblings={siblings} onClosed={onClosed} />}
     </div>
@@ -762,6 +794,7 @@ const SwipeHint = forwardRef<HTMLDivElement, { up: string; side: string }>(funct
   // L'opacità sta sulla capsula stessa (un antenato semitrasparente spegnerebbe
   // la sfocatura del vetro); entra con una dissolvenza, poi la guida il gesto.
   const [shown, setShown] = useState(false)
+  const liquid = useContext(LiquidOn)
   useEffect(() => { const tm = window.setTimeout(() => setShown(true), 500); return () => clearTimeout(tm) }, [])
   return (
     <div className="fixed left-0 right-0 flex justify-center pointer-events-none"
@@ -770,9 +803,9 @@ const SwipeHint = forwardRef<HTMLDivElement, { up: string; side: string }>(funct
         @keyframes lito-hint-up { 0%, 100% { transform: translate3d(0, 3px, 0); opacity: .55 } 50% { transform: translate3d(0, -4px, 0); opacity: 1 } }
         @keyframes lito-hint-side { 0%, 100% { transform: translate3d(3px, 0, 0); opacity: .55 } 50% { transform: translate3d(-4px, 0, 0); opacity: 1 } }
       `}</style>
-      <div ref={ref} className="relative flex flex-col items-center"
-        style={{ ...glassSurface(), borderRadius: 22, padding: '10px 18px 11px', gap: 5, maxWidth: 360, opacity: shown ? 1 : 0, transition: 'opacity 700ms ease' }}>
-        <GlassSheen />
+      <div ref={ref} className="relative flex flex-col items-center" data-glass={liquid ? '' : undefined} data-radius="22" data-panel="1"
+        style={{ ...(liquid ? {} : glassSurface()), borderRadius: 22, padding: '10px 18px 11px', gap: 5, maxWidth: 360, opacity: shown ? 1 : 0, transition: 'opacity 700ms ease' }}>
+        {!liquid && <GlassSheen />}
         <HintRow anim="lito-hint-up" icon={<path d="M2 9l6-6 6 6" />} text={up} />
         <HintRow anim="lito-hint-side" icon={<path d="M10 2L4 8l6 6" />} text={side} soft />
       </div>

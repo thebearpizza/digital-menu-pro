@@ -18,6 +18,8 @@
 // Tutte le coordinate sono in pixel CSS dello schermo.
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { LiquidGlass, type GlassParams, type GlassRect } from './liquidGlass'
+
 export interface Vec { x: number; y: number }
 
 export interface CurlParams {
@@ -234,6 +236,19 @@ export interface Scene {
 
 export class CurlRenderer {
   readonly gl: WebGLRenderingContext
+  /** WebGL2 (se c'è): permette il vetro liquido sopra la scena. */
+  private gl2: WebGL2RenderingContext | null
+  private glass: LiquidGlass | null = null
+  private glassRects: GlassRect[] = []
+  private glassLook: GlassParams | null = null
+  // Lastra della scena (multicampione per i bordi lisci, poi risolta in una
+  // texture con mipmap che il vetro legge, sfoca e piega).
+  private fb: { msaa: WebGLFramebuffer; color: WebGLRenderbuffer; depth: WebGLRenderbuffer; resolve: WebGLFramebuffer; tex: WebGLTexture; w: number; h: number } | null = null
+  private fbValid = false
+  private last: Scene | null = null
+  private pxW = 1
+  private pxH = 1
+  private paperHex: string
   private prog: WebGLProgram
   private buf: WebGLBuffer
   private ibuf: WebGLBuffer
@@ -245,9 +260,15 @@ export class CurlRenderer {
   private blank: WebGLTexture | null = null
 
   constructor(canvas: HTMLCanvasElement, paperHex: string) {
-    const gl = canvas.getContext('webgl', { antialias: true, alpha: false, depth: true, premultipliedAlpha: false, powerPreference: 'high-performance' })
+    const attrs = { antialias: true, alpha: false, depth: true, premultipliedAlpha: false, powerPreference: 'high-performance' as const }
+    // WebGL2 se c'è (gli shader WebGL1 funzionano uguale), altrimenti WebGL1.
+    const gl2 = canvas.getContext('webgl2', attrs) as WebGL2RenderingContext | null
+    const gl = (gl2 ?? canvas.getContext('webgl', attrs)) as WebGLRenderingContext | null
     if (!gl) throw new Error('WebGL non disponibile')
-    this.gl = gl
+    this.gl = gl as WebGLRenderingContext
+    this.gl2 = gl2
+    if (gl2) { try { this.glass = new LiquidGlass(gl2) } catch { this.glass = null } }
+    this.paperHex = paperHex
     this.paper = hexToRgb(paperHex)
     this.prog = link(gl, VS, FS)
     for (const n of ['uScreen', 'uOrigin', 'uPage', 'uCurl', 'uAxis', 'uDir', 'uR', 'uPersp', 'uTex', 'uBack', 'uHasBack',
@@ -281,13 +302,88 @@ export class CurlRenderer {
   }
 
   /** Colore della carta (fondo e retro dei fogli) quando cambia lo stile. */
-  setPaper(hex: string) { this.paper = hexToRgb(hex) }
+  setPaper(hex: string) { this.paper = hexToRgb(hex); this.paperHex = hex }
+
+  /** Il vetro liquido è disponibile (WebGL2). */
+  get liquid(): boolean { return !!this.glass }
+
+  /** Elementi in vetro sopra il menu e aspetto del vetro. */
+  setGlass(rects: GlassRect[], look: GlassParams) { this.glassRects = rects; this.glassLook = look }
+
+  /** Ridisegna solo il vetro sopra l'ultima scena (i comandi si muovono, la
+   *  pagina no). Se il vetro sparisce, torna al disegno diretto. */
+  composite() {
+    if (!this.glass || !this.last) return
+    if (!this.glassRects.length) { this.render(this.last); return }
+    if (!this.fbValid) { this.drawToFb(this.last) }
+    this.drawGlass()
+  }
 
   get maxTexture(): number { return this.gl.getParameter(this.gl.MAX_TEXTURE_SIZE) as number }
 
   resize(wCss: number, hCss: number, pxW: number, pxH: number) {
     this.sw = wCss; this.sh = hCss
+    this.pxW = pxW; this.pxH = pxH
+    this.fbValid = false
     this.gl.viewport(0, 0, pxW, pxH)
+  }
+
+  private ensureFb() {
+    const gl = this.gl2!
+    if (this.fb && this.fb.w === this.pxW && this.fb.h === this.pxH) return this.fb
+    if (this.fb) {
+      gl.deleteFramebuffer(this.fb.msaa); gl.deleteFramebuffer(this.fb.resolve)
+      gl.deleteRenderbuffer(this.fb.color); gl.deleteRenderbuffer(this.fb.depth); gl.deleteTexture(this.fb.tex)
+    }
+    const w = this.pxW, h = this.pxH
+    const samples = Math.min(4, gl.getParameter(gl.MAX_SAMPLES) as number)
+    const color = gl.createRenderbuffer()!
+    gl.bindRenderbuffer(gl.RENDERBUFFER, color)
+    gl.renderbufferStorageMultisample(gl.RENDERBUFFER, samples, gl.RGBA8, w, h)
+    const depth = gl.createRenderbuffer()!
+    gl.bindRenderbuffer(gl.RENDERBUFFER, depth)
+    gl.renderbufferStorageMultisample(gl.RENDERBUFFER, samples, gl.DEPTH_COMPONENT24, w, h)
+    const msaa = gl.createFramebuffer()!
+    gl.bindFramebuffer(gl.FRAMEBUFFER, msaa)
+    gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.RENDERBUFFER, color)
+    gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, depth)
+    const tex = gl.createTexture()!
+    gl.bindTexture(gl.TEXTURE_2D, tex)
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+    const resolve = gl.createFramebuffer()!
+    gl.bindFramebuffer(gl.FRAMEBUFFER, resolve)
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0)
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null)
+    this.fb = { msaa, color, depth, resolve, tex, w, h }
+    return this.fb
+  }
+
+  /** Scena nella lastra, risolta nella texture con mipmap. */
+  private drawToFb(scene: Scene) {
+    const gl = this.gl2!
+    const fb = this.ensureFb()
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fb.msaa)
+    this.drawScene(scene)
+    gl.bindFramebuffer(gl.READ_FRAMEBUFFER, fb.msaa)
+    gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, fb.resolve)
+    gl.blitFramebuffer(0, 0, fb.w, fb.h, 0, 0, fb.w, fb.h, gl.COLOR_BUFFER_BIT, gl.NEAREST)
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null)
+    gl.bindTexture(gl.TEXTURE_2D, fb.tex)
+    gl.generateMipmap(gl.TEXTURE_2D)
+    this.fbValid = true
+  }
+
+  private drawGlass() {
+    if (!this.glass || !this.fb || !this.glassLook) return
+    this.glass.render({
+      width: this.sw, height: this.sh, base: this.paperHex,
+      layers: [{ texture: { tex: this.fb.tex, w: this.fb.w, h: this.fb.h }, alpha: 1, scale: 1, cover: false, dynamic: false }],
+      veil: 0, blur: 0, rects: this.glassRects, glass: this.glassLook,
+    }, this.pxW / this.sw)
   }
 
   createTexture(source: HTMLCanvasElement): WebGLTexture {
@@ -306,7 +402,21 @@ export class CurlRenderer {
   deleteTexture(t: WebGLTexture) { this.gl.deleteTexture(t) }
 
   render(scene: Scene) {
+    this.last = scene
+    // Con elementi in vetro sullo schermo: scena nella lastra, poi il vetro.
+    if (this.glass && this.glassRects.length && this.glassLook) {
+      this.drawToFb(scene)
+      this.drawGlass()
+      return
+    }
+    this.fbValid = false
+    this.gl.bindFramebuffer(this.gl.FRAMEBUFFER, null)
+    this.drawScene(scene)
+  }
+
+  private drawScene(scene: Scene) {
     const gl = this.gl
+    gl.viewport(0, 0, this.pxW, this.pxH)
     gl.clearColor(this.paper[0], this.paper[1], this.paper[2], 1)
     gl.clearDepth(1)
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)

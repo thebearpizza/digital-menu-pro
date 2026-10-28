@@ -16,7 +16,7 @@ import type { LandingPick } from '@/app/prova/[token]/Landing'
 import { loadCustomFonts } from '@/app/prova/[token]/fonts'
 import { compressImageFile, MAX_VIDEO_BYTES } from '@/lib/imageCompress'
 import {
-  Choice, ColorField, ColorRefField, FieldShell, FontsManager, OrnamentField, PaperSwatch, PhoneFrame, Slider, TextStyleField, Toggle,
+  Choice, ColorField, ColorRefField, FieldShell, GlassControls, FontsManager, OrnamentField, PaperSwatch, PhoneFrame, Slider, TextStyleField, Toggle,
   lum, pct, px, uploadAsset,
 } from './controls'
 import { saveLandingStyle } from './actions'
@@ -403,40 +403,12 @@ export default function LandingEditor({ restaurantId, token, initialStyle, menuF
         <Toggle label={'Scritta "Scegli il menu" sopra i pulsanti'} value={st.chooseLabel.show} onChange={v => edit(s => { s.chooseLabel.show = v })} />
         {st.chooseLabel.show && T('Testo "Scegli il menu"', s => s.chooseLabel.text, [8, 20])}
       </>)
-      case 'glass': {
-        const G = st.buttons.glass
-        const g = (fn: (x: LandingStyle['buttons']['glass']) => void) => edit(s => { fn(s.buttons.glass) })
-        return (<>
-          <p className="text-[11px] text-gray-400 -mt-1">Vale per i pulsanti dei menu in vetro, la bandierina della lingua e i social in vetro. Sui telefoni senza grafica avanzata si usa un vetro più semplice.</p>
-          <FieldShell label="Vetri pronti">
-            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
-              {GLASS_PRESETS.map(p => {
-                const on = JSON.stringify(p.look) === JSON.stringify(G)
-                return (
-                  <button key={p.name} type="button" aria-pressed={on} onClick={() => edit(s => { s.buttons.glass = { ...p.look }; s.buttons.tint = lum(p.look.tint) < 0.4 ? 'dark' : 'light' })}
-                    className={`text-left border p-2 transition ${on ? 'border-blue-600 ring-1 ring-blue-600' : 'border-gray-200 hover:border-gray-400'}`} style={{ borderRadius: 12 }}>
-                    <div className="text-xs font-medium text-gray-800">{p.name}</div>
-                    <div className="text-[10px] text-gray-400 leading-tight">{p.desc}</div>
-                  </button>
-                )
-              })}
-            </div>
-          </FieldShell>
-          <Slider label="Rifrazione (quanto il bordo piega lo sfondo)" value={G.refraction} min={0} max={1} step={0.01} format={pct} onChange={v => g(x => { x.refraction = v })} />
-          <Slider label="Spessore della lente" value={G.bezel} min={0} max={1} step={0.01} format={pct} onChange={v => g(x => { x.bezel = v })} />
-          <Slider label="Dispersione dei colori sul bordo" value={G.dispersion} min={0} max={1} step={0.01} format={pct} onChange={v => g(x => { x.dispersion = v })} />
-          <Slider label="Smerigliatura" value={G.frost} min={0} max={1} step={0.01} format={v => (v < 0.05 ? 'Limpido' : pct(v))} onChange={v => g(x => { x.frost = v })} />
-          <div className="grid grid-cols-2 gap-3">
-            <ColorField label="Colore del vetro" value={G.tint} onChange={v => g(x => { x.tint = v })} />
-            <Slider label="Intensità del colore" value={G.tintAmount} min={0} max={1} step={0.01} format={pct} onChange={v => g(x => { x.tintAmount = v })} />
-          </div>
-          <Slider label="Luminosità" value={G.brightness} min={-1} max={1} step={0.01} format={v => `${v > 0 ? '+' : ''}${Math.round(v * 100)}`} onChange={v => g(x => { x.brightness = v })} />
-          <Slider label="Saturazione" value={G.saturation} min={0} max={2} step={0.01} format={pct} onChange={v => g(x => { x.saturation = v })} />
-          <Slider label="Riflessi di luce" value={G.highlight} min={0} max={1} step={0.01} format={pct} onChange={v => g(x => { x.highlight = v })} />
-          <Slider label="Direzione della luce" value={G.lightAngle} min={0} max={360} step={5} format={v => lightLabel(v)} onChange={v => g(x => { x.lightAngle = v })} />
-          <Slider label="Ombra sotto il vetro" value={G.shadow} min={0} max={1} step={0.01} format={pct} onChange={v => g(x => { x.shadow = v })} />
-        </>)
-      }
+      case 'glass': return (
+        <GlassControls value={st.buttons.glass}
+          note="Vale per i pulsanti dei menu in vetro, la bandierina e il suo menu, i social in vetro. Sui telefoni senza grafica avanzata si usa un vetro più semplice."
+          onPreset={look => edit(s => { s.buttons.glass = { ...look }; s.buttons.tint = lum(look.tint) < 0.4 ? 'dark' : 'light' })}
+          onChange={patch => edit(s => { Object.assign(s.buttons.glass, patch) })} />
+      )
       case 'captions': return (<>
         <Toggle label="Titolo e sottotitolo sopra foto e video" hint="Si scrivono nel pannello Sfondo, per ogni foto o video." value={st.captions.show} onChange={v => edit(s => { s.captions.show = v })} />
         {st.captions.show && (<>
@@ -688,10 +660,4 @@ function IntroImageField({ restaurantId, value, fallback, onChange }: {
       {err && <p className="text-[11px] text-red-600 mt-1">{err}</p>}
     </FieldShell>
   )
-}
-
-/** Da dove arriva la luce, a parole. */
-function lightLabel(a: number): string {
-  const names = ['da destra', 'dall\'alto a destra', 'dall\'alto', 'dall\'alto a sinistra', 'da sinistra', 'dal basso a sinistra', 'dal basso', 'dal basso a destra']
-  return names[Math.round((((a % 360) + 360) % 360) / 45) % 8]
 }

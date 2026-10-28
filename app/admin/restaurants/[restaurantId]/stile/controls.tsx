@@ -8,8 +8,8 @@
 
 import { useEffect, useRef, useState } from 'react'
 import {
-  CUSTOM_PREFIX, FONTS, FONT_CATS, ORNAMENTS, WEIGHTS, customWeights, fontInfo, fontLabel, fontStack, mix, resolveFace,
-  type ColorRef, type CustomFont, type FontCat, type MenuStyle, type Ornament, type TextStyle, type Weight,
+  CUSTOM_PREFIX, FONTS, FONT_CATS, GLASS_PRESETS, ORNAMENTS, WEIGHTS, customWeights, fontInfo, fontLabel, fontStack, mix, resolveFace,
+  type ColorRef, type CustomFont, type FontCat, type GlassLook, type MenuStyle, type Ornament, type TextStyle, type Weight,
 } from '@/lib/menuStyle'
 import { drawOrnament } from '@/app/prova/[token]/typeset'
 import { paintPaper } from '@/app/prova/[token]/paper'
@@ -517,4 +517,52 @@ export function PaperSwatch({ paper, texture, strength, light, ink }: {
     c.globalAlpha = 1
   }, [paper, texture, strength, light, ink])
   return <canvas ref={ref} aria-hidden className="block w-full" style={{ height: 72, borderRadius: 10 }} />
+}
+
+// ── Vetro liquido ────────────────────────────────────────────────────────────
+
+/** Da dove arriva la luce, a parole. */
+function lightLabel(a: number): string {
+  const names = ['da destra', 'dall\'alto a destra', 'dall\'alto', 'dall\'alto a sinistra', 'da sinistra', 'dal basso a sinistra', 'dal basso', 'dal basso a destra']
+  return names[Math.round((((a % 360) + 360) % 360) / 45) % 8]
+}
+
+/** Regolazioni del vetro liquido: vetri pronti e ogni parametro. */
+export function GlassControls({ value: G, note, onPreset, onChange }: {
+  value:    GlassLook
+  note?:    string
+  onPreset: (look: GlassLook) => void
+  onChange: (patch: Partial<GlassLook>) => void
+}) {
+  const sign = (v: number) => `${v > 0 ? '+' : ''}${Math.round(v * 100)}`
+  return (<>
+    {note && <p className="text-[11px] text-gray-400 -mt-1">{note}</p>}
+    <FieldShell label="Vetri pronti">
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+        {GLASS_PRESETS.map(p => {
+          const on = JSON.stringify(p.look) === JSON.stringify(G)
+          return (
+            <button key={p.name} type="button" aria-pressed={on} onClick={() => onPreset(p.look)}
+              className={`text-left border p-2 transition ${on ? 'border-blue-600 ring-1 ring-blue-600' : 'border-gray-200 hover:border-gray-400'}`} style={{ borderRadius: 12 }}>
+              <div className="text-xs font-medium text-gray-800">{p.name}</div>
+              <div className="text-[10px] text-gray-400 leading-tight">{p.desc}</div>
+            </button>
+          )
+        })}
+      </div>
+    </FieldShell>
+    <Slider label="Rifrazione (quanto il bordo piega lo sfondo)" value={G.refraction} min={0} max={1} step={0.01} format={pct} onChange={v => onChange({ refraction: v })} />
+    <Slider label="Spessore della lente" value={G.bezel} min={0} max={1} step={0.01} format={pct} onChange={v => onChange({ bezel: v })} />
+    <Slider label="Dispersione dei colori sul bordo" value={G.dispersion} min={0} max={1} step={0.01} format={pct} onChange={v => onChange({ dispersion: v })} />
+    <Slider label="Smerigliatura" value={G.frost} min={0} max={1} step={0.01} format={v => (v < 0.05 ? 'Limpido' : pct(v))} onChange={v => onChange({ frost: v })} />
+    <div className="grid grid-cols-2 gap-3">
+      <ColorField label="Colore del vetro" value={G.tint} onChange={v => onChange({ tint: v })} />
+      <Slider label="Intensità del colore" value={G.tintAmount} min={0} max={1} step={0.01} format={pct} onChange={v => onChange({ tintAmount: v })} />
+    </div>
+    <Slider label="Luminosità" value={G.brightness} min={-1} max={1} step={0.01} format={sign} onChange={v => onChange({ brightness: v })} />
+    <Slider label="Saturazione" value={G.saturation} min={0} max={2} step={0.01} format={pct} onChange={v => onChange({ saturation: v })} />
+    <Slider label="Riflessi di luce" value={G.highlight} min={0} max={1} step={0.01} format={pct} onChange={v => onChange({ highlight: v })} />
+    <Slider label="Direzione della luce" value={G.lightAngle} min={0} max={360} step={5} format={lightLabel} onChange={v => onChange({ lightAngle: v })} />
+    <Slider label="Ombra sotto il vetro" value={G.shadow} min={0} max={1} step={0.01} format={pct} onChange={v => onChange({ shadow: v })} />
+  </>)
 }

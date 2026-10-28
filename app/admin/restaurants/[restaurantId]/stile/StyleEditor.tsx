@@ -25,7 +25,7 @@ import {
 import type { PickTarget } from '@/app/prova/[token]/typeset'
 import { loadCustomFonts } from '@/app/prova/[token]/fonts'
 import {
-  BackgroundField, Choice, ColorField, FieldShell, FontsManager, OrnamentField, PaperSwatch, PhoneFrame, Slider,
+  BackgroundField, Choice, ColorField, FieldShell, FontsManager, GlassControls, OrnamentField, PaperSwatch, PhoneFrame, Slider,
   TextStyleField, Toggle, cssOf, lum, pct, px,
 } from './controls'
 import { saveMenuStyles } from './actions'
@@ -49,7 +49,7 @@ const PANELS: { id: PanelId; title: string; sub: string }[] = [
   { id: 'pageNumber',  title: 'Numeri di pagina',     sub: 'In fondo alle pagine' },
   { id: 'textPages',   title: 'Pagine di testo',      sub: 'Pagina informativa e legenda allergeni' },
   { id: 'card',        title: 'Scheda del piatto',    sub: 'Quella che si apre toccando un piatto' },
-  { id: 'chrome',      title: 'Comandi e aiuti',      sub: 'Barra in basso, inviti a sfogliare' },
+  { id: 'chrome',      title: 'Comandi e vetro',      sub: 'Barra, categorie, lingua: vetro liquido; aiuti' },
   { id: 'effects',     title: 'Effetto sfoglio',      sub: 'Ombre e velocità della pagina' },
 ]
 
@@ -508,9 +508,13 @@ export default function StyleEditor({ restaurantId, token, menus }: Props) {
         <Toggle label="&quot;Altro in …&quot; (altri piatti della categoria)" value={st.card.showMore} onChange={v => edit(s => { s.card.showMore = v })} />
       </>)
       case 'chrome': return (<>
-        <Choice label="Vetro dei comandi" value={st.chrome.tint} onChange={v => edit(s => { s.chrome.tint = v })}
-          options={[{ value: 'light', label: 'Chiaro' }, { value: 'dark', label: 'Fumé' }]}
-          hint="La barra con Menu, categorie e lingua (si apre scorrendo in su sul menu)." />
+        <Choice label="Testo dei comandi" value={st.chrome.tint} onChange={v => edit(s => { s.chrome.tint = v })}
+          options={[{ value: 'light', label: 'Scuro (vetro chiaro)' }, { value: 'dark', label: 'Bianco (vetro scuro)' }]}
+          hint="La barra con Menu, categorie e lingua si apre scorrendo in su sul menu." />
+        <GlassControls value={st.chrome.glass}
+          note="Vetro della barra, delle categorie, della bandierina e del suo menu, delle istruzioni dei gesti. Scegliendo un vetro pronto il testo si adatta."
+          onPreset={look => edit(s => { s.chrome.glass = { ...look }; s.chrome.tint = lum(look.tint) < 0.4 ? 'dark' : 'light' })}
+          onChange={patch => edit(s => { Object.assign(s.chrome.glass, patch) })} />
         <Toggle label="Istruzioni dei gesti alla prima apertura" value={st.chrome.hints} onChange={v => edit(s => { s.chrome.hints = v })} />
         <Toggle label="Invito a sfogliare (il foglio si solleva da solo)" hint="Non si vede nell'anteprima." value={st.chrome.peek} onChange={v => edit(s => { s.chrome.peek = v })} />
       </>)

@@ -8,9 +8,11 @@
 // ha già (banner, sfondo e logo del vecchio tema): vedi `initialLanding`.
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Vetro liquido: definito con lo stile del menu (vale anche per i suoi comandi).
+export { GLASS_PRESETS, type GlassLook } from './menuStyle'
 import {
-  CUSTOM_PREFIX, PAPER_TEXTURES, bool, colorRef, fontsUrlFor, facesFor, hex, num, obj, parseCustomFonts, pick, text,
-  ORNAMENTS, type ColorRef, type CustomFont, type Ornament, type PaperTextureKind, type TextStyle, type Weight,
+  CUSTOM_PREFIX, GLASS_PRESETS, PAPER_TEXTURES, bool, colorRef, fontsUrlFor, parseGlass, facesFor, hex, num, obj, parseCustomFonts, pick, text,
+  ORNAMENTS, type ColorRef, type CustomFont, type GlassLook, type Ornament, type PaperTextureKind, type TextStyle, type Weight,
 } from './menuStyle'
 
 export interface LandingMedia {
@@ -80,34 +82,6 @@ export interface LandingStyle {
   customFonts: CustomFont[]
 }
 
-/** Il vetro liquido: lente (rifrazione, spessore del bordo, dispersione),
- *  smerigliatura, colore, luce e ombra. */
-export interface GlassLook {
-  frost:      number   // 0 – 1
-  refraction: number   // 0 – 1
-  bezel:      number   // 0 – 1
-  dispersion: number   // 0 – 1
-  tint:       string
-  tintAmount: number   // 0 – 1
-  brightness: number   // -1 – 1
-  saturation: number   // 0 – 2
-  highlight:  number   // 0 – 1
-  lightAngle: number   // 0 – 360
-  shadow:     number   // 0 – 1
-}
-export const GLASS_PRESETS: { name: string; desc: string; look: GlassLook }[] = [
-  { name: 'Cristallo', desc: 'Limpido, lente forte',
-    look: { frost: 0.08, refraction: 0.85, bezel: 0.6, dispersion: 0.45, tint: '#ffffff', tintAmount: 0.06, brightness: 0.06, saturation: 1.3, highlight: 0.8, lightAngle: 135, shadow: 0.45 } },
-  { name: 'Chiaro', desc: 'Vetro di iPhone, appena smerigliato',
-    look: { frost: 0.35, refraction: 0.6, bezel: 0.55, dispersion: 0.3, tint: '#ffffff', tintAmount: 0.16, brightness: 0.1, saturation: 1.25, highlight: 0.7, lightAngle: 135, shadow: 0.4 } },
-  { name: 'Fumé', desc: 'Scuro e profondo',
-    look: { frost: 0.4, refraction: 0.55, bezel: 0.5, dispersion: 0.25, tint: '#15120f', tintAmount: 0.38, brightness: -0.08, saturation: 1.2, highlight: 0.55, lightAngle: 135, shadow: 0.55 } },
-  { name: 'Ghiaccio', desc: 'Molto smerigliato, freddo',
-    look: { frost: 0.85, refraction: 0.35, bezel: 0.45, dispersion: 0.15, tint: '#eef4f8', tintAmount: 0.3, brightness: 0.14, saturation: 0.9, highlight: 0.6, lightAngle: 120, shadow: 0.35 } },
-  { name: 'Ambra', desc: 'Caldo, dorato',
-    look: { frost: 0.3, refraction: 0.6, bezel: 0.55, dispersion: 0.3, tint: '#b8862f', tintAmount: 0.3, brightness: 0.02, saturation: 1.35, highlight: 0.7, lightAngle: 135, shadow: 0.45 } },
-]
-
 const T = (font: string, size: number, weight: Weight, color: ColorRef, o: Partial<TextStyle> = {}): TextStyle =>
   ({ font, size, weight, italic: false, color, upper: false, tracking: 0, ...o })
 const SERIF = 'Cormorant Garamond', SANS = 'Inter'
@@ -140,16 +114,6 @@ export const DEFAULT_LANDING: LandingStyle = {
   legal: { text: T(SANS, 10.5, 400, 'soft') },
   motion: { entrance: 'rise' },
   customFonts: [],
-}
-
-function parseGlass(v: unknown, d: GlassLook): GlassLook {
-  const g = obj(v)
-  return {
-    frost: num(g.frost, 0, 1, d.frost), refraction: num(g.refraction, 0, 1, d.refraction), bezel: num(g.bezel, 0, 1, d.bezel),
-    dispersion: num(g.dispersion, 0, 1, d.dispersion), tint: hex(g.tint, d.tint), tintAmount: num(g.tintAmount, 0, 1, d.tintAmount),
-    brightness: num(g.brightness, -1, 1, d.brightness), saturation: num(g.saturation, 0, 2, d.saturation),
-    highlight: num(g.highlight, 0, 1, d.highlight), lightAngle: num(g.lightAngle, 0, 360, d.lightAngle), shadow: num(g.shadow, 0, 1, d.shadow),
-  }
 }
 
 const isUrl = (u: unknown): u is string => typeof u === 'string' && /^https:\/\//.test(u)

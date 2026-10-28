@@ -11,10 +11,10 @@
 // chiude scorrendo verso il basso, girando pagina o toccando il foglio.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { forwardRef, useLayoutEffect, useRef, useState } from 'react'
+import { forwardRef, useContext, useLayoutEffect, useRef, useState } from 'react'
 import { FlagIcon } from '@/components/ui/FlagIcon'
 import { ALL_LANGS, LANG_LABELS, type Lang } from '@/lib/translations'
-import { GlassButton, GlassMenu, GlassMenuItem, GlassSheen, GlassTint, glassInk, glassSurface, SPRING, type GlassTintKind } from './Glass'
+import { GlassButton, GlassMenu, GlassMenuItem, GlassSheen, GlassTint, LiquidOn, glassInk, glassSurface, SPRING, type GlassTintKind } from './Glass'
 import { t } from './i18n'
 import { SANS } from './typeset'
 import { mix } from '@/lib/menuStyle'
@@ -106,6 +106,7 @@ function CategoryBar({ categories, active, onJump, hide, tint, accent }: {
   accent:     string
 }) {
   const dark = tint === 'dark'
+  const liquid = useContext(LiquidOn)
   const SELECTED = selectedOf(accent, tint)
   const ar = parseInt(accent.slice(1, 3), 16), ag = parseInt(accent.slice(3, 5), 16), ab = parseInt(accent.slice(5, 7), 16)
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -124,9 +125,9 @@ function CategoryBar({ categories, active, onJump, hide, tint, accent }: {
   }, [active, categories])
 
   return (
-    <nav aria-label="Categorie" className="relative overflow-hidden min-w-0"
-      style={{ ...glassSurface('light', tint), pointerEvents: hide ? 'none' : 'auto', borderRadius: BAR_H / 2, height: BAR_H, flex: '0 1 auto', maxWidth: 560 }}>
-      <GlassSheen />
+    <nav aria-label="Categorie" className="relative overflow-hidden min-w-0" data-glass={liquid ? '' : undefined} data-radius={BAR_H / 2}
+      style={{ ...(liquid ? {} : glassSurface('light', tint)), pointerEvents: hide ? 'none' : 'auto', borderRadius: BAR_H / 2, height: BAR_H, flex: '0 1 auto', maxWidth: 560 }}>
+      {!liquid && <GlassSheen />}
       <div ref={scrollRef} className="relative h-full overflow-x-auto"
         style={{ scrollbarWidth: 'none', touchAction: 'pan-x', overscrollBehaviorX: 'contain',
           WebkitMaskImage: 'linear-gradient(90deg, transparent 0, #000 10px, #000 calc(100% - 10px), transparent 100%)',

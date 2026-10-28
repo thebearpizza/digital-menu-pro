@@ -28,7 +28,7 @@ import { fontStack, resolveFace, type TextStyle } from '@/lib/menuStyle'
 import { introVideo, landingColor, landingFaces, landingFontsUrl, parseLanding, type LandingStyle } from '@/lib/landingStyle'
 import { registerCustomFonts } from '@/lib/menuStyle'
 import { PrefetchKind } from 'next/dist/client/components/router-reducer/router-reducer-types'
-import { GlassButton, GlassMenu, GlassMenuItem, GlassSheen, GlassTint, glassSurface, SPRING } from './Glass'
+import { GlassButton, GlassMenu, GlassMenuItem, GlassSheen, GlassTint, LiquidOn, glassSurface, SPRING } from './Glass'
 import { Flag } from './Chrome'
 import { t, type MenuChoice } from './i18n'
 import { loadCustomFonts, loadFontCss, loadStyleAssets } from './fonts'
@@ -286,21 +286,15 @@ export default function Landing({ token, restaurant, menus, style: initialStyle,
       {/* Lingua */}
       <div data-nopick className="fixed" style={{ top: 'calc(env(safe-area-inset-top) + 12px)', right: 'max(14px, env(safe-area-inset-right))', zIndex: 20 }}>
         <GlassTint.Provider value={onMedia || lum(bg.paper) < 0.45 ? 'dark' : 'light'}>
-          {glOn ? (
-            <button type="button" data-glass="" data-radius="20" aria-label={`${t('language', lang)}: ${LANG_LABELS[lang]}`} aria-expanded={langOpen}
-              onClick={() => setLangOpen(o => !o)} className="flex items-center justify-center"
-              style={{ width: 40, height: 40, borderRadius: 20, opacity: shown ? 1 : 0, transform: `scale(${shown ? 1 : 0.7})`,
-                transition: `transform 320ms ${SPRING}, opacity 220ms ease`, pointerEvents: shown ? 'auto' : 'none', WebkitTapHighlightColor: 'transparent' }}>
-              <Flag lang={lang} />
-            </button>
-          ) : (
+          <LiquidOn.Provider value={glOn}>
             <GlassButton hidden={!shown} label={`${t('language', lang)}: ${LANG_LABELS[lang]}`} expanded={langOpen} onClick={() => setLangOpen(o => !o)}>
               <Flag lang={lang} />
             </GlassButton>
-          )}
+          </LiquidOn.Provider>
         </GlassTint.Provider>
       </div>
       <div data-nopick>
+        <LiquidOn.Provider value={glOn}>
         <GlassMenu open={langOpen} onClose={() => setLangOpen(false)} align="right" edge={14}
           title={t('language', lang)} top="calc(env(safe-area-inset-top) + 60px)">
           {ALL_LANGS.map(l => (
@@ -308,6 +302,7 @@ export default function Landing({ token, restaurant, menus, style: initialStyle,
               onClick={() => { setLangOpen(false); setLang(l) }} />
           ))}
         </GlassMenu>
+        </LiquidOn.Provider>
       </div>
 
       <main className="relative h-full overflow-y-auto flex flex-col"
