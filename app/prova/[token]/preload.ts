@@ -20,6 +20,9 @@ export function warmImage(src: string | null | undefined, low = false) {
   const im = new Image()
   if (low) (im as HTMLImageElement & { fetchPriority?: string }).fetchPriority = 'low'
   im.decoding = 'async'
+  // Come le foto della scheda (CORS): stessa copia in memoria, e il vetro
+  // liquido della scheda può ridisegnarle.
+  im.crossOrigin = 'anonymous'
   im.src = src
   im.decode().then(() => { readyImages.add(src) }, () => {}).finally(() => pending.delete(src))
 }

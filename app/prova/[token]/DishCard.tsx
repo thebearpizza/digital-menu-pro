@@ -22,11 +22,12 @@
 // animazioni scrivono lo stile direttamente (niente render React per fotogramma).
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { createContext, forwardRef, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { Dish } from './typeset'
 import { readyImages, warmImage } from './preload'
-import { DEFAULT_STYLE, fontStack, formatPrice, resolveColor, resolveFace, type MenuStyle, type TextStyle } from '@/lib/menuStyle'
-import { GlassButton, glassSheet } from './Glass'
+import { DEFAULT_STYLE, fontStack, formatPrice, mix, resolveColor, resolveFace, type MenuStyle, type TextStyle } from '@/lib/menuStyle'
+import { GlassButton, GlassTint, LiquidOn, glassSheet } from './Glass'
+import CardGlass from './CardGlass'
 import { t } from './i18n'
 import type { Lang } from '@/lib/translations'
 
@@ -35,43 +36,75 @@ const CLOSE_PULL = 110     // px di trascinamento oltre la cima per chiudere
 const DIM = 0.22           // scurimento della pagina sotto durante lo "Scivola"
 const VEIL = 0.55          // velo della pagina che scorre sopra un'altra (resta vetro)
 
-const CARD    = '#fffdf9'                     // colore pieno (sotto le barre di Safari)
-const STAT_BG = 'rgba(255,255,255,0.55)'      // riquadro prezzo/allergeni sul vetro chiaro
-const TILE    = 'rgba(255,255,255,0.42)'      // riquadri chiari appoggiati sul vetro
 // Caratteri e colori del testo della scheda: quelli del menu (stile del
-// ristorante), letti da tutte le parti della scheda tramite contesto.
-// La scheda è sempre su vetro chiaro: un colore troppo chiaro (carta scura)
-// torna al testo base, per restare leggibile.
-const DARK_INK = '#1d1915', DARK_SOFT = '#5f574d'
+// ristorante) o, a scelta, colori propri della scheda; letti da tutte le parti
+// della scheda tramite contesto. Con i colori del menu, uno che si leggerebbe
+// male sul vetro della scheda (es. carta scura e scheda chiara) torna al testo
+// base, scuro o chiaro secondo la scheda.
+const DARK_INK = '#1d1915', DARK_SOFT = '#5f574d', LIGHT_INK = '#f6f1e8', LIGHT_SOFT = '#cfc6b8'
 function lum(hex: string) {
   const n = parseInt(hex.slice(1), 16)
   return (0.2126 * ((n >> 16) & 255) + 0.7152 * ((n >> 8) & 255) + 0.0722 * (n & 255)) / 255
 }
-const onCard = (c: string, fallback: string) => (lum(c) > 0.62 ? fallback : c)
+/** Luminanza relativa (WCAG) e contrasto tra due colori. */
+function relLum(hex: string) {
+  const n = parseInt(hex.slice(1), 16)
+  const c = (v: number) => { const x = v / 255; return x <= 0.03928 ? x / 12.92 : Math.pow((x + 0.055) / 1.055, 2.4) }
+  return 0.2126 * c((n >> 16) & 255) + 0.7152 * c((n >> 8) & 255) + 0.0722 * c(n & 255)
+}
+const contrast = (a: string, b: string) => { const x = relLum(a), y = relLum(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05) }
+const rgba = (hex: string, a: number) => { const n = parseInt(hex.slice(1), 16); return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})` }
+/** Colore con l'alfa = allargamento della scheda (--frost). */
+const rgbaVar = (hex: string) => { const n = parseInt(hex.slice(1), 16); return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},var(--frost, 0))` }
+
 function cardStyleOf(st: MenuStyle) {
+  const c = st.card
+  const alpha = 0.92 - 0.8 * c.glass                 // velo del vetro della scheda
+  // Colore che si vede davvero sotto il testo: vetro sopra la carta del menu.
+  const seen = mix(st.page.paper, c.surface, Math.min(1, alpha + 0.1))
+  // La leggibilità si misura sul colore della scheda: è quello a cui tende
+  // (la parte bassa si opacizza allargandola).
+  const lightCard = lum(c.surface) > 0.5
+  const custom = c.textColors === 'custom'
+  const fix = (col: string, kind: 'ink' | 'soft') => (custom || contrast(col, c.surface) >= 2.6 ? col
+    : kind === 'ink' ? (lightCard ? DARK_INK : LIGHT_INK) : (lightCard ? DARK_SOFT : LIGHT_SOFT))
+  const sw = custom ? { ...st, page: { ...st.page, ink: c.ink, soft: c.soft, accent: c.accent } } : st
   /** Carattere, spessore, corsivo, maiuscolo e spaziatura di uno stile (CSS). */
-  const css = (t: TextStyle, fallback = DARK_INK): React.CSSProperties => {
+  const css = (t: TextStyle, kind: 'ink' | 'soft' = 'ink'): React.CSSProperties => {
     const f = resolveFace(t.font, t.weight, t.italic)
     return {
       fontFamily: fontStack(t.font), fontWeight: f.weight, fontStyle: f.italic ? 'italic' : 'normal',
       textTransform: t.upper ? 'uppercase' : 'none', letterSpacing: `${t.tracking}em`,
-      color: onCard(resolveColor(t.color, st), fallback),
+      color: fix(resolveColor(t.color, sw), kind),
     }
   }
   const plain = (t: TextStyle): React.CSSProperties => ({ ...css(t), textTransform: 'none', letterSpacing: 0, fontStyle: 'normal' })
+  const INK = fix(sw.page.ink, 'ink')
+  // Colore di X e freccia: scelto, o adatto al vetro dei tasti (bianco sul vetro scuro).
+  const b = c.buttons
+  const darkButtons = lum(mix(seen, b.tint, b.tintAmount)) < 0.42
   return {
-    NAME: css(st.dish.name), DESC: css(st.dish.description, DARK_SOFT), PRICE: css(st.dish.price),
-    LABEL: css(st.category.text), DETAIL: css(st.allergens.text, DARK_SOFT), DETAIL_PLAIN: plain(st.allergens.text),
+    NAME: css(st.dish.name), DESC: css(st.dish.description, 'soft'), PRICE: css(st.dish.price),
+    LABEL: css(st.category.text), DETAIL: css(st.allergens.text, 'soft'), DETAIL_PLAIN: plain(st.allergens.text),
     NAME_PLAIN: plain(st.dish.name),
-    INK: onCard(st.page.ink, DARK_INK), SOFT: onCard(st.page.soft, DARK_SOFT), ACCENT: onCard(st.page.accent, '#9a8462'),
-    card: st.card,
+    INK, SOFT: fix(sw.page.soft, 'soft'), ACCENT: fix(sw.page.accent, 'soft'),
+    ICON: c.icon !== 'auto' ? c.icon : darkButtons ? '#ffffff' : INK,
+    buttonTint: (darkButtons ? 'dark' : 'light') as 'dark' | 'light',
+    card: c,
     price: (p: number | null) => formatPrice(p, st.dish.priceSymbol, st.dish.priceDecimals),
-    alpha: 0.92 - 0.8 * st.card.glass,   // velo del vetro della scheda
+    alpha,
+    SURFACE: c.surface,
+    lightCard,
+    // Colore della scheda sotto i tasti in vetro, e della parte bassa opacizzata.
+    seen, frosted: mix(seen, c.surface, c.fill),
+    STAT_BG: rgba(c.box, c.boxOpacity),             // riquadro prezzo/allergeni
+    TILE:    rgba(c.box, c.boxOpacity * 0.76),      // riquadri appoggiati sul vetro
+    LINE:    rgba(INK, 0.09),
+    SHINE:   lightCard ? 0.7 : 0.14,                // filo di luce dei riquadri
   }
 }
 const CardStyle = createContext(cardStyleOf(DEFAULT_STYLE))
 const useCardStyle = () => useContext(CardStyle)
-const LINE    = 'rgba(29,25,21,0.09)'
 const PHOTO_RATIO: Record<MenuStyle['card']['photo'], string> = { square: '1 / 1', landscape: '4 / 3', portrait: '4 / 5', circle: '1 / 1' }
 
 
@@ -118,7 +151,10 @@ interface Props {
 
 export default function DishCard({ dish: first, style, lang, sequence, siblings, onClosed }: Props) {
   const cs = useMemo(() => cardStyleOf(style), [style])
-  const { INK } = cs
+  const { ICON, SURFACE, buttonTint, seen, frosted, card: cardSt } = cs
+  // X e freccia in vetro liquido (WebGL) quando disponibile; prima del primo
+  // disegno, o senza WebGL2, vetro dei browser.
+  const [liquid, setLiquid] = useState(false)
   const backdropRef = useRef<HTMLDivElement>(null)
   const cardRef     = useRef<HTMLDivElement>(null)
   const barRef      = useRef<HTMLDivElement>(null)
@@ -372,7 +408,6 @@ export default function DishCard({ dish: first, style, lang, sequence, siblings,
     const s = st.current
     const html = document.documentElement
     const prevBg = html.style.backgroundColor
-    html.style.backgroundColor = CARD
     apply()
     warmAround()
     tween('o', 0, 1, 520, easeOutQuint, v => { s.o = v })
@@ -382,7 +417,8 @@ export default function DishCard({ dish: first, style, lang, sequence, siblings,
       html.style.backgroundColor = prevBg
     }
   }, [apply, tween, warmAround])
-
+  // Colore sotto la barra di Safari uguale alla scheda (ripristinato alla chiusura, sopra).
+  useLayoutEffect(() => { document.documentElement.style.backgroundColor = SURFACE }, [SURFACE])
   useLayoutEffect(() => { apply() }, [layers, apply])
 
   // ── Gesti
@@ -595,7 +631,7 @@ export default function DishCard({ dish: first, style, lang, sequence, siblings,
         <div ref={probeRef} aria-hidden className="pointer-events-none fixed inset-0 invisible"
           style={{ padding: 'env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)' }} />
         {/* Fondo: scurisce il menu; un tocco fuori dalla scheda la chiude. */}
-        <div ref={backdropRef} className="absolute inset-0" style={{ background: 'rgba(24,18,12,0.12)', opacity: 0 }}
+        <div ref={backdropRef} className="absolute inset-0" style={{ background: `rgba(24,18,12,${cardSt.dim})`, opacity: 0 }}
           onClick={() => close()} />
 
         <div ref={cardRef} role="dialog" aria-modal="true" aria-label={layers[layers.length - 1].dish.name}
@@ -607,12 +643,17 @@ export default function DishCard({ dish: first, style, lang, sequence, siblings,
           ))}
 
           <div ref={barRef} className="absolute left-0 right-0 top-0 flex justify-between pointer-events-none" style={{ padding: 14, zIndex: 5 }}>
-            <GlassButton label={t('back', lang)} onClick={back} hidden={depth <= 1}>
-              <svg width="11" height="18" viewBox="0 0 11 18" aria-hidden><path d="M9 1.8L2 9l7 7.2" fill="none" stroke={INK} strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" /></svg>
-            </GlassButton>
-            <GlassButton label={t('close', lang)} onClick={() => close()}>
-              <svg width="13" height="13" viewBox="0 0 13 13" aria-hidden><path d="M1.6 1.6l9.8 9.8M11.4 1.6l-9.8 9.8" stroke={INK} strokeWidth="2" strokeLinecap="round" /></svg>
-            </GlassButton>
+            <CardGlass barRef={barRef} cardRef={cardRef} base={seen} frosted={frosted} glass={cardSt.buttons} onState={setLiquid} />
+            <GlassTint.Provider value={buttonTint}>
+              <LiquidOn.Provider value={liquid}>
+                <GlassButton label={t('back', lang)} onClick={back} hidden={depth <= 1}>
+                  <svg width="11" height="18" viewBox="0 0 11 18" aria-hidden><path d="M9 1.8L2 9l7 7.2" fill="none" stroke={ICON} strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                </GlassButton>
+                <GlassButton label={t('close', lang)} onClick={() => close()}>
+                  <svg width="13" height="13" viewBox="0 0 13 13" aria-hidden><path d="M1.6 1.6l9.8 9.8M11.4 1.6l-9.8 9.8" stroke={ICON} strokeWidth="2" strokeLinecap="round" /></svg>
+                </GlassButton>
+              </LiquidOn.Provider>
+            </GlassTint.Provider>
           </div>
         </div>
       </div>
@@ -629,7 +670,7 @@ function Page({ layer, lang, siblings, onLink, register }: {
   onLink:   (d: Dish) => void
   register: (key: string, el: HTMLDivElement | null) => void
 }) {
-  const { NAME_PLAIN, DESC, DETAIL, DETAIL_PLAIN, ACCENT, card, price, alpha } = useCardStyle()
+  const { NAME_PLAIN, DESC, DETAIL, DETAIL_PLAIN, ACCENT, card, price, alpha, SURFACE, TILE, LINE, SHINE } = useCardStyle()
   const { dish } = layer
   const ref = useCallback((el: HTMLDivElement | null) => register(layer.key, el), [layer.key, register])
   const others = siblings(dish).filter(d => d.id !== dish.id)
@@ -639,27 +680,27 @@ function Page({ layer, lang, siblings, onLink, register }: {
     // entrambe vedono il menu dietro): in alto (foto, nome, prezzo) e da
     // "Descrizione" in giù, che si opacizza mentre la scheda si allarga. Nello "Scivola" vedono anche la
     // pagina sotto; il velo (data-veil) la copre mentre questa scorre.
-    <div ref={ref} className="absolute inset-0 overflow-hidden">
-      <div data-veil aria-hidden className="absolute inset-0 pointer-events-none" style={{ background: CARD, opacity: 0 }} />
+    <div ref={ref} data-card-page className="absolute inset-0 overflow-hidden">
+      <div data-veil aria-hidden className="absolute inset-0 pointer-events-none" style={{ background: SURFACE, opacity: 0 }} />
       {/* Sfondo fermo sul fondo dell'area (sfumato, solo quanto arriva il
           rimbalzo): copre il rimbalzo in fondo, dove un vetro sotto il
           contenuto allungherebbe lo scorrimento. */}
       <div data-scroller className="absolute inset-0 overflow-y-auto"
         style={{ overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch', touchAction: 'pan-y',
-          background: 'linear-gradient(180deg, transparent calc(100% - 150px), rgba(247,244,238,var(--frost, 0)) calc(100% - 40px))' }}>
+          background: `linear-gradient(180deg, transparent calc(100% - 150px), ${rgbaVar(SURFACE)} calc(100% - 40px))` }}>
         <div style={{ position: 'relative', minHeight: `calc(100% + ${EXPAND}px)`, display: 'flex', flexDirection: 'column' }}>
           {/* Vetro sopra la cima: nel rimbalzo di iOS si vede la stessa lastra e
               non il menu scurito dietro (sopra l'inizio non si può scorrere,
               quindi non allunga la pagina). */}
           <div aria-hidden className="absolute left-0 right-0 pointer-events-none"
-            style={{ ...glassSheet(alpha), background: `rgba(255,253,249,${alpha})`, bottom: '100%', height: '100vh' }} />
-          <div style={glassSheet(alpha)}>
+            style={{ ...glassSheet(alpha, SURFACE), background: rgba(SURFACE, alpha), bottom: '100%', height: '100vh' }} />
+          <div style={glassSheet(alpha, SURFACE)}>
             <Header dish={dish} lang={lang} />
           </div>
-          <section className="relative" style={{ ...glassSheet(alpha), boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.7)', flex: 1, paddingBottom: 'calc(env(safe-area-inset-bottom) + 40px + var(--extra, 0px))' }}>
+          <section data-card-section className="relative" style={{ ...glassSheet(alpha, SURFACE), boxShadow: `inset 0 1px 0 rgba(255,255,255,${SHINE})`, flex: 1, paddingBottom: 'calc(env(safe-area-inset-bottom) + 40px + var(--extra, 0px))' }}>
             {/* Come in Libri: parte vetro come la zona sopra e si opacizza
                 mentre la scheda si allarga (--frost = allargamento 0..1). */}
-            <div aria-hidden className="absolute inset-0 pointer-events-none" style={{ background: 'rgba(252,249,243,0.62)', opacity: 'var(--frost, 0)' }} />
+            <div aria-hidden className="absolute inset-0 pointer-events-none" style={{ background: rgba(SURFACE, card.fill), opacity: 'var(--frost, 0)' }} />
             <div data-rubber className="relative mx-auto" style={{ maxWidth: 560, padding: '30px 24px 0' }}>
               {dish.description && (
                 <Block title={t('description', lang)}>
@@ -730,7 +771,7 @@ function Page({ layer, lang, siblings, onLink, register }: {
 }
 
 function Header({ dish, lang }: { dish: Dish; lang: Lang }) {
-  const { NAME, PRICE, LABEL, DETAIL, card, price } = useCardStyle()
+  const { NAME, PRICE, LABEL, DETAIL, card, price, TILE, STAT_BG, LINE, SHINE } = useCardStyle()
   const [ready] = useState(() => !!dish.image && readyImages.has(dish.image))
   const [loaded, setLoaded] = useState(ready)
   return (
@@ -738,8 +779,7 @@ function Header({ dish, lang }: { dish: Dish; lang: Lang }) {
       {dish.image && (
         <div className="mx-auto" style={{ width: `min(${card.photoWidth}%, ${Math.round(card.photoWidth * 4.3)}px)`, marginBottom: 28 }}>
           <div style={{ position: 'relative', aspectRatio: PHOTO_RATIO[card.photo], borderRadius: card.photo === 'circle' ? '50%' : card.radius, overflow: 'hidden', background: TILE, boxShadow: '0 18px 40px rgba(40,28,14,0.20), 0 2px 6px rgba(40,28,14,0.10)' }}>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={dish.image} alt="" draggable={false} onLoad={() => { readyImages.add(dish.image!); setLoaded(true) }}
+            <CardImg src={dish.image} onLoad={() => { readyImages.add(dish.image!); setLoaded(true) }}
               ref={el => { if (el?.complete && el.naturalWidth && !loaded) setLoaded(true) }}
               style={{ width: '100%', height: '100%', objectFit: 'cover', opacity: loaded ? 1 : 0, transition: ready ? 'none' : 'opacity 300ms ease' }} />
           </div>
@@ -754,7 +794,7 @@ function Header({ dish, lang }: { dish: Dish; lang: Lang }) {
         {dish.name}
       </h2>
       {card.showSummary && (dish.price !== null || dish.allergens.length > 0) && (
-        <div className="mx-auto flex" style={{ marginTop: 24, maxWidth: 380, borderRadius: 18, background: STAT_BG, boxShadow: `inset 0 0 0 1px rgba(255,255,255,0.7), 0 1px 3px rgba(20,14,8,0.06)`, padding: '14px 6px' }}>
+        <div className="mx-auto flex" style={{ marginTop: 24, maxWidth: 380, borderRadius: 18, background: STAT_BG, boxShadow: `inset 0 0 0 1px rgba(255,255,255,${SHINE}), 0 1px 3px rgba(20,14,8,0.06)`, padding: '14px 6px' }}>
           {dish.price !== null && <Stat label={t('price', lang)} value={price(dish.price)} valueStyle={PRICE} labelStyle={DETAIL} />}
           {dish.price !== null && dish.allergens.length > 0 && <span style={{ width: 1, background: LINE, margin: '4px 0' }} />}
           {dish.allergens.length > 0 && <Stat label={t('allergens', lang)} value={dish.allergens.map(a => a.n).join(' · ')} valueStyle={{ ...PRICE, textTransform: 'none', letterSpacing: 0 }} labelStyle={DETAIL} />}
@@ -785,16 +825,29 @@ function Block({ title, children }: { title: string; children: React.ReactNode }
 }
 
 function Thumb({ dish, size }: { dish: Dish; size: number }) {
-  const { NAME_PLAIN, ACCENT, card } = useCardStyle()
+  const { NAME_PLAIN, ACCENT, card, TILE, LINE } = useCardStyle()
   return (
     <span className="block shrink-0 overflow-hidden" style={{ width: size, height: size, borderRadius: card.photo === 'circle' ? '50%' : Math.min(card.radius, size > 80 ? 12 : 10), background: TILE, boxShadow: `inset 0 0 0 1px ${LINE}` }}>
       {dish.image
-        // eslint-disable-next-line @next/next/no-img-element
-        ? <img src={dish.image} alt="" loading="lazy" draggable={false} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+        ? <CardImg src={dish.image} lazy style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
         : <span className="flex items-center justify-center h-full" style={{ fontFamily: NAME_PLAIN.fontFamily, fontStyle: 'italic', fontSize: size * 0.42, color: ACCENT }}>{dish.name.trim().charAt(0)}</span>}
     </span>
   )
 }
+
+/** Foto della scheda, chiesta con CORS (il vetro liquido dei tasti la può
+ *  ridisegnare). Se il sito della foto non lo permette si ricarica normale:
+ *  si vede lo stesso, solo la lente non la mostra. */
+const CardImg = forwardRef<HTMLImageElement, { src: string; lazy?: boolean; onLoad?: () => void; style: React.CSSProperties }>(
+  function CardImg({ src, lazy, onLoad, style }, ref) {
+    const [cors, setCors] = useState(true)
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img ref={ref} key={cors ? 'c' : 'n'} data-card-photo={cors ? '' : undefined} crossOrigin={cors ? 'anonymous' : undefined}
+        src={src} alt="" loading={lazy ? 'lazy' : undefined} draggable={false} onLoad={onLoad}
+        onError={() => { if (cors) setCors(false) }} style={style} />
+    )
+  })
 
 function Chevron() {
   const { SOFT } = useCardStyle()

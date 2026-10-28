@@ -276,6 +276,15 @@ export interface MenuStyle {
     showCategory: boolean
     showSummary: boolean      // riquadro prezzo/allergeni
     showMore: boolean         // "Altro in …"
+    surface: string           // colore del vetro della scheda
+    fill: number              // velatura della parte bassa a tutto schermo: 0 – 1
+    textColors: 'menu' | 'custom'   // colori del testo: quelli del menu o propri
+    ink: string; soft: string; accent: string
+    box: string               // riquadri (prezzo/allergeni, abbinamento, miniature)
+    boxOpacity: number        // 0 – 1
+    dim: number               // scurimento del menu dietro: 0 – 0.6
+    buttons: GlassLook        // vetro liquido della X e della freccia
+    icon: string              // colore di X e freccia: 'auto' o #rrggbb
   }
   /** Comandi sopra il menu (barra, lingua, istruzioni): tinta del testo e vetro liquido. */
   chrome: { tint: 'light' | 'dark'; glass: GlassLook; peek: boolean; hints: boolean }
@@ -348,7 +357,9 @@ export const DEFAULT_STYLE: MenuStyle = {
   allergens: { show: true, label: true, text: T(SANS, 9.5, 500, 'accent', { upper: true, tracking: 0.14 }) },
   pageNumber: { show: true, format: 'of', text: T(SANS, 9.5, 500, 'accent', { tracking: 0.17 }) },
   textPages: { title: T(SERIF, 25, 500, 'ink'), body: T(SERIF, 16.5, 400, 'ink'), lineHeight: 1, paraGap: 6 },
-  card: { photo: 'square', photoWidth: 84, radius: 14, titleSize: 34, glass: 0.5, showCategory: true, showSummary: true, showMore: true },
+  card: { photo: 'square', photoWidth: 84, radius: 14, titleSize: 34, glass: 0.5, showCategory: true, showSummary: true, showMore: true,
+    surface: '#fffdf9', fill: 0.62, textColors: 'menu', ink: '#1d1915', soft: '#5f574d', accent: '#9a8462',
+    box: '#ffffff', boxOpacity: 0.55, dim: 0.12, buttons: GLASS_PRESETS[1].look, icon: 'auto' },
   chrome: { tint: 'light', glass: GLASS_PRESETS[1].look, peek: true, hints: true },
   effects: { shadow: 1, speed: 1, showThrough: 0.03 },
   customFonts: [],
@@ -517,6 +528,13 @@ export function parseStyle(raw: unknown): MenuStyle {
       showCategory: bool(cd.showCategory, d.card.showCategory),
       showSummary: bool(cd.showSummary, d.card.showSummary),
       showMore: bool(cd.showMore, d.card.showMore),
+      surface: hex(cd.surface, d.card.surface), fill: num(cd.fill, 0, 1, d.card.fill),
+      textColors: pick(cd.textColors, ['menu', 'custom'] as const, d.card.textColors),
+      ink: hex(cd.ink, d.card.ink), soft: hex(cd.soft, d.card.soft), accent: hex(cd.accent, d.card.accent),
+      box: hex(cd.box, d.card.box), boxOpacity: num(cd.boxOpacity, 0, 1, d.card.boxOpacity),
+      dim: num(cd.dim, 0, 0.6, d.card.dim),
+      buttons: parseGlass(cd.buttons, d.card.buttons),
+      icon: cd.icon === 'auto' ? 'auto' : hex(cd.icon, d.card.icon),
     },
     chrome: {
       tint: pick(ch.tint, ['light', 'dark'] as const, d.chrome.tint),

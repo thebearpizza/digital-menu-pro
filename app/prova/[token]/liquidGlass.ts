@@ -100,6 +100,7 @@ uniform float uShadow;
 uniform vec3  uTint;
 uniform float uTintA;
 uniform vec2  uLight;     // direzione verso la luce
+uniform float uClear;     // 1 = fuori dalle lenti trasparente (tela sopra l'HTML)
 out vec4 outColor;
 
 float layerLod(float r, float texel) { return r > 0.5 ? log2(max(1.0, r * texel)) : 0.0; }
@@ -156,7 +157,9 @@ void main() {
     float ds = sdBox(p - vec2(0.0, 5.0 + 3.0 * s.z), r, rad);
     shade = max(shade, (1.0 - smoothstep(-8.0, 22.0, ds)) * s.y);
   }
-  if (best > 0.0) col *= 1.0 - 0.38 * uShadow * shade;
+  float sa = best > 0.0 ? 0.38 * uShadow * shade : 0.0;
+  vec3 lens = vec3(0.0);
+  float la = 0.0;
 
   if (bi >= 0 && best < 1.0) {
     vec4 r = uRect[0];
@@ -198,9 +201,17 @@ void main() {
     g += uHigh * 0.07 * (1.0 - smoothstep(0.0, 0.6, yy)) * (1.0 - t);
     g += press * 0.035;
     float aa = clamp(0.5 - d * uDpr, 0.0, 1.0);
-    col = mix(col, clamp(g, 0.0, 1.0), aa * s.y);
+    lens = clamp(g, 0.0, 1.0);
+    la = aa * s.y;
   }
-  outColor = vec4(col, 1.0);
+  if (uClear > 0.5) {
+    // Solo lente e ombra (nero velato), il resto lascia vedere sotto.
+    float a = la + (1.0 - la) * sa;
+    outColor = vec4(a > 0.0 ? lens * la / a : vec3(0.0), a);
+  } else {
+    col = mix(col * (1.0 - sa), lens, la);
+    outColor = vec4(col, 1.0);
+  }
 }`
 
 interface Tex { tex: WebGLTexture; w: number; h: number; version: number; ready: boolean }
@@ -217,13 +228,16 @@ export class LiquidGlass {
   private texs = new Map<NonNullable<BgLayer['source']>, Tex>()
   private canvas: HTMLCanvasElement | null
   private buf: WebGLBuffer
+  private clear: boolean
 
   /** Con una tela: contesto proprio. Con un contesto WebGL2 già esistente
-   *  (il motore del giro pagina): disegna nel suo framebuffer principale. */
-  constructor(target: HTMLCanvasElement | WebGL2RenderingContext) {
+   *  (il motore del giro pagina): disegna nel suo framebuffer principale.
+   *  `transparent`: la tela sta sopra l'HTML e disegna solo lenti e ombre. */
+  constructor(target: HTMLCanvasElement | WebGL2RenderingContext, opts: { transparent?: boolean } = {}) {
     const own = target instanceof HTMLCanvasElement
     this.canvas = own ? target : null
-    const gl = own ? target.getContext('webgl2', { antialias: false, premultipliedAlpha: false, alpha: false, preserveDrawingBuffer: false }) : target
+    this.clear = !!opts.transparent && own
+    const gl = own ? target.getContext('webgl2', { antialias: false, premultipliedAlpha: false, alpha: this.clear, preserveDrawingBuffer: false }) : target
     if (!gl) throw new Error('webgl2')
     this.gl = gl
     const sh = (type: number, src: string) => {
@@ -245,7 +259,7 @@ export class LiquidGlass {
     gl.bindBuffer(gl.ARRAY_BUFFER, this.buf)
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW)
     for (const n of ['uSize', 'uDpr', 'uBase', 'uTex0', 'uTex1', 'uMap0', 'uMap1', 'uA0', 'uA1', 'uTexel0', 'uTexel1', 'uVeil', 'uBgBlur',
-      'uN', 'uRect', 'uShape', 'uFrost', 'uRefract', 'uBezel', 'uDisp', 'uBright', 'uSat', 'uHigh', 'uShadow', 'uTint', 'uTintA', 'uLight']) {
+      'uN', 'uRect', 'uShape', 'uFrost', 'uRefract', 'uBezel', 'uDisp', 'uBright', 'uSat', 'uHigh', 'uShadow', 'uTint', 'uTintA', 'uLight', 'uClear']) {
       this.u[n] = gl.getUniformLocation(prog, n)
     }
     gl.uniform1i(this.u.uTex0, 0)
@@ -358,6 +372,7 @@ export class LiquidGlass {
     // 90° dall'alto, 135° dall'alto a sinistra, 180° da sinistra.
     const a = (g.lightAngle * Math.PI) / 180
     gl.uniform2f(this.u.uLight, Math.cos(a), -Math.sin(a))
+    gl.uniform1f(this.u.uClear, this.clear ? 1 : 0)
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4)
   }
 

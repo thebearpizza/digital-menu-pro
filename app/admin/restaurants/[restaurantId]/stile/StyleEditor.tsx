@@ -494,7 +494,8 @@ export default function StyleEditor({ restaurantId, token, menus }: Props) {
         <Slider label="Spazio tra i paragrafi" value={st.textPages.paraGap} min={0} max={30} step={1} format={px} onChange={v => edit(s => { s.textPages.paraGap = v })} />
       </>)
       case 'card': return (<>
-        <p className="text-[11px] text-gray-400 -mt-1">L&apos;anteprima mostra la scheda di un piatto finché questo pannello è aperto. Caratteri e colori sono quelli dei piatti.</p>
+        <p className="text-[11px] text-gray-400 -mt-1">L&apos;anteprima mostra la scheda di un piatto finché questo pannello è aperto. I caratteri sono quelli dei piatti.</p>
+        <Sub>Foto e testo</Sub>
         <Choice label="Forma della foto" value={st.card.photo} onChange={v => edit(s => { s.card.photo = v })}
           options={[{ value: 'square', label: 'Quadrata' }, { value: 'landscape', label: 'Orizzontale' }, { value: 'portrait', label: 'Verticale' }, { value: 'circle', label: 'Tonda' }]} />
         <Slider label="Larghezza della foto" value={st.card.photoWidth} min={50} max={100} step={1} format={v => `${Math.round(v)}%`} onChange={v => edit(s => { s.card.photoWidth = v })} />
@@ -502,10 +503,59 @@ export default function StyleEditor({ restaurantId, token, menus }: Props) {
           <Slider label="Angoli della foto" value={st.card.radius} min={0} max={32} step={1} format={px} onChange={v => edit(s => { s.card.radius = v })} />
         )}
         <Slider label="Grandezza del nome" value={st.card.titleSize} min={22} max={48} step={1} format={px} onChange={v => edit(s => { s.card.titleSize = v })} />
-        <Slider label="Trasparenza del vetro" value={st.card.glass} min={0} max={1} step={0.05} format={v => (v < 0.15 ? 'Piena' : v > 0.8 ? 'Molto trasparente' : pct(v))} onChange={v => edit(s => { s.card.glass = v })} />
         <Toggle label="Categoria sopra il nome" value={st.card.showCategory} onChange={v => edit(s => { s.card.showCategory = v })} />
         <Toggle label="Riquadro prezzo e allergeni" value={st.card.showSummary} onChange={v => edit(s => { s.card.showSummary = v })} />
         <Toggle label="&quot;Altro in …&quot; (altri piatti della categoria)" value={st.card.showMore} onChange={v => edit(s => { s.card.showMore = v })} />
+
+        <Sub>Colori della scheda</Sub>
+        <FieldShell label="Colori pronti">
+          <div className="flex flex-wrap gap-2">
+            {CARD_COLORS(st.page.paper).map(c => {
+              const on = st.card.surface === c.surface
+              return (
+                <button key={c.name} type="button" aria-pressed={on} onClick={() => edit(s => {
+                    s.card.surface = c.surface; s.card.box = c.box
+                    // Vetro scuro sopra una carta chiara: più pieno, se no diventa grigio.
+                    if (c.dark) s.card.glass = Math.min(s.card.glass, 0.2)
+                  })}
+                  className={`flex items-center gap-2 border px-2.5 py-1.5 text-xs transition ${on ? 'border-blue-600 ring-1 ring-blue-600 text-gray-900' : 'border-gray-200 text-gray-600 hover:border-gray-400'}`} style={{ borderRadius: 10 }}>
+                  <span className="inline-block w-4 h-4 border border-gray-300" style={{ background: c.surface, borderRadius: 5 }} />
+                  {c.name}
+                </button>
+              )
+            })}
+          </div>
+        </FieldShell>
+        <ColorField label="Colore del vetro della scheda" value={st.card.surface} onChange={v => edit(s => { s.card.surface = v })} />
+        <Slider label="Trasparenza del vetro" value={st.card.glass} min={0} max={1} step={0.05} format={v => (v < 0.15 ? 'Piena' : v > 0.8 ? 'Molto trasparente' : pct(v))} onChange={v => edit(s => { s.card.glass = v })} />
+        <Slider label="Velatura a tutto schermo" hint="Allargando la scheda, la parte da &quot;Descrizione&quot; in giù si opacizza per leggere meglio."
+          value={st.card.fill} min={0} max={1} step={0.02} format={v => (v < 0.05 ? 'Nessuna' : pct(v))} onChange={v => edit(s => { s.card.fill = v })} />
+        <Slider label="Scurimento del menu dietro" value={st.card.dim} min={0} max={0.6} step={0.02} format={v => (v < 0.02 ? 'Nessuno' : pct(v / 0.6))} onChange={v => edit(s => { s.card.dim = v })} />
+        <Choice label="Colori del testo" value={st.card.textColors} onChange={v => edit(s => { s.card.textColors = v })}
+          options={[{ value: 'menu', label: 'Come il menu' }, { value: 'custom', label: 'Propri della scheda' }]}
+          hint={st.card.textColors === 'menu' ? 'Se un colore del menu si leggerebbe male sulla scheda, si usa un testo scuro o chiaro.' : 'Usati così come sono: ogni testo prende il principale, il secondario o l\'accento, come nel menu.'} />
+        {st.card.textColors === 'custom' && (
+          <div className="grid grid-cols-3 gap-3">
+            <ColorField label="Principale" value={st.card.ink} onChange={v => edit(s => { s.card.ink = v })} />
+            <ColorField label="Secondario" value={st.card.soft} onChange={v => edit(s => { s.card.soft = v })} />
+            <ColorField label="Accento" value={st.card.accent} onChange={v => edit(s => { s.card.accent = v })} />
+          </div>
+        )}
+        <div className="grid grid-cols-2 gap-3">
+          <ColorField label="Colore dei riquadri" hint="Prezzo e allergeni, abbinamento, miniature." value={st.card.box} onChange={v => edit(s => { s.card.box = v })} />
+          <Slider label="Intensità dei riquadri" value={st.card.boxOpacity} min={0} max={1} step={0.02} format={v => (v < 0.02 ? 'Invisibili' : pct(v))} onChange={v => edit(s => { s.card.boxOpacity = v })} />
+        </div>
+
+        <Sub>Tasti X e freccia</Sub>
+        <GlassControls value={st.card.buttons}
+          note="Vetro liquido dei tasti in alto nella scheda: piega la foto del piatto quando ci passa sotto. Sui telefoni senza WebGL2 resta il vetro normale."
+          onPreset={look => edit(s => { s.card.buttons = { ...look } })}
+          onChange={patch => edit(s => { Object.assign(s.card.buttons, patch) })} />
+        <Choice label="Colore della X e della freccia" value={st.card.icon === 'auto' ? 'auto' : 'custom'}
+          onChange={v => edit(s => { s.card.icon = v === 'auto' ? 'auto' : (s.card.icon === 'auto' ? '#1d1915' : s.card.icon) })}
+          options={[{ value: 'auto', label: 'Automatico' }, { value: 'custom', label: 'Scelto' }]}
+          hint={st.card.icon === 'auto' ? 'Scuro sul vetro chiaro, bianco sul vetro scuro.' : undefined} />
+        {st.card.icon !== 'auto' && <ColorField label="Colore" value={st.card.icon} onChange={v => edit(s => { s.card.icon = v })} />}
       </>)
       case 'chrome': return (<>
         <Choice label="Testo dei comandi" value={st.chrome.tint} onChange={v => edit(s => { s.chrome.tint = v })}
@@ -669,3 +719,19 @@ function ApplySheet({ menus, current, saving, onCancel, onSave }: {
     </div>
   )
 }
+
+/** Titoletto di un gruppo di controlli dentro un pannello. */
+function Sub({ children }: { children: React.ReactNode }) {
+  return <p className="pt-3 text-[11px] font-semibold uppercase tracking-wider text-gray-500 border-t border-gray-100">{children}</p>
+}
+
+/** Colori pronti per la scheda del piatto (vetro e riquadri). */
+const CARD_COLORS = (paper: string) => [
+  { name: 'Avorio',  surface: '#fffdf9', box: '#ffffff' },
+  { name: 'Bianco',  surface: '#ffffff', box: '#ffffff' },
+  { name: 'Carta del menu', surface: paper, box: '#ffffff' },
+  { name: 'Sabbia',  surface: '#efe4d2', box: '#fffaf1' },
+  { name: 'Salvia',  surface: '#e3e8dc', box: '#f8faf4' },
+  { name: 'Fumo',    surface: '#2a2622', box: '#4a433c', dark: true },
+  { name: 'Notte',   surface: '#141618', box: '#2c3034', dark: true },
+]

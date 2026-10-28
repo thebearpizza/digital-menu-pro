@@ -86,15 +86,19 @@ export function GlassSheen() {
 }
 
 /**
- * Vetro chiaro per le superfici della scheda prodotto: sfocatura media (il
- * menu dietro si intuisce ma non si legge) e velo chiaro e caldo. La parte
+ * Vetro per le superfici della scheda prodotto: sfocatura media (il menu
+ * dietro si intuisce ma non si legge) e velo del colore scelto (chiaro e
+ * caldo di base). La parte
  * bassa della scheda ci aggiunge sopra una velatura che cresce mentre la
  * scheda si allarga (DishCard, --frost).
  */
-export function glassSheet(alpha = 0.52): React.CSSProperties {
-  const filter = 'blur(8px) saturate(1.35) brightness(1.08)'
+export function glassSheet(alpha = 0.52, color = '#fffdf9'): React.CSSProperties {
+  const n = parseInt(color.slice(1), 16)
+  const rgb = `${(n >> 16) & 255},${(n >> 8) & 255},${n & 255}`
+  const light = (0.2126 * ((n >> 16) & 255) + 0.7152 * ((n >> 8) & 255) + 0.0722 * (n & 255)) / 255 > 0.5
+  const filter = `blur(8px) saturate(1.35) brightness(${light ? 1.08 : 0.9})`
   return {
-    background: `linear-gradient(180deg, rgba(255,253,249,${alpha}), rgba(255,253,249,${Math.max(0.08, alpha - 0.08)}))`,
+    background: `linear-gradient(180deg, rgba(${rgb},${alpha}), rgba(${rgb},${Math.max(0.08, alpha - 0.08)}))`,
     backdropFilter: filter,
     WebkitBackdropFilter: filter,
   }
