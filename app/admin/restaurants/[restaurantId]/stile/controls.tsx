@@ -34,25 +34,98 @@ export function cssOf(t: TextStyle, sw: { ink: string; soft: string; accent: str
 
 /** Miniatura di uno stile pronto: titolo, categoria, un piatto con prezzo. */
 // ── Cornice da telefono (si adatta allo spazio) ─────────────────────────────
+// Il menu si impagina sull'altezza visibile dello schermo: l'anteprima usa
+// l'area che resta al sito nel browser del telefono (barre di Safari/Chrome
+// comprese), così le pagine si spezzano negli stessi punti che vede il
+// cliente. Misure in punti CSS, con le barre del browser visibili.
 
-export function PhoneFrame({ children }: { children: React.ReactNode }) {
+export const PREVIEW_DEVICES = [
+  { id: 'iphone',    label: 'iPhone 13–16 (Safari)',      w: 390, h: 664 },
+  { id: 'iphonemax', label: 'iPhone Plus / Pro Max (Safari)', w: 430, h: 739 },
+  { id: 'iphonese',  label: 'iPhone SE / 8 (Safari)',     w: 375, h: 553 },
+  { id: 'android',   label: 'Android grande (Chrome)',    w: 412, h: 783 },
+  { id: 'galaxy',    label: 'Samsung Galaxy S (Chrome)',  w: 360, h: 668 },
+] as const
+type PreviewDevice = { id: string; label: string; w: number; h: number }
+const DEVICE_KEY = 'lito-preview-device'
+const CUSTOM_KEY = 'lito-preview-custom'
+const clampDim = (v: number, d: number) => (Number.isFinite(v) ? Math.max(280, Math.min(1400, Math.round(v))) : d)
+
+/** Misura in punti: si applica quando è un valore sensato (mentre si scrive no). */
+function DimInput({ label, value, onCommit }: { label: string; value: number; onCommit: (v: number) => void }) {
+  const [text, setText] = useState(String(value))
+  useEffect(() => setText(String(value)), [value])
+  return (
+    <input type="number" inputMode="numeric" aria-label={label} value={text} className="w-16 border border-gray-200 px-2 py-1 text-xs" style={{ borderRadius: 8 }}
+      onChange={e => { setText(e.target.value); const n = Number(e.target.value); if (n >= 280 && n <= 1400) onCommit(Math.round(n)) }}
+      onBlur={() => setText(String(value))} />
+  )
+}
+
+/** Anteprima nella cornice: `children` riceve la misura dello schermo scelto. */
+export function PhoneFrame({ children }: { children: (size: { w: number; h: number }) => React.ReactNode }) {
+  const [dev, setDev] = useState<PreviewDevice>(PREVIEW_DEVICES[0])
+  // "Personalizzato": le misure del proprio telefono (pagina /schermo).
+  const [custom, setCustom] = useState({ w: 393, h: 659 })
+  useEffect(() => {
+    try {
+      const c = JSON.parse(localStorage.getItem(CUSTOM_KEY) ?? 'null') as { w?: number; h?: number } | null
+      const cu = c ? { w: clampDim(Number(c.w), 393), h: clampDim(Number(c.h), 659) } : null
+      if (cu) setCustom(cu)
+      const id = localStorage.getItem(DEVICE_KEY)
+      const d = id === 'custom' && cu ? { id: 'custom', label: 'Personalizzato', ...cu } : PREVIEW_DEVICES.find(x => x.id === id)
+      if (d) setDev(d)
+    } catch { /* memoria non disponibile */ }
+  }, [])
+  const applyCustom = (c: { w: number; h: number }) => {
+    setCustom(c)
+    setDev({ id: 'custom', label: 'Personalizzato', ...c })
+    try { localStorage.setItem(CUSTOM_KEY, JSON.stringify(c)); localStorage.setItem(DEVICE_KEY, 'custom') } catch { /* memoria non disponibile */ }
+  }
   const [k, setK] = useState(0.7)
   useEffect(() => {
     const fit = () => {
       const wide = window.innerWidth >= 1024
-      const maxH = wide ? window.innerHeight - 140 : window.innerHeight * 0.58
-      const maxW = wide ? 360 : window.innerWidth - 48
-      setK(Math.max(0.4, Math.min(1, maxH / 844, maxW / 390)))
+      const maxH = wide ? window.innerHeight - 170 : window.innerHeight * 0.58
+      const maxW = wide ? 380 : window.innerWidth - 48
+      setK(Math.max(0.4, Math.min(1, maxH / dev.h, maxW / dev.w)))
     }
     fit()
     window.addEventListener('resize', fit)
     return () => window.removeEventListener('resize', fit)
-  }, [])
+  }, [dev])
   return (
-    <div className="rounded-[40px] bg-gray-900 p-2.5 shadow-xl" style={{ width: 390 * k + 20, height: 844 * k + 20 }}>
-      <div className="overflow-hidden rounded-[32px] bg-white" style={{ width: 390 * k, height: 844 * k }}>
-        <div style={{ width: 390, height: 844, transform: `scale(${k})`, transformOrigin: '0 0' }}>{children}</div>
+    <div className="flex flex-col items-center gap-2">
+      <div className="rounded-[34px] bg-gray-900 p-2.5 shadow-xl" style={{ width: dev.w * k + 20, height: dev.h * k + 20 }}>
+        <div className="overflow-hidden rounded-[26px] bg-white" style={{ width: dev.w * k, height: dev.h * k }}>
+          <div style={{ width: dev.w, height: dev.h, transform: `scale(${k})`, transformOrigin: '0 0' }}>{children({ w: dev.w, h: dev.h })}</div>
+        </div>
       </div>
+      <label className="flex items-center gap-2 text-xs text-gray-500">
+        Schermo
+        <select value={dev.id} className="border border-gray-200 bg-white px-2 py-1 text-xs text-gray-700" style={{ borderRadius: 8 }}
+          onChange={e => {
+            if (e.target.value === 'custom') { applyCustom(custom); return }
+            const d = PREVIEW_DEVICES.find(x => x.id === e.target.value) ?? PREVIEW_DEVICES[0]
+            setDev(d)
+            try { localStorage.setItem(DEVICE_KEY, d.id) } catch { /* memoria non disponibile */ }
+          }}>
+          {PREVIEW_DEVICES.map(d => <option key={d.id} value={d.id}>{d.label}</option>)}
+          <option value="custom">Il mio telefono (misure)</option>
+        </select>
+      </label>
+      {dev.id === 'custom' && (
+        <div className="flex flex-col items-center gap-1 text-xs text-gray-500">
+          <div className="flex items-center gap-1.5">
+            <DimInput label="Larghezza" value={custom.w} onCommit={w => applyCustom({ ...custom, w })} />
+            ×
+            <DimInput label="Altezza" value={custom.h} onCommit={h => applyCustom({ ...custom, h })} />
+          </div>
+          <span className="text-[11px] text-gray-400 text-center max-w-[260px]">
+            Per le misure esatte apri <b className="text-gray-600">{typeof window !== 'undefined' ? window.location.host : ''}/schermo</b> sul telefono, nel browser con cui i clienti aprono il QR.
+          </span>
+        </div>
+      )}
     </div>
   )
 }
