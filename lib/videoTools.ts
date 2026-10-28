@@ -110,6 +110,8 @@ export const toH264 = (source: File | string, onProgress?: (p: number) => void) 
 type FrameCb = (now: number, meta: { mediaTime: number }) => void
 type VideoWithRvfc = HTMLVideoElement & { requestVideoFrameCallback?: (cb: FrameCb) => number }
 
+const FRAME_US = Math.round(1e6 / 30)   // durata di un fotogramma a 30 al secondo (µs)
+
 // H.264 dal profilo più alto al più semplice, livelli che coprono il 720p e il 1080p.
 const CODECS = ['avc1.640028', 'avc1.4d0028', 'avc1.42e028', 'avc1.64001f', 'avc1.4d001f', 'avc1.42e01f']
 
@@ -151,7 +153,17 @@ export async function encodeVideo(
     const muxer = new Muxer({ target: new ArrayBufferTarget(), video: { codec: 'avc', width, height }, fastStart: 'in-memory' })
     let failure: string | null = null
     const encoder = new VideoEncoder({
-      output: (chunk, meta) => { try { muxer.addVideoChunk(chunk, meta) } catch (e) { failure = `scrittura MP4: ${(e as Error).message}` } },
+      // Safari consegna i pezzi codificati senza durata (null), che il muxer
+      // rifiuta: si passano i dati grezzi con una durata esplicita (quella del
+      // pezzo se c'è, altrimenti un fotogramma a 30 al secondo).
+      output: (chunk, meta) => {
+        try {
+          const data = new Uint8Array(chunk.byteLength)
+          chunk.copyTo(data)
+          const duration = typeof chunk.duration === 'number' && chunk.duration >= 0 ? chunk.duration : FRAME_US
+          muxer.addVideoChunkRaw(data, chunk.type, chunk.timestamp, duration, meta)
+        } catch (e) { failure = `scrittura MP4: ${(e as Error).message}` }
+      },
       error: e => { failure = `codifica: ${e.message}` },
     })
     encoder.configure({ codec, ...base })
@@ -160,7 +172,7 @@ export async function encodeVideo(
     const c = canvas.getContext('2d')!
     let count = 0
     const encode = (src: CanvasImageSource, t: number) => {
-      const frame = new VideoFrame(src as HTMLCanvasElement, { timestamp: Math.round(t * 1e6) })
+      const frame = new VideoFrame(src as HTMLCanvasElement, { timestamp: Math.round(t * 1e6), duration: FRAME_US })
       encoder.encode(frame, { keyFrame: count % 60 === 0 })
       frame.close()
       count++
