@@ -1,4 +1,5 @@
 'use client'
+import type { PhotoShape } from '@/lib/photoFrame'
 
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { formatAllergensShort } from '@/lib/allergens'
@@ -43,6 +44,7 @@ interface Dish {
   image_url: string | null
   image_original_url: string | null
   image_crop: { x: number; y: number; w: number; h: number } | null
+  photo_frame?: { x: number; y: number; w: number; h: number; a: number } | null
   allergens: number[]
   sort_order: number
   is_active: boolean
@@ -71,6 +73,8 @@ interface Props {
   // restare nella posizione separata accanto al breadcrumb (quella resta
   // solo su mobile, invariata — vedi page.tsx).
   pdfButton?: React.ReactNode
+  /** Formato della foto nel nuovo menu e se il QR lo usa già (Inquadra). */
+  photoFormat?: { shape: PhotoShape; newMenu: boolean }
 }
 
 interface SourceDish {
@@ -565,7 +569,7 @@ function SortableCategory({
 
 export default function DishList({
   restaurantId, menuId, initialDishes, allDishes, allMenus, initialCategoryOrder,
-  initialCategorySchedules, pdfButton,
+  initialCategorySchedules, pdfButton, photoFormat,
 }: Props) {
   const [dishes,       setDishes]       = useState(initialDishes)
   // Programmazione oraria: bersaglio della modale (piatto o categoria) e
@@ -1258,6 +1262,7 @@ export default function DishList({
           allDishes={allDishes}
           allMenus={allMenus}
           defaultCategory={formCat ?? undefined}
+          photoFormat={photoFormat}
           onSaved={handleSaved}
           onClose={() => { setFormOpen(false); setEditingDish(null); setFormCat(null) }}
         />
