@@ -11,6 +11,7 @@ import {
   type DishTranslations, type Lang, type MenuTranslations,
 } from '@/lib/translations'
 import type { Dish, MenuData } from './typeset'
+import type { MenuStyle } from '@/lib/menuStyle'
 
 export interface I18nData {
   /** Traduzioni del menu aperto (nome e categorie). */
@@ -30,6 +31,9 @@ export interface MenuChoice {
   hours?:       string | null
   /** Colore della carta del menu: la pagina d'apertura sfuma in questo. */
   paper?:       string
+  /** Da precaricare già nella pagina d'apertura: stile del menu (caratteri,
+   *  sfondo delle pagine) e foto dei primi piatti. */
+  preload?:     { style: MenuStyle; images: string[] }
 }
 
 const UI = {

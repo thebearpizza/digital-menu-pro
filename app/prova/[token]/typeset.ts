@@ -193,6 +193,8 @@ export interface Layout {
   categoryStarts: { index: number; name: string; page: number }[]
   /** Elemento sotto il punto (anteprima della Personalizzazione). */
   pick:   (pageIndex: number, x: number, y: number) => PickTarget
+  /** Piatti di una pagina (e i loro abbinamenti): per precaricarne le foto. */
+  dishesOn: (pageIndex: number) => Dish[]
 }
 
 /** Elementi del menu che si possono toccare nell'anteprima per modificarli. */
@@ -744,7 +746,17 @@ export function layoutMenu(ctx: Ctx, data: MenuData, vp: Viewport, style: MenuSt
     return 'paper'
   }
 
-  return { vp, pages, paint, hit, categoryStarts, pick }
+  const dishesOn = (pageIndex: number): Dish[] => {
+    const out: Dish[] = []
+    for (const it of pages[pageIndex]?.items ?? []) {
+      if (it.block.kind !== 'dish') continue
+      out.push(it.block.dish)
+      if (it.block.dish.pairing) out.push(it.block.dish.pairing.dish)
+    }
+    return out
+  }
+
+  return { vp, pages, paint, hit, categoryStarts, pick, dishesOn }
 }
 
 // ── Ornamenti ────────────────────────────────────────────────────────────────

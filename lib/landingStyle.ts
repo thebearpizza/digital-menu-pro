@@ -14,12 +14,16 @@ import {
 } from './menuStyle'
 
 export interface LandingMedia {
-  id:       string
-  url:      string
-  video:    boolean
-  poster:   string | null
-  title:    string | null
-  subtitle: string | null
+  id:        string
+  url:       string
+  video:     boolean
+  poster:    string | null   // immagine d'attesa (primo fotogramma utile)
+  title:     string | null
+  subtitle:  string | null
+  /** Video: secondo del primo fotogramma utile (saltato l'inizio nero). */
+  startAt:   number
+  /** Video: versione "andata e ritorno" già pronta (riproduzione boomerang). */
+  boomerang: string | null
 }
 
 export interface LandingStyle {
@@ -35,6 +39,13 @@ export interface LandingStyle {
     blur:            number            // sfocatura di foto/video: 0 – 20 px
     kenBurns:        boolean           // lento zoom sulle foto
     interval:        number            // secondi tra una foto e l'altra: 4 – 15
+    /** Riproduzione dei video: in loop; boomerang (avanti e indietro); oppure
+     *  "intro": immagine ferma, il video parte quando si sceglie il menu e il
+     *  menu si apre alla fine del video. */
+    videoMode:       'loop' | 'boomerang' | 'intro'
+    /** Intro: immagine ferma scelta dal ristoratore (altrimenti il primo
+     *  fotogramma utile del video). */
+    introImage:      string | null
   }
   colors:  { ink: string; soft: string; accent: string }
   layout:  { header: 'top' | 'center'; buttons: 'bottom' | 'center'; align: 'center' | 'left' }
@@ -73,7 +84,7 @@ export const DEFAULT_LANDING: LandingStyle = {
   version: 1,
   background: {
     kind: 'paper', paper: '#fbf8f2', color2: '#efe6d6', texture: 'grain', textureStrength: 0.35,
-    media: [], overlay: 0.5, blur: 0, kenBurns: true, interval: 7,
+    media: [], overlay: 0.5, blur: 0, kenBurns: true, interval: 7, videoMode: 'loop', introImage: null,
   },
   colors: { ...ON_PAPER },
   layout: { header: 'top', buttons: 'bottom', align: 'center' },
@@ -111,6 +122,7 @@ export function parseLanding(raw: unknown): LandingStyle {
     .map(m => ({
       id: (m.id as string).slice(0, 60), url: m.url as string, video: bool(m.video, false),
       poster: isUrl(m.poster) ? m.poster : null, title: str(m.title, 80), subtitle: str(m.subtitle, 140),
+      startAt: num(m.startAt, 0, 30, 0), boomerang: isUrl(m.boomerang) ? m.boomerang : null,
     }))
   return {
     version: 1,
@@ -124,6 +136,8 @@ export function parseLanding(raw: unknown): LandingStyle {
       blur: num(bg.blur, 0, 20, d.background.blur),
       kenBurns: bool(bg.kenBurns, d.background.kenBurns),
       interval: num(bg.interval, 4, 15, d.background.interval),
+      videoMode: pick(bg.videoMode, ['loop', 'boomerang', 'intro'] as const, d.background.videoMode),
+      introImage: isUrl(bg.introImage) ? bg.introImage : null,
     },
     colors: { ink: hex(co.ink, d.colors.ink), soft: hex(co.soft, d.colors.soft), accent: hex(co.accent, d.colors.accent) },
     layout: {
@@ -187,3 +201,7 @@ export const landingFaces = (st: LandingStyle) => facesFor(landingTexts(st))
 /** Colore effettivo di un riferimento. */
 export const landingColor = (ref: ColorRef, st: LandingStyle) =>
   ref === 'ink' ? st.colors.ink : ref === 'soft' ? st.colors.soft : ref === 'accent' ? st.colors.accent : ref
+
+/** Video dell'intro: il primo video tra foto e video (se c'è). */
+export const introVideo = (st: LandingStyle) =>
+  st.background.kind === 'media' && st.background.videoMode === 'intro' ? st.background.media.find(m => m.video) ?? null : null

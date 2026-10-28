@@ -63,17 +63,34 @@ export default async function ProvaPage({
   // Nessun menu scelto: pagina d'apertura (anche con un solo menu).
   const chosen = menus.find(m => m.id === searchParams.menu)
   if (!chosen) {
-    const { data: bannerRows } = await supabase
-      .from('restaurant_banners').select('id, media_url, media_type, title, subtitle')
-      .eq('restaurant_id', restaurant.id).eq('is_active', true)
-      .order('sort_order', { ascending: true })
+    const [{ data: bannerRows }, { data: photoRows }] = await Promise.all([
+      supabase
+        .from('restaurant_banners').select('id, media_url, media_type, title, subtitle')
+        .eq('restaurant_id', restaurant.id).eq('is_active', true)
+        .order('sort_order', { ascending: true }),
+      // Foto dei primi piatti di ogni menu (≈ prime due pagine), da
+      // precaricare mentre si sceglie il menu.
+      supabase
+        .from('dishes').select('menu_id, image_url, category, sort_order')
+        .in('menu_id', menus.map(m => m.id as string)).eq('is_active', true).not('image_url', 'is', null)
+        .order('sort_order', { ascending: true }),
+    ])
+    for (const c of choices) {
+      const m = menus.find(x => x.id === c.id)!
+      const order: string[] = Array.isArray(m.category_order) ? m.category_order : []
+      const rank = (cat: string | null) => { const i = order.indexOf(cat ?? ''); return i < 0 ? order.length : i }
+      const images = (photoRows ?? []).filter(d => d.menu_id === c.id)
+        .sort((a, b) => rank(a.category as string | null) - rank(b.category as string | null))
+        .slice(0, 8).map(d => d.image_url as string)
+      c.preload = { style: parseStyle(m.menu_style ?? (restaurant as Row).menu_style), images }
+    }
     const r = restaurant as Row
     // Stile della pagina d'apertura; chi non ne ha ancora uno parte da quello
     // che c'è già (banner e logo del menu attuale, sfondo del vecchio tema).
     const old = oldLanding(r.theme_config)
     let media: LandingMedia[] = (bannerRows ?? []).filter(b => b.media_url).map(b => ({
       id: b.id as string, url: b.media_url as string, video: b.media_type === 'video', poster: null,
-      title: (b.title as string | null) || null, subtitle: (b.subtitle as string | null) || null,
+      title: (b.title as string | null) || null, subtitle: (b.subtitle as string | null) || null, startAt: 0, boomerang: null,
     }))
     if (!media.length && old.background) media = [old.background]
     const landing = r.landing_style
@@ -201,7 +218,7 @@ function oldLanding(theme: unknown): { background: LandingMedia | null; logo: st
   const media = bg && bg.value && (bg.type === 'image' || bg.type === 'video' || bg.type === 'gif')
   return {
     background: media
-      ? { id: 'landing-bg', url: bg!.value!, video: bg!.type === 'video', poster: bg!.poster || null, title: null, subtitle: null }
+      ? { id: 'landing-bg', url: bg!.value!, video: bg!.type === 'video', poster: bg!.poster || null, title: null, subtitle: null, startAt: 0, boomerang: null }
       : null,
     logo: l?.logo?.image || null,
   }

@@ -22,6 +22,7 @@ import { parseStyle, registerCustomFonts, type MenuStyle } from '@/lib/menuStyle
 import { isLang, type Lang } from '@/lib/translations'
 import DishCard from './DishCard'
 import { loadStyleAssets } from './fonts'
+import { warmImage } from './preload'
 import Chrome, { BAR_HIDE } from './Chrome'
 import { localize, t, type I18nData } from './i18n'
 import { GlassSheen, glassSurface } from './Glass'
@@ -172,8 +173,16 @@ export default function CurlMenu({ data: base, style: initialStyle, preview = fa
     let layout: Layout | null = null
     let index = 0
     // Comunica a React la pagina aperta (categoria attiva nella barra).
+    // Foto dei piatti: pagina aperta e successiva (in doppia pagina le due
+    // doppie vicine); le altre arrivano quando si gira verso di loro.
+    const warmPhotos = () => {
+      if (!layout) return
+      const span = spread ? 4 : 2
+      for (let p = index; p < index + span; p++) for (const d of layout.dishesOn(p)) warmImage(d.image, p > index + (spread ? 1 : 0))
+    }
     const report = () => {
       if (!layout) return
+      warmPhotos()
       const a = layout.pages[index]?.anchor
       if (a) anchorRef.current = a
       setPageInfo({ index, spread, starts: layout.categoryStarts })
@@ -572,7 +581,7 @@ export default function CurlMenu({ data: base, style: initialStyle, preview = fa
         }
         const dish = layout?.hit(page, px, d.start.y)
         if (dish) {
-          if (dish.image) { const im = new Image(); im.src = dish.image }
+          warmImage(dish.image)
           setCard(dish)
         } else if (chromeOpen.current) settleBar(false)   // spazio vuoto: chiude i comandi
         peekIdle()

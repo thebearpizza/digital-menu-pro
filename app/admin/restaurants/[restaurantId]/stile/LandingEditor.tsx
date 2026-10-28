@@ -17,10 +17,11 @@ import { loadCustomFonts } from '@/app/prova/[token]/fonts'
 import { compressImageFile, MAX_VIDEO_BYTES } from '@/lib/imageCompress'
 import {
   Choice, ColorField, FieldShell, FontsManager, OrnamentField, PaperSwatch, PhoneFrame, Slider, TextStyleField, Toggle,
-  capturePoster, lum, pct, px, uploadAsset,
+  lum, pct, px, uploadAsset,
 } from './controls'
 import { saveLandingStyle } from './actions'
 import StyleNav from './StyleNav'
+import { canMakeBoomerang, makeBoomerang, usefulFrame } from '@/lib/videoTools'
 
 type PanelId =
   | 'presets' | 'background' | 'colors' | 'layout' | 'logo' | 'description' | 'buttons' | 'captions'
@@ -160,6 +161,53 @@ export default function LandingEditor({ restaurantId, token, initialStyle, menuF
 
   const edit = useCallback((fn: (s: LandingStyle) => void) => setStyle(prev => { const n = structuredClone(prev); fn(n); return n }), [])
 
+  // Lavori sui video, in automatico: immagine d'attesa e punto di partenza
+  // (primo fotogramma utile) per i video che non li hanno ancora (es. quelli
+  // del menu attuale) e versione boomerang quando serve. Ogni lavoro si
+  // tenta una volta sola per video.
+  const [jobs, setJobs] = useState<Record<string, string>>({})
+  const tried = useRef(new Set<string>())
+  const patchMedia = useCallback((id: string, patch: Partial<LandingMedia>) =>
+    edit(s => { const m = s.background.media.find(x => x.id === id); if (m) Object.assign(m, patch) }), [edit])
+  const bgKind = style.background.kind, videoMode = style.background.videoMode, mediaKey = JSON.stringify(style.background.media.map(m => [m.id, !!m.poster, m.startAt, !!m.boomerang]))
+  useEffect(() => {
+    if (bgKind !== 'media') return
+    const say = (id: string, text: string | null) => setJobs(j => { const n = { ...j }; if (text) n[id] = text; else delete n[id]; return n })
+    for (const m of live.current.background.media) {
+      if (!m.video) continue
+      const posterKey = `${m.id}:poster`, boomKey = `${m.id}:boom`
+      // Anche i video che hanno già un'immagine d'attesa ma nessun punto di
+      // partenza calcolato (es. quelli del vecchio tema): servono all'intro.
+      const needPoster = (!m.poster || m.startAt === 0) && !tried.current.has(posterKey)
+      const needBoom = videoMode === 'boomerang' && !m.boomerang && !tried.current.has(boomKey)
+      if (!needPoster && !needBoom) continue
+      if (needPoster) tried.current.add(posterKey)
+      if (needBoom) tried.current.add(boomKey)
+      ;(async () => {
+        try {
+          if (needPoster) {
+            say(m.id, 'Cerco il primo fotogramma utile…')
+            const f = await usefulFrame(m.url)
+            const poster = f.image ? await uploadAsset(restaurantId, 'landing', new File([f.image], 'poster.jpg', { type: 'image/jpeg' }), 'jpg') : null
+            patchMedia(m.id, { poster, startAt: f.time })
+          }
+          if (needBoom) {
+            if (!canMakeBoomerang()) { say(m.id, 'Questo browser non sa preparare il boomerang: apri la pagina da Chrome o da Safari aggiornati. Intanto il video va in loop.'); return }
+            say(m.id, 'Preparo il boomerang… 0%')
+            const blob = await makeBoomerang(m.url, p => say(m.id, `Preparo il boomerang… ${Math.round(p * 100)}%`))
+            if (!blob) { say(m.id, 'Boomerang non riuscito con questo video: va in loop.'); return }
+            say(m.id, 'Carico il boomerang…')
+            const url = await uploadAsset(restaurantId, 'landing', new File([blob], 'boomerang.mp4', { type: 'video/mp4' }), 'mp4')
+            patchMedia(m.id, { boomerang: url })
+          }
+          say(m.id, null)
+        } catch {
+          say(m.id, 'Preparazione del video non riuscita.')
+        }
+      })()
+    }
+  }, [bgKind, videoMode, mediaKey, restaurantId, patchMedia])
+
   /** I caratteri dei menu usati qui vengono copiati nello stile della pagina. */
   const withUsedFonts = (st: LandingStyle): LandingStyle => {
     const json = JSON.stringify(st)
@@ -211,7 +259,23 @@ export default function LandingEditor({ restaurantId, token, initialStyle, menuF
         <Choice label="Sfondo" value={st.background.kind} onChange={setKind}
           options={[{ value: 'paper', label: 'Carta' }, { value: 'gradient', label: 'Gradiente' }, { value: 'media', label: 'Foto e video' }]} />
         {st.background.kind === 'media' ? (<>
-          <MediaManager restaurantId={restaurantId} media={st.background.media} onSet={m => edit(s => { s.background.media = m })} />
+          <MediaManager restaurantId={restaurantId} media={st.background.media} jobs={jobs} onSet={m => edit(s => { s.background.media = m })} />
+          {st.background.media.some(m => m.video) && (<>
+            <Choice label="Riproduzione del video" value={st.background.videoMode} onChange={v => edit(s => { s.background.videoMode = v })}
+              options={[{ value: 'loop', label: 'In loop' }, { value: 'boomerang', label: 'Boomerang' }, { value: 'intro', label: 'All\'apertura del menu' }]}
+              hint={st.background.videoMode === 'loop' ? 'Il video ricomincia da capo, all\'infinito.'
+                : st.background.videoMode === 'boomerang' ? 'Arrivato alla fine il video torna indietro, poi riparte: movimento continuo, senza salti. La versione andata e ritorno si prepara qui una volta (fino a 10 secondi di video).'
+                : 'Si vede un\'immagine ferma; quando il cliente sceglie il menu parte il video (il primo tra foto e video) e il menu si apre alla fine. Intanto il menu si prepara.'} />
+            {st.background.videoMode === 'intro' && (<>
+              <IntroImageField restaurantId={restaurantId} value={st.background.introImage}
+                fallback={st.background.media.find(m => m.video)?.poster ?? null}
+                onChange={url => edit(s => { s.background.introImage = url })} />
+              <button type="button" onClick={() => post({ type: 'lito-intro-test' })}
+                className="border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:border-gray-500">
+                ▶ Prova l&apos;intro nell&apos;anteprima
+              </button>
+            </>)}
+          </>)}
           <Slider label="Velo scuro (leggibilità)" value={st.background.overlay} min={0} max={0.9} step={0.05} format={pct} onChange={v => edit(s => { s.background.overlay = v })} />
           <Slider label="Sfocatura" value={st.background.blur} min={0} max={20} step={1} format={px} onChange={v => edit(s => { s.background.blur = v })} />
           <Toggle label="Lento zoom sulle foto" value={st.background.kenBurns} onChange={v => edit(s => { s.background.kenBurns = v })} />
@@ -431,7 +495,9 @@ function LogoField({ restaurantId, value, onChange }: { restaurantId: string; va
 
 // ── Foto e video ─────────────────────────────────────────────────────────────
 
-function MediaManager({ restaurantId, media, onSet }: { restaurantId: string; media: LandingMedia[]; onSet: (m: LandingMedia[]) => void }) {
+function MediaManager({ restaurantId, media, jobs, onSet }: {
+  restaurantId: string; media: LandingMedia[]; jobs: Record<string, string>; onSet: (m: LandingMedia[]) => void
+}) {
   const fileRef = useRef<HTMLInputElement>(null)
   const [busy, setBusy] = useState<string | null>(null)
   const [err, setErr] = useState<string | null>(null)
@@ -450,12 +516,15 @@ function MediaManager({ restaurantId, media, onSet }: { restaurantId: string; me
         const file = video ? raw : await compressImageFile(raw)
         const ext = (file.name.split('.').pop() || (video ? 'mp4' : 'jpg')).toLowerCase()
         const url = await uploadAsset(restaurantId, 'landing', file, ext)
-        let poster: string | null = null
+        // Video: immagine d'attesa e punto di partenza dal primo fotogramma
+        // utile (saltato l'inizio nero o in dissolvenza).
+        let poster: string | null = null, startAt = 0
         if (video) {
-          const shot = await capturePoster(raw)
-          if (shot) poster = await uploadAsset(restaurantId, 'landing', new File([shot], 'poster.jpg', { type: 'image/jpeg' }), 'jpg')
+          const f = await usefulFrame(raw)
+          startAt = f.time
+          if (f.image) poster = await uploadAsset(restaurantId, 'landing', new File([f.image], 'poster.jpg', { type: 'image/jpeg' }), 'jpg')
         }
-        added.push({ id: `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`, url, video, poster, title: null, subtitle: null })
+        added.push({ id: `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`, url, video, poster, title: null, subtitle: null, startAt, boomerang: null })
       } catch { setErr(`${raw.name}: caricamento non riuscito.`) }
     }
     if (added.length) onSet([...latest.current, ...added].slice(0, 12))
@@ -486,6 +555,7 @@ function MediaManager({ restaurantId, media, onSet }: { restaurantId: string; me
                 <button type="button" aria-label="Sposta giù" disabled={i === media.length - 1} onClick={() => moveBy(i, 1)} className="px-1.5 disabled:opacity-30">↓</button>
                 <button type="button" onClick={() => onSet(media.filter((_, k) => k !== i))} className="px-1.5 hover:text-red-600">Togli</button>
               </div>
+              {jobs[m.id] && <p className="text-[11px] text-blue-700">{jobs[m.id]}</p>}
               <input value={m.title ?? ''} onChange={e => update(i, { title: e.target.value.slice(0, 80) || null })} placeholder="Titolo (facoltativo)"
                 className="w-full text-sm border border-gray-200 px-2 py-1 outline-none focus:border-gray-400" />
               <input value={m.subtitle ?? ''} onChange={e => update(i, { subtitle: e.target.value.slice(0, 140) || null })} placeholder="Sottotitolo (facoltativo)"
@@ -502,6 +572,46 @@ function MediaManager({ restaurantId, media, onSet }: { restaurantId: string; me
         {err && <p className="text-[11px] text-red-600">{err}</p>}
         {!media.length && <p className="text-[11px] text-gray-400">Senza foto o video si vede la carta.</p>}
       </div>
+    </FieldShell>
+  )
+}
+
+// ── Immagine ferma dell'intro ────────────────────────────────────────────────
+
+function IntroImageField({ restaurantId, value, fallback, onChange }: {
+  restaurantId: string; value: string | null; fallback: string | null; onChange: (url: string | null) => void
+}) {
+  const fileRef = useRef<HTMLInputElement>(null)
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+  const upload = async (raw: File) => {
+    setBusy(true); setErr(null)
+    try {
+      const file = await compressImageFile(raw)
+      const ext = (file.name.split('.').pop() || 'jpg').toLowerCase()
+      onChange(await uploadAsset(restaurantId, 'landing', file, ext))
+    } catch { setErr('Caricamento non riuscito, riprova.') }
+    setBusy(false)
+  }
+  const shown = value ?? fallback
+  return (
+    <FieldShell label="Immagine ferma prima del video"
+      hint={value ? undefined : 'Se non ne scegli una, si usa il primo fotogramma utile del video (saltato l\'inizio nero).'}>
+      <div className="flex items-center gap-3">
+        <div className="w-16 h-24 shrink-0 overflow-hidden bg-gray-100 border border-gray-200" style={{ borderRadius: 8 }}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          {shown && <img src={shown} alt="" className="w-full h-full object-cover" />}
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button type="button" onClick={() => fileRef.current?.click()} disabled={busy}
+            className="border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:border-gray-500 disabled:opacity-50">
+            {busy ? 'Caricamento…' : value ? 'Cambia immagine' : 'Scegli un\'immagine'}
+          </button>
+          {value && <button type="button" onClick={() => onChange(null)} className="px-2 py-1.5 text-xs text-gray-500 hover:text-red-600">Usa il primo fotogramma</button>}
+        </div>
+        <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) upload(f) }} />
+      </div>
+      {err && <p className="text-[11px] text-red-600 mt-1">{err}</p>}
     </FieldShell>
   )
 }

@@ -24,6 +24,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { Dish } from './typeset'
+import { readyImages, warmImage } from './preload'
 import { DEFAULT_STYLE, fontStack, formatPrice, resolveColor, resolveFace, type MenuStyle, type TextStyle } from '@/lib/menuStyle'
 import { GlassButton, glassSheet } from './Glass'
 import { t } from './i18n'
@@ -100,15 +101,6 @@ interface Trans {
 }
 interface Tween { from: number; to: number; t0: number; dur: number; ease: (x: number) => number; set: (v: number) => void; done?: () => void }
 
-// Foto già scaricate e decodificate: una pagina nuova le mostra subito,
-// senza ripartire da vuota con la dissolvenza.
-const readyImages = new Set<string>()
-function warmImage(src: string | null | undefined) {
-  if (!src || readyImages.has(src)) return
-  const im = new Image()
-  im.src = src
-  im.decode().then(() => { readyImages.add(src) }, () => {})
-}
 
 let keySeq = 0
 const entryFor = (dish: Dish): Entry => ({ key: `p${++keySeq}`, dish, scroll: 0, q: 0 })

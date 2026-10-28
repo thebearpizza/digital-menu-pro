@@ -11,6 +11,12 @@
 //    nome e orario. Toccandone uno la pagina sfuma nella carta di quel menu.
 //  • Social, ragione sociale, P.IVA, indirizzo e informativa privacy.
 //
+// Video: in loop, a boomerang (file andata e ritorno preparato al caricamento)
+// oppure "intro": immagine ferma; scelto il menu, il video parte e il menu si
+// apre alla fine. L'attesa serve a precaricare il menu (pagina, caratteri,
+// sfondo, foto dei primi piatti), che comunque inizia già qui: mentre si
+// sceglie, si preparano tutti i menu.
+//
 // Anteprima della Personalizzazione (?preview=1): lo stile arriva dalla
 // pagina che la contiene; toccando un elemento si apre il suo pannello.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -19,11 +25,14 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { ALL_LANGS, LANG_LABELS, isLang, menuName, type Lang } from '@/lib/translations'
 import { fontStack, resolveFace, type TextStyle } from '@/lib/menuStyle'
-import { landingColor, landingFaces, landingFontsUrl, parseLanding, type LandingStyle } from '@/lib/landingStyle'
+import { introVideo, landingColor, landingFaces, landingFontsUrl, parseLanding, type LandingStyle } from '@/lib/landingStyle'
+import { registerCustomFonts } from '@/lib/menuStyle'
+import { PrefetchKind } from 'next/dist/client/components/router-reducer/router-reducer-types'
 import { GlassButton, GlassMenu, GlassMenuItem, GlassSheen, GlassTint, glassSurface, SPRING } from './Glass'
 import { Flag } from './Chrome'
 import { t, type MenuChoice } from './i18n'
-import { loadCustomFonts, loadFontCss } from './fonts'
+import { loadCustomFonts, loadFontCss, loadStyleAssets } from './fonts'
+import { warmImage, whenIdle } from './preload'
 import { paintPaper } from './paper'
 import { drawOrnament } from './typeset'
 
@@ -76,6 +85,10 @@ export default function Landing({ token, restaurant, menus, style: initialStyle,
   const [langOpen, setLangOpen] = useState(false)
   const [ready, setReady] = useState(false)
   const [leaving, setLeaving] = useState<string | null>(null)
+  // Intro: il video parte alla scelta del menu; intanto la pagina si svuota.
+  const [introOn, setIntroOn] = useState(false)
+  const introRef = useRef<HTMLVideoElement>(null)
+  const introBusy = useRef(false)
 
   // Anteprima: lo stile arriva a ogni modifica dalla Personalizzazione.
   useEffect(() => {
@@ -84,6 +97,7 @@ export default function Landing({ token, restaurant, menus, style: initialStyle,
       if (e.origin !== window.location.origin) return
       const msg = e.data as { type?: string; style?: unknown }
       if (msg?.type === 'lito-landing' && msg.style) setSt(parseLanding(msg.style))
+      if (msg?.type === 'lito-intro-test') startIntroRef.current(null)   // "Prova l'intro" dall'editor
     }
     window.addEventListener('message', onMsg)
     window.parent?.postMessage({ type: 'lito-preview-ready' }, window.location.origin)
@@ -106,8 +120,21 @@ export default function Landing({ token, restaurant, menus, style: initialStyle,
 
   useEffect(() => {
     try { const saved = localStorage.getItem(LANG_KEY); if (isLang(saved)) setLangState(saved) } catch { /* memoria non disponibile */ }
-    if (!preview) for (const m of menus) router.prefetch(`/prova/${token}?menu=${m.id}`)
-  }, [menus, router, token, preview])
+  }, [])
+
+  // Precaricamento dei menu mentre si sceglie: pagina (dati e codice),
+  // caratteri, sfondo delle pagine e foto dei primi piatti.
+  const preloadMenu = useCallback((m: MenuChoice, urgent: boolean) => {
+    router.prefetch(`/prova/${token}?menu=${m.id}`, { kind: PrefetchKind.FULL })
+    if (!m.preload) return
+    registerCustomFonts(m.preload.style.customFonts)
+    loadStyleAssets(m.preload.style).catch(() => undefined)
+    for (const src of m.preload.images) warmImage(src, !urgent)
+  }, [router, token])
+  useEffect(() => {
+    if (!ready || preview) return
+    whenIdle(() => { for (const m of menus) preloadMenu(m, false) }, 2000)
+  }, [ready, preview, menus, preloadMenu])
 
   // Sotto le barre di Safari: lo stesso fondo della pagina.
   useEffect(() => {
@@ -122,10 +149,48 @@ export default function Landing({ token, restaurant, menus, style: initialStyle,
     try { localStorage.setItem(LANG_KEY, l) } catch { /* memoria non disponibile */ }
   }, [])
 
-  const open = (m: MenuChoice) => {
-    if (leaving || preview) return
+  const go = (m: MenuChoice) => {
     setLeaving(m.paper ?? '#fbf8f2')
     window.setTimeout(() => router.push(`/prova/${token}?menu=${m.id}`), 280)
+  }
+
+  /** Intro: parte il video (dal primo fotogramma utile), la pagina si svuota,
+   *  il menu scelto si precarica; alla fine del video si apre il menu. Se il
+   *  video non parte o si blocca, si apre subito. m = null: prova dall'editor
+   *  (alla fine si torna all'immagine ferma). */
+  const startIntro = (m: MenuChoice | null) => {
+    const iv = introVideo(st), v = introRef.current
+    if (!iv || !v) { if (m) go(m); return }
+    if (introBusy.current) return
+    introBusy.current = true
+    if (m) preloadMenu(m, true)
+    setIntroOn(true)
+    let last = -1, still = 0
+    const finish = () => {
+      clearInterval(watch); clearTimeout(cap)
+      v.onended = null
+      if (m) { go(m); return }
+      introBusy.current = false
+      setIntroOn(false)
+      v.pause()
+      try { v.currentTime = iv.startAt } catch { /* non ancora caricato */ }
+    }
+    const watch = window.setInterval(() => {
+      if (v.currentTime === last) { if (++still >= 6) finish() } else still = 0
+      last = v.currentTime
+    }, 500)
+    const cap = window.setTimeout(finish, 30000)
+    v.onended = finish
+    try { v.currentTime = iv.startAt } catch { /* si parte da dove si è */ }
+    v.play().catch(finish)
+  }
+  const startIntroRef = useRef(startIntro)
+  startIntroRef.current = startIntro
+
+  const open = (m: MenuChoice) => {
+    if (leaving || preview || introBusy.current) return
+    if (introVideo(st)) startIntro(m)
+    else go(m)
   }
 
   // Anteprima: un tocco dice alla Personalizzazione che cosa si vuole
@@ -142,13 +207,16 @@ export default function Landing({ token, restaurant, menus, style: initialStyle,
   // Entrata a scalare. Per gli elementi in vetro il contenitore si sposta e
   // basta: la dissolvenza va sull'elemento stesso (un antenato semitrasparente
   // spegnerebbe la sfocatura, che poi comparirebbe di scatto).
+  // Durante l'intro tutto sparisce insieme, senza ritardi.
   const motion = st.motion.entrance
+  const shown = ready && !introOn
+  const delay = (i: number) => (introOn ? 0 : 120 + i * 90)
   const move = (i: number): React.CSSProperties => motion === 'rise'
-    ? { transform: ready ? 'none' : 'translate3d(0, 12px, 0)', transition: `transform 900ms ${SPRING} ${120 + i * 90}ms` }
+    ? { transform: shown ? 'none' : 'translate3d(0, 12px, 0)', transition: `transform 900ms ${SPRING} ${delay(i)}ms` }
     : {}
-  const fade = (i: number): React.CSSProperties => motion === 'none'
-    ? { opacity: ready ? 1 : 0 }
-    : { opacity: ready ? 1 : 0, transition: `opacity 700ms ease ${120 + i * 90}ms` }
+  const fade = (i: number): React.CSSProperties => motion === 'none' && !introOn
+    ? { opacity: shown ? 1 : 0 }
+    : { opacity: shown ? 1 : 0, transition: `opacity ${introOn ? 450 : 700}ms ease ${delay(i)}ms` }
   const appear = (i: number): React.CSSProperties => {
     const m = move(i), f = fade(i)
     return { ...m, ...f, transition: [m.transition, f.transition].filter(Boolean).join(', ') || undefined }
@@ -204,13 +272,13 @@ export default function Landing({ token, restaurant, menus, style: initialStyle,
   return (
     <div className="fixed inset-0 overflow-hidden" style={{ background: base }} onClickCapture={onPickCapture}>
       <div data-pick="l-background" className="absolute inset-0">
-        {onMedia ? <Media st={st} /> : <PaperCanvas st={st} />}
+        {onMedia ? <Media st={st} introRef={introRef} introOn={introOn} /> : <PaperCanvas st={st} />}
       </div>
 
       {/* Lingua */}
       <div data-nopick className="fixed" style={{ top: 'calc(env(safe-area-inset-top) + 12px)', right: 'max(14px, env(safe-area-inset-right))', zIndex: 20 }}>
         <GlassTint.Provider value={onMedia || lum(bg.paper) < 0.45 ? 'dark' : 'light'}>
-          <GlassButton hidden={!ready} label={`${t('language', lang)}: ${LANG_LABELS[lang]}`} expanded={langOpen} onClick={() => setLangOpen(o => !o)}>
+          <GlassButton hidden={!shown} label={`${t('language', lang)}: ${LANG_LABELS[lang]}`} expanded={langOpen} onClick={() => setLangOpen(o => !o)}>
             <Flag lang={lang} />
           </GlassButton>
         </GlassTint.Provider>
@@ -226,7 +294,7 @@ export default function Landing({ token, restaurant, menus, style: initialStyle,
       </div>
 
       <main className="relative h-full overflow-y-auto flex flex-col"
-        style={{ alignItems: left ? 'flex-start' : 'center', padding: 'calc(env(safe-area-inset-top) + 64px) 22px calc(env(safe-area-inset-bottom) + 18px)', overscrollBehavior: 'contain' }}>
+        style={{ pointerEvents: introOn ? 'none' : undefined, alignItems: left ? 'flex-start' : 'center', padding: 'calc(env(safe-area-inset-top) + 64px) 22px calc(env(safe-area-inset-bottom) + 18px)', overscrollBehavior: 'contain' }}>
         {st.layout.header === 'center' && <div className="flex-1" style={{ minHeight: 12 }} />}
         {header}
         <GlassTint.Provider value={glassTint}>
@@ -340,11 +408,15 @@ function PaperCanvas({ st }: { st: LandingStyle }) {
 }
 
 /** Foto e video a tutto schermo: si alternano in dissolvenza; le foto con un
- *  lento zoom, i video muti in loop. Titolo e sottotitolo al centro. */
-function Media({ st }: { st: LandingStyle }) {
+ *  lento zoom, i video muti in loop (o a boomerang). Titolo e sottotitolo al
+ *  centro. Intro: immagine ferma e il video pronto, che parte su richiesta. */
+function Media({ st, introRef, introOn }: { st: LandingStyle; introRef: React.RefObject<HTMLVideoElement>; introOn: boolean }) {
   const bg = st.background
-  const list = bg.media
+  const iv = introVideo(st)
+  const list = iv ? [iv] : bg.media
   const [i, setI] = useState(0)
+  const [playing, setPlaying] = useState(false)
+  useEffect(() => { if (!introOn) setPlaying(false) }, [introOn])
   useEffect(() => {
     if (list.length < 2) return
     const tm = window.setInterval(() => setI(v => (v + 1) % list.length), bg.interval * 1000)
@@ -353,27 +425,45 @@ function Media({ st }: { st: LandingStyle }) {
   const k0 = i % Math.max(1, list.length)
   const cur = list[k0]
   const blur = bg.blur > 0 ? { filter: `blur(${bg.blur}px)`, transform: 'scale(1.06)' } : {}
+  // Immagine ferma dell'intro: quella scelta, altrimenti il primo fotogramma utile.
+  const still = iv ? bg.introImage ?? iv.poster : null
   return (
     <>
       <style>{`@keyframes lito-kb { from { transform: scale(1.0) } to { transform: scale(1.09) } }
         @keyframes lito-cap { from { opacity: 0; transform: translate3d(0, 8px, 0) } to { opacity: 1; transform: none } }`}</style>
-      {list.map((b, k) => (
+      {iv ? (
+        <div aria-hidden className="absolute inset-0 overflow-hidden">
+          <div className="absolute inset-0" style={blur}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            {still && <img src={still} alt="" className="absolute inset-0 w-full h-full" style={{ objectFit: 'cover' }} />}
+            {/* Il video resta sotto l'immagine finché non scorre davvero
+                (niente fotogramma nero o fermo a vista). */}
+            <video ref={introRef} src={iv.url} muted playsInline preload="auto" className="absolute inset-0 w-full h-full"
+              onLoadedMetadata={e => { try { e.currentTarget.currentTime = iv.startAt } catch { /* ok */ } }}
+              onPlaying={() => setPlaying(true)}
+              style={{ objectFit: 'cover', opacity: playing || !still ? 1 : 0, transition: 'opacity 350ms ease' }} />
+          </div>
+        </div>
+      ) : list.map((b, k) => (
         <div key={b.id} aria-hidden className="absolute inset-0 overflow-hidden" style={{ opacity: k === k0 ? 1 : 0, transition: 'opacity 1400ms ease' }}>
           <div className="absolute inset-0" style={blur}>
             {b.video
               // Il poster resta visibile se il video non parte (es. formato non supportato).
-              ? <video src={b.url} poster={b.poster ?? undefined} muted playsInline autoPlay loop preload="auto" className="w-full h-full" style={{ objectFit: 'cover' }} />
+              ? <video src={bg.videoMode === 'boomerang' ? b.boomerang ?? b.url : b.url} poster={b.poster ?? undefined}
+                  muted playsInline autoPlay loop preload="auto" className="w-full h-full" style={{ objectFit: 'cover' }} />
               // eslint-disable-next-line @next/next/no-img-element
               : <img key={k === k0 ? `on-${i}` : 'off'} src={b.url} alt="" className="w-full h-full"
                   style={{ objectFit: 'cover', animation: k === k0 && bg.kenBurns ? `lito-kb ${bg.interval + 2}s ease-out forwards` : 'none' }} />}
           </div>
         </div>
       ))}
-      {/* Velo per la leggibilità: più scuro in alto (nome) e in basso (pulsanti). */}
+      {/* Velo per la leggibilità: più scuro in alto (nome) e in basso (pulsanti).
+          Durante l'intro sparisce: il video si vede pieno. */}
       <div aria-hidden className="absolute inset-0" style={{
+        opacity: introOn ? 0 : 1, transition: 'opacity 600ms ease',
         background: `linear-gradient(180deg, rgba(0,0,0,${0.84 * bg.overlay}) 0%, rgba(0,0,0,${0.1 * bg.overlay}) 32%, rgba(0,0,0,${0.2 * bg.overlay}) 52%, rgba(0,0,0,${Math.min(0.92, 1.36 * bg.overlay)}) 100%)`,
       }} />
-      {st.captions.show && (cur?.title || cur?.subtitle) && (
+      {st.captions.show && !introOn && (cur?.title || cur?.subtitle) && (
         <div key={cur.id} data-pick="l-captions" className="absolute left-0 right-0 text-center"
           style={{ top: '38%', padding: '0 28px', animation: 'lito-cap 900ms ease both' }}>
           {cur.title && <p style={{ ...css(st.captions.title, st), lineHeight: 1.15, textShadow: '0 2px 16px rgba(0,0,0,0.45)' }}>{cur.title}</p>}

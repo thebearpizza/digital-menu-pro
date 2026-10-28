@@ -22,11 +22,11 @@ export default async function LandingStylePage({ params }: { params: { restauran
     const l = (restaurant.theme_config as { landing?: { background?: { type?: string; value?: string; poster?: string }; logo?: { image?: string } } } | null)?.landing
     let media: LandingMedia[] = (banners ?? []).filter(b => b.media_url).map(b => ({
       id: b.id as string, url: b.media_url as string, video: b.media_type === 'video', poster: null,
-      title: (b.title as string | null) || null, subtitle: (b.subtitle as string | null) || null,
+      title: (b.title as string | null) || null, subtitle: (b.subtitle as string | null) || null, startAt: 0, boomerang: null,
     }))
     const bg = l?.background
     if (!media.length && bg?.value && (bg.type === 'image' || bg.type === 'video' || bg.type === 'gif')) {
-      media = [{ id: 'landing-bg', url: bg.value, video: bg.type === 'video', poster: bg.poster || null, title: null, subtitle: null }]
+      media = [{ id: 'landing-bg', url: bg.value, video: bg.type === 'video', poster: bg.poster || null, title: null, subtitle: null, startAt: 0, boomerang: null }]
     }
     style = initialLanding(media, (restaurant.logo_url as string | null) || l?.logo?.image || null)
   }

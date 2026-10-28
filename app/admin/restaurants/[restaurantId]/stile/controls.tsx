@@ -518,32 +518,3 @@ export function PaperSwatch({ paper, texture, strength, light, ink }: {
   }, [paper, texture, strength, light, ink])
   return <canvas ref={ref} aria-hidden className="block w-full" style={{ height: 72, borderRadius: 10 }} />
 }
-
-// ── Fotogramma di un video (immagine d'attesa) ──────────────────────────────
-
-/** Fotogramma a ~1 s (o a 1/4 se più corto): il primo è spesso nero. JPEG. */
-export function capturePoster(file: File): Promise<Blob | null> {
-  return new Promise(resolve => {
-    const video = document.createElement('video')
-    const url = URL.createObjectURL(file)
-    video.src = url; video.muted = true; video.playsInline = true; video.preload = 'auto'
-    const end = (b: Blob | null) => { URL.revokeObjectURL(url); resolve(b) }
-    const draw = () => {
-      const w = Math.min(1280, video.videoWidth || 1280), k = w / (video.videoWidth || w)
-      const cv = document.createElement('canvas')
-      cv.width = w; cv.height = Math.round((video.videoHeight || 720) * k)
-      const c = cv.getContext('2d')
-      if (!c) { end(null); return }
-      c.drawImage(video, 0, 0, cv.width, cv.height)
-      cv.toBlob(b => end(b), 'image/jpeg', 0.82)
-    }
-    video.addEventListener('loadeddata', () => {
-      const t = Math.min(1, (Number.isFinite(video.duration) ? video.duration : 4) * 0.25)
-      if (t <= 0.05) { draw(); return }
-      video.addEventListener('seeked', draw, { once: true })
-      try { video.currentTime = t } catch { draw() }
-    }, { once: true })
-    video.addEventListener('error', () => end(null), { once: true })
-    video.load()
-  })
-}
