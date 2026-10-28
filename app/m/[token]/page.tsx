@@ -7,15 +7,21 @@ import type { Metadata } from 'next'
 import PublicMenuView from './PublicMenuView'
 import { parseTheme, googleFontsUrl, allThemeFonts, customFontFaceCss, themeRootCssVars } from '@/lib/theme'
 import { isMenuOpenNow, isWindowOpenNow, isCategoryOpenNow, type CategorySchedules } from '@/lib/menuSchedule'
+import { usesNewMenu } from '@/lib/newMenu'
+import NewMenuPage, { NEW_MENU_METADATA, type NewMenuSearch } from '@/app/prova/[token]/NewMenuPage'
 
 // The /m/[token] URL pattern is the printed QR contract — this path must never change.
 // See CLAUDE.md → "URL del QR code stabile per sempre"
 
 export const dynamic = 'force-dynamic'
 
-export const metadata: Metadata = {
+const OLD_METADATA: Metadata = {
   title: 'Menu',
   robots: { index: false, follow: false },
+}
+
+export async function generateMetadata({ params }: { params: { token: string } }): Promise<Metadata> {
+  return (await usesNewMenu(params.token)) ? NEW_MENU_METADATA : OLD_METADATA
 }
 
 export default async function PublicMenuPage({
@@ -23,8 +29,14 @@ export default async function PublicMenuPage({
   searchParams,
 }: {
   params: { token: string }
-  searchParams?: { from?: string }
+  searchParams?: NewMenuSearch
 }) {
+  // Ristoranti passati al nuovo menu (interruttore nel gestionale): stesso
+  // indirizzo del QR, nuova pagina d'apertura e nuovo menu.
+  if (await usesNewMenu(params.token)) {
+    return NewMenuPage({ token: params.token, searchParams: searchParams ?? {}, base: '/m', live: true })
+  }
+
   const supabase = await createClient()
 
   const { data: restaurant } = await supabase

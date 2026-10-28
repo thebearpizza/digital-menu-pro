@@ -7,6 +7,7 @@ import { createDish, updateDish, detectAllergens } from './actions'
 import { allergenList } from '@/lib/allergens'
 import { useAllergenCatalog } from '@/components/AllergenCatalog'
 import { Spinner } from '@/components/ui/Spinner'
+import { PHOTO_ASPECT, PHOTO_LABEL, frameFor, frameStyle, parseFrame, type PhotoFrame, type PhotoShape, type Rect } from '@/lib/photoFrame'
 
 interface Dish {
   id: string
@@ -17,6 +18,7 @@ interface Dish {
   image_url: string | null
   image_original_url: string | null
   image_crop: CropRect | null
+  photo_frame?: PhotoFrame | null
   allergens: number[]
   pairing_dish_id: string | null
   pairing_label: string | null
@@ -36,6 +38,8 @@ interface Props {
   allDishes: SimpleDish[]
   allMenus: SimpleMenu[]
   defaultCategory?: string
+  /** Formato della foto nella scheda del nuovo menu e se il QR lo usa già. */
+  photoFormat?: { shape: PhotoShape; newMenu: boolean }
   onSaved: (dish: Dish, isNew: boolean, dirtyFields: Set<string>) => void
   onClose: () => void
 }
@@ -162,23 +166,15 @@ function CategoryCombobox({
 }
 
 // ── Ritaglio foto ─────────────────────────────────────────────────────────────────
-// La card prodotto del frontend mostra la foto in 16:9 (aspect-video, object-cover):
-// il riquadro di selezione ha lo stesso aspect ratio, quindi ciò che si inquadra
-// qui è esattamente ciò che si vedrà nella card. Il ritaglio viene applicato al
-// file (image_url = versione ritagliata), l'originale resta in image_original_url
-// per poter riposizionare il riquadro in seguito.
+// Vecchio menu: la card prodotto mostra la foto in 16:9 (aspect-video,
+// object-cover): il riquadro di selezione ha lo stesso aspect ratio e il
+// ritaglio viene applicato al file (image_url = versione ritagliata),
+// l'originale resta in image_original_url per poter riposizionare in seguito.
+// Nuovo menu: la scheda mostra l'originale nel formato scelto nello stile del
+// menu (quadrata, 4:3, 4:5, tonda); qui si sceglie solo l'inquadratura
+// (photo_frame), senza creare un nuovo file (vedi lib/photoFrame).
 
 const CROP_ASPECT = 16 / 9
-
-/** Riquadro 16:9 massimo centrato nell'immagine (coordinate normalizzate). */
-function defaultCropRect(imgAspect: number): CropRect {
-  if (imgAspect >= CROP_ASPECT) {
-    const w = CROP_ASPECT / imgAspect
-    return { x: (1 - w) / 2, y: 0, w, h: 1 }
-  }
-  const h = imgAspect / CROP_ASPECT
-  return { x: 0, y: (1 - h) / 2, w: 1, h }
-}
 
 /** Ritaglia l'immagine su canvas e restituisce un JPEG (max 1600px di larghezza). */
 async function cropImageToBlob(src: string, rect: CropRect): Promise<Blob> {
@@ -214,12 +210,20 @@ async function cropImageToBlob(src: string, rect: CropRect): Promise<Blob> {
 function CropModal({
   src,
   initial,
+  aspect = CROP_ASPECT,
+  round = false,
+  note,
   busy,
   onConfirm,
   onCancel,
 }: {
   src: string
   initial: CropRect | null
+  /** Formato del riquadro (larghezza/altezza). */
+  aspect?: number
+  /** Riquadro tondo (foto tonda nella scheda). */
+  round?: boolean
+  note?: string
   busy: boolean
   onConfirm: (rect: CropRect) => void
   onCancel: () => void
@@ -240,7 +244,8 @@ function CropModal({
     const el = imgRef.current
     if (!el || !el.naturalWidth) return
     setDims({ w: el.clientWidth, h: el.clientHeight })
-    setRect(prev => prev ?? initial ?? defaultCropRect(el.naturalWidth / el.naturalHeight))
+    // Senza inquadratura salvata: il riquadro più grande, centrato.
+    setRect(prev => prev ?? initial ?? frameFor(el.naturalWidth / el.naturalHeight, aspect, null, null))
   }
 
   useEffect(() => {
@@ -274,9 +279,9 @@ function CropModal({
       })
       return
     }
-    // Resize: l'angolo opposto resta fermo, il riquadro mantiene il 16:9.
+    // Resize: l'angolo opposto resta fermo, il riquadro mantiene il formato.
     // Lavoriamo in pixel visualizzati (l'aspect è preservato dalla scala uniforme).
-    const A = CROP_ASPECT
+    const A = aspect
     const ax = (g.sx > 0 ? s.x : s.x + s.w) * W
     const ay = (g.sy > 0 ? s.y : s.y + s.h) * H
     const px = e.clientX - (imgRef.current?.getBoundingClientRect().left ?? 0)
@@ -315,8 +320,8 @@ function CropModal({
         <div className="px-5 py-4 border-b border-gray-200">
           <h2 className="text-sm font-semibold text-gray-900">Inquadra la foto</h2>
           <p className="text-xs text-gray-500 mt-0.5">
-            Il riquadro è esattamente ciò che si vedrà nella card del prodotto.
-            Trascinalo per spostarlo, usa gli angoli per ridimensionarlo.
+            {note ?? 'Il riquadro è esattamente ciò che si vedrà nella card del prodotto.'}
+            {' '}Trascinalo per spostarlo, usa gli angoli per ridimensionarlo.
           </p>
         </div>
 
@@ -352,10 +357,13 @@ function CropModal({
                   <div className="absolute bg-black/55 pointer-events-none" style={{ left: disp.x + disp.w, top: disp.y, right: 0, height: disp.h }} />
                   {/* Riquadro trascinabile */}
                   <div
-                    className="absolute border-2 border-white shadow-[0_0_0_1px_rgba(0,0,0,0.5)] cursor-move"
+                    className="absolute overflow-hidden border-2 border-white shadow-[0_0_0_1px_rgba(0,0,0,0.5)] cursor-move"
                     style={{ left: disp.x, top: disp.y, width: disp.w, height: disp.h }}
                     onPointerDown={e => startGesture(e, 'move')}
-                  />
+                  >
+                    {/* Foto tonda: il cerchio mostra cosa resta visibile. */}
+                    {round && <div className="absolute inset-0 pointer-events-none border border-white/80" style={{ borderRadius: '50%', boxShadow: '0 0 0 9999px rgba(0,0,0,0.35)' }} />}
+                  </div>
                   {corners.map(c => (
                     <div
                       key={`${c.sx}${c.sy}`}
@@ -393,10 +401,25 @@ function CropModal({
   )
 }
 
+/** Anteprima della foto come nella scheda del nuovo menu (formato e inquadratura). */
+function FramePreview({ src, aspect, round, frame, focus }: { src: string; aspect: number; round: boolean; frame: PhotoFrame | null; focus: Rect | null }) {
+  const [ia, setIa] = useState(0)
+  return (
+    <div className="relative overflow-hidden border border-gray-200 bg-gray-100"
+      style={{ width: aspect >= 1 ? 144 : 144 * aspect, aspectRatio: String(aspect), borderRadius: round ? '50%' : 0 }}>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src={src} alt="" draggable={false}
+        ref={el => { if (el?.complete && el.naturalWidth) setIa(el.naturalWidth / el.naturalHeight) }}
+        onLoad={e => setIa(e.currentTarget.naturalWidth / e.currentTarget.naturalHeight)}
+        style={ia ? frameStyle(frameFor(ia, aspect, frame, focus)) : { width: '100%', height: '100%', objectFit: 'cover' }} />
+    </div>
+  )
+}
+
 // ── Main form ─────────────────────────────────────────────────────────────────────
 
 export default function DishForm({
-  restaurantId, menuId, dish, allDishes, allMenus, defaultCategory, onSaved, onClose,
+  restaurantId, menuId, dish, allDishes, allMenus, defaultCategory, photoFormat, onSaved, onClose,
 }: Props) {
   const [name, setName]               = useState(dish?.name ?? '')
   const [description, setDescription] = useState(dish?.description ?? '')
@@ -407,7 +430,14 @@ export default function DishForm({
   // versione ritagliata (ciò che la card mostra) — il frontend non cambia.
   const [origUrl, setOrigUrl]         = useState(dish?.image_original_url ?? '')
   const [imageCrop, setImageCrop]     = useState<CropRect | null>(dish?.image_crop ?? null)
-  const [cropState, setCropState]     = useState<{ src: string; initial: CropRect | null } | null>(null)
+  // Inquadratura per il nuovo menu (formato della scheda, nessun file nuovo).
+  const [photoFrame, setPhotoFrame]   = useState<PhotoFrame | null>(parseFrame(dish?.photo_frame))
+  const shape   = photoFormat?.shape ?? 'square'
+  const aspect  = PHOTO_ASPECT[shape]
+  const newMenu = photoFormat?.newMenu === true
+  // mode 'crop': ritaglio 16:9 del vecchio menu (crea il file ritagliato);
+  // 'frame': inquadratura nel formato del nuovo menu.
+  const [cropState, setCropState]     = useState<{ src: string; initial: CropRect | null; mode: 'crop' | 'frame' } | null>(null)
   const [cropSaving, setCropSaving]   = useState(false)
   // Object URL del file appena caricato (sorgente locale per il ritaglio, niente CORS)
   const localSrcRef = useRef<string | null>(null)
@@ -484,12 +514,14 @@ export default function DishForm({
       setImageUrl(pub.publicUrl)
       setOrigUrl(pub.publicUrl)
       setImageCrop(null)
+      setPhotoFrame(null)
       dirtyRef.current.add('image_url')
-      // Apri subito il selettore di ritaglio sul file locale (nessun round-trip).
+      // Apri subito il selettore di ritaglio sul file locale (nessun round-trip):
+      // nel formato del nuovo menu se il QR lo usa già, altrimenti 16:9.
       if (localSrcRef.current) URL.revokeObjectURL(localSrcRef.current)
       const local = URL.createObjectURL(rawFile)
       localSrcRef.current = local
-      setCropState({ src: local, initial: null })
+      setCropState({ src: local, initial: null, mode: newMenu ? 'frame' : 'crop' })
     } else if (err) {
       setError('Upload fallito: ' + err.message)
     }
@@ -509,11 +541,33 @@ export default function DishForm({
   function handleReposition() {
     const src = origUrl || imageUrl
     if (!src) return
-    setCropState({ src, initial: imageCrop })
+    setCropState({ src, initial: imageCrop, mode: 'crop' })
+  }
+
+  // Inquadratura del nuovo menu, sull'originale. Senza inquadratura salvata
+  // parte dal centro del vecchio ritaglio 16:9 (come la mostra già il menu).
+  function handleFrame() {
+    const src = origUrl || imageUrl
+    if (!src) return
+    const img = new window.Image()
+    img.onload = () => {
+      const focus = origUrl && imageCrop ? imageCrop : null
+      setCropState({ src, initial: frameFor(img.naturalWidth / img.naturalHeight, aspect, photoFrame, focus), mode: 'frame' })
+    }
+    img.onerror = () => setCropState({ src, initial: null, mode: 'frame' })
+    img.src = src
   }
 
   async function handleCropConfirm(rect: CropRect) {
     if (!cropState) return
+    if (cropState.mode === 'frame') {
+      // Nessun file nuovo: si salva solo la parte da mostrare.
+      setOrigUrl(prev => prev || imageUrl)
+      setPhotoFrame({ ...rect, a: aspect })
+      dirtyRef.current.add('image_url')
+      closeCropModal()
+      return
+    }
     setCropSaving(true)
     try {
       const blob = await cropImageToBlob(cropState.src, rect)
@@ -551,6 +605,7 @@ export default function DishForm({
       image_url:       imageUrl,
       image_original_url: origUrl || null,
       image_crop:      imageCrop,
+      photo_frame:     photoFrame,
       allergens:       allergensRef.current,
       pairing_dish_id: pairingId || null,
     }
@@ -674,13 +729,16 @@ export default function DishForm({
             <label className="block text-xs font-medium text-gray-600 mb-1">Foto</label>
             {imageUrl && (
               <div className="mb-2">
-                {/* Anteprima 16:9 — stesso taglio della card prodotto nel frontend */}
+                {/* Anteprima con lo stesso taglio della scheda del menu attivo
+                    sul QR: formato del nuovo menu, o 16:9 del vecchio. */}
                 <div className="relative inline-block">
-                  <img src={imageUrl} alt="" className="w-36 aspect-video object-cover border border-gray-200" />
+                  {newMenu
+                    ? <FramePreview src={origUrl || imageUrl} aspect={aspect} round={shape === 'circle'} frame={photoFrame} focus={origUrl ? imageCrop : null} />
+                    : <img src={imageUrl} alt="" className="w-36 aspect-video object-cover border border-gray-200" />}
                   <button
                     type="button"
                     onClick={() => {
-                      setImageUrl(''); setOrigUrl(''); setImageCrop(null)
+                      setImageUrl(''); setOrigUrl(''); setImageCrop(null); setPhotoFrame(null)
                       dirtyRef.current.add('image_url')
                     }}
                     className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 text-white text-xs rounded-full flex items-center justify-center"
@@ -690,11 +748,18 @@ export default function DishForm({
                 </div>
                 <button
                   type="button"
-                  onClick={handleReposition}
+                  onClick={newMenu ? handleFrame : handleReposition}
                   className="block mt-1.5 text-xs text-blue-600 hover:underline"
                 >
                   Riposiziona inquadratura
                 </button>
+                {/* Prima di attivare il nuovo menu sul QR: si può già preparare
+                    l'inquadratura nel suo formato (non tocca il menu attuale). */}
+                {!newMenu && (
+                  <button type="button" onClick={handleFrame} className="block mt-1 text-xs text-blue-600 hover:underline">
+                    Inquadra per il nuovo menu ({PHOTO_LABEL[shape]}){photoFrame ? ' ✓' : ''}
+                  </button>
+                )}
               </div>
             )}
             <input
@@ -835,8 +900,14 @@ export default function DishForm({
 
       {cropState && (
         <CropModal
+          key={cropState.mode}
           src={cropState.src}
           initial={cropState.initial}
+          aspect={cropState.mode === 'frame' ? aspect : undefined}
+          round={cropState.mode === 'frame' && shape === 'circle'}
+          note={cropState.mode === 'frame'
+            ? `Il riquadro è ciò che si vedrà nella scheda del piatto del nuovo menu (foto ${PHOTO_LABEL[shape]}, come nello stile del menu).`
+            : undefined}
           busy={cropSaving}
           onConfirm={handleCropConfirm}
           onCancel={closeCropModal}

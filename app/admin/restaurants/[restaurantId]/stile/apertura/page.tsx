@@ -3,13 +3,14 @@ import { notFound } from 'next/navigation'
 import { parseStyle } from '@/lib/menuStyle'
 import { initialLanding, parseLanding, type LandingMedia } from '@/lib/landingStyle'
 import LandingEditor from '../LandingEditor'
+import QrSwitch from '../QrSwitch'
 
 // Personalizzazione della pagina d'apertura del nuovo menu (dove si sceglie
 // il menu). Chi non ha ancora uno stile parte da foto/video e logo che ha già.
 export default async function LandingStylePage({ params }: { params: { restaurantId: string } }) {
   const supabase = await createClient()
   const [{ data: restaurant }, { data: banners }, { data: menus }] = await Promise.all([
-    supabase.from('restaurants').select('id, qr_public_token, landing_style, logo_url, theme_config, menu_style').eq('id', params.restaurantId).single(),
+    supabase.from('restaurants').select('id, qr_public_token, landing_style, logo_url, theme_config, menu_style, new_menu').eq('id', params.restaurantId).single(),
     supabase.from('restaurant_banners').select('id, media_url, media_type, title, subtitle')
       .eq('restaurant_id', params.restaurantId).eq('is_active', true).order('sort_order', { ascending: true }),
     supabase.from('menus').select('menu_style').eq('restaurant_id', params.restaurantId).eq('is_active', true),
@@ -37,8 +38,9 @@ export default async function LandingStylePage({ params }: { params: { restauran
     for (const f of parseStyle(m).customFonts) menuFonts.set(f.id, f)
   }
 
-  return (
+  return (<>
+    <QrSwitch restaurantId={params.restaurantId} token={restaurant.qr_public_token as string} initial={restaurant.new_menu === true} />
     <LandingEditor restaurantId={params.restaurantId} token={restaurant.qr_public_token as string}
       initialStyle={style} menuFonts={Array.from(menuFonts.values())} saved={!!restaurant.landing_style} />
-  )
+  </>)
 }

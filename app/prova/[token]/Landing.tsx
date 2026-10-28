@@ -36,6 +36,7 @@ import { warmImage, whenIdle } from './preload'
 import { paintPaper } from './paper'
 import { drawOrnament } from './typeset'
 import GlassStage, { type StageBackground } from './GlassStage'
+import AdminReturn from './AdminReturn'
 
 const LANG_KEY = 'dmp-menu-lang'
 
@@ -45,9 +46,15 @@ export type LandingPick =
 
 export interface LandingProps {
   token: string
+  /** Indirizzo di partenza dei collegamenti: '/m' (QR) o '/prova'. */
+  base?: '/m' | '/prova'
+  /** Aperto dall'Anteprima del gestionale (tasto per tornarci). */
+  fromAdmin?: boolean
   restaurant: {
     name:        string
     description: string | null
+    /** Nascosti dal ristoratore nei dati del ristorante. */
+    hide?:       { logo?: boolean; name?: boolean }
     socials:     { kind: SocialKind; url: string }[]
     legalName:   string | null
     vat:         string | null
@@ -75,7 +82,7 @@ const lum = (hex: string) => {
   return (0.2126 * ((n >> 16) & 255) + 0.7152 * ((n >> 8) & 255) + 0.0722 * (n & 255)) / 255
 }
 
-export default function Landing({ token, restaurant, menus, style: initialStyle, preview = false }: LandingProps) {
+export default function Landing({ token, base: basePath = '/prova', fromAdmin = false, restaurant, menus, style: initialStyle, preview = false }: LandingProps) {
   const router = useRouter()
   const [st, setSt] = useState(initialStyle)
   const bg = st.background
@@ -131,12 +138,12 @@ export default function Landing({ token, restaurant, menus, style: initialStyle,
   // Precaricamento dei menu mentre si sceglie: pagina (dati e codice),
   // caratteri, sfondo delle pagine e foto dei primi piatti.
   const preloadMenu = useCallback((m: MenuChoice, urgent: boolean) => {
-    router.prefetch(`/prova/${token}?menu=${m.id}`, { kind: PrefetchKind.FULL })
+    router.prefetch(`${basePath}/${token}?menu=${m.id}`, { kind: PrefetchKind.FULL })
     if (!m.preload) return
     registerCustomFonts(m.preload.style.customFonts)
     loadStyleAssets(m.preload.style).catch(() => undefined)
     for (const src of m.preload.images) warmImage(src, !urgent)
-  }, [router, token])
+  }, [router, token, basePath])
   useEffect(() => {
     if (!ready || preview) return
     whenIdle(() => { for (const m of menus) preloadMenu(m, false) }, 2000)
@@ -157,7 +164,7 @@ export default function Landing({ token, restaurant, menus, style: initialStyle,
 
   const go = (m: MenuChoice) => {
     setLeaving(m.paper ?? '#fbf8f2')
-    window.setTimeout(() => router.push(`/prova/${token}?menu=${m.id}`), 280)
+    window.setTimeout(() => router.push(`${basePath}/${token}?menu=${m.id}`), 280)
   }
 
   /** Intro: parte il video (dal primo fotogramma utile), la pagina si svuota,
@@ -230,8 +237,9 @@ export default function Landing({ token, restaurant, menus, style: initialStyle,
 
   const left = st.layout.align === 'left'
   const B = st.buttons
-  const showName = st.logo.mode !== 'logo' || !st.logo.url
-  const showLogo = st.logo.mode !== 'name' && !!st.logo.url
+  const hasLogo = !!st.logo.url && !restaurant.hide?.logo
+  const showName = !restaurant.hide?.name && (st.logo.mode !== 'logo' || !hasLogo)
+  const showLogo = st.logo.mode !== 'name' && hasLogo
   const shadow = onMedia ? '0 2px 18px rgba(0,0,0,0.35)' : 'none'
   const glassTint = B.tint
   const header = (
@@ -282,6 +290,7 @@ export default function Landing({ token, restaurant, menus, style: initialStyle,
       </div>
       {/* Vetro liquido: sfondo e lenti disegnati in WebGL (sotto i testi). */}
       <GlassStage rootRef={rootRef} background={bgRef} glass={B.glass} liquidPress={B.press === 'liquid'} onState={setGlOn} />
+      {!preview && <AdminReturn fromAdmin={fromAdmin} />}
 
       {/* Lingua */}
       <div data-nopick className="fixed" style={{ top: 'calc(env(safe-area-inset-top) + 12px)', right: 'max(14px, env(safe-area-inset-right))', zIndex: 20 }}>
@@ -334,7 +343,7 @@ export default function Landing({ token, restaurant, menus, style: initialStyle,
             </div>
           )}
           <div data-pick="l-legal" style={fade(4 + menus.length)}>
-            <Legal restaurant={restaurant} token={token} lang={lang} style={css(st.legal.text, st)} />
+            <Legal restaurant={restaurant} token={token} base={basePath} lang={lang} style={css(st.legal.text, st)} />
           </div>
         </footer>
       </main>
@@ -588,13 +597,13 @@ function OrnamentCanvas({ kind, color }: { kind: LandingStyle['ornament']; color
   return <canvas ref={ref} aria-hidden style={{ width: 100, height: 16, display: 'block' }} />
 }
 
-function Legal({ restaurant, token, lang, style }: { restaurant: LandingProps['restaurant']; token: string; lang: Lang; style: React.CSSProperties }) {
+function Legal({ restaurant, token, base, lang, style }: { restaurant: LandingProps['restaurant']; token: string; base: string; lang: Lang; style: React.CSSProperties }) {
   const line1 = [restaurant.legalName || restaurant.name, restaurant.vat ? `${t('vat', lang)} ${restaurant.vat}` : null].filter(Boolean).join(' · ')
   return (
     <div style={{ ...style, lineHeight: 1.6 }}>
       <p>{line1}</p>
       {restaurant.address && <p>{restaurant.address}</p>}
-      <a href={`/prova/${token}/privacy`} className="underline underline-offset-2" style={{ color: style.color }}>{t('privacy', lang)}</a>
+      <a href={`${base}/${token}/privacy`} className="underline underline-offset-2" style={{ color: style.color }}>{t('privacy', lang)}</a>
     </div>
   )
 }

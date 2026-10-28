@@ -22,12 +22,13 @@
 // animazioni scrivono lo stile direttamente (niente render React per fotogramma).
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { createContext, forwardRef, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { Dish } from './typeset'
 import { readyImages, warmImage } from './preload'
 import { DEFAULT_STYLE, fontStack, formatPrice, mix, resolveColor, resolveFace, type MenuStyle, type TextStyle } from '@/lib/menuStyle'
 import { GlassButton, GlassTint, LiquidOn, glassSheet } from './Glass'
 import CardGlass from './CardGlass'
+import { PHOTO_ASPECT, frameFor, frameStyle } from '@/lib/photoFrame'
 import { t } from './i18n'
 import type { Lang } from '@/lib/translations'
 
@@ -782,9 +783,8 @@ function Header({ dish, lang }: { dish: Dish; lang: Lang }) {
       {dish.image && (
         <div className="mx-auto" style={{ width: `min(${card.photoWidth}%, ${Math.round(card.photoWidth * 4.3)}px)`, marginBottom: 28 }}>
           <div style={{ position: 'relative', aspectRatio: PHOTO_RATIO[card.photo], borderRadius: card.photo === 'circle' ? '50%' : card.radius, overflow: 'hidden', background: TILE, boxShadow: '0 18px 40px rgba(40,28,14,0.20), 0 2px 6px rgba(40,28,14,0.10)' }}>
-            <CardImg src={dish.image} onLoad={() => { readyImages.add(dish.image!); setLoaded(true) }}
-              ref={el => { if (el?.complete && el.naturalWidth && !loaded) setLoaded(true) }}
-              style={{ width: '100%', height: '100%', objectFit: 'cover', opacity: loaded ? 1 : 0, transition: ready ? 'none' : 'opacity 300ms ease' }} />
+            <CardImg dish={dish} aspect={PHOTO_ASPECT[card.photo]} onLoad={() => { readyImages.add(dish.image!); setLoaded(true) }}
+              style={{ opacity: loaded ? 1 : 0, transition: ready ? 'none' : 'opacity 300ms ease' }} />
           </div>
         </div>
       )}
@@ -830,27 +830,37 @@ function Block({ title, children }: { title: string; children: React.ReactNode }
 function Thumb({ dish, size }: { dish: Dish; size: number }) {
   const { NAME_PLAIN, ACCENT, card, TILE, LINE } = useCardStyle()
   return (
-    <span className="block shrink-0 overflow-hidden" style={{ width: size, height: size, borderRadius: card.photo === 'circle' ? '50%' : Math.min(card.radius, size > 80 ? 12 : 10), background: TILE, boxShadow: `inset 0 0 0 1px ${LINE}` }}>
+    <span className="relative block shrink-0 overflow-hidden" style={{ width: size, height: size, borderRadius: card.photo === 'circle' ? '50%' : Math.min(card.radius, size > 80 ? 12 : 10), background: TILE, boxShadow: `inset 0 0 0 1px ${LINE}` }}>
       {dish.image
-        ? <CardImg src={dish.image} lazy style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+        ? <CardImg dish={dish} aspect={1} lazy />
         : <span className="flex items-center justify-center h-full" style={{ fontFamily: NAME_PLAIN.fontFamily, fontStyle: 'italic', fontSize: size * 0.42, color: ACCENT }}>{dish.name.trim().charAt(0)}</span>}
     </span>
   )
 }
 
-/** Foto della scheda, chiesta con CORS (il vetro liquido dei tasti la può
- *  ridisegnare). Se il sito della foto non lo permette si ricarica normale:
- *  si vede lo stesso, solo la lente non la mostra. */
-const CardImg = forwardRef<HTMLImageElement, { src: string; lazy?: boolean; onLoad?: () => void; style: React.CSSProperties }>(
-  function CardImg({ src, lazy, onLoad, style }, ref) {
-    const [cors, setCors] = useState(true)
-    return (
-      // eslint-disable-next-line @next/next/no-img-element
-      <img ref={ref} key={cors ? 'c' : 'n'} data-card-photo={cors ? '' : undefined} crossOrigin={cors ? 'anonymous' : undefined}
-        src={src} alt="" loading={lazy ? 'lazy' : undefined} draggable={false} onLoad={onLoad}
-        onError={() => { if (cors) setCors(false) }} style={style} />
-    )
-  })
+/** Foto della scheda: l'originale, inquadrato nel formato del riquadro
+ *  (lib/photoFrame). Chiesta con CORS (il vetro liquido dei tasti la può
+ *  ridisegnare); se il sito della foto non lo permette si ricarica normale:
+ *  si vede lo stesso, solo la lente non la mostra. `onLoad` arriva anche se
+ *  la foto era già pronta. */
+function CardImg({ dish, aspect, lazy, onLoad, style }: { dish: Dish; aspect: number; lazy?: boolean; onLoad?: () => void; style?: React.CSSProperties }) {
+  const [cors, setCors] = useState(true)
+  const [ia, setIa] = useState(0)   // proporzioni della foto (larghezza/altezza)
+  const ready = (el: HTMLImageElement | null) => {
+    if (!el?.complete || !el.naturalWidth) return
+    setIa(el.naturalWidth / el.naturalHeight)
+    onLoad?.()
+  }
+  const place: React.CSSProperties = ia
+    ? frameStyle(frameFor(ia, aspect, dish.frame ?? null, dish.focus ?? null))
+    : { width: '100%', height: '100%', objectFit: 'cover' }
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img ref={ready} key={cors ? 'c' : 'n'} data-card-photo={cors ? '' : undefined} crossOrigin={cors ? 'anonymous' : undefined}
+      src={dish.image!} alt="" loading={lazy ? 'lazy' : undefined} draggable={false}
+      onLoad={e => ready(e.currentTarget)} onError={() => { if (cors) setCors(false) }} style={{ ...place, ...style }} />
+  )
+}
 
 function Chevron() {
   const { SOFT } = useCardStyle()

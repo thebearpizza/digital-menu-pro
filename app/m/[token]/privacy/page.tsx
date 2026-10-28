@@ -1,6 +1,8 @@
 import { createClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
 import type { Metadata } from 'next'
+import { usesNewMenu } from '@/lib/newMenu'
+import NewPrivacy, { PRIVACY_METADATA } from '@/app/prova/[token]/privacy/NewPrivacy'
 
 // Informativa privacy del menu digitale (art. 13 GDPR). Testo base: va fatto
 // verificare dal consulente del ristorante. Descrive ciò che il menu fa
@@ -9,12 +11,17 @@ import type { Metadata } from 'next'
 
 export const dynamic = 'force-dynamic'
 
-export const metadata: Metadata = {
+const OLD_METADATA: Metadata = {
   title: 'Informativa privacy',
   robots: { index: false, follow: false },
 }
 
+export async function generateMetadata({ params }: { params: { token: string } }): Promise<Metadata> {
+  return (await usesNewMenu(params.token)) ? PRIVACY_METADATA : OLD_METADATA
+}
+
 export default async function PrivacyPage({ params }: { params: { token: string } }) {
+  if (await usesNewMenu(params.token)) return NewPrivacy({ token: params.token, base: '/m' })
   const supabase = await createClient()
   const { data: r } = await supabase
     .from('restaurants')

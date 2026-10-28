@@ -16,6 +16,7 @@
 
 import { forwardRef, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { CurlRenderer, constrain, solveCurl, type Rect, type Scene, type Sheet, type Vec } from './curl'
+import AdminReturn from './AdminReturn'
 import { useRouter } from 'next/navigation'
 import { layoutMenu, SANS, type Dish, type Layout, type MenuData, type Insets } from './typeset'
 import { parseStyle, registerCustomFonts, type MenuStyle } from '@/lib/menuStyle'
@@ -41,6 +42,20 @@ interface Props {
   preview?: boolean
   i18n:   I18nData
   token:  string
+  /** Indirizzo di partenza dei collegamenti: '/m' (QR) o '/prova'. */
+  base?:  '/m' | '/prova'
+  /** Menu vero sul QR: aperture del menu e dei piatti nelle statistiche. */
+  track?: { restaurantId: string; menuId: string } | null
+}
+
+/** Statistiche (come il vecchio menu): invio senza attendere risposta. */
+function sendEvent(t: { restaurantId: string; menuId: string }, event_type: 'menu_open' | 'dish_click', dish_id?: string) {
+  try {
+    void fetch('/api/track', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, keepalive: true,
+      body: JSON.stringify({ restaurant_id: t.restaurantId, menu_id: t.menuId, dish_id: dish_id ?? null, event_type }),
+    }).catch(() => {})
+  } catch { /* statistiche non essenziali */ }
 }
 
 interface PageInfo { index: number; spread: boolean; starts: Layout['categoryStarts'] }
@@ -73,8 +88,17 @@ type Anim = {
   arc:    number
 }
 
-export default function CurlMenu({ data: base, style: initialStyle, preview = false, i18n, token }: Props) {
+export default function CurlMenu({ data: base, style: initialStyle, preview = false, i18n, token, base: basePath = '/prova', track = null }: Props) {
   const router = useRouter()
+  const trackRef = useRef(track)
+  trackRef.current = track
+  // Una sola apertura per menu mostrato (anche se l'effetto si ripete).
+  const openedRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (!track || openedRef.current === track.menuId) return
+    openedRef.current = track.menuId
+    sendEvent(track, 'menu_open')
+  }, [track?.menuId])   // eslint-disable-line react-hooks/exhaustive-deps
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const probeRef  = useRef<HTMLDivElement>(null)
   const stageRef  = useRef<HTMLDivElement>(null)
@@ -588,6 +612,7 @@ export default function CurlMenu({ data: base, style: initialStyle, preview = fa
         if (dish) {
           warmImage(dish.image)
           setCard(dish)
+          if (trackRef.current) sendEvent(trackRef.current, 'dish_click', dish.id)
         } else if (chromeOpen.current) settleBar(false)   // spazio vuoto: chiude i comandi
         peekIdle()
         return
@@ -754,6 +779,7 @@ export default function CurlMenu({ data: base, style: initialStyle, preview = fa
 
   return (
     <div ref={rootRef} className="fixed inset-0 overflow-hidden" style={{ background: style.page.paper, overscrollBehavior: 'none' }}>
+      {!preview && <AdminReturn />}
       <div ref={stageRef} className="absolute inset-0 overflow-hidden">
         {/* Sonda invisibile: legge le aree sicure (notch, barra home) in px. */}
         <div ref={probeRef} aria-hidden className="pointer-events-none fixed inset-0 invisible"
@@ -773,7 +799,7 @@ export default function CurlMenu({ data: base, style: initialStyle, preview = fa
       {status !== 'loading' && (
         <LiquidOn.Provider value={liquid}>
         <Chrome shown={chrome} barRef={barRef} lang={lang} onLang={setLang}
-          onMenus={() => router.push(`/prova/${token}`)}
+          onMenus={() => router.push(`${basePath}/${token}?from=menu`)}   // ritorno: non è una nuova visita
           categories={pageInfo.starts} active={activeCategory} onJump={p => apiRef.current?.jump(p)}
           tint={style.chrome.tint} accent={style.page.accent} />
         </LiquidOn.Provider>

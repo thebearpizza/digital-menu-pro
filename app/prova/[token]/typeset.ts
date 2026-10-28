@@ -26,7 +26,12 @@ export interface Dish {
   price:       number | null
   /** id ufficiale (1–14), numero mostrato (personalizzabile per account) e nome per esteso. */
   allergens:   { id: number; n: number; name: string }[]
+  /** Foto originale (intera); la parte da mostrare la decide `frame`. */
   image:       string | null
+  /** Inquadratura scelta per il nuovo menu, e centro del vecchio ritaglio
+   *  16:9 come ripiego (vedi lib/photoFrame). */
+  frame?:      import('@/lib/photoFrame').PhotoFrame | null
+  focus?:      import('@/lib/photoFrame').Rect | null
   category:    string
   /** Abbinamento consigliato (anche da un altro menu del ristorante). */
   pairing:     { label: string | null; dish: Dish } | null
