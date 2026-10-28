@@ -456,6 +456,9 @@ export default function StyleEditor({ restaurantId, token, menus }: Props) {
         </>)}
       </>)
       case 'category': return (<>
+        <Choice label="Categorie nelle pagine" value={st.category.newPage ? 'page' : 'flow'} onChange={v => edit(s => { s.category.newPage = v === 'page' })}
+          options={[{ value: 'flow', label: 'Una dopo l\'altra (più categorie per pagina)' }, { value: 'page', label: 'Ogni categoria su una pagina nuova' }]}
+          hint={st.category.newPage ? 'Una categoria lunga continua sulle pagine dopo; la successiva parte sempre da una pagina nuova.' : undefined} />
         {T('Titolo della categoria', s => s.category.text, [8, 40])}
         <Choice label="Decorazione" value={st.category.style} onChange={v => edit(s => { s.category.style = v })}
           options={[{ value: 'rules', label: 'Filetti' }, { value: 'underline', label: 'Sottolineato' }, { value: 'frame', label: 'Cornice' }, { value: 'ornament', label: 'Ornamento sotto' }, { value: 'plain', label: 'Nessuna' }]} />

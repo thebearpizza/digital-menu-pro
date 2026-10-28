@@ -435,6 +435,9 @@ export function layoutMenu(ctx: Ctx, data: MenuData, vp: Viewport, style: MenuSt
     const dishes = cat.dishes.map(measureDish)
     // Titolo + primo piatto devono stare insieme.
     const firstH = dishes.length ? dishHeight(dishes[0]) : 0
+    // A scelta: ogni categoria comincia su una pagina nuova (la prima resta
+    // sotto il titolo del menu).
+    if (st.category.newPage && cur.some(it => it.block.kind !== 'head')) newPage()
     const afterHead = !cur.length || cur[cur.length - 1].block.kind === 'head'
     const before = afterHead ? 0 : CAT_BEFORE
     if (before + CAT_H + CAT_AFTER + Math.min(firstH, m.bottom - m.top - CAT_H - CAT_AFTER) > room()) newPage()

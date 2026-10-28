@@ -244,6 +244,7 @@ export interface MenuStyle {
     before: number            // spazio prima: 0 – 80
     after: number             // spazio dopo: 0 – 60
     continued: boolean        // "segue" quando la categoria continua
+    newPage: boolean          // ogni categoria comincia su una pagina nuova
   }
   dish: {
     align: 'left' | 'center'
@@ -345,7 +346,7 @@ export const DEFAULT_STYLE: MenuStyle = {
     space: 0,
   },
   runningHead: { show: true, content: 'both', text: T(SANS, 9.5, 500, 'accent', { upper: true, tracking: 0.25 }) },
-  category: { text: T(SANS, 11, 600, 'accent', { upper: true, tracking: 0.25 }), style: 'rules', ornament: 'diamond', align: 'center', before: 30, after: 18, continued: true },
+  category: { text: T(SANS, 11, 600, 'accent', { upper: true, tracking: 0.25 }), style: 'rules', ornament: 'diamond', align: 'center', before: 30, after: 18, continued: true, newPage: false },
   dish: {
     align: 'left', spacing: 20, divider: 'none', dividerOrnament: 'diamond',
     name: T(SERIF, 19.5, 600, 'ink'), nameLineHeight: 1.18,
@@ -487,6 +488,7 @@ export function parseStyle(raw: unknown): MenuStyle {
       before: num(ct.before, 0, 80, d.category.before),
       after: num(ct.after, 0, 60, d.category.after),
       continued: bool(ct.continued, d.category.continued),
+      newPage: bool(ct.newPage, d.category.newPage),
     },
     dish: {
       align: pick(ds.align, ['left', 'center'] as const, d.dish.align),
