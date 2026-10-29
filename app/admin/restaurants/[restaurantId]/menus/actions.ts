@@ -2,8 +2,6 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
-import { translateItems, translateEnabled } from '@/lib/translateEngine'
-import { TARGET_LANGS, type MenuTranslations } from '@/lib/translations'
 import { ALLERGENI_DEFAULT_TEXT } from './menuExtraPages'
 import type { MenuExtraPages } from './menuExtraPages'
 
@@ -20,27 +18,6 @@ function revalidate(restaurantId: string) {
   revalidatePath(`/admin/restaurants/${restaurantId}/menus`)
 }
 
-/**
- * Rigenera la traduzione automatica del nome del menu (override manuali
- * preservati). Best effort: mai bloccante per il salvataggio.
- */
-async function autoTranslateMenuName(supabase: any, menuId: string, name: string) {
-  if (!translateEnabled()) return
-  try {
-    const { data: menu } = await supabase
-      .from('menus').select('translations').eq('id', menuId).single()
-    const tr = (menu?.translations ?? {}) as MenuTranslations
-    const res = await translateItems([{ id: 'name', text: name }])
-    let changed = false
-    for (const lang of TARGET_LANGS) {
-      const entry = tr[lang] ?? (tr[lang] = {})
-      const t = res['name']?.[lang]
-      if (t && !entry.manual?.name) { entry.name = t; changed = true }
-    }
-    if (changed) await supabase.from('menus').update({ translations: tr }).eq('id', menuId)
-  } catch (e: any) { console.error('autoTranslateMenuName failed', e?.message) }
-}
-
 export async function createMenu(restaurantId: string, name: string) {
   const supabase = await createClient()
   await verifyOwnership(supabase, restaurantId)
@@ -55,7 +32,8 @@ export async function createMenu(restaurantId: string, name: string) {
     .select('id, name, sort_order, is_active').single()
 
   if (error) throw new Error(error.message)
-  await autoTranslateMenuName(supabase, data.id, name)
+  // Traduzione del nome: NON qui — Gemini impiega secondi e la creazione
+  // aspetterebbe. Il client chiama /api/menus/translate subito dopo, in sottofondo.
   revalidate(restaurantId)
   return data
 }
@@ -85,7 +63,7 @@ export async function updateMenuName(restaurantId: string, menuId: string, name:
   const { error } = await supabase
     .from('menus').update({ name }).eq('id', menuId).eq('restaurant_id', restaurantId)
   if (error) throw new Error(error.message)
-  await autoTranslateMenuName(supabase, menuId, name)
+  // Traduzione del nuovo nome: la fa il client in sottofondo (/api/menus/translate).
   revalidate(restaurantId)
 }
 

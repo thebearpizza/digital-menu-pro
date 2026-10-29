@@ -278,12 +278,23 @@ export default function MenuList({ restaurantId, initialMenus }: Props) {
 
   const sensors = useSensors(useSensor(PointerSensor))
 
+  // Traduzione del nome in sottofondo: il salvataggio non la aspetta (Gemini
+  // impiega secondi). keepalive: la richiesta parte anche se si cambia pagina.
+  function translateMenuName(menuId: string) {
+    fetch('/api/menus/translate', {
+      method: 'POST', keepalive: true,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ menuId }),
+    }).catch(() => {})
+  }
+
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault()
     if (!newName.trim()) return
     setCreating(true)
     try {
       const created = await createMenu(restaurantId, newName.trim())
+      translateMenuName(created.id)
       setMenus(prev => [...prev, created as Menu])
       setNewName('')
     } catch (err: any) {
@@ -296,6 +307,7 @@ export default function MenuList({ restaurantId, initialMenus }: Props) {
   async function handleRename(id: string, name: string) {
     try {
       await updateMenuName(restaurantId, id, name)
+      translateMenuName(id)
       setMenus(prev => prev.map(m => m.id === id ? { ...m, name } : m))
     } catch (err: any) {
       setError(err.message ?? 'Errore nella rinomina del menu.')
