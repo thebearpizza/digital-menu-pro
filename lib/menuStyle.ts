@@ -158,21 +158,38 @@ export type ColorRef = 'ink' | 'soft' | 'accent' | string
 
 export const CATEGORY_STYLES = ['rules', 'ornament', 'underline', 'frame', 'pill', 'band', 'marquee', 'plain'] as const
 export type CategoryStyle = typeof CATEGORY_STYLES[number]
-export const CATEGORY_EFFECTS = ['none', 'shadow', 'outline', 'glow', 'neon'] as const
-export type CategoryEffect = typeof CATEGORY_EFFECTS[number]
+/** Effetti dei titoli (categorie e copertina). */
+export const TITLE_EFFECTS = ['none', 'shadow', 'outline', 'glow', 'neon', 'foil', 'letterpress', 'retro'] as const
+export type TitleEffect = typeof TITLE_EFFECTS[number]
 /** Animazioni dei titoli: 'pulse' e 'flicker' con luce o neon, 'chase' con
- *  le lampadine, 'shimmer' con tutti. */
-export const CATEGORY_ANIMATIONS = ['none', 'pulse', 'flicker', 'shimmer', 'chase'] as const
-export type CategoryAnimation = typeof CATEGORY_ANIMATIONS[number]
-/** L'animazione scelta vale con questo titolo? */
-export function categoryAnimates(c: { style: CategoryStyle; effect: CategoryEffect; animation: CategoryAnimation }): boolean {
-  switch (c.animation) {
-    case 'pulse': case 'flicker': return c.effect === 'glow' || c.effect === 'neon'
-    case 'chase': return c.style === 'marquee'
-    case 'shimmer': return true
-    default: return false
+ *  le lampadine, le altre con tutti. */
+export const TITLE_ANIMATIONS = ['none', 'pulse', 'flicker', 'shimmer', 'chase', 'wave', 'sparkle', 'rainbow', 'glitch'] as const
+export type TitleAnimation = typeof TITLE_ANIMATIONS[number]
+export const CATEGORY_EFFECTS = TITLE_EFFECTS
+export type CategoryEffect = TitleEffect
+export const CATEGORY_ANIMATIONS = TITLE_ANIMATIONS
+export type CategoryAnimation = TitleAnimation
+/** Effetto e animazione di un titolo. */
+export interface TitleFx {
+  effect:    TitleEffect
+  glow:      number         // intensità: 0.2 – 1
+  animation: TitleAnimation
+  speed:     number         // 0.5 – 2
+}
+export const TITLE_FX_NONE: TitleFx = { effect: 'none', glow: 0.7, animation: 'none', speed: 1 }
+/** L'animazione scelta vale con questo titolo? (marquee: ha le lampadine) */
+export function fxAnimates(fx: TitleFx, marquee: boolean): boolean {
+  switch (fx.animation) {
+    case 'pulse': case 'flicker': return fx.effect === 'glow' || fx.effect === 'neon'
+    case 'chase': return marquee
+    case 'none': return false
+    default: return true
   }
 }
+export function categoryAnimates(c: TitleFx & { style: CategoryStyle }): boolean {
+  return fxAnimates(c, c.style === 'marquee')
+}
+
 /** Spessori: 400–700 nel catalogo; i caratteri caricati possono avere anche
  *  100–300 (sottili) e 800–900 (nerissimi). */
 export type Weight = 100 | 200 | 300 | 400 | 500 | 600 | 700 | 800 | 900
@@ -252,6 +269,11 @@ export interface MenuStyle {
     ornamentSize: number      // 0.6 – 2
     ornamentGap: number       // distanza tra titolo e ornamento: 10 – 60
     space: number             // spazio sotto il titolo prima dei piatti: 0 – 80
+    restaurantFx: TitleFx
+    titleFx: TitleFx
+    /** Cornice attorno al titolo del menu. */
+    titleFrame: 'none' | 'frame' | 'marquee'
+    titleFrameRadius: number  // 0 – 30
   }
   runningHead: { show: boolean; content: 'both' | 'restaurant' | 'menu'; text: TextStyle }
   category: {
@@ -375,6 +397,10 @@ export const DEFAULT_STYLE: MenuStyle = {
     ornamentSize: 1,
     ornamentGap: 24,
     space: 0,
+    restaurantFx: { ...TITLE_FX_NONE },
+    titleFx: { ...TITLE_FX_NONE },
+    titleFrame: 'none',
+    titleFrameRadius: 10,
   },
   runningHead: { show: true, content: 'both', text: T(SANS, 9.5, 500, 'accent', { upper: true, tracking: 0.25 }) },
   category: {
@@ -468,6 +494,16 @@ export function parseCustomFonts(raw: unknown): CustomFont[] {
   return list
 }
 
+export function parseFx(v: unknown, d: TitleFx): TitleFx {
+  const r = obj(v)
+  return {
+    effect: pick(r.effect, TITLE_EFFECTS, d.effect),
+    glow: num(r.glow, 0.2, 1, d.glow),
+    animation: pick(r.animation, TITLE_ANIMATIONS, d.animation),
+    speed: num(r.speed, 0.5, 2, d.speed),
+  }
+}
+
 export function parseStyle(raw: unknown): MenuStyle {
   const r0 = obj(raw)
   const r = r0.version === 2 ? r0 : fromV1(r0)
@@ -510,6 +546,10 @@ export function parseStyle(raw: unknown): MenuStyle {
       ornamentSize: num(hd.ornamentSize, 0.6, 2, d.head.ornamentSize),
       ornamentGap: num(hd.ornamentGap, 10, 60, d.head.ornamentGap),
       space: num(hd.space, 0, 80, d.head.space),
+      restaurantFx: parseFx(hd.restaurantFx, d.head.restaurantFx),
+      titleFx: parseFx(hd.titleFx, d.head.titleFx),
+      titleFrame: pick(hd.titleFrame, ['none', 'frame', 'marquee'] as const, d.head.titleFrame),
+      titleFrameRadius: num(hd.titleFrameRadius, 0, 30, d.head.titleFrameRadius),
     },
     runningHead: {
       show: bool(rh.show, d.runningHead.show),

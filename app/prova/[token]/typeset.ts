@@ -1,6 +1,6 @@
 import {
-  DEFAULT_STYLE, categoryAnimates, cssFont, fontStack, formatPrice, mix, resolveColor, styleFaces,
-  type MenuStyle, type Ornament, type TextStyle,
+  DEFAULT_STYLE, categoryAnimates, cssFont, fontStack, formatPrice, fxAnimates, mix, resolveColor, styleFaces,
+  type MenuStyle, type Ornament, type TextStyle, type TitleAnimation, type TitleFx,
 } from '@/lib/menuStyle'
 import { paintPaper } from './paper'
 
@@ -178,9 +178,58 @@ interface DishBlock {
   showHead:  boolean
 }
 interface CatBlock { kind: 'cat'; name: string; cont: boolean }
-/** Animazione di un titolo: luce (1 accesa), lettera spenta, passo delle
- *  lampadine, posizione del riflesso (null = nessuno). */
-interface CatState { light: number; bad: number; chase: number; sweep: number | null }
+/** Animazione di un titolo, già "a gradini" (stesso stato = stesso disegno):
+ *  luce (1 accesa), lettera spenta, passo delle lampadine, posizione del
+ *  riflesso, fase dell'onda, tinta dell'arcobaleno, disturbo, scintille. */
+interface FxState {
+  light: number; bad: number; chase: number; sweep: number | null
+  wave: number | null; hue: number | null; glitch: number; spark: number | null
+}
+const STILL: FxState = { light: 1, bad: -1, chase: 0, sweep: null, wave: null, hue: null, glitch: 0, spark: null }
+const fxKey = (q: FxState) => `${q.light}|${q.bad}|${q.chase}|${q.sweep}|${q.wave}|${q.hue}|${q.glitch}|${q.spark}`
+/** Animazioni con pochi stati che si ripetono: si possono tenere da parte. */
+const CACHEABLE: TitleAnimation[] = ['none', 'flicker', 'chase', 'glitch']
+
+/** Stato dell'animazione `anim` (già verificata) al tempo t (assente = fermo). */
+function fxState(fx: TitleFx, anim: TitleAnimation, label: string, seedText: string, t?: number): FxState {
+  if (t === undefined || anim === 'none') return STILL
+  // Ogni titolo ha il suo ritmo: non si muovono tutti insieme.
+  const seed = hashOf(seedText)
+  const time = t * fx.speed + seed * 7
+  switch (anim) {
+    case 'pulse': {
+      const w = 0.5 + 0.5 * Math.sin((time * Math.PI * 2) / 2.6)
+      return { ...STILL, light: 0.5 + 0.5 * Math.round(w * 14) / 14 }
+    }
+    case 'flicker': {
+      // Insegna: tremolio all'accensione, poi ogni tanto una lettera difettosa.
+      const P = 6.5, cyc = Math.floor(time / P), u = time - cyc * P
+      const light = u < 0.8 && noise(Math.floor(u * 16) + cyc * 31) <= 0.42 ? 0.12 : 1
+      let bad = -1
+      const idx = Array.from(label).map((ch, i) => (ch.trim() ? i : -1)).filter(i => i >= 0)
+      if (idx.length > 2 && u > 3 && u < 4.4 && noise(Math.floor(u * 22) + cyc * 5) > 0.45) {
+        bad = idx[Math.floor(noise(cyc * 7.3 + seed * 13) * idx.length)]
+      }
+      return { ...STILL, light, bad }
+    }
+    case 'chase': return { ...STILL, chase: Math.floor(time * 7) % 3 }
+    case 'shimmer': {
+      const P = 3.4, p = ((time % P) / P) * 1.6 - 0.3
+      return { ...STILL, sweep: p > -0.2 && p < 1.2 ? Math.round(p * 25) / 25 : null }
+    }
+    case 'wave': return { ...STILL, wave: Math.round(((time / 1.5) % 1) * 30) / 30 }
+    case 'rainbow': return { ...STILL, hue: Math.round(((time / 6) % 1) * 60) / 60 }
+    case 'sparkle': return { ...STILL, spark: Math.round(time * 12) / 12 }
+    case 'glitch': {
+      // Quasi sempre fermo; ogni ~4 s un breve disturbo a scatti.
+      const P = 4.2, cyc = Math.floor(time / P), u = time - cyc * P
+      if (u > 0.42) return STILL
+      const n = noise(Math.floor(u * 12) + cyc * 17)
+      return { ...STILL, glitch: n < 0.25 ? 0 : 1 + Math.floor(((n - 0.25) / 0.75) * 4) }
+    }
+    default: return STILL
+  }
+}
 interface HeadBlock { kind: 'head'; titleSize: number }
 /** Una riga di testo ricco già spezzata (pagine informative). */
 interface TextLineBlock {
@@ -313,10 +362,17 @@ export function layoutMenu(ctx: Ctx, data: MenuData, vp: Viewport, style: MenuSt
 
   // ── Testata della prima pagina: nome del ristorante, titolo, ornamento.
   const H = st.head
-  const TITLE_FIT = fit(H.title, data.menuName, m.cw)
+  // Cornice attorno al titolo: spazio ai lati e sopra/sotto.
+  const TF = H.titleFrame
+  const TF_PX = TF === 'none' ? 0 : (TF === 'marquee' ? 18 : 14) * s
+  const TF_PY = TF === 'none' ? 0 : (TF === 'marquee' ? 12 : 9) * s
+  const TITLE_FIT = fit(H.title, data.menuName, m.cw - TF_PX * 2)
   const restBase = H.showRestaurant ? REST.size + 3.5 * s : 0
-  const titleBase = restBase + (H.showRestaurant ? TITLE_FIT.size * 1.21 + H.titleGap * s : TITLE_FIT.size * 0.95)
-  const ornY = titleBase + H.ornamentGap * s
+  const titleBase = restBase + (H.showRestaurant ? TITLE_FIT.size * 1.21 + H.titleGap * s : TITLE_FIT.size * 0.95) + TF_PY
+  const ornY = titleBase + H.ornamentGap * s + TF_PY
+  const REST_ANIM: TitleAnimation = H.showRestaurant && fxAnimates(H.restaurantFx, false) ? H.restaurantFx.animation : 'none'
+  const TITLE_ANIM: TitleAnimation = fxAnimates(H.titleFx, TF === 'marquee') ? H.titleFx.animation : 'none'
+  const HEAD_ANIM = REST_ANIM !== 'none' || TITLE_ANIM !== 'none'
   const HEAD_H = (H.ornament === 'none' ? titleBase + 30 * s : ornY + (24 + 10 * H.ornamentSize) * s) + H.space * s
 
   // ── Titolo di categoria
@@ -326,11 +382,11 @@ export function layoutMenu(ctx: Ctx, data: MenuData, vp: Viewport, style: MenuSt
   const CAT_H = CAT.size * 1.4 + CAT_PAD * 2 + (CS === 'underline' ? 7 * s : 0)
   const CONT = rt({ ...D.description, size: 12, italic: true, color: st.category.text.color, upper: false, tracking: 0 })
   // Luce, filetti e animazione dei titoli.
-  const CAT_ANIM = categoryAnimates(CC) ? CC.animation : 'none'
+  const CAT_ANIM: TitleAnimation = categoryAnimates(CC) ? CC.animation : 'none'
   const CAT_LINE = CC.lineColor !== 'auto' ? resolveColor(CC.lineColor, st)
     : CC.effect === 'neon' ? CAT.color : CS === 'marquee' ? st.page.accent : ACCENT_SOFT
   const CAT_FILL = resolveColor(CC.fill, st)
-  const CAT_GLOW_PAD = (CC.effect === 'glow' || CC.effect === 'neon' || CS === 'marquee' ? 26 : 10) * s
+  const CAT_GLOW_PAD = (CC.effect === 'glow' || CC.effect === 'neon' || CS === 'marquee' ? 26 : CAT_ANIM !== 'none' ? 18 : 10) * s
 
   // ── Testo ricco → righe (a capo per parole, con caratteri diversi nella riga)
   const TP = st.textPages
@@ -620,8 +676,8 @@ export function layoutMenu(ctx: Ctx, data: MenuData, vp: Viewport, style: MenuSt
     let prev: Placed | null = null
     for (const it of page.items) {
       const b = it.block
-      if (b.kind === 'head') paintHead(c, b, it.y)
-      else if (b.kind === 'cat') { if (!(opts.skipAnimated && CAT_ANIM !== 'none')) paintCat(c, b, it.y, catState(b, opts.t)) }
+      if (b.kind === 'head') { if (!(opts.skipAnimated && HEAD_ANIM)) paintHead(c, b, it.y, opts.t) }
+      else if (b.kind === 'cat') { if (!(opts.skipAnimated && CAT_ANIM !== 'none')) paintCat(c, b, it.y, opts.t) }
       else if (b.kind === 'tline') paintTextLine(c, b, it.y)
       else if (b.kind === 'legend') paintLegend(c, b, it.y)
       else {
@@ -741,55 +797,182 @@ export function layoutMenu(ctx: Ctx, data: MenuData, vp: Viewport, style: MenuSt
     draw(c, LEG_NAME, tx(LEG_NAME, b.name), left + 34 * s * legK, base, 'left')
   }
 
-  function paintHead(c: Ctx, b: HeadBlock, top: number) {
+  function paintHead(c: Ctx, b: HeadBlock, top: number, t?: number) {
     const cx = vp.w / 2
+    const dpr = dprOf(c)
     if (H.showRestaurant) {
       const name = tx(REST, data.restaurantName)
       const r = measure(c, REST, name) > m.cw ? fit(H.restaurant, data.restaurantName, m.cw) : REST
-      draw(c, r, name, cx, top + restBase, 'center')
+      const q = fxState(H.restaurantFx, REST_ANIM, name, `r:${name}`, t)
+      const w = measure(c, r, name), y = top + restBase
+      paintTitle(c, r, name, cx, y, 'center', H.restaurantFx, REST_ANIM, q, dpr,
+        { x0: cx - w / 2, x1: cx + w / 2, top: y - r.size * 0.9, h: r.size * 1.2 }, `r:${name}`)
     }
-    draw(c, TITLE_FIT, tx(TITLE_FIT, data.menuName), cx, top + titleBase, 'center')
+    const title = tx(TITLE_FIT, data.menuName)
+    const q = fxState(H.titleFx, TITLE_ANIM, title, `t:${title}`, t)
+    const tw = measure(c, TITLE_FIT, title), ty = top + titleBase
+    const box = { x0: cx - tw / 2 - TF_PX, x1: cx + tw / 2 + TF_PX, top: ty - TITLE_FIT.size * 0.82 - TF_PY, h: TITLE_FIT.size * 1.06 + TF_PY * 2 }
+    if (TF !== 'none') {
+      const line = H.titleFx.effect === 'neon' ? TITLE_FIT.color : TF === 'marquee' ? st.page.accent : ACCENT_SOFT
+      paintBox(c, TF, box.x0, box.top, box.x1 - box.x0, box.h, Math.min(H.titleFrameRadius * s, box.h / 2), line, 0.8 * s, H.titleFx, TITLE_ANIM, q, dpr)
+    }
+    paintTitle(c, TITLE_FIT, title, cx, ty, 'center', H.titleFx, TITLE_ANIM, q, dpr, box, `t:${title}`)
     if (H.ornament !== 'none') ornament(c, H.ornament, cx, top + ornY, H.ornamentSize)
   }
 
   const ornament = (c: Ctx, kind: Ornament, cx: number, cy: number, k: number) =>
     drawOrnament(c, kind, cx, cy, s * k, st.page.accent, ACCENT_SOFT)
 
-  /** Stato dell'animazione di un titolo al tempo t (assente = fermo), già
-   *  "a gradini": stesso stato = stesso disegno, niente da ridisegnare. */
-  function catState(b: CatBlock, t?: number): CatState {
-    const still: CatState = { light: 1, bad: -1, chase: 0, sweep: null }
-    if (t === undefined || CAT_ANIM === 'none') return still
-    // Ogni categoria ha il suo ritmo: non sfarfallano tutte insieme.
-    const seed = hashOf(b.name)
-    const time = t * CC.speed + seed * 7
-    switch (CAT_ANIM) {
-      case 'pulse': {
-        const w = 0.5 + 0.5 * Math.sin((time * Math.PI * 2) / 2.6)
-        return { ...still, light: 0.5 + 0.5 * Math.round(w * 14) / 14 }
+  const lit = (fx: TitleFx) => fx.effect === 'glow' || fx.effect === 'neon'
+  const glowOff = (c: Ctx) => { c.shadowColor = 'transparent'; c.shadowBlur = 0; c.shadowOffsetX = 0; c.shadowOffsetY = 0 }
+
+  // ── Bagliori già pronti: le ombre sfocate costano, quindi bagliore di ogni
+  // lettera, cornici, fondi e filetti si disegnano una volta (in bianco, poi
+  // colorati) e a ogni fotogramma si copiano soltanto. Memoria limitata.
+  const sprites = new Map<string, { c: HTMLCanvasElement; px: number }>()
+  let spritePx = 0
+  const SPRITE_BUDGET = 8e6
+  function sprite(key: string, w: number, h: number, dpr: number, paintFn: (x: Ctx) => void): HTMLCanvasElement | null {
+    const hit = sprites.get(key)
+    if (hit) { sprites.delete(key); sprites.set(key, hit); return hit.c }
+    if (typeof document === 'undefined') return null
+    const cv = document.createElement('canvas')
+    cv.width = Math.max(1, Math.ceil(w * dpr)); cv.height = Math.max(1, Math.ceil(h * dpr))
+    const x = cv.getContext('2d')
+    if (!x) return null
+    x.setTransform(dpr, 0, 0, dpr, 0, 0)
+    x.textBaseline = 'alphabetic'
+    paintFn(x)
+    const px = cv.width * cv.height
+    sprites.set(key, { c: cv, px }); spritePx += px
+    while (spritePx > SPRITE_BUDGET && sprites.size > 1) {
+      const [k0, e] = sprites.entries().next().value as [string, { c: HTMLCanvasElement; px: number }]
+      sprites.delete(k0); spritePx -= e.px
+    }
+    return cv
+  }
+  /** Disegno in (x, y, w, h) con margine `pad`, preso dalla memoria se c'è già. */
+  function blit(c: Ctx, key: string, x: number, y: number, w: number, h: number, pad: number, dpr: number, paintFn: (x: Ctx) => void) {
+    const sp = sprite(`${key}|${w.toFixed(1)}|${h.toFixed(1)}|${dpr}`, w + pad * 2, h + pad * 2, dpr, xc => { xc.translate(pad, pad); paintFn(xc) })
+    if (sp) c.drawImage(sp, x - pad, y - pad, w + pad * 2, h + pad * 2)
+    else { c.save(); c.translate(x, y); paintFn(c); c.restore() }
+  }
+  /** Bagliore (luce o neon) di un testo, colorato e con trasparenza `alpha`. */
+  function haloAt(c: Ctx, r: RT, t: string, px: number, py: number, kind: 'glow' | 'neon', g: number, dpr: number, color: string, alpha: number) {
+    c.font = r.font
+    const w = c.measureText(t).width
+    const P = (kind === 'neon' ? 46 : 18) * g * s + 2 * s
+    const asc = r.size * 1.05, desc = r.size * 0.4
+    const W = w + P * 2, Hh = asc + desc + P * 2
+    const passes = (x: Ctx, col: string, k: number) => {
+      x.font = r.font; x.fillStyle = col; x.strokeStyle = col; x.shadowColor = col
+      if (kind === 'neon') {
+        // Il tubo ha spessore: il contorno dà più "materia" all'alone.
+        x.lineWidth = Math.max(1, r.size * 0.08); x.lineJoin = 'round'
+        x.shadowBlur = 40 * g * s * k; x.fillText(t, P, P + asc); x.strokeText(t, P, P + asc); x.fillText(t, P, P + asc)
+        x.shadowBlur = 12 * g * s * k; x.fillText(t, P, P + asc)
+        x.shadowBlur = 3 * s * k; x.fillText(t, P, P + asc)
+      } else {
+        x.shadowBlur = 14 * g * s * k; x.fillText(t, P, P + asc)
       }
-      case 'flicker': {
-        // Insegna: tremolio all'accensione, poi ogni tanto una lettera difettosa.
-        const P = 6.5, cyc = Math.floor(time / P), u = time - cyc * P
-        const light = u < 0.8 && noise(Math.floor(u * 16) + cyc * 31) <= 0.42 ? 0.12 : 1
-        let bad = -1
-        const label = tx(CAT, b.name)
-        const idx = Array.from(label).map((ch, i) => (ch.trim() ? i : -1)).filter(i => i >= 0)
-        if (idx.length > 2 && u > 3 && u < 4.4 && noise(Math.floor(u * 22) + cyc * 5) > 0.45) {
-          bad = idx[Math.floor(noise(cyc * 7.3 + seed * 13) * idx.length)]
+    }
+    // Il bagliore è sfocato: basta mezza risoluzione (il testo nitido va sopra).
+    const hd = Math.min(dpr, 1.25)
+    const key = `halo|${kind}|${r.font}|${t}|${g}|${s}|${hd}`
+    const base = sprite(key, W, Hh, hd, x => passes(x, '#ffffff', hd))
+    const tint = base && sprite(`${key}|${color}`, W, Hh, hd, x => {
+      x.drawImage(base, 0, 0, W, Hh)
+      x.globalCompositeOperation = 'source-in'
+      x.fillStyle = color; x.fillRect(0, 0, W, Hh)
+    })
+    c.globalAlpha = Math.max(0, Math.min(1, alpha))
+    if (tint) c.drawImage(tint, px - P, py - asc - P, W, Hh)
+    else { c.save(); c.translate(px - P, py - asc - P); passes(c, color, dpr); c.restore() }
+    c.globalAlpha = 1
+    glowOff(c)
+  }
+
+  /** Cornice o insegna a lampadine (anche per il titolo della copertina). */
+  function paintBox(c: Ctx, kind: 'frame' | 'marquee', x: number, y: number, w: number, h: number, rad: number,
+    line: string, lw: number, fx: TitleFx, anim: TitleAnimation, q: FxState, dpr: number) {
+    const chase = anim === 'chase' ? q.chase : -1
+    blit(c, `box|${kind}|${rad}|${line}|${lw}|${fx.effect}|${fx.glow}|${q.light}|${chase}`, x, y, w, h, 30 * s, dpr, b => {
+      b.strokeStyle = line
+      b.lineWidth = Math.max(0.5, lw)
+      if (kind === 'frame') {
+        if (lit(fx)) { b.shadowColor = withAlpha(line, Math.min(1, 0.95 * q.light)); b.shadowBlur = (fx.effect === 'neon' ? 24 : 12) * fx.glow * s * dpr }
+        roundRectPath(b, 0, 0.5, w, h - 1, rad); b.stroke()
+        if (fx.effect === 'neon') b.stroke()
+        glowOff(b)
+        return
+      }
+      // Insegna a lampadine: cornice sottile e lampadine lungo il bordo.
+      b.globalAlpha = 0.5
+      roundRectPath(b, 0, 0.5, w, h - 1, rad); b.stroke()
+      b.globalAlpha = 1
+      const pts = roundRectPoints(0, 0.5, w, h - 1, rad, 9 * s)
+      const dim = mix(line, st.page.paper, 0.6)
+      const core = mix(line, '#ffffff', 0.55)
+      pts.forEach(([px, py], i) => {
+        const on = chase < 0 || (((i - chase) % 3) + 3) % 3 === 0
+        b.beginPath(); b.arc(px, py, 2.1 * s, 0, Math.PI * 2)
+        if (on) {
+          b.shadowColor = withAlpha(line, 0.9); b.shadowBlur = 7 * fx.glow * s * dpr
+          b.fillStyle = line; b.fill()
+          glowOff(b)
+          b.beginPath(); b.arc(px, py, 0.9 * s, 0, Math.PI * 2); b.fillStyle = core; b.fill()
+        } else { b.fillStyle = dim; b.fill() }
+      })
+    })
+  }
+
+  /** Titolo con effetto e animazione, più riflesso e scintille attorno a `box`. */
+  function paintTitle(c: Ctx, r: RT, label: string, x: number, y: number, align: 'left' | 'center', fx: TitleFx,
+    anim: TitleAnimation, q: FxState, dpr: number, box: { x0: number; x1: number; top: number; h: number }, seedText: string,
+    fill?: { x: number; w: number; rad: number }) {
+    paintFxText(c, r, label, x, y, align, fx, anim, q, dpr)
+    // Riflesso di luce che attraversa il titolo (e il suo fondo), ogni ~3 s.
+    if (q.sweep !== null) {
+      const x0 = box.x0 - 40 * s, x1 = box.x1 + 40 * s
+      const bx = x0 + (x1 - x0) * q.sweep, bw = 34 * s
+      const g = c.createLinearGradient(bx - bw, box.top, bx + bw, box.top + box.h)
+      g.addColorStop(0, 'rgba(255,255,255,0)')
+      g.addColorStop(0.5, 'rgba(255,255,255,0.85)')
+      g.addColorStop(1, 'rgba(255,255,255,0)')
+      if (fill) {
+        c.fillStyle = g; c.globalAlpha = 0.55
+        roundRectPath(c, fill.x, box.top, fill.w, box.h, fill.rad)
+        c.fill(); c.globalAlpha = 1
+      }
+      paintFxText(c, r, label, x, y, align, fx, anim, q, dpr, g)
+    }
+    // Scintille: piccole stelle che nascono e svaniscono attorno al titolo.
+    if (q.spark !== null) {
+      const seed = hashOf(seedText)
+      const N = 6, P = 1.7
+      const star = mix(r.color.startsWith('#') ? r.color : st.page.accent, '#ffffff', 0.6)
+      for (let j = 0; j < N; j++) {
+        const ph = q.spark / P + j / N + seed
+        const cyc = Math.floor(ph), u = ph - cyc
+        if (u > 0.6) continue
+        const k = Math.sin((u / 0.6) * Math.PI)
+        const px = box.x0 - 8 * s + noise(cyc * 13 + j * 7 + seed * 50) * (box.x1 - box.x0 + 16 * s)
+        const py = box.top - 6 * s + noise(cyc * 29 + j * 3 + seed * 90) * (box.h + 12 * s)
+        const R = (2 + 2.6 * noise(j * 11 + cyc)) * s * k
+        c.fillStyle = star
+        c.shadowColor = withAlpha(star, 0.9 * k); c.shadowBlur = 6 * s * dpr
+        c.beginPath()
+        for (let a = 0; a < 8; a++) {
+          const rr = a % 2 ? R * 0.28 : R, ang = (a * Math.PI) / 4
+          c.lineTo(px + Math.cos(ang) * rr, py + Math.sin(ang) * rr)
         }
-        return { ...still, light, bad }
+        c.closePath(); c.fill()
+        glowOff(c)
       }
-      case 'chase': return { ...still, chase: Math.floor(time * 7) % 3 }
-      case 'shimmer': {
-        const P = 3.4, p = ((time % P) / P) * 1.6 - 0.3
-        return { ...still, sweep: p > -0.2 && p < 1.2 ? Math.round(p * 25) / 25 : null }
-      }
-      default: return still
     }
   }
 
-  function paintCat(c: Ctx, b: CatBlock, top: number, cs: CatState = catState(b)) {
+  function paintCat(c: Ctx, b: CatBlock, top: number, t?: number) {
     const left = CC.align === 'left'
     const cx = m.x0 + m.cw / 2
     const label = tx(CAT, b.name)
@@ -797,177 +980,169 @@ export function layoutMenu(ctx: Ctx, data: MenuData, vp: Viewport, style: MenuSt
     const base = top + CAT_PAD + r.size
     const tw = measure(c, r, label)
     const tx0 = left ? m.x0 + CAT_PAD * 1.5 : cx - tw / 2
-    const dpr = typeof c.getTransform === 'function' ? c.getTransform().a : 1
-    const light = cs.light
-    const letterLight = cs.bad >= 0 ? (i: number) => (i === cs.bad ? 0.1 : 1) : null
-    // Neon con lettera difettosa: lettera per lettera (sempre, così il
-    // fotogramma fermo e quelli animati coincidono).
-    const perLetter = CC.effect === 'neon' && CAT_ANIM === 'flicker'
+    const dpr = dprOf(c)
+    const q = fxState(CC, CAT_ANIM, label, b.name, t)
 
     // Riquadro del titolo (cornice, pillola, lampadine) e fascia.
     const fx = tx0 - CAT_PAD * 1.5, fw = tw + CAT_PAD * 3
     const boxR = CS === 'pill' ? CAT_H / 2 : Math.min(CC.radius * s, CAT_H / 2)
-    const lit = CC.effect === 'glow' || CC.effect === 'neon'
-    const glowOn = (color: string, k: number) => {
-      if (!lit) return
-      c.shadowColor = withAlpha(color, Math.min(1, 0.95 * light * k))
-      c.shadowBlur = (CC.effect === 'neon' ? 24 : 12) * CC.glow * s * dpr
-    }
-    const glowOff = () => { c.shadowColor = 'transparent'; c.shadowBlur = 0; c.shadowOffsetY = 0 }
+    const bandR = Math.min(CC.radius * s, CAT_H / 2)
 
     // Fondi (pillola, fascia).
+    const glowK = (k: number) => (lit(CC) ? `${CC.effect}|${CC.glow}|${q.light}|${k}` : 'flat')
+    const shine = (b: Ctx, color: string, k: number) => {
+      if (lit(CC)) { b.shadowColor = withAlpha(color, Math.min(1, k * q.light)); b.shadowBlur = (CC.effect === 'neon' ? 24 : 12) * CC.glow * s * dpr }
+    }
     if (CS === 'pill' || CS === 'band') {
-      const bx = CS === 'band' ? m.x0 : fx, bw = CS === 'band' ? m.cw : fw
-      c.fillStyle = CAT_FILL
-      glowOn(CAT_FILL, 0.8)
-      roundRectPath(c, bx, top, bw, CAT_H, CS === 'band' ? Math.min(CC.radius * s, CAT_H / 2) : boxR)
-      c.fill()
-      glowOff()
+      const bx = CS === 'band' ? m.x0 : fx, bw = CS === 'band' ? m.cw : fw, br = CS === 'band' ? bandR : boxR
+      blit(c, `fill|${CAT_FILL}|${br}|${glowK(0.76)}`, bx, top, bw, CAT_H, 30 * s, dpr, b => {
+        b.fillStyle = CAT_FILL; shine(b, CAT_FILL, 0.76)
+        roundRectPath(b, 0, 0, bw, CAT_H, br); b.fill()
+        glowOff(b)
+      })
     }
 
-    // Titolo.
-    paintCatText(c, r, label, left ? tx0 : cx, base, left ? 'left' : 'center', light, letterLight, perLetter, dpr)
-
-    // Filetti e cornici.
-    c.strokeStyle = CAT_LINE
-    c.lineWidth = Math.max(0.5, CC.lineWidth * s)
+    // Filetti (sotto il titolo: il suo alone resta sopra).
     const ly = base - r.size * 0.36
     const pad = 12 * s
-    glowOn(CAT_LINE, 0.9)
-    if (CS === 'rules') {
-      // Filetti ai lati del titolo (a destra soltanto, se allineato a sinistra).
-      c.beginPath()
-      if (!left) { c.moveTo(m.x0, ly); c.lineTo(tx0 - pad, ly) }
-      c.moveTo(tx0 + tw + pad, ly); c.lineTo(m.x0 + m.cw, ly)
-      c.stroke()
-    } else if (CS === 'underline') {
-      c.beginPath(); c.moveTo(tx0, base + 7 * s); c.lineTo(tx0 + tw, base + 7 * s); c.stroke()
-    } else if (CS === 'frame') {
-      roundRectPath(c, fx, top + 0.5, fw, CAT_H - 1, boxR); c.stroke()
-      if (CC.effect === 'neon') c.stroke()
-    } else if (CS === 'marquee') {
-      // Insegna a lampadine: cornice sottile e lampadine lungo il bordo.
-      glowOff()
-      c.globalAlpha = 0.5
-      roundRectPath(c, fx, top + 0.5, fw, CAT_H - 1, boxR); c.stroke()
-      c.globalAlpha = 1
-      const pts = roundRectPoints(fx, top + 0.5, fw, CAT_H - 1, boxR, 9 * s)
-
-      const dim = mix(CAT_LINE, st.page.paper, 0.6)
-      const core = mix(CAT_LINE, '#ffffff', 0.55)
-      pts.forEach(([px, py], i) => {
-        const on = CAT_ANIM !== 'chase' || (((i - cs.chase) % 3) + 3) % 3 === 0
-        c.beginPath(); c.arc(px, py, 2.1 * s, 0, Math.PI * 2)
-        if (on) {
-          c.shadowColor = withAlpha(CAT_LINE, 0.9); c.shadowBlur = 7 * CC.glow * s * dpr
-          c.fillStyle = CAT_LINE; c.fill()
-          glowOff()
-          c.beginPath(); c.arc(px, py, 0.9 * s, 0, Math.PI * 2); c.fillStyle = core; c.fill()
-        } else { c.fillStyle = dim; c.fill() }
-      })
-    } else if (CS === 'ornament' && !b.cont) {
+    const lw = Math.max(0.5, CC.lineWidth * s)
+    if (CS === 'rules' || CS === 'underline') {
+      const segs: [number, number, number][] = CS === 'underline' ? [[tx0, tx0 + tw, base + 7 * s]]
+        : [...(left ? [] : [[m.x0, tx0 - pad, ly] as [number, number, number]]), [tx0 + tw + pad, m.x0 + m.cw, ly]]
+      for (const [a, z, yy] of segs) {
+        if (z - a < 1) continue
+        blit(c, `line|${CAT_LINE}|${lw}|${glowK(0.85)}`, a, yy - lw, z - a, lw * 2, 30 * s, dpr, b => {
+          b.strokeStyle = CAT_LINE; b.lineWidth = lw; shine(b, CAT_LINE, 0.85)
+          b.beginPath(); b.moveTo(0, lw); b.lineTo(z - a, lw); b.stroke()
+          glowOff(b)
+        })
+      }
+    }
+    if (CS === 'frame' || CS === 'marquee') paintBox(c, CS, fx, top, fw, CAT_H, boxR, CAT_LINE, CC.lineWidth * s, CC, CAT_ANIM, q, dpr)
+    else if (CS === 'ornament' && !b.cont) {
       // Ornamento piccolo sotto il titolo (a sinistra: sotto l'inizio).
       ornament(c, CC.ornament, left ? tx0 + 46 * 0.55 * s : cx, base + 9 * s, 0.55)
     }
-    glowOff()
 
-    // Riflesso di luce che attraversa titolo (e pillola/fascia), ogni ~3 s.
-    if (cs.sweep !== null) {
-      const x0 = (CS === 'band' ? m.x0 : fx) - 40 * s, x1 = (CS === 'band' ? m.x0 + m.cw : fx + fw) + 40 * s
-      const p = cs.sweep
-      {
-        const bx = x0 + (x1 - x0) * p, bw = 34 * s
-        const g = c.createLinearGradient(bx - bw, top, bx + bw, top + CAT_H)
-        g.addColorStop(0, 'rgba(255,255,255,0)')
-        g.addColorStop(0.5, 'rgba(255,255,255,0.85)')
-        g.addColorStop(1, 'rgba(255,255,255,0)')
-        if (CS === 'pill' || CS === 'band') {
-          c.fillStyle = g; c.globalAlpha = 0.55
-          roundRectPath(c, CS === 'band' ? m.x0 : fx, top, CS === 'band' ? m.cw : fw, CAT_H, CS === 'band' ? Math.min(CC.radius * s, CAT_H / 2) : boxR)
-          c.fill(); c.globalAlpha = 1
-        }
-        paintCatText(c, { ...r, color: '' }, label, left ? tx0 : cx, base, left ? 'left' : 'center', 1, null, perLetter, dpr, g)
-      }
-    }
+    // Titolo (con riflesso e scintille).
+    const box = CS === 'band' ? { x0: m.x0, x1: m.x0 + m.cw, top, h: CAT_H } : { x0: fx, x1: fx + fw, top, h: CAT_H }
+    const fill = CS === 'pill' ? { x: fx, w: fw, rad: boxR } : CS === 'band' ? { x: m.x0, w: m.cw, rad: bandR } : undefined
+    paintTitle(c, r, label, left ? tx0 : cx, base, left ? 'left' : 'center', CC, CAT_ANIM, q, dpr, box, b.name, fill)
 
     if (b.cont) draw(c, CONT, data.labels.cont, left ? tx0 : cx, top + CAT_H + 12 * s, left ? 'left' : 'center')
   }
 
-  /** Testo del titolo con l'effetto scelto. `paintWith`: riempimento al posto
-   *  dell'effetto (riflesso). */
-  function paintCatText(c: Ctx, r: RT, label: string, x: number, y: number, align: 'left' | 'center', light: number,
-    letterLight: ((i: number) => number) | null, perLetter: boolean, dpr: number, paintWith?: CanvasGradient) {
+  /** Testo di un titolo con l'effetto scelto. `paintWith`: riempimento al
+   *  posto dell'effetto (riflesso). */
+  function paintFxText(c: Ctx, r: RT, label: string, x: number, y: number, align: 'left' | 'center', fx: TitleFx,
+    anim: TitleAnimation, q: FxState, dpr: number, paintWith?: CanvasGradient) {
     c.font = r.font
     const chars = Array.from(label)
-    // Lettera per lettera (neon con lettera difettosa) o tutto insieme.
-    const each = (fn: (text: string, x: number, i: number) => void) => {
-      if (!perLetter && !letterLight) {
-        if (!r.track) { c.textAlign = align; fn(label, x, -1); c.textAlign = 'left'; return }
+    // Lettera per lettera (onda, arcobaleno, neon con lettera difettosa) o
+    // tutto insieme. Sempre allo stesso modo per la stessa animazione, così
+    // il fotogramma fermo e quelli animati coincidono.
+    const perLetter = anim === 'wave' || anim === 'rainbow' || (fx.effect === 'neon' && anim === 'flicker')
+    const amp = r.size * 0.12
+    const each = (fn: (text: string, x: number, y: number, i: number) => void) => {
+      c.textAlign = 'left'
+      if (!perLetter) {
+        if (!r.track) { fn(label, align === 'left' ? x : x - c.measureText(label).width / 2, y, -1); return }
         const total = spacedWidth(c, label, r.track)
         let px = align === 'left' ? x : x - total / 2
-        chars.forEach((ch, i) => { fn(ch, px, i); px += c.measureText(ch).width + r.track })
+        chars.forEach((ch, i) => { fn(ch, px, y, i); px += c.measureText(ch).width + r.track })
         return
       }
       const total = chars.reduce((w, ch) => w + c.measureText(ch).width, 0) + r.track * (chars.length - 1)
       let px = align === 'left' ? x : x - total / 2
-      chars.forEach((ch, i) => { fn(ch, px, i); px += c.measureText(ch).width + r.track })
+      chars.forEach((ch, i) => {
+        const dy = q.wave === null ? 0 : -Math.sin(q.wave * Math.PI * 2 - i * 0.55) * amp
+        fn(ch, px, y + dy, i)
+        px += c.measureText(ch).width + r.track
+      })
     }
-    const lv = (i: number) => light * (letterLight && i >= 0 ? letterLight(i) : 1)
-    if (paintWith) { c.fillStyle = paintWith; each((t, px) => c.fillText(t, px, y)); return }
-    const color = r.color
-    switch (CC.effect) {
+    const lv = (i: number) => q.light * (q.bad >= 0 && i === q.bad ? 0.1 : 1)
+    // Arcobaleno: ogni lettera la sua tinta, che scorre.
+    const colorAt = (i: number) => q.hue === null ? r.color
+      : hslHex(Math.round(((q.hue * 360 + Math.max(0, i) * 24) % 360) / 15) * 15, 0.85, DARK_PAPER ? 0.62 : 0.45)
+    if (paintWith) { c.fillStyle = paintWith; each((t, px, py) => c.fillText(t, px, py)); return }
+
+    // Disturbo: due copie colorate spostate, sotto il testo.
+    if (q.glitch) {
+      const dx = [-2.2, 1.6, -1.1, 2.6][q.glitch - 1] * s * Math.max(1, r.size / 16)
+      c.globalAlpha = 0.75
+      c.fillStyle = '#ff2a6d'; each((t, px, py) => c.fillText(t, px - dx, py))
+      c.fillStyle = '#05d9e8'; each((t, px, py) => c.fillText(t, px + dx, py + (q.glitch % 2 ? 0.6 * s : -0.6 * s)))
+      c.globalAlpha = 1
+    }
+
+    switch (fx.effect) {
       case 'shadow':
-        c.shadowColor = `rgba(0,0,0,${(0.5 * CC.glow).toFixed(3)})`
-        c.shadowOffsetY = 2 * s * dpr * CC.glow
-        c.shadowBlur = 5 * s * dpr * CC.glow
-        c.fillStyle = color
-        each((t, px) => c.fillText(t, px, y))
+        c.shadowColor = `rgba(0,0,0,${(0.5 * fx.glow).toFixed(3)})`
+        c.shadowOffsetY = 2 * s * dpr * fx.glow
+        c.shadowBlur = 5 * s * dpr * fx.glow
+        each((t, px, py, i) => { c.fillStyle = colorAt(i); c.fillText(t, px, py) })
         break
       case 'outline':
-        c.strokeStyle = color
         c.lineWidth = Math.max(0.6, r.size * 0.055)
         c.lineJoin = 'round'
-        each((t, px) => c.strokeText(t, px, y))
+        each((t, px, py, i) => { c.strokeStyle = colorAt(i); c.strokeText(t, px, py) })
         break
       case 'glow':
-        each((t, px, i) => {
-          const k = lv(i)
+        each((t, px, py, i) => {
+          const k = lv(i), color = colorAt(i)
+          haloAt(c, r, t, px, py, 'glow', fx.glow, dpr, color, 0.9 * k)
+          c.font = r.font
           c.fillStyle = mix(mix(color, st.page.paper, 0.5), color, k)
-          c.shadowColor = withAlpha(color, 0.9 * k)
-          c.shadowBlur = 14 * CC.glow * s * dpr * (0.4 + 0.6 * k)
-          c.fillText(t, px, y)
-          c.shadowBlur = 0; c.shadowColor = 'transparent'
-          c.fillText(t, px, y)
+          c.fillText(t, px, py)
         })
         break
       case 'neon':
-        // Tubo: alone largo, alone stretto, anima chiara. Spento: tubo opaco.
-        each((t, px, i) => {
-          const k = lv(i)
+        // Tubo: alone largo e stretto (già pronti), anima chiara. Spento: tubo opaco.
+        each((t, px, py, i) => {
+          const k = lv(i), color = colorAt(i)
           const off = mix(color, st.page.paper, 0.55)
-          if (k > 0.2) {
-            // Il tubo ha spessore: il contorno dà più "materia" all'alone.
-            c.fillStyle = color; c.strokeStyle = color
-            c.lineWidth = Math.max(1, r.size * 0.08); c.lineJoin = 'round'
-            c.shadowColor = withAlpha(color, k)
-            c.shadowBlur = 40 * CC.glow * s * dpr
-            c.fillText(t, px, y); c.strokeText(t, px, y)
-            c.fillText(t, px, y)
-            c.shadowBlur = 12 * CC.glow * s * dpr
-            c.fillText(t, px, y)
-            c.shadowBlur = 3 * s * dpr
-            c.fillText(t, px, y)
-            c.shadowBlur = 0; c.shadowColor = 'transparent'
-          }
+          if (k > 0.2) haloAt(c, r, t, px, py, 'neon', fx.glow, dpr, color, k)
+          c.font = r.font
           c.fillStyle = mix(off, mix(color, '#ffffff', 0.55), k)
-          c.fillText(t, px, y)
+          c.fillText(t, px, py)
         })
         break
+      case 'foil':
+        // Lamina: riflessi metallici dall'alto in basso (oro con un accento oro).
+        each((t, px, py, i) => {
+          const color = colorAt(i)
+          const g = c.createLinearGradient(0, py - r.size * 0.85, 0, py + r.size * 0.2)
+          g.addColorStop(0, mix(color, '#ffffff', 0.25 + 0.4 * fx.glow))
+          g.addColorStop(0.45, color)
+          g.addColorStop(0.55, mix(color, '#000000', 0.15 + 0.25 * fx.glow))
+          g.addColorStop(1, mix(color, '#ffffff', 0.2 + 0.3 * fx.glow))
+          c.fillStyle = g
+          c.fillText(t, px, py)
+        })
+        break
+      case 'letterpress':
+        // Inciso nella carta: luce sotto (carta chiara) o ombra sopra (scura).
+        each((t, px, py, i) => {
+          c.fillStyle = DARK_PAPER ? `rgba(0,0,0,${(0.7 * fx.glow).toFixed(3)})` : `rgba(255,255,255,${(0.95 * fx.glow).toFixed(3)})`
+          c.fillText(t, px, py + (DARK_PAPER ? -1 : 1) * Math.max(0.8, r.size * 0.05))
+          c.fillStyle = mix(colorAt(i), DARK_PAPER ? '#ffffff' : '#000000', 0.1)
+          c.fillText(t, px, py)
+        })
+        break
+      case 'retro': {
+        // Rilievo retrò: il testo "estruso" in diagonale, nel secondo colore.
+        const depth = Math.round(2 + 5 * fx.glow)
+        const step = Math.max(0.5, r.size * 0.035)
+        const ext = r.color === st.page.accent ? st.page.ink : st.page.accent
+        c.fillStyle = mix(ext, st.page.paper, 0.15)
+        for (let k = depth; k >= 1; k--) each((t, px, py) => c.fillText(t, px + k * step, py + k * step))
+        each((t, px, py, i) => { c.fillStyle = colorAt(i); c.fillText(t, px, py) })
+        break
+      }
       default:
-        c.fillStyle = color
-        each((t, px) => c.fillText(t, px, y))
+        each((t, px, py, i) => { c.fillStyle = colorAt(i); c.fillText(t, px, py) })
     }
-    c.shadowColor = 'transparent'; c.shadowBlur = 0; c.shadowOffsetY = 0
+    glowOff(c)
   }
 
   function paintDivider(c: Ctx, yy: number) {
@@ -1120,15 +1295,22 @@ export function layoutMenu(ctx: Ctx, data: MenuData, vp: Viewport, style: MenuSt
   }
 
   // Titoli animati: la loro striscia (con l'alone) si ridisegna da sola.
+  const ANIM_ON = CAT_ANIM !== 'none' || HEAD_ANIM
   const animated = (pageIndex: number) => {
     const page = pages[pageIndex]
-    if (CAT_ANIM === 'none' || !page || page.media) return []
-    return page.items.filter(it => it.block.kind === 'cat').map(it => {
-      const b = it.block as CatBlock
+    if (!ANIM_ON || !page || page.media) return []
+    const out: { x: number; y: number; w: number; h: number }[] = []
+    for (const it of page.items) {
+      if (it.block.kind === 'head' && HEAD_ANIM) {
+        const y0 = Math.max(0, it.y - 30 * s), y1 = Math.min(vp.h, it.y + it.h + 10 * s)
+        out.push({ x: 0, y: y0, w: vp.w, h: y1 - y0 })
+      }
+      if (it.block.kind !== 'cat' || CAT_ANIM === 'none') continue
+      const b = it.block
       const y0 = Math.max(0, it.y - CAT_GLOW_PAD)
       const y1 = Math.min(vp.h, it.y + CAT_H + CAT_GLOW_PAD + (b.cont ? 18 * s : 0))
       // Filetti e fascia vanno da un margine all'altro; il resto sta attorno al titolo.
-      if (CS === 'rules' || CS === 'band') return { x: 0, y: y0, w: vp.w, h: y1 - y0 }
+      if (CS === 'rules' || CS === 'band') { out.push({ x: 0, y: y0, w: vp.w, h: y1 - y0 }); continue }
       const label = tx(CAT, b.name)
       const r = measure(ctx, CAT, label) > m.cw - 24 * s ? fit(CC.text, b.name, m.cw - 24 * s) : CAT
       const tw = Math.max(measure(ctx, r, label), b.cont ? measure(ctx, CONT, data.labels.cont) : 0)
@@ -1136,27 +1318,35 @@ export function layoutMenu(ctx: Ctx, data: MenuData, vp: Viewport, style: MenuSt
       const tx0 = left ? m.x0 + CAT_PAD * 1.5 : m.x0 + m.cw / 2 - tw / 2
       const x0 = Math.max(0, tx0 - CAT_PAD * 1.5 - CAT_GLOW_PAD - 4 * s)
       const x1 = Math.min(vp.w, tx0 + tw + CAT_PAD * 1.5 + CAT_GLOW_PAD + 4 * s)
-      return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 }
-    })
+      out.push({ x: x0, y: y0, w: x1 - x0, h: y1 - y0 })
+    }
+    return out
   }
   const paintAnimated = (c: Ctx, pageIndex: number, t: number) => {
-    if (CAT_ANIM === 'none') return
+    if (!ANIM_ON) return
     c.textBaseline = 'alphabetic'
-    for (const it of pages[pageIndex]?.items ?? []) if (it.block.kind === 'cat') paintCat(c, it.block, it.y, catState(it.block, t))
+    for (const it of pages[pageIndex]?.items ?? []) {
+      if (it.block.kind === 'head' && HEAD_ANIM) paintHead(c, it.block, it.y, t)
+      else if (it.block.kind === 'cat' && CAT_ANIM !== 'none') paintCat(c, it.block, it.y, t)
+    }
   }
   // Stesso stato = stesso disegno: si ridisegna (e si ricarica) solo se cambia.
   const animKey = (pageIndex: number, t: number) => {
-    if (CAT_ANIM === 'none') return ''
+    if (!ANIM_ON) return ''
     let k = ''
     for (const it of pages[pageIndex]?.items ?? []) {
-      if (it.block.kind !== 'cat') continue
-      const q = catState(it.block, t)
-      k += `${q.light}|${q.bad}|${q.chase}|${q.sweep};`
+      if (it.block.kind === 'head' && HEAD_ANIM) {
+        const name = tx(REST, data.restaurantName), title = tx(TITLE_FIT, data.menuName)
+        k += `h${fxKey(fxState(H.restaurantFx, REST_ANIM, name, `r:${name}`, t))}/${fxKey(fxState(H.titleFx, TITLE_ANIM, title, `t:${title}`, t))};`
+      } else if (it.block.kind === 'cat' && CAT_ANIM !== 'none') {
+        k += `${fxKey(fxState(CC, CAT_ANIM, tx(CAT, it.block.name), it.block.name, t))};`
+      }
     }
     return k
   }
+  const animCacheable = [CAT_ANIM, REST_ANIM, TITLE_ANIM].every(a => CACHEABLE.includes(a))
 
-  return { vp, pages, paint, animated, paintAnimated, animKey, animCacheable: CAT_ANIM === 'flicker' || CAT_ANIM === 'chase', hit, categoryStarts, pick, dishesOn }
+  return { vp, pages, paint, animated, paintAnimated, animKey, animCacheable, hit, categoryStarts, pick, dishesOn }
 }
 
 // ── Titoli di categoria: aiuti ─────────────────────────────────────────────────
@@ -1172,6 +1362,19 @@ function hashOf(text: string): number {
 function noise(k: number): number {
   const x = Math.sin(k * 127.1 + 311.7) * 43758.5453
   return x - Math.floor(x)
+}
+
+/** Fattore pixel/punto del contesto (le ombre non seguono la scala). */
+function dprOf(c: Ctx): number {
+  return typeof c.getTransform === 'function' ? c.getTransform().a : 1
+}
+
+/** Tinta (gradi), saturazione e luminosità (0 – 1) → #rrggbb. */
+function hslHex(h: number, sat: number, l: number): string {
+  const k = (n: number) => (n + h / 30) % 12
+  const a = sat * Math.min(l, 1 - l)
+  const f = (n: number) => Math.round(255 * (l - a * Math.max(-1, Math.min(k(n) - 3, 9 - k(n), 1))))
+  return `#${((f(0) << 16) | (f(8) << 8) | f(4)).toString(16).padStart(6, '0')}`
 }
 
 function withAlpha(hex: string, a: number): string {

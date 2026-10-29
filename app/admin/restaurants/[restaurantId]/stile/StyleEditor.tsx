@@ -19,8 +19,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react'
 import {
-  CUSTOM_PREFIX, DEFAULT_STYLE, FONTS, PAPER_STYLES, PAPER_TEXTURES, TEXTURE_LABEL, categoryAnimates, parseStyle, registerCustomFonts, resolveColor,
-  type CategoryAnimation, type MenuStyle, type Ornament, type TextStyle, type Weight,
+  CUSTOM_PREFIX, DEFAULT_STYLE, FONTS, PAPER_STYLES, PAPER_TEXTURES, TEXTURE_LABEL, fxAnimates, parseStyle, registerCustomFonts, resolveColor,
+  type MenuStyle, type TitleAnimation, type TitleEffect, type TitleFx, type Ornament, type TextStyle, type Weight,
 } from '@/lib/menuStyle'
 import type { PickTarget } from '@/app/prova/[token]/typeset'
 import { loadCustomFonts } from '@/app/prova/[token]/fonts'
@@ -469,6 +469,17 @@ export default function StyleEditor({ restaurantId, token, menus }: Props) {
           <Slider label="Distanza tra titolo e ornamento" value={st.head.ornamentGap} min={10} max={60} step={1} format={px} onChange={v => edit(s => { s.head.ornamentGap = v })} />
         </>)}
         <Slider label="Spazio sotto la copertina" value={st.head.space} min={0} max={80} step={1} format={px} onChange={v => edit(s => { s.head.space = v })} />
+        <Choice label="Cornice attorno al titolo" value={st.head.titleFrame} onChange={v => edit(s => { s.head.titleFrame = v })}
+          options={[{ value: 'none', label: 'Nessuna' }, { value: 'frame', label: 'Cornice' }, { value: 'marquee', label: 'Lampadine' }]} />
+        {st.head.titleFrame !== 'none' && (
+          <Slider label="Angoli della cornice" value={st.head.titleFrameRadius} min={0} max={30} step={1} format={v => (v === 0 ? 'Squadrati' : px(v))} onChange={v => edit(s => { s.head.titleFrameRadius = v })} />
+        )}
+        <FxControls label="Effetto sul titolo del menu" value={st.head.titleFx} marquee={st.head.titleFrame === 'marquee'}
+          onChange={patch => edit(s => { s.head.titleFx = { ...s.head.titleFx, ...patch } })} />
+        {st.head.showRestaurant && (
+          <FxControls label="Effetto sul nome del ristorante" value={st.head.restaurantFx} marquee={null}
+            onChange={patch => edit(s => { s.head.restaurantFx = { ...s.head.restaurantFx, ...patch } })} />
+        )}
       </>)
       case 'runningHead': return (<>
         <Toggle label="Mostra la testatina" hint="Dalla seconda pagina in poi. Senza, il testo parte più in alto." value={st.runningHead.show} onChange={v => edit(s => { s.runningHead.show = v })} />
@@ -516,31 +527,8 @@ export default function StyleEditor({ restaurantId, token, menus }: Props) {
         </>)}
         <Choice label="Allineamento" value={st.category.align} onChange={v => edit(s => { s.category.align = v })}
           options={[{ value: 'center', label: 'Centrato' }, { value: 'left', label: 'A sinistra' }]} />
-        <Choice label="Effetto sul titolo" value={st.category.effect} onChange={v => edit(s => { s.category.effect = v })}
-          options={[{ value: 'none', label: 'Nessuno' }, { value: 'shadow', label: 'Ombra' }, { value: 'outline', label: 'Contorno' }, { value: 'glow', label: 'Luce' }, { value: 'neon', label: 'Neon' }]}
-          hint={st.category.effect === 'neon' ? 'Il neon prende il colore del testo (e delle linee, se automatico). Su carta scura si accende di più.'
-            : st.category.effect === 'glow' ? 'Un alone del colore del testo.' : undefined} />
-        {(st.category.effect === 'shadow' || st.category.effect === 'glow' || st.category.effect === 'neon') && (
-          <Slider label={st.category.effect === 'shadow' ? 'Intensità dell\'ombra' : 'Intensità della luce'} value={st.category.glow} min={0.2} max={1} step={0.05} format={pct} onChange={v => edit(s => { s.category.glow = v })} />
-        )}
-        {(() => {
-          const c = st.category
-          const all: { value: CategoryAnimation; label: string }[] = [
-            { value: 'none', label: 'Nessuna' }, { value: 'pulse', label: 'Respiro' }, { value: 'flicker', label: 'Insegna che sfarfalla' },
-            { value: 'shimmer', label: 'Riflesso' }, { value: 'chase', label: 'Luci che corrono' },
-          ]
-          const options = all.filter(o => o.value === 'none' || categoryAnimates({ ...c, animation: o.value }))
-          const value = categoryAnimates(c) ? c.animation : 'none'
-          return (<>
-            <Choice label="Animazione" value={value} onChange={v => edit(s => { s.category.animation = v })} options={options}
-              hint={c.effect !== 'glow' && c.effect !== 'neon'
-                ? `Con l'effetto Luce o Neon si aggiungono Respiro e Insegna che sfarfalla${c.style === 'marquee' ? '' : '; con le Lampadine, Luci che corrono'}.`
-                : 'Si muove solo il titolo della pagina a vista, senza appesantire il menu; ferma se il telefono chiede meno movimento.'} />
-            {value !== 'none' && (
-              <Slider label="Velocità" value={c.speed} min={0.5} max={2} step={0.05} format={v => `${v.toFixed(2).replace('.', ',')}×`} onChange={v => edit(s => { s.category.speed = v })} />
-            )}
-          </>)
-        })()}
+        <FxControls label="Effetto sul titolo" value={st.category} marquee={st.category.style === 'marquee'}
+          onChange={patch => edit(s => { Object.assign(s.category, patch) })} />
         <Slider label="Spazio prima della categoria" value={st.category.before} min={0} max={80} step={1} format={px} onChange={v => edit(s => { s.category.before = v })} />
         <Slider label="Spazio dopo la categoria" value={st.category.after} min={0} max={60} step={1} format={px} onChange={v => edit(s => { s.category.after = v })} />
         <Toggle label="Scrivi &quot;segue&quot; quando la categoria continua nella pagina dopo" value={st.category.continued} onChange={v => edit(s => { s.category.continued = v })} />
@@ -869,3 +857,47 @@ const CARD_COLORS = (paper: string) => [
 ]
 
 const EMPTY_TEXT: MenuTextPages = { info: { enabled: false, position: 'first', body: '', align: 'left' }, allergen: { enabled: false } }
+
+// ── Effetto e animazione di un titolo (categorie, copertina) ──────────────────
+
+const FX_EFFECTS: { value: TitleEffect; label: string }[] = [
+  { value: 'none', label: 'Nessuno' }, { value: 'shadow', label: 'Ombra' }, { value: 'outline', label: 'Contorno' },
+  { value: 'glow', label: 'Luce' }, { value: 'neon', label: 'Neon' }, { value: 'foil', label: 'Lamina' },
+  { value: 'letterpress', label: 'Inciso' }, { value: 'retro', label: 'Rilievo retrò' },
+]
+const FX_ANIMATIONS: { value: TitleAnimation; label: string }[] = [
+  { value: 'none', label: 'Nessuna' }, { value: 'pulse', label: 'Respiro' }, { value: 'flicker', label: 'Insegna che sfarfalla' },
+  { value: 'shimmer', label: 'Riflesso' }, { value: 'chase', label: 'Luci che corrono' }, { value: 'wave', label: 'Onda' },
+  { value: 'sparkle', label: 'Scintille' }, { value: 'rainbow', label: 'Arcobaleno' }, { value: 'glitch', label: 'Disturbo' },
+]
+const FX_HINT: Partial<Record<TitleEffect, string>> = {
+  glow: 'Un alone del colore del testo.',
+  neon: 'Il neon prende il colore del testo (e delle linee, se automatico). Su carta scura si accende di più.',
+  foil: 'Riflessi metallici: con un colore oro sembra oro, con un grigio argento.',
+  letterpress: 'Come stampato a pressione nella carta.',
+  retro: 'Il testo in rilievo, nel colore accento (o nel colore del testo, se il titolo è già in accento).',
+}
+const FX_AMOUNT: Partial<Record<TitleEffect, string>> = {
+  shadow: "Intensità dell'ombra", glow: 'Intensità della luce', neon: 'Intensità della luce',
+  foil: 'Brillantezza', letterpress: 'Profondità', retro: 'Profondità',
+}
+
+/** marquee: con le lampadine (null = qui le lampadine non ci sono). */
+function FxControls({ label, value, marquee, onChange }: { label: string; value: TitleFx; marquee: boolean | null; onChange: (patch: Partial<TitleFx>) => void }) {
+  const options = FX_ANIMATIONS.filter(o => o.value === 'none' || fxAnimates({ ...value, animation: o.value }, !!marquee))
+  const anim = fxAnimates(value, !!marquee) ? value.animation : 'none'
+  const amount = FX_AMOUNT[value.effect]
+  return (<>
+    <Choice label={label} value={value.effect} onChange={v => onChange({ effect: v })} options={FX_EFFECTS} hint={FX_HINT[value.effect]} />
+    {amount && (
+      <Slider label={amount} value={value.glow} min={0.2} max={1} step={0.05} format={pct} onChange={v => onChange({ glow: v })} />
+    )}
+    <Choice label="Animazione" value={anim} onChange={v => onChange({ animation: v })} options={options}
+      hint={value.effect !== 'glow' && value.effect !== 'neon'
+        ? `Con l'effetto Luce o Neon si aggiungono Respiro e Insegna che sfarfalla${marquee === false ? '; con le Lampadine, Luci che corrono' : ''}.`
+        : 'Si muove solo il titolo della pagina a vista, senza appesantire il menu; ferma se il telefono chiede meno movimento.'} />
+    {anim !== 'none' && (
+      <Slider label="Velocità" value={value.speed} min={0.5} max={2} step={0.05} format={v => `${v.toFixed(2).replace('.', ',')}×`} onChange={v => onChange({ speed: v })} />
+    )}
+  </>)
+}
