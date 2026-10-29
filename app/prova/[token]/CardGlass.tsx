@@ -50,16 +50,35 @@ export default function CardGlass({ barRef, cardRef, base, frosted, glass, onSta
     const onLost = (e: Event) => { e.preventDefault(); dead = true; canvas.style.opacity = '0'; props.current.onState(false) }
     canvas.addEventListener('webglcontextlost', onLost)
 
+    // Si legge la scheda solo quando qualcosa cambia (scorrimento, tocchi,
+    // animazioni che scrivono lo stile, foto caricate) e per qualche
+    // fotogramma dopo: da ferma non pesa sul telefono mentre si scorre.
+    let busy = 60
+    const wake = () => { busy = 24 }
+    const host = cardRef.current
+    const mo = new MutationObserver(wake)
+    if (host) {
+      mo.observe(host, { attributes: true, attributeFilter: ['style'], subtree: true })
+      host.addEventListener('scroll', wake, { capture: true, passive: true })
+      host.addEventListener('pointerdown', wake, { passive: true })
+      host.addEventListener('pointerup', wake, { passive: true })
+      host.addEventListener('load', wake, { capture: true })
+    }
+    window.addEventListener('resize', wake)
+
     const tick = () => {
       raf = requestAnimationFrame(tick)
       const bar = barRef.current, card = cardRef.current
       if (dead || !bar || !card) return
+      if (busy <= 0 && !first) return
+      busy--
       const cr = canvas.getBoundingClientRect()
       const W = cr.width, H = cr.height
       if (W < 2 || H < 2) return
       // La scheda è scalata (transform): misure dello schermo → della tela.
       const k = canvas.offsetWidth ? W / canvas.offsetWidth : 1
       const { rects, moving } = readGlassRects(bar, press, true, window.innerHeight)
+      if (moving) wake()   // la lente si sta gonfiando/sgonfiando
       for (const r of rects) { r.x -= cr.left; r.y -= cr.top; r.radius *= k }
 
       // Cosa c'è sotto: parti basse della scheda e foto, in ordine di pagina.
@@ -91,6 +110,13 @@ export default function CardGlass({ barRef, cardRef, base, frosted, glass, onSta
           a *= frost
         }
         it.a = a
+        // Parti basse: conta solo il pezzo sotto la tela (che copra tutta la
+        // tela o quasi non cambia nulla mentre scorre: niente ridisegno).
+        if (!it.img) {
+          const x0 = Math.max(0, it.x), y0 = Math.max(0, it.y)
+          const x1 = Math.min(W, it.x + it.w), y1 = Math.min(H, it.y + it.h)
+          it.x = Math.round(x0); it.y = Math.round(y0); it.w = Math.round(x1 - x0); it.h = Math.round(y1 - y0)
+        }
         if (a > 0.01) under.push(it)
       })
       const sig = JSON.stringify([W, H, rects, under.map(u => [u.img?.src ?? 0, u.x, u.y, u.w, u.h, u.clip, u.rad, u.a.toFixed(3)]), base, frosted, glass])
@@ -138,6 +164,14 @@ export default function CardGlass({ barRef, cardRef, base, frosted, glass, onSta
     return () => {
       cancelAnimationFrame(raf)
       canvas.removeEventListener('webglcontextlost', onLost)
+      mo.disconnect()
+      if (host) {
+        host.removeEventListener('scroll', wake, { capture: true })
+        host.removeEventListener('pointerdown', wake)
+        host.removeEventListener('pointerup', wake)
+        host.removeEventListener('load', wake, { capture: true })
+      }
+      window.removeEventListener('resize', wake)
       gl.dispose()
     }
   }, [barRef, cardRef])

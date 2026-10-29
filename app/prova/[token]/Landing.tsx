@@ -37,6 +37,7 @@ import { paintPaper } from './paper'
 import { drawOrnament } from './typeset'
 import GlassStage, { type StageBackground } from './GlassStage'
 import AdminReturn from './AdminReturn'
+import FpsMeter from './FpsMeter'
 
 const LANG_KEY = 'dmp-menu-lang'
 
@@ -291,6 +292,7 @@ export default function Landing({ token, base: basePath = '/prova', fromAdmin = 
       {/* Vetro liquido: sfondo e lenti disegnati in WebGL (sotto i testi). */}
       <GlassStage rootRef={rootRef} background={bgRef} glass={B.glass} liquidPress={B.press === 'liquid'} onState={setGlOn} />
       {!preview && <AdminReturn fromAdmin={fromAdmin} />}
+      <FpsMeter />
 
       {/* Lingua */}
       <div data-nopick className="fixed" style={{ top: 'calc(env(safe-area-inset-top) + 12px)', right: 'max(14px, env(safe-area-inset-right))', zIndex: 20 }}>

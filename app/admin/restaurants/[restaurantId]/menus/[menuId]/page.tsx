@@ -3,10 +3,9 @@ import { createClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import DishList from './DishList'
-import TextPagesPanel from './TextPagesPanel'
 import DownloadPDFButton from './DownloadPDFButton'
 import { defaultExtraPages } from '../menuExtraPages'
-import { parseTheme, resolveMenuTheme } from '@/lib/theme'
+import { parseTheme } from '@/lib/theme'
 import type { MenuExtraPages } from '../menuExtraPages'
 
 export default async function MenuDishesPage({
@@ -123,16 +122,15 @@ export default async function MenuDishesPage({
         }
       />
 
-      <TextPagesPanel
-        restaurantId={params.restaurantId}
-        menuId={params.menuId}
-        initialPages={extraPages}
-        customFonts={theme.customFonts}
-        paper={{
-          bg:      resolveMenuTheme(theme, params.menuId).pageBackground.color,
-          compact: resolveMenuTheme(theme, params.menuId).pdfLayout === 'compact',
-        }}
-      />
+      {/* Pagina informativa e pagina allergeni: si scrivono e si impaginano
+          nella Personalizzazione, con l'anteprima del menu accanto. */}
+      <div className="mt-6 border border-gray-200 bg-white px-4 py-3 text-sm text-gray-600" style={{ borderRadius: 12 }}>
+        Pagina informativa e pagina allergeni ora si modificano in{' '}
+        <Link href={`/admin/restaurants/${params.restaurantId}/stile`} className="font-medium text-gray-900 underline underline-offset-2">
+          Stile (nuovo menu)
+        </Link>
+        , con l&apos;anteprima del menu accanto.
+      </div>
     </div>
   )
 }

@@ -4,9 +4,11 @@
 //
 //  • Si apre salendo dal basso: una scheda quasi a tutto schermo (staccata ai
 //    lati e in alto, prosegue sotto il fondo dello schermo), il menu si scurisce.
-//  • Scorrendo verso il basso la scheda si allarga fino a tutto schermo;
-//    scorrendo verso l'alto si rimpicciolisce subito, ovunque si sia nel testo
-//    (come le barre di Safari): un solo movimento, nessun doppio passaggio.
+//  • Lo scorrimento decide la misura, sempre agli stessi punti (come le
+//    schede di iOS): in cima la scheda è staccata, nei primi EXPAND px si
+//    allarga, oltre resta a tutto schermo finché non si torna lì. Lasciata a
+//    metà della corsa, la calamita la porta al punto più vicino: attaccata,
+//    oppure staccata e col contenuto di nuovo in cima.
 //  • In cima, tirando ancora verso il basso la scheda segue il dito e, lasciata
 //    oltre la soglia (o con un gesto deciso), si chiude.
 //  • Swipe orizzontale: piatto precedente/successivo del menu, con l'effetto
@@ -32,7 +34,7 @@ import { PHOTO_ASPECT, frameFor, frameStyle } from '@/lib/photoFrame'
 import { t } from './i18n'
 import type { Lang } from '@/lib/translations'
 
-const EXPAND = 96          // px di scorrimento per passare da staccata a tutto schermo
+const EXPAND = 170         // px di corsa per passare da staccata a tutto schermo
 const CLOSE_PULL = 110     // px di trascinamento oltre la cima per chiudere
 const DIM = 0.22           // scurimento della pagina sotto durante lo "Scivola"
 const VEIL = 0.55          // velo della pagina che scorre sopra un'altra (resta vetro)
@@ -160,6 +162,7 @@ export default function DishCard({ dish: first, style, lang, sequence, siblings,
   const cardRef     = useRef<HTMLDivElement>(null)
   const barRef      = useRef<HTMLDivElement>(null)
   const probeRef    = useRef<HTMLDivElement>(null)
+  const safeCache   = useRef({ w: 0, h: 0, top: 0 })
   const pages = useRef(new Map<string, { root: HTMLDivElement; scroller: HTMLDivElement; dim: HTMLDivElement; veil: HTMLDivElement; rubbed?: boolean }>())
 
   const [initial] = useState<Entry>(() => entryFor(first))
@@ -200,8 +203,12 @@ export default function DishCard({ dish: first, style, lang, sequence, siblings,
     if (!card || !bd || !bar || !probe) return
     const s = st.current
     const W = window.innerWidth, H = window.innerHeight
-    const cs = getComputedStyle(probe)
-    const safeTop = parseFloat(cs.paddingTop) || 0
+    // Area sicura in alto: letta solo quando cambia la misura dello schermo
+    // (getComputedStyle a ogni fotogramma costa durante lo scorrimento).
+    if (safeCache.current.w !== W || safeCache.current.h !== H) {
+      safeCache.current = { w: W, h: H, top: parseFloat(getComputedStyle(probe).paddingTop) || 0 }
+    }
+    const safeTop = safeCache.current.top
     const wide = W >= 700
     const p = smooth(s.q)
     const cardW = wide ? Math.min(760, W - 64) : W
@@ -426,12 +433,17 @@ export default function DishCard({ dish: first, style, lang, sequence, siblings,
   useEffect(() => {
     const card = cardRef.current!
     const s = st.current
-    let touch: null | { x0: number; y0: number; armed: boolean; pulling: boolean; last: { y: number; t: number }[]; bounceClose: boolean } = null
-    let sw: null | { id: number; x0: number; y0: number; mode: 'undecided' | 'h' | 'v'; samples: { x: number; t: number }[] } = null
+    // axis: direzione del dito decisa dai primi px (tocco: più affidabile dei
+    // pointer su iOS, che per un dito in arco possono sembrare orizzontali).
+    let touch: null | { x0: number; y0: number; sx: number; sy: number; axis: 'h' | 'v' | null; armed: boolean; pulling: boolean; last: { y: number; t: number }[]; bounceClose: boolean } = null
+    let sw: null | { id: number; x0: number; y0: number; top0: number; mode: 'undecided' | 'h' | 'v'; samples: { x: number; t: number }[] } = null
+    /** In cima niente rimbalzo nativo: tirando giù si muove solo la scheda
+     *  (rimbalzo di Safari + trascinamento insieme facevano scatti). */
+    const setTopBounce = (sc: HTMLElement | null, on: boolean) => { if (sc) sc.style.overscrollBehaviorY = on ? 'contain' : 'none' }
 
-    // Scorrimento: la direzione allarga/rimpicciolisce (mai oltre quanto
-    // permette la distanza dalla cima: in cima la scheda è sempre staccata).
-    let lastDir = 0, settleTimer = 0
+    // Scorrimento: la posizione decide la misura (staccata in cima, a tutto
+    // schermo da EXPAND px in giù): attacco e stacco sempre agli stessi punti.
+    let settleTimer = 0
     const onScroll = (e: Event) => {
       const sc = activeScroller()
       if (!sc || e.target !== sc) return
@@ -439,30 +451,26 @@ export default function DishCard({ dish: first, style, lang, sequence, siblings,
       if (s.trans) return
       const max = Math.max(0, sc.scrollHeight - sc.clientHeight)
       const top = Math.max(0, Math.min(max, sc.scrollTop))   // ignora i rimbalzi
-      const d = top - s.lastTop
       s.lastTop = top
       if (s.tweens.has('snap')) return                       // la calamita guida da sola
-      if (d) lastDir = Math.sign(d)
-      s.q = Math.min(clamp01(s.q + d / EXPAND), top / EXPAND)
+      s.q = clamp01(top / EXPAND)
       schedule()
       clearTimeout(settleTimer); settleTimer = window.setTimeout(settle, 110)
     }
 
-    // Calamita (come iOS): lasciata a metà dell'allargamento, la scheda
-    // finisce il movimento da sola, nella direzione in cui si stava andando,
-    // e il contenuto scorre insieme dello spazio che mancava (come se il dito
-    // avesse finito il gesto). Scorrimento e allargamento restano sempre
-    // legati 1:1, così la scheda si attacca e si stacca sempre allo stesso
-    // punto dello scorrimento (in cima: staccata a 0, attaccata a EXPAND).
+    // Calamita: lasciata a metà della corsa (tra la cima ed EXPAND), la
+    // scheda va al punto più vicino, staccata o attaccata, e il contenuto
+    // scorre insieme fino a quel punto. Fuori dalla corsa non fa nulla.
     const settle = () => {
       const sc = activeScroller()
       if (!sc || touch || s.trans || s.closing || s.tweens.has('snap')) return
       if (s.q <= 0.001 || s.q >= 0.999) return
-      const open = lastDir ? lastDir > 0 : s.q > 0.5
+      const open = s.q >= 0.5
       const q0 = s.q, top0 = Math.max(0, sc.scrollTop)
       const max = Math.max(0, sc.scrollHeight - sc.clientHeight)
-      const topTo = Math.max(0, Math.min(max, top0 + (open ? 1 - q0 : -q0) * EXPAND))
-      const dur = 260 + 160 * (open ? 1 - q0 : q0)
+      // Staccata = in cima: il contenuto torna all'inizio.
+      const topTo = Math.max(0, Math.min(max, open ? EXPAND : 0))
+      const dur = 300 + 200 * (open ? 1 - q0 : q0)
       tween('snap', 0, 1, dur, easeOutCubic, v => {
         if (topTo !== top0) sc.scrollTop = top0 + (topTo - top0) * v
         s.q = q0 + ((open ? 1 : 0) - q0) * v
@@ -474,8 +482,13 @@ export default function DishCard({ dish: first, style, lang, sequence, siblings,
       if (s.closing || s.trans || e.touches.length > 1) return
       const sc = activeScroller()
       const t0 = e.touches[0]
-      touch = { x0: t0.clientX, y0: t0.clientY, armed: !!sc && sc.scrollTop <= 0, pulling: false, last: [{ y: t0.clientY, t: e.timeStamp }], bounceClose: false }
+      const atTop = !!sc && sc.scrollTop <= 0
+      touch = { x0: t0.clientX, y0: t0.clientY, sx: t0.clientX, sy: t0.clientY, axis: null, armed: atTop, pulling: false, last: [{ y: t0.clientY, t: e.timeStamp }], bounceClose: false }
+      setTopBounce(sc, !atTop)
       s.tweens.delete('pull')
+      // Scheda ancora spostata (ripresa mentre torna, o un rilascio perso):
+      // il trascinamento continua da dove si trova.
+      if (s.pull > 0.5) { touch.pulling = true; touch.y0 = t0.clientY - s.pull }
       s.tweens.delete('snap')   // il dito riprende la scheda
       clearTimeout(settleTimer)
     }
@@ -483,6 +496,12 @@ export default function DishCard({ dish: first, style, lang, sequence, siblings,
       if (!touch || s.closing) return
       const t0 = e.touches[0]
       touch.last.push({ y: t0.clientY, t: e.timeStamp }); if (touch.last.length > 5) touch.last.shift()
+      if (!touch.axis) {
+        const ax = t0.clientX - touch.sx, ay = t0.clientY - touch.sy
+        // Orizzontale solo se lo è davvero (entro ~30°): il pollice che
+        // scorre in verticale descrive un arco.
+        if (Math.hypot(ax, ay) >= 8) touch.axis = Math.abs(ax) > Math.abs(ay) * 1.7 ? 'h' : 'v'
+      }
       const dy = t0.clientY - touch.y0
       if (!touch.pulling) {
         const sc = activeScroller()
@@ -501,6 +520,7 @@ export default function DishCard({ dish: first, style, lang, sequence, siblings,
       if (!touch) return
       const t = touch
       touch = null
+      setTopBounce(activeScroller(), true)
       // Dito lasciato fermo a metà (nessuno scorrimento dopo): calamita.
       clearTimeout(settleTimer); settleTimer = window.setTimeout(settle, 110)
       if (t.bounceClose) { close(0.8); return }
@@ -516,7 +536,7 @@ export default function DishCard({ dish: first, style, lang, sequence, siblings,
       if (s.closing || s.trans || sw) return
       if (e.pointerType === 'mouse' && e.button !== 0) return
       if ((e.target as Element).closest('[data-noswipe]')) return
-      sw = { id: e.pointerId, x0: e.clientX, y0: e.clientY, mode: 'undecided', samples: [{ x: e.clientX, t: e.timeStamp }] }
+      sw = { id: e.pointerId, x0: e.clientX, y0: e.clientY, top0: activeScroller()?.scrollTop ?? 0, mode: 'undecided', samples: [{ x: e.clientX, t: e.timeStamp }] }
     }
     const onPointerMove = (e: PointerEvent) => {
       if (!sw || e.pointerId !== sw.id) return
@@ -524,7 +544,12 @@ export default function DishCard({ dish: first, style, lang, sequence, siblings,
       if (sw.mode === 'undecided') {
         const dx = e.clientX - sw.x0, dy = e.clientY - sw.y0
         if (Math.hypot(dx, dy) < 10) return
-        if (touch?.pulling || s.trans || Math.abs(dx) < Math.abs(dy) * 1.2) { sw.mode = 'v'; return }
+        // Il testo ha già cominciato a scorrere: mai cambio di piatto.
+        const scrolled = Math.abs((activeScroller()?.scrollTop ?? 0) - sw.top0) > 1
+        // Col dito decide la direzione del tocco (vedi touch.axis).
+        if (e.pointerType === 'touch' && touch && !touch.axis && !scrolled) return
+        const vertical = e.pointerType === 'touch' && touch?.axis ? touch.axis === 'v' : Math.abs(dx) <= Math.abs(dy) * 1.7
+        if (touch?.pulling || s.trans || scrolled || vertical) { sw.mode = 'v'; return }
         sw.mode = 'h'
         sw.x0 = e.clientX   // si parte da qui: nessun salto
         try { card.setPointerCapture(e.pointerId) } catch { /* già rilasciato */ }

@@ -267,7 +267,9 @@ export interface MenuStyle {
   }
   allergens: { show: boolean; label: boolean; text: TextStyle }
   pageNumber: { show: boolean; format: 'of' | 'plain' | 'dashes'; text: TextStyle }
-  textPages: { title: TextStyle; body: TextStyle; lineHeight: number; paraGap: number }   // 0.85 – 1.4, 0 – 30
+  /** Pagina informativa (titoli, testo, interlinea 0.85 – 1.4, spazio tra i
+   *  paragrafi 0 – 30) e pagina degli allergeni (nomi e numeri). */
+  textPages: { title: TextStyle; body: TextStyle; lineHeight: number; paraGap: number; legendName: TextStyle; legendNum: TextStyle }
   card: {
     photo: 'square' | 'landscape' | 'portrait' | 'circle'
     photoWidth: number        // % della larghezza: 50 – 100
@@ -357,7 +359,8 @@ export const DEFAULT_STYLE: MenuStyle = {
   },
   allergens: { show: true, label: true, text: T(SANS, 9.5, 500, 'accent', { upper: true, tracking: 0.14 }) },
   pageNumber: { show: true, format: 'of', text: T(SANS, 9.5, 500, 'accent', { tracking: 0.17 }) },
-  textPages: { title: T(SERIF, 25, 500, 'ink'), body: T(SERIF, 16.5, 400, 'ink'), lineHeight: 1, paraGap: 6 },
+  textPages: { title: T(SERIF, 25, 500, 'ink'), body: T(SERIF, 16.5, 400, 'ink'), lineHeight: 1, paraGap: 6,
+    legendName: T(SERIF, 17, 400, 'ink'), legendNum: T(SANS, 11, 600, 'accent', { upper: true, tracking: 0.14 }) },
   card: { photo: 'square', photoWidth: 84, radius: 14, titleSize: 34, glass: 0.5, showCategory: true, showSummary: true, showMore: true,
     surface: '#fffdf9', fill: 0.62, textColors: 'menu', ink: '#1d1915', soft: '#5f574d', accent: '#9a8462',
     box: '#ffffff', boxOpacity: 0.55, dim: 0.12, buttons: GLASS_PRESETS[1].look, icon: 'auto' },
@@ -444,6 +447,7 @@ export function parseStyle(raw: unknown): MenuStyle {
   const customFonts = parseCustomFonts(r.customFonts)
   const custom = new Set(customFonts.map(f => CUSTOM_PREFIX + f.id))
   const tx = (v: unknown, dd: TextStyle) => text(v, dd, custom)
+  const tpBody = tx(tp.body, d.textPages.body), algText = tx(al.text, d.allergens.text)
   const orn = (v: unknown, dd: Ornament) => pick(v, ORNAMENTS, dd)
   // Formato del prezzo della versione precedente (un solo campo).
   const oldFmt = ds.priceFormat
@@ -510,16 +514,19 @@ export function parseStyle(raw: unknown): MenuStyle {
         oldFmt === 'euro-before' ? 'before' : oldFmt === 'number' ? 'none' : d.dish.priceSymbol),
       priceDecimals: pick(ds.priceDecimals, ['always', 'auto'] as const, oldFmt === 'compact' ? 'auto' : d.dish.priceDecimals),
     },
-    allergens: { show: bool(al.show, d.allergens.show), label: bool(al.label, d.allergens.label), text: tx(al.text, d.allergens.text) },
+    allergens: { show: bool(al.show, d.allergens.show), label: bool(al.label, d.allergens.label), text: algText },
     pageNumber: {
       show: bool(pn.show, d.pageNumber.show),
       format: pick(pn.format, ['of', 'plain', 'dashes'] as const, d.pageNumber.format),
       text: tx(pn.text, d.pageNumber.text),
     },
     textPages: {
-      title: tx(tp.title, d.textPages.title), body: tx(tp.body, d.textPages.body),
+      title: tx(tp.title, d.textPages.title), body: tpBody,
       lineHeight: num(tp.lineHeight, 0.85, 1.4, d.textPages.lineHeight),
       paraGap: num(tp.paraGap, 0, 30, d.textPages.paraGap),
+      // Senza una scelta propria: come prima (testo delle pagine e numeri degli allergeni).
+      legendName: tx(tp.legendName, { ...tpBody, size: Math.round(tpBody.size * 1.03 * 2) / 2 }),
+      legendNum: tx(tp.legendNum, { ...algText, size: Math.round(algText.size * 1.16 * 2) / 2, weight: 600 }),
     },
     card: {
       photo: pick(cd.photo, ['square', 'landscape', 'portrait', 'circle'] as const, d.card.photo),
@@ -589,7 +596,7 @@ export function textStyles(st: MenuStyle): TextStyle[] {
   return [
     st.head.restaurant, st.head.title, st.runningHead.text, st.category.text,
     st.dish.name, st.dish.description, st.dish.price, st.allergens.text, st.pageNumber.text,
-    st.textPages.title, st.textPages.body,
+    st.textPages.title, st.textPages.body, st.textPages.legendName, st.textPages.legendNum,
     // Pagine di testo: sottotitoli e corsivi del corpo.
     { ...st.textPages.title, weight: 500 }, { ...st.textPages.body, italic: true }, { ...st.textPages.body, weight: 600 },
     // "Segue" delle categorie (corsivo del carattere delle descrizioni).
