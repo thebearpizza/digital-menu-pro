@@ -19,13 +19,13 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react'
 import {
-  CUSTOM_PREFIX, DEFAULT_STYLE, FONTS, PAPER_STYLES, PAPER_TEXTURES, TEXTURE_LABEL, parseStyle, registerCustomFonts,
-  type MenuStyle, type Ornament, type TextStyle, type Weight,
+  CUSTOM_PREFIX, DEFAULT_STYLE, FONTS, PAPER_STYLES, PAPER_TEXTURES, TEXTURE_LABEL, categoryAnimates, parseStyle, registerCustomFonts, resolveColor,
+  type CategoryAnimation, type MenuStyle, type Ornament, type TextStyle, type Weight,
 } from '@/lib/menuStyle'
 import type { PickTarget } from '@/app/prova/[token]/typeset'
 import { loadCustomFonts } from '@/app/prova/[token]/fonts'
 import {
-  BackgroundField, Choice, ColorField, FieldShell, FontsManager, GlassControls, OrnamentField, PaperSwatch, PhoneFrame, Slider,
+  BackgroundField, Choice, ColorField, ColorRefField, FieldShell, FontsManager, GlassControls, OrnamentField, PaperSwatch, PhoneFrame, Slider,
   TextStyleField, Toggle, cssOf, lum, pct, px,
 } from './controls'
 import { saveMenuMedia, saveMenuStyles, saveMenuText, type MenuTextPages } from './actions'
@@ -483,11 +483,64 @@ export default function StyleEditor({ restaurantId, token, menus }: Props) {
           options={[{ value: 'flow', label: 'Una dopo l\'altra (più categorie per pagina)' }, { value: 'page', label: 'Ogni categoria su una pagina nuova' }]}
           hint={st.category.newPage ? 'Una categoria lunga continua sulle pagine dopo; la successiva parte sempre da una pagina nuova.' : undefined} />
         {T('Titolo della categoria', s => s.category.text, [8, 40])}
-        <Choice label="Decorazione" value={st.category.style} onChange={v => edit(s => { s.category.style = v })}
-          options={[{ value: 'rules', label: 'Filetti' }, { value: 'underline', label: 'Sottolineato' }, { value: 'frame', label: 'Cornice' }, { value: 'ornament', label: 'Ornamento sotto' }, { value: 'plain', label: 'Nessuna' }]} />
+        <Choice label="Decorazione" value={st.category.style}
+          onChange={v => edit(s => {
+            s.category.style = v
+            // Pillola o fascia dello stesso colore del testo: il testo va sulla carta.
+            if ((v === 'pill' || v === 'band') && resolveColor(s.category.text.color, s) === resolveColor(s.category.fill, s)) s.category.text.color = s.page.paper
+          })}
+          options={[
+            { value: 'rules', label: 'Filetti' }, { value: 'underline', label: 'Sottolineato' }, { value: 'frame', label: 'Cornice' },
+            { value: 'pill', label: 'Pillola' }, { value: 'band', label: 'Fascia' }, { value: 'marquee', label: 'Lampadine' },
+            { value: 'ornament', label: 'Ornamento sotto' }, { value: 'plain', label: 'Nessuna' },
+          ]} />
         {st.category.style === 'ornament' && O('Ornamento sotto la categoria', st.category.ornament, (s, v) => { s.category.ornament = v }, true)}
+        {(st.category.style === 'pill' || st.category.style === 'band') && (
+          <FieldShell label="Colore del fondo">
+            <ColorRefField value={st.category.fill} swatches={swatches} onChange={c => edit(s => { s.category.fill = c })} />
+          </FieldShell>
+        )}
+        {(st.category.style === 'frame' || st.category.style === 'band' || st.category.style === 'marquee') && (
+          <Slider label="Angoli" value={st.category.radius} min={0} max={30} step={1} format={v => (v === 0 ? 'Squadrati' : px(v))} onChange={v => edit(s => { s.category.radius = v })} />
+        )}
+        {['rules', 'underline', 'frame', 'marquee'].includes(st.category.style) && (<>
+          <Choice label={st.category.style === 'marquee' ? 'Colore delle lampadine' : 'Colore delle linee'} value={st.category.lineColor === 'auto' ? 'auto' : 'custom'}
+            onChange={v => edit(s => { s.category.lineColor = v === 'auto' ? 'auto' : 'accent' })}
+            options={[{ value: 'auto', label: 'Automatico' }, { value: 'custom', label: 'Scelgo io' }]} />
+          {st.category.lineColor !== 'auto' && (
+            <ColorRefField value={st.category.lineColor} swatches={swatches} onChange={c => edit(s => { s.category.lineColor = c })} />
+          )}
+          {st.category.style !== 'marquee' && (
+            <Slider label="Spessore delle linee" value={st.category.lineWidth} min={0.5} max={3} step={0.1} format={v => `${v.toFixed(1)} px`} onChange={v => edit(s => { s.category.lineWidth = v })} />
+          )}
+        </>)}
         <Choice label="Allineamento" value={st.category.align} onChange={v => edit(s => { s.category.align = v })}
           options={[{ value: 'center', label: 'Centrato' }, { value: 'left', label: 'A sinistra' }]} />
+        <Choice label="Effetto sul titolo" value={st.category.effect} onChange={v => edit(s => { s.category.effect = v })}
+          options={[{ value: 'none', label: 'Nessuno' }, { value: 'shadow', label: 'Ombra' }, { value: 'outline', label: 'Contorno' }, { value: 'glow', label: 'Luce' }, { value: 'neon', label: 'Neon' }]}
+          hint={st.category.effect === 'neon' ? 'Il neon prende il colore del testo (e delle linee, se automatico). Su carta scura si accende di più.'
+            : st.category.effect === 'glow' ? 'Un alone del colore del testo.' : undefined} />
+        {(st.category.effect === 'shadow' || st.category.effect === 'glow' || st.category.effect === 'neon') && (
+          <Slider label={st.category.effect === 'shadow' ? 'Intensità dell\'ombra' : 'Intensità della luce'} value={st.category.glow} min={0.2} max={1} step={0.05} format={pct} onChange={v => edit(s => { s.category.glow = v })} />
+        )}
+        {(() => {
+          const c = st.category
+          const all: { value: CategoryAnimation; label: string }[] = [
+            { value: 'none', label: 'Nessuna' }, { value: 'pulse', label: 'Respiro' }, { value: 'flicker', label: 'Insegna che sfarfalla' },
+            { value: 'shimmer', label: 'Riflesso' }, { value: 'chase', label: 'Luci che corrono' },
+          ]
+          const options = all.filter(o => o.value === 'none' || categoryAnimates({ ...c, animation: o.value }))
+          const value = categoryAnimates(c) ? c.animation : 'none'
+          return (<>
+            <Choice label="Animazione" value={value} onChange={v => edit(s => { s.category.animation = v })} options={options}
+              hint={c.effect !== 'glow' && c.effect !== 'neon'
+                ? `Con l'effetto Luce o Neon si aggiungono Respiro e Insegna che sfarfalla${c.style === 'marquee' ? '' : '; con le Lampadine, Luci che corrono'}.`
+                : 'Si muove solo il titolo della pagina a vista, senza appesantire il menu; ferma se il telefono chiede meno movimento.'} />
+            {value !== 'none' && (
+              <Slider label="Velocità" value={c.speed} min={0.5} max={2} step={0.05} format={v => `${v.toFixed(2).replace('.', ',')}×`} onChange={v => edit(s => { s.category.speed = v })} />
+            )}
+          </>)
+        })()}
         <Slider label="Spazio prima della categoria" value={st.category.before} min={0} max={80} step={1} format={px} onChange={v => edit(s => { s.category.before = v })} />
         <Slider label="Spazio dopo la categoria" value={st.category.after} min={0} max={60} step={1} format={px} onChange={v => edit(s => { s.category.after = v })} />
         <Toggle label="Scrivi &quot;segue&quot; quando la categoria continua nella pagina dopo" value={st.category.continued} onChange={v => edit(s => { s.category.continued = v })} />

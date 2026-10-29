@@ -415,6 +415,14 @@ export class CurlRenderer {
 
   deleteTexture(t: WebGLTexture) { this.gl.deleteTexture(t) }
 
+  /** Striscia di una pagina ridisegnata (titoli animati), in pixel della texture. */
+  updateRegion(t: WebGLTexture, source: HTMLCanvasElement, x: number, y: number) {
+    const gl = this.gl
+    gl.bindTexture(gl.TEXTURE_2D, t)
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false)
+    gl.texSubImage2D(gl.TEXTURE_2D, 0, x, y, gl.RGBA, gl.UNSIGNED_BYTE, source)
+  }
+
   /** Texture per un video (aggiornata a ogni fotogramma con updateVideo). */
   createVideoTexture(): WebGLTexture {
     const gl = this.gl

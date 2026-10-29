@@ -51,7 +51,9 @@ export interface LandingStyle {
   }
   colors:  { ink: string; soft: string; accent: string }
   layout:  { header: 'top' | 'center'; buttons: 'bottom' | 'center'; align: 'center' | 'left' }
-  logo:    { url: string | null; mode: 'logo' | 'name' | 'both'; size: number }   // altezza 40 – 180
+  /** Logo e nome si accendono e spengono ciascuno per conto suo (entrambi
+   *  spenti = in testa non c'è nulla). Logo acceso senza file = niente logo. */
+  logo:    { url: string | null; showLogo: boolean; showName: boolean; size: number }   // altezza 40 – 180
   name:        TextStyle
   description: { show: boolean; text: TextStyle }
   ornament:    Ornament
@@ -98,7 +100,7 @@ export const DEFAULT_LANDING: LandingStyle = {
   },
   colors: { ...ON_PAPER },
   layout: { header: 'top', buttons: 'bottom', align: 'center' },
-  logo: { url: null, mode: 'logo', size: 84 },
+  logo: { url: null, showLogo: true, showName: false, size: 84 },
   name: T(SERIF, 46, 500, 'ink', { tracking: 0.01 }),
   description: { show: true, text: T(SANS, 10.5, 600, 'accent', { upper: true, tracking: 0.3 }) },
   ornament: 'diamond',
@@ -156,11 +158,7 @@ export function parseLanding(raw: unknown): LandingStyle {
       buttons: pick(ly.buttons, ['bottom', 'center'] as const, d.layout.buttons),
       align: pick(ly.align, ['center', 'left'] as const, d.layout.align),
     },
-    logo: {
-      url: isUrl(lg.url) ? lg.url : null,
-      mode: pick(lg.mode, ['logo', 'name', 'both'] as const, d.logo.mode),
-      size: num(lg.size, 40, 180, d.logo.size),
-    },
+    logo: logoOf(lg, d.logo),
     name: tx(r.name, d.name),
     description: { show: bool(de.show, d.description.show), text: tx(de.text, d.description.text) },
     ornament: pick(r.ornament, ORNAMENTS, d.ornament),
@@ -224,3 +222,15 @@ export const landingColor = (ref: ColorRef, st: LandingStyle) =>
 /** Video dell'intro: il primo video tra foto e video (se c'è). */
 export const introVideo = (st: LandingStyle) =>
   st.background.kind === 'media' && st.background.videoMode === 'intro' ? st.background.media.find(m => m.video) ?? null : null
+
+/** Logo e nome visibili. Vecchio formato (`mode`: solo logo / solo nome /
+ *  entrambi, e senza file il nome compariva comunque): stessa resa di prima. */
+function logoOf(lg: Record<string, unknown>, d: LandingStyle['logo']): LandingStyle['logo'] {
+  const url = isUrl(lg.url) ? lg.url : null
+  const size = num(lg.size, 40, 180, d.size)
+  if (typeof lg.showLogo === 'boolean' || typeof lg.showName === 'boolean') {
+    return { url, size, showLogo: lg.showLogo === true, showName: lg.showName === true }
+  }
+  const mode = lg.mode === 'name' || lg.mode === 'both' ? lg.mode : 'logo'
+  return { url, size, showLogo: mode !== 'name' && !!url, showName: mode !== 'logo' || !url }
+}

@@ -1,5 +1,5 @@
 import {
-  DEFAULT_STYLE, cssFont, fontStack, formatPrice, mix, resolveColor, styleFaces,
+  DEFAULT_STYLE, categoryAnimates, cssFont, fontStack, formatPrice, mix, resolveColor, styleFaces,
   type MenuStyle, type Ornament, type TextStyle,
 } from '@/lib/menuStyle'
 import { paintPaper } from './paper'
@@ -178,6 +178,9 @@ interface DishBlock {
   showHead:  boolean
 }
 interface CatBlock { kind: 'cat'; name: string; cont: boolean }
+/** Animazione di un titolo: luce (1 accesa), lettera spenta, passo delle
+ *  lampadine, posizione del riflesso (null = nessuno). */
+interface CatState { light: number; bad: number; chase: number; sweep: number | null }
 interface HeadBlock { kind: 'head'; titleSize: number }
 /** Una riga di testo ricco già spezzata (pagine informative). */
 interface TextLineBlock {
@@ -205,7 +208,17 @@ export interface Page {
 export interface Layout {
   vp:     Viewport
   pages:  Page[]
-  paint:  (ctx: Ctx, pageIndex: number) => void
+  /** t = secondi dell'animazione dei titoli (assente = fotogramma fermo);
+   *  skipAnimated: senza i titoli animati (fondo da ridisegnare sotto). */
+  paint:  (ctx: Ctx, pageIndex: number, opts?: { t?: number; skipAnimated?: boolean }) => void
+  /** Strisce della pagina con un titolo animato (coordinate della pagina). */
+  animated: (pageIndex: number) => { x: number; y: number; w: number; h: number }[]
+  /** Solo i titoli animati della pagina, al tempo t. */
+  paintAnimated: (ctx: Ctx, pageIndex: number, t: number) => void
+  /** Firma dello stato animato della pagina al tempo t (uguale = disegno uguale). */
+  animKey: (pageIndex: number, t: number) => string
+  /** Pochi stati che si ripetono (luce, insegna, lampadine): si possono tenere da parte. */
+  animCacheable: boolean
   /** Piatto sotto il punto (x, y) della pagina, in coordinate della pagina. */
   hit:    (pageIndex: number, x: number, y: number) => Dish | null
   /** Pagina in cui inizia ogni categoria (index = posizione in data.categories). */
@@ -307,10 +320,17 @@ export function layoutMenu(ctx: Ctx, data: MenuData, vp: Viewport, style: MenuSt
   const HEAD_H = (H.ornament === 'none' ? titleBase + 30 * s : ornY + (24 + 10 * H.ornamentSize) * s) + H.space * s
 
   // ── Titolo di categoria
-  const CS = st.category.style
-  const CAT_PAD = CS === 'frame' ? 8 * s : 0
+  const CC = st.category
+  const CS = CC.style
+  const CAT_PAD = CS === 'marquee' ? 12 * s : CS === 'frame' || CS === 'pill' || CS === 'band' ? 8 * s : 0
   const CAT_H = CAT.size * 1.4 + CAT_PAD * 2 + (CS === 'underline' ? 7 * s : 0)
   const CONT = rt({ ...D.description, size: 12, italic: true, color: st.category.text.color, upper: false, tracking: 0 })
+  // Luce, filetti e animazione dei titoli.
+  const CAT_ANIM = categoryAnimates(CC) ? CC.animation : 'none'
+  const CAT_LINE = CC.lineColor !== 'auto' ? resolveColor(CC.lineColor, st)
+    : CC.effect === 'neon' ? CAT.color : CS === 'marquee' ? st.page.accent : ACCENT_SOFT
+  const CAT_FILL = resolveColor(CC.fill, st)
+  const CAT_GLOW_PAD = (CC.effect === 'glow' || CC.effect === 'neon' || CS === 'marquee' ? 26 : 10) * s
 
   // ── Testo ricco → righe (a capo per parole, con caratteri diversi nella riga)
   const TP = st.textPages
@@ -546,7 +566,7 @@ export function layoutMenu(ctx: Ctx, data: MenuData, vp: Viewport, style: MenuSt
 
   /** Disegna la pagina `index`; fuori dall'intervallo disegna carta vuota
    *  (es. la destra dell'ultima doppia pagina quando le pagine sono dispari). */
-  const paint = (c: Ctx, index: number) => {
+  const paint = (c: Ctx, index: number, opts: { t?: number; skipAnimated?: boolean } = {}) => {
     const page = pages[index] as Page | undefined
     const { w, h } = vp
     if (page?.media) { paintMedia(c, page.media); return }
@@ -601,7 +621,7 @@ export function layoutMenu(ctx: Ctx, data: MenuData, vp: Viewport, style: MenuSt
     for (const it of page.items) {
       const b = it.block
       if (b.kind === 'head') paintHead(c, b, it.y)
-      else if (b.kind === 'cat') paintCat(c, b, it.y)
+      else if (b.kind === 'cat') { if (!(opts.skipAnimated && CAT_ANIM !== 'none')) paintCat(c, b, it.y, catState(b, opts.t)) }
       else if (b.kind === 'tline') paintTextLine(c, b, it.y)
       else if (b.kind === 'legend') paintLegend(c, b, it.y)
       else {
@@ -735,19 +755,85 @@ export function layoutMenu(ctx: Ctx, data: MenuData, vp: Viewport, style: MenuSt
   const ornament = (c: Ctx, kind: Ornament, cx: number, cy: number, k: number) =>
     drawOrnament(c, kind, cx, cy, s * k, st.page.accent, ACCENT_SOFT)
 
-  function paintCat(c: Ctx, b: CatBlock, top: number) {
-    const left = st.category.align === 'left'
+  /** Stato dell'animazione di un titolo al tempo t (assente = fermo), già
+   *  "a gradini": stesso stato = stesso disegno, niente da ridisegnare. */
+  function catState(b: CatBlock, t?: number): CatState {
+    const still: CatState = { light: 1, bad: -1, chase: 0, sweep: null }
+    if (t === undefined || CAT_ANIM === 'none') return still
+    // Ogni categoria ha il suo ritmo: non sfarfallano tutte insieme.
+    const seed = hashOf(b.name)
+    const time = t * CC.speed + seed * 7
+    switch (CAT_ANIM) {
+      case 'pulse': {
+        const w = 0.5 + 0.5 * Math.sin((time * Math.PI * 2) / 2.6)
+        return { ...still, light: 0.5 + 0.5 * Math.round(w * 14) / 14 }
+      }
+      case 'flicker': {
+        // Insegna: tremolio all'accensione, poi ogni tanto una lettera difettosa.
+        const P = 6.5, cyc = Math.floor(time / P), u = time - cyc * P
+        const light = u < 0.8 && noise(Math.floor(u * 16) + cyc * 31) <= 0.42 ? 0.12 : 1
+        let bad = -1
+        const label = tx(CAT, b.name)
+        const idx = Array.from(label).map((ch, i) => (ch.trim() ? i : -1)).filter(i => i >= 0)
+        if (idx.length > 2 && u > 3 && u < 4.4 && noise(Math.floor(u * 22) + cyc * 5) > 0.45) {
+          bad = idx[Math.floor(noise(cyc * 7.3 + seed * 13) * idx.length)]
+        }
+        return { ...still, light, bad }
+      }
+      case 'chase': return { ...still, chase: Math.floor(time * 7) % 3 }
+      case 'shimmer': {
+        const P = 3.4, p = ((time % P) / P) * 1.6 - 0.3
+        return { ...still, sweep: p > -0.2 && p < 1.2 ? Math.round(p * 25) / 25 : null }
+      }
+      default: return still
+    }
+  }
+
+  function paintCat(c: Ctx, b: CatBlock, top: number, cs: CatState = catState(b)) {
+    const left = CC.align === 'left'
     const cx = m.x0 + m.cw / 2
     const label = tx(CAT, b.name)
-    const r = measure(c, CAT, label) > m.cw - 24 * s ? fit(st.category.text, b.name, m.cw - 24 * s) : CAT
+    const r = measure(c, CAT, label) > m.cw - 24 * s ? fit(CC.text, b.name, m.cw - 24 * s) : CAT
     const base = top + CAT_PAD + r.size
     const tw = measure(c, r, label)
     const tx0 = left ? m.x0 + CAT_PAD * 1.5 : cx - tw / 2
-    draw(c, r, label, left ? tx0 : cx, base, left ? 'left' : 'center')
-    c.strokeStyle = ACCENT_SOFT
-    c.lineWidth = Math.max(0.5, 0.7 * s)
+    const dpr = typeof c.getTransform === 'function' ? c.getTransform().a : 1
+    const light = cs.light
+    const letterLight = cs.bad >= 0 ? (i: number) => (i === cs.bad ? 0.1 : 1) : null
+    // Neon con lettera difettosa: lettera per lettera (sempre, così il
+    // fotogramma fermo e quelli animati coincidono).
+    const perLetter = CC.effect === 'neon' && CAT_ANIM === 'flicker'
+
+    // Riquadro del titolo (cornice, pillola, lampadine) e fascia.
+    const fx = tx0 - CAT_PAD * 1.5, fw = tw + CAT_PAD * 3
+    const boxR = CS === 'pill' ? CAT_H / 2 : Math.min(CC.radius * s, CAT_H / 2)
+    const lit = CC.effect === 'glow' || CC.effect === 'neon'
+    const glowOn = (color: string, k: number) => {
+      if (!lit) return
+      c.shadowColor = withAlpha(color, Math.min(1, 0.95 * light * k))
+      c.shadowBlur = (CC.effect === 'neon' ? 24 : 12) * CC.glow * s * dpr
+    }
+    const glowOff = () => { c.shadowColor = 'transparent'; c.shadowBlur = 0; c.shadowOffsetY = 0 }
+
+    // Fondi (pillola, fascia).
+    if (CS === 'pill' || CS === 'band') {
+      const bx = CS === 'band' ? m.x0 : fx, bw = CS === 'band' ? m.cw : fw
+      c.fillStyle = CAT_FILL
+      glowOn(CAT_FILL, 0.8)
+      roundRectPath(c, bx, top, bw, CAT_H, CS === 'band' ? Math.min(CC.radius * s, CAT_H / 2) : boxR)
+      c.fill()
+      glowOff()
+    }
+
+    // Titolo.
+    paintCatText(c, r, label, left ? tx0 : cx, base, left ? 'left' : 'center', light, letterLight, perLetter, dpr)
+
+    // Filetti e cornici.
+    c.strokeStyle = CAT_LINE
+    c.lineWidth = Math.max(0.5, CC.lineWidth * s)
     const ly = base - r.size * 0.36
     const pad = 12 * s
+    glowOn(CAT_LINE, 0.9)
     if (CS === 'rules') {
       // Filetti ai lati del titolo (a destra soltanto, se allineato a sinistra).
       c.beginPath()
@@ -757,13 +843,131 @@ export function layoutMenu(ctx: Ctx, data: MenuData, vp: Viewport, style: MenuSt
     } else if (CS === 'underline') {
       c.beginPath(); c.moveTo(tx0, base + 7 * s); c.lineTo(tx0 + tw, base + 7 * s); c.stroke()
     } else if (CS === 'frame') {
-      const fx = tx0 - CAT_PAD * 1.5, fw = tw + CAT_PAD * 3
-      c.strokeRect(fx, top + 0.5, fw, CAT_H - 1)
+      roundRectPath(c, fx, top + 0.5, fw, CAT_H - 1, boxR); c.stroke()
+      if (CC.effect === 'neon') c.stroke()
+    } else if (CS === 'marquee') {
+      // Insegna a lampadine: cornice sottile e lampadine lungo il bordo.
+      glowOff()
+      c.globalAlpha = 0.5
+      roundRectPath(c, fx, top + 0.5, fw, CAT_H - 1, boxR); c.stroke()
+      c.globalAlpha = 1
+      const pts = roundRectPoints(fx, top + 0.5, fw, CAT_H - 1, boxR, 9 * s)
+
+      const dim = mix(CAT_LINE, st.page.paper, 0.6)
+      const core = mix(CAT_LINE, '#ffffff', 0.55)
+      pts.forEach(([px, py], i) => {
+        const on = CAT_ANIM !== 'chase' || (((i - cs.chase) % 3) + 3) % 3 === 0
+        c.beginPath(); c.arc(px, py, 2.1 * s, 0, Math.PI * 2)
+        if (on) {
+          c.shadowColor = withAlpha(CAT_LINE, 0.9); c.shadowBlur = 7 * CC.glow * s * dpr
+          c.fillStyle = CAT_LINE; c.fill()
+          glowOff()
+          c.beginPath(); c.arc(px, py, 0.9 * s, 0, Math.PI * 2); c.fillStyle = core; c.fill()
+        } else { c.fillStyle = dim; c.fill() }
+      })
     } else if (CS === 'ornament' && !b.cont) {
       // Ornamento piccolo sotto il titolo (a sinistra: sotto l'inizio).
-      ornament(c, st.category.ornament, left ? tx0 + 46 * 0.55 * s : cx, base + 9 * s, 0.55)
+      ornament(c, CC.ornament, left ? tx0 + 46 * 0.55 * s : cx, base + 9 * s, 0.55)
     }
+    glowOff()
+
+    // Riflesso di luce che attraversa titolo (e pillola/fascia), ogni ~3 s.
+    if (cs.sweep !== null) {
+      const x0 = (CS === 'band' ? m.x0 : fx) - 40 * s, x1 = (CS === 'band' ? m.x0 + m.cw : fx + fw) + 40 * s
+      const p = cs.sweep
+      {
+        const bx = x0 + (x1 - x0) * p, bw = 34 * s
+        const g = c.createLinearGradient(bx - bw, top, bx + bw, top + CAT_H)
+        g.addColorStop(0, 'rgba(255,255,255,0)')
+        g.addColorStop(0.5, 'rgba(255,255,255,0.85)')
+        g.addColorStop(1, 'rgba(255,255,255,0)')
+        if (CS === 'pill' || CS === 'band') {
+          c.fillStyle = g; c.globalAlpha = 0.55
+          roundRectPath(c, CS === 'band' ? m.x0 : fx, top, CS === 'band' ? m.cw : fw, CAT_H, CS === 'band' ? Math.min(CC.radius * s, CAT_H / 2) : boxR)
+          c.fill(); c.globalAlpha = 1
+        }
+        paintCatText(c, { ...r, color: '' }, label, left ? tx0 : cx, base, left ? 'left' : 'center', 1, null, perLetter, dpr, g)
+      }
+    }
+
     if (b.cont) draw(c, CONT, data.labels.cont, left ? tx0 : cx, top + CAT_H + 12 * s, left ? 'left' : 'center')
+  }
+
+  /** Testo del titolo con l'effetto scelto. `paintWith`: riempimento al posto
+   *  dell'effetto (riflesso). */
+  function paintCatText(c: Ctx, r: RT, label: string, x: number, y: number, align: 'left' | 'center', light: number,
+    letterLight: ((i: number) => number) | null, perLetter: boolean, dpr: number, paintWith?: CanvasGradient) {
+    c.font = r.font
+    const chars = Array.from(label)
+    // Lettera per lettera (neon con lettera difettosa) o tutto insieme.
+    const each = (fn: (text: string, x: number, i: number) => void) => {
+      if (!perLetter && !letterLight) {
+        if (!r.track) { c.textAlign = align; fn(label, x, -1); c.textAlign = 'left'; return }
+        const total = spacedWidth(c, label, r.track)
+        let px = align === 'left' ? x : x - total / 2
+        chars.forEach((ch, i) => { fn(ch, px, i); px += c.measureText(ch).width + r.track })
+        return
+      }
+      const total = chars.reduce((w, ch) => w + c.measureText(ch).width, 0) + r.track * (chars.length - 1)
+      let px = align === 'left' ? x : x - total / 2
+      chars.forEach((ch, i) => { fn(ch, px, i); px += c.measureText(ch).width + r.track })
+    }
+    const lv = (i: number) => light * (letterLight && i >= 0 ? letterLight(i) : 1)
+    if (paintWith) { c.fillStyle = paintWith; each((t, px) => c.fillText(t, px, y)); return }
+    const color = r.color
+    switch (CC.effect) {
+      case 'shadow':
+        c.shadowColor = `rgba(0,0,0,${(0.5 * CC.glow).toFixed(3)})`
+        c.shadowOffsetY = 2 * s * dpr * CC.glow
+        c.shadowBlur = 5 * s * dpr * CC.glow
+        c.fillStyle = color
+        each((t, px) => c.fillText(t, px, y))
+        break
+      case 'outline':
+        c.strokeStyle = color
+        c.lineWidth = Math.max(0.6, r.size * 0.055)
+        c.lineJoin = 'round'
+        each((t, px) => c.strokeText(t, px, y))
+        break
+      case 'glow':
+        each((t, px, i) => {
+          const k = lv(i)
+          c.fillStyle = mix(mix(color, st.page.paper, 0.5), color, k)
+          c.shadowColor = withAlpha(color, 0.9 * k)
+          c.shadowBlur = 14 * CC.glow * s * dpr * (0.4 + 0.6 * k)
+          c.fillText(t, px, y)
+          c.shadowBlur = 0; c.shadowColor = 'transparent'
+          c.fillText(t, px, y)
+        })
+        break
+      case 'neon':
+        // Tubo: alone largo, alone stretto, anima chiara. Spento: tubo opaco.
+        each((t, px, i) => {
+          const k = lv(i)
+          const off = mix(color, st.page.paper, 0.55)
+          if (k > 0.2) {
+            // Il tubo ha spessore: il contorno dà più "materia" all'alone.
+            c.fillStyle = color; c.strokeStyle = color
+            c.lineWidth = Math.max(1, r.size * 0.08); c.lineJoin = 'round'
+            c.shadowColor = withAlpha(color, k)
+            c.shadowBlur = 40 * CC.glow * s * dpr
+            c.fillText(t, px, y); c.strokeText(t, px, y)
+            c.fillText(t, px, y)
+            c.shadowBlur = 12 * CC.glow * s * dpr
+            c.fillText(t, px, y)
+            c.shadowBlur = 3 * s * dpr
+            c.fillText(t, px, y)
+            c.shadowBlur = 0; c.shadowColor = 'transparent'
+          }
+          c.fillStyle = mix(off, mix(color, '#ffffff', 0.55), k)
+          c.fillText(t, px, y)
+        })
+        break
+      default:
+        c.fillStyle = color
+        each((t, px) => c.fillText(t, px, y))
+    }
+    c.shadowColor = 'transparent'; c.shadowBlur = 0; c.shadowOffsetY = 0
   }
 
   function paintDivider(c: Ctx, yy: number) {
@@ -915,7 +1119,103 @@ export function layoutMenu(ctx: Ctx, data: MenuData, vp: Viewport, style: MenuSt
     return out
   }
 
-  return { vp, pages, paint, hit, categoryStarts, pick, dishesOn }
+  // Titoli animati: la loro striscia (con l'alone) si ridisegna da sola.
+  const animated = (pageIndex: number) => {
+    const page = pages[pageIndex]
+    if (CAT_ANIM === 'none' || !page || page.media) return []
+    return page.items.filter(it => it.block.kind === 'cat').map(it => {
+      const b = it.block as CatBlock
+      const y0 = Math.max(0, it.y - CAT_GLOW_PAD)
+      const y1 = Math.min(vp.h, it.y + CAT_H + CAT_GLOW_PAD + (b.cont ? 18 * s : 0))
+      // Filetti e fascia vanno da un margine all'altro; il resto sta attorno al titolo.
+      if (CS === 'rules' || CS === 'band') return { x: 0, y: y0, w: vp.w, h: y1 - y0 }
+      const label = tx(CAT, b.name)
+      const r = measure(ctx, CAT, label) > m.cw - 24 * s ? fit(CC.text, b.name, m.cw - 24 * s) : CAT
+      const tw = Math.max(measure(ctx, r, label), b.cont ? measure(ctx, CONT, data.labels.cont) : 0)
+      const left = CC.align === 'left'
+      const tx0 = left ? m.x0 + CAT_PAD * 1.5 : m.x0 + m.cw / 2 - tw / 2
+      const x0 = Math.max(0, tx0 - CAT_PAD * 1.5 - CAT_GLOW_PAD - 4 * s)
+      const x1 = Math.min(vp.w, tx0 + tw + CAT_PAD * 1.5 + CAT_GLOW_PAD + 4 * s)
+      return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 }
+    })
+  }
+  const paintAnimated = (c: Ctx, pageIndex: number, t: number) => {
+    if (CAT_ANIM === 'none') return
+    c.textBaseline = 'alphabetic'
+    for (const it of pages[pageIndex]?.items ?? []) if (it.block.kind === 'cat') paintCat(c, it.block, it.y, catState(it.block, t))
+  }
+  // Stesso stato = stesso disegno: si ridisegna (e si ricarica) solo se cambia.
+  const animKey = (pageIndex: number, t: number) => {
+    if (CAT_ANIM === 'none') return ''
+    let k = ''
+    for (const it of pages[pageIndex]?.items ?? []) {
+      if (it.block.kind !== 'cat') continue
+      const q = catState(it.block, t)
+      k += `${q.light}|${q.bad}|${q.chase}|${q.sweep};`
+    }
+    return k
+  }
+
+  return { vp, pages, paint, animated, paintAnimated, animKey, animCacheable: CAT_ANIM === 'flicker' || CAT_ANIM === 'chase', hit, categoryStarts, pick, dishesOn }
+}
+
+// ── Titoli di categoria: aiuti ─────────────────────────────────────────────────
+
+/** 0 – 1 stabile per un testo (ritmo diverso per ogni categoria). */
+function hashOf(text: string): number {
+  let h = 2166136261
+  for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 16777619)
+  return (h >>> 0) / 4294967296
+}
+
+/** 0 – 1 pseudo-casuale e ripetibile per un intero. */
+function noise(k: number): number {
+  const x = Math.sin(k * 127.1 + 311.7) * 43758.5453
+  return x - Math.floor(x)
+}
+
+function withAlpha(hex: string, a: number): string {
+  const n = parseInt(hex.slice(1), 16)
+  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${Math.max(0, Math.min(1, a)).toFixed(3)})`
+}
+
+function roundRectPath(c: Ctx, x: number, y: number, w: number, h: number, r: number) {
+  r = Math.max(0, Math.min(r, w / 2, h / 2))
+  c.beginPath()
+  c.moveTo(x + r, y)
+  c.arcTo(x + w, y, x + w, y + h, r)
+  c.arcTo(x + w, y + h, x, y + h, r)
+  c.arcTo(x, y + h, x, y, r)
+  c.arcTo(x, y, x + w, y, r)
+  c.closePath()
+}
+
+/** Punti equidistanti (circa `step`) lungo il bordo di un rettangolo arrotondato. */
+function roundRectPoints(x: number, y: number, w: number, h: number, r: number, step: number): [number, number][] {
+  r = Math.max(0, Math.min(r, w / 2, h / 2))
+  const sw = w - 2 * r, sh = h - 2 * r, arc = (Math.PI / 2) * r
+  const L = 2 * (sw + sh) + 4 * arc
+  const n = Math.max(8, Math.round(L / step))
+  const out: [number, number][] = []
+  // Tratti in senso orario dall'angolo in alto a sinistra: lato, angolo, lato…
+  const segs: { len: number; at: (d: number) => [number, number] }[] = [
+    { len: sw,  at: d => [x + r + d, y] },
+    { len: arc, at: d => { const a = -Math.PI / 2 + d / Math.max(r, 1e-6); return [x + w - r + Math.cos(a) * r, y + r + Math.sin(a) * r] } },
+    { len: sh,  at: d => [x + w, y + r + d] },
+    { len: arc, at: d => { const a = d / Math.max(r, 1e-6); return [x + w - r + Math.cos(a) * r, y + h - r + Math.sin(a) * r] } },
+    { len: sw,  at: d => [x + w - r - d, y + h] },
+    { len: arc, at: d => { const a = Math.PI / 2 + d / Math.max(r, 1e-6); return [x + r + Math.cos(a) * r, y + h - r + Math.sin(a) * r] } },
+    { len: sh,  at: d => [x, y + h - r - d] },
+    { len: arc, at: d => { const a = Math.PI + d / Math.max(r, 1e-6); return [x + r + Math.cos(a) * r, y + r + Math.sin(a) * r] } },
+  ]
+  for (let i = 0; i < n; i++) {
+    let d = (i * L) / n
+    for (const sg of segs) {
+      if (d <= sg.len || sg === segs[segs.length - 1]) { out.push(sg.at(Math.min(d, sg.len))); break }
+      d -= sg.len
+    }
+  }
+  return out
 }
 
 // ── Ornamenti ────────────────────────────────────────────────────────────────

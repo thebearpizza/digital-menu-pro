@@ -357,19 +357,91 @@ export default function CurlMenu({ data: base0, style: initialStyle, preview = f
       }
     }
 
-    const pageCanvas = (i: number): HTMLCanvasElement => {
+    // ── Titoli di categoria animati (insegna, riflesso, lampadine): si
+    // ridisegna solo la loro striscia, direttamente nella texture della
+    // pagina, e solo quando lo stato della luce cambia davvero. Gli stati che
+    // si ripetono (insegna accesa/spenta, passo delle lampadine) si disegnano
+    // una volta e si tengono da parte.
+    type AnimStrip = { X: number; Y: number; c: HTMLCanvasElement; base: HTMLCanvasElement; cache: Map<string, HTMLCanvasElement> }
+    const animOf = new WeakMap<WebGLTexture, { page: number; strips: AnimStrip[]; key: string }>()
+    const reduceMotion = !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+    const animStart = performance.now()
+    const animTime = () => (performance.now() - animStart) / 1000
+    const STRIP_CACHE = 6
+    let animRaf = 0
+
+    /** strips: se passato, i titoli animati si separano dal fondo (texture). */
+    const pageCanvas = (i: number, strips?: AnimStrip[]): HTMLCanvasElement => {
       scratch.width = Math.round(pageW * dpr); scratch.height = Math.round(H * dpr)
       sctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-      layout!.paint(sctx, i)
+      const rects = strips && !reduceMotion ? layout!.animated(i) : []
+      if (!strips || !rects.length) { layout!.paint(sctx, i); return scratch }
+      layout!.paint(sctx, i, { skipAnimated: true })
+      for (const r of rects) {
+        const X = Math.max(0, Math.floor(r.x * dpr)), Y = Math.max(0, Math.floor(r.y * dpr))
+        const w = Math.min(scratch.width, Math.ceil((r.x + r.w) * dpr)) - X
+        const h = Math.min(scratch.height, Math.ceil((r.y + r.h) * dpr)) - Y
+        if (w < 1 || h < 1) continue
+        const base = document.createElement('canvas'); base.width = w; base.height = h
+        base.getContext('2d')!.drawImage(scratch, X, Y, w, h, 0, 0, w, h)
+        const c = document.createElement('canvas'); c.width = w; c.height = h
+        strips.push({ X, Y, c, base, cache: new Map() })
+      }
+      layout!.paintAnimated(sctx, i, animTime())
       return scratch
     }
+
+    const animTick = () => {
+      animRaf = 0
+      const R = renderer, L = layout
+      if (!R || !L) return
+      let any = false, changed = false
+      const t = animTime()
+      textures.forEach(tex => {
+        const a = animOf.get(tex)
+        if (!a) return
+        any = true
+        if (cardOpen.current) return
+        const key = L.animKey(a.page, t)
+        if (key === a.key) return
+        a.key = key
+        changed = true
+        for (const st of a.strips) {
+          let src = L.animCacheable ? st.cache.get(key) : undefined
+          if (!src) {
+            src = L.animCacheable ? document.createElement('canvas') : st.c
+            src.width = st.c.width; src.height = st.c.height
+            const x = src.getContext('2d')!
+            x.setTransform(1, 0, 0, 1, 0, 0)
+            x.clearRect(0, 0, src.width, src.height)
+            x.drawImage(st.base, 0, 0)
+            x.setTransform(dpr, 0, 0, dpr, -st.X, -st.Y)
+            L.paintAnimated(x, a.page, t)
+            if (L.animCacheable) {
+              if (st.cache.size >= STRIP_CACHE) st.cache.delete(st.cache.keys().next().value as string)
+              st.cache.set(key, src)
+            }
+          }
+          R.updateRegion(tex, src, st.X, st.Y)
+        }
+      })
+      if (!any) return
+      if (changed) request()
+      animRaf = requestAnimationFrame(animTick)
+    }
+    const startAnim = () => { if (!animRaf && !reduceMotion) animRaf = requestAnimationFrame(animTick) }
 
     // Pagine fuori intervallo (fine della doppia pagina) = carta vuota.
     const texture = (i: number): WebGLTexture | null => {
       if (!layout || !renderer || i < 0) return null
       const key = Math.min(i, pageCount())   // tutte le vuote condividono una texture
       let t = textures.get(key)
-      if (!t) { t = renderer.createTexture(pageCanvas(key)); textures.set(key, t) }
+      if (!t) {
+        const strips: AnimStrip[] = []
+        t = renderer.createTexture(pageCanvas(key, strips))
+        textures.set(key, t)
+        if (strips.length) { animOf.set(t, { page: key, strips, key: '' }); startAnim() }
+      }
       return t
     }
     const bitmap = (i: number): HTMLCanvasElement | null => {
@@ -859,6 +931,7 @@ export default function CurlMenu({ data: base0, style: initialStyle, preview = f
       html.style.backgroundColor = prevBg
       cancelAnimationFrame(raf)
       cancelAnimationFrame(glassRaf)
+      cancelAnimationFrame(animRaf)
       clearTimeout(warmTimer); clearTimeout(resizeTimer); clearTimeout(jumpTimer); clearTimeout(peekTimer)
       peeking = false
       apiRef.current = null

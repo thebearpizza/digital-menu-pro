@@ -239,8 +239,8 @@ export default function Landing({ token, base: basePath = '/prova', fromAdmin = 
   const left = st.layout.align === 'left'
   const B = st.buttons
   const hasLogo = !!st.logo.url && !restaurant.hide?.logo
-  const showName = !restaurant.hide?.name && (st.logo.mode !== 'logo' || !hasLogo)
-  const showLogo = st.logo.mode !== 'name' && hasLogo
+  const showName = !restaurant.hide?.name && st.logo.showName
+  const showLogo = st.logo.showLogo && hasLogo
   const shadow = onMedia ? '0 2px 18px rgba(0,0,0,0.35)' : 'none'
   const glassTint = B.tint
   const header = (

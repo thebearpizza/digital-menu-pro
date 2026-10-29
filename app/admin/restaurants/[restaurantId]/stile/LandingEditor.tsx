@@ -16,7 +16,7 @@ import type { LandingPick } from '@/app/prova/[token]/Landing'
 import { loadCustomFonts } from '@/app/prova/[token]/fonts'
 import { compressImageFile, MAX_VIDEO_BYTES } from '@/lib/imageCompress'
 import {
-  Choice, ColorField, ColorRefField, FieldShell, GlassControls, FontsManager, OrnamentField, PaperSwatch, PhoneFrame, Slider, TextStyleField, Toggle,
+  Choice, ColorField, ColorRefField, FieldShell, GlassControls, FontsManager, MultiChoice, OrnamentField, PaperSwatch, PhoneFrame, Slider, TextStyleField, Toggle,
   lum, pct, px, uploadAsset,
 } from './controls'
 import { saveLandingStyle } from './actions'
@@ -354,14 +354,18 @@ export default function LandingEditor({ restaurantId, token, initialStyle, menuF
           options={[{ value: 'center', label: 'Centrato' }, { value: 'left', label: 'A sinistra' }]} />
       </>)
       case 'logo': return (<>
-        <LogoField restaurantId={restaurantId} value={st.logo.url} onChange={url => edit(s => { s.logo.url = url })} />
-        <Choice label="Mostra" value={st.logo.mode} onChange={v => edit(s => { s.logo.mode = v })}
-          options={[{ value: 'logo', label: 'Solo logo' }, { value: 'name', label: 'Solo nome' }, { value: 'both', label: 'Logo e nome' }]}
-          hint={!st.logo.url && st.logo.mode !== 'name' ? 'Senza logo si vede il nome.' : undefined} />
-        {st.logo.url && st.logo.mode !== 'name' && (
+        {/* Logo appena caricato: si accende da solo. */}
+        <LogoField restaurantId={restaurantId} value={st.logo.url} onChange={url => edit(s => { if (url && !s.logo.url) s.logo.showLogo = true; s.logo.url = url })} />
+        <MultiChoice label="Mostra" hint={!st.logo.showLogo && !st.logo.showName ? 'In testa non si vede né il logo né il nome.'
+            : st.logo.showLogo && !st.logo.url ? 'Carica un logo per vederlo.' : 'Tocca per accendere o spegnere: si possono tenere entrambi.'}
+          options={[
+            { label: 'Logo', on: st.logo.showLogo, toggle: () => edit(s => { s.logo.showLogo = !s.logo.showLogo }) },
+            { label: 'Nome', on: st.logo.showName, toggle: () => edit(s => { s.logo.showName = !s.logo.showName }) },
+          ]} />
+        {st.logo.url && st.logo.showLogo && (
           <Slider label="Grandezza del logo" value={st.logo.size} min={40} max={180} step={2} format={px} onChange={v => edit(s => { s.logo.size = v })} />
         )}
-        {(st.logo.mode !== 'logo' || !st.logo.url) && T('Nome del ristorante', s => s.name, [20, 72])}
+        {st.logo.showName && T('Nome del ristorante', s => s.name, [20, 72])}
         <OrnamentField label="Ornamento" value={st.ornament} accent={st.colors.accent} paper={paperForSamples} onChange={v => edit(s => { s.ornament = v })} />
       </>)
       case 'description': return (<>

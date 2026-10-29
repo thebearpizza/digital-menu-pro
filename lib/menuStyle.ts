@@ -155,6 +155,24 @@ export function resolveFace(name: string, weight: number, italic: boolean): { we
 /** Colore: uno dei colori della carta ('ink' testo, 'soft' testo secondario,
  *  'accent') oppure un colore libero #rrggbb. */
 export type ColorRef = 'ink' | 'soft' | 'accent' | string
+
+export const CATEGORY_STYLES = ['rules', 'ornament', 'underline', 'frame', 'pill', 'band', 'marquee', 'plain'] as const
+export type CategoryStyle = typeof CATEGORY_STYLES[number]
+export const CATEGORY_EFFECTS = ['none', 'shadow', 'outline', 'glow', 'neon'] as const
+export type CategoryEffect = typeof CATEGORY_EFFECTS[number]
+/** Animazioni dei titoli: 'pulse' e 'flicker' con luce o neon, 'chase' con
+ *  le lampadine, 'shimmer' con tutti. */
+export const CATEGORY_ANIMATIONS = ['none', 'pulse', 'flicker', 'shimmer', 'chase'] as const
+export type CategoryAnimation = typeof CATEGORY_ANIMATIONS[number]
+/** L'animazione scelta vale con questo titolo? */
+export function categoryAnimates(c: { style: CategoryStyle; effect: CategoryEffect; animation: CategoryAnimation }): boolean {
+  switch (c.animation) {
+    case 'pulse': case 'flicker': return c.effect === 'glow' || c.effect === 'neon'
+    case 'chase': return c.style === 'marquee'
+    case 'shimmer': return true
+    default: return false
+  }
+}
 /** Spessori: 400–700 nel catalogo; i caratteri caricati possono avere anche
  *  100–300 (sottili) e 800–900 (nerissimi). */
 export type Weight = 100 | 200 | 300 | 400 | 500 | 600 | 700 | 800 | 900
@@ -238,8 +256,19 @@ export interface MenuStyle {
   runningHead: { show: boolean; content: 'both' | 'restaurant' | 'menu'; text: TextStyle }
   category: {
     text: TextStyle
-    style: 'rules' | 'ornament' | 'underline' | 'frame' | 'plain'
+    style: CategoryStyle
     ornament: Ornament        // quello sotto il titolo, con lo stile 'ornament'
+    /** Filetti, cornice, lampadine: 'auto' = accento tenue (col neon: colore del testo). */
+    lineColor: ColorRef | 'auto'
+    lineWidth: number         // 0.5 – 3
+    /** Fondo della pillola e della fascia. */
+    fill: ColorRef
+    radius: number            // angoli di cornice, pillola e lampadine: 0 – 30
+    /** Luce del titolo (il colore della luce è quello del testo). */
+    effect: CategoryEffect
+    glow: number              // intensità della luce / dell'ombra: 0.2 – 1
+    animation: CategoryAnimation
+    speed: number             // velocità dell'animazione: 0.5 – 2
     align: 'center' | 'left'
     before: number            // spazio prima: 0 – 80
     after: number             // spazio dopo: 0 – 60
@@ -348,7 +377,10 @@ export const DEFAULT_STYLE: MenuStyle = {
     space: 0,
   },
   runningHead: { show: true, content: 'both', text: T(SANS, 9.5, 500, 'accent', { upper: true, tracking: 0.25 }) },
-  category: { text: T(SANS, 11, 600, 'accent', { upper: true, tracking: 0.25 }), style: 'rules', ornament: 'diamond', align: 'center', before: 30, after: 18, continued: true, newPage: false },
+  category: {
+    text: T(SANS, 11, 600, 'accent', { upper: true, tracking: 0.25 }), style: 'rules', ornament: 'diamond', align: 'center', before: 30, after: 18, continued: true, newPage: false,
+    lineColor: 'auto', lineWidth: 0.7, fill: 'accent', radius: 0, effect: 'none', glow: 0.7, animation: 'none', speed: 1,
+  },
   dish: {
     align: 'left', spacing: 20, divider: 'none', dividerOrnament: 'diamond',
     name: T(SERIF, 19.5, 600, 'ink'), nameLineHeight: 1.18,
@@ -486,13 +518,21 @@ export function parseStyle(raw: unknown): MenuStyle {
     },
     category: {
       text: tx(ct.text, d.category.text),
-      style: pick(ct.style, ['rules', 'ornament', 'underline', 'frame', 'plain'] as const, d.category.style),
+      style: pick(ct.style, CATEGORY_STYLES, d.category.style),
       ornament: orn(ct.ornament, d.category.ornament),
       align: pick(ct.align, ['center', 'left'] as const, d.category.align),
       before: num(ct.before, 0, 80, d.category.before),
       after: num(ct.after, 0, 60, d.category.after),
       continued: bool(ct.continued, d.category.continued),
       newPage: bool(ct.newPage, d.category.newPage),
+      lineColor: ct.lineColor === 'auto' ? 'auto' : colorRef(ct.lineColor, d.category.lineColor),
+      lineWidth: num(ct.lineWidth, 0.5, 3, d.category.lineWidth),
+      fill: colorRef(ct.fill, d.category.fill),
+      radius: num(ct.radius, 0, 30, d.category.radius),
+      effect: pick(ct.effect, CATEGORY_EFFECTS, d.category.effect),
+      glow: num(ct.glow, 0.2, 1, d.category.glow),
+      animation: pick(ct.animation, CATEGORY_ANIMATIONS, d.category.animation),
+      speed: num(ct.speed, 0.5, 2, d.category.speed),
     },
     dish: {
       align: pick(ds.align, ['left', 'center'] as const, d.dish.align),
