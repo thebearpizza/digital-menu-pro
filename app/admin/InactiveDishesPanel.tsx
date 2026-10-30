@@ -60,7 +60,7 @@ function RestaurantDishTable({ group }: { group: RestaurantGroup }) {
     <div className="bg-white border border-gray-200">
       <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
         <Link
-          href={`/admin/restaurants/${group.id}`}
+          href={`/admin/restaurants/${group.id}/menus`}
           className="text-sm font-medium text-gray-900 hover:text-blue-600 hover:underline"
         >
           {group.name}

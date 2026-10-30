@@ -382,7 +382,7 @@ export default function ScanStatsLive({
             {rows.map(r => (
               <div key={r.restaurantId} className="flex items-center justify-between gap-4">
                 <Link
-                  href={`/admin/restaurants/${r.restaurantId}`}
+                  href={`/admin/restaurants/${r.restaurantId}/menus`}
                   className="text-sm text-gray-500 hover:text-blue-600 hover:underline truncate"
                 >
                   {r.restaurantName}
