@@ -76,6 +76,11 @@ export interface LandingStyle {
     press:  'liquid' | 'scale' | 'none'
     name:   TextStyle
     hours:  { show: boolean; text: TextStyle }
+    /** Parola prima del nome del menu (es. "MENU"), con uno stile suo. Vuota = niente. */
+    prefix: { text: string; style: TextStyle }
+    /** Bagliore lungo il bordo, dentro e fuori: 0 – 1. */
+    glow:   number
+    glowColor: ColorRef
   }
   captions: { show: boolean; title: TextStyle; subtitle: TextStyle }
   socials:  { show: boolean; style: 'glass' | 'plain' }
@@ -110,6 +115,8 @@ export const DEFAULT_LANDING: LandingStyle = {
     paddingX: 20, border: { width: 0, color: 'ink' }, shadow: 0.4, content: 'stack', arrow: 'none', press: 'liquid',
     name: T(SERIF, 23, 500, 'ink'),
     hours: { show: true, text: T(SANS, 10.5, 600, 'accent', { tracking: 0.16 }) },
+    prefix: { text: '', style: T(SANS, 15, 300, 'ink', { upper: true, tracking: 0.08 }) },
+    glow: 0, glowColor: 'accent',
   },
   captions: { show: true, title: T(SERIF, 28, 500, 'ink', { italic: true }), subtitle: T(SANS, 12, 500, 'soft', { tracking: 0.08 }) },
   socials: { show: true, style: 'glass' },
@@ -180,6 +187,10 @@ export function parseLanding(raw: unknown): LandingStyle {
       press: pick(bt.press, ['liquid', 'scale', 'none'] as const, d.buttons.press),
       name: tx(bt.name, d.buttons.name),
       hours: { show: bool(hr.show, d.buttons.hours.show), text: tx(hr.text, d.buttons.hours.text) },
+      prefix: { text: (typeof obj(bt.prefix).text === 'string' ? (obj(bt.prefix).text as string).slice(0, 24) : d.buttons.prefix.text),
+        style: tx(obj(bt.prefix).style, d.buttons.prefix.style) },
+      glow: num(bt.glow, 0, 1, d.buttons.glow),
+      glowColor: colorRef(bt.glowColor, d.buttons.glowColor),
     },
     captions: { show: bool(ca.show, d.captions.show), title: tx(ca.title, d.captions.title), subtitle: tx(ca.subtitle, d.captions.subtitle) },
     socials: { show: bool(so.show, d.socials.show), style: pick(so.style, ['glass', 'plain'] as const, d.socials.style) },
@@ -209,7 +220,7 @@ export function initialLanding(media: LandingMedia[], logo: string | null): Land
 
 /** Testi della pagina (per caricare solo i caratteri usati). */
 export function landingTexts(st: LandingStyle): TextStyle[] {
-  return [st.name, st.description.text, st.chooseLabel.text, st.buttons.name, st.buttons.hours.text,
+  return [st.name, st.description.text, st.chooseLabel.text, st.buttons.name, st.buttons.hours.text, st.buttons.prefix.style,
     st.captions.title, st.captions.subtitle, st.legal.text]
 }
 export const landingFontsUrl = (st: LandingStyle) => fontsUrlFor(landingTexts(st))

@@ -402,6 +402,16 @@ export default function LandingEditor({ restaurantId, token, initialStyle, menuF
         <Choice label="Al tocco" value={st.buttons.press} onChange={v => edit(s => { s.buttons.press = v })}
           options={[{ value: 'liquid', label: 'Il vetro si gonfia' }, { value: 'scale', label: 'Si rimpicciolisce' }, { value: 'none', label: 'Niente' }]} />
         {T('Nome del menu', s => s.buttons.name, [13, 36], st.buttons.style === 'solid' ? 'Su colore pieno, con "Testo" o "Secondario" il colore si adatta da solo al pulsante.' : undefined)}
+        <FieldShell label="Parola prima del nome" hint='Per esempio "MENU": si legge "MENU ALLA CARTA". Vuota = niente.'>
+          <input value={st.buttons.prefix.text} maxLength={24} placeholder="Nessuna"
+            onChange={e => { const v = e.target.value; edit(s => { s.buttons.prefix.text = v }) }}
+            className="w-full border border-gray-200 px-3 py-2 text-sm outline-none focus:border-gray-400" style={{ borderRadius: 10 }} />
+        </FieldShell>
+        {st.buttons.prefix.text.trim() && T('Stile della parola prima del nome', s => s.buttons.prefix.style, [9, 30])}
+        <Slider label="Bagliore lungo il bordo" value={st.buttons.glow} min={0} max={1} step={0.05} format={v => (v === 0 ? 'Nessuno' : pct(v))} onChange={v => edit(s => { s.buttons.glow = v })} />
+        {st.buttons.glow > 0 && (
+          <ColorRefField value={st.buttons.glowColor} swatches={st.colors} onChange={c => edit(s => { s.buttons.glowColor = c })} />
+        )}
         <Toggle label="Orario del menu (se programmato)" value={st.buttons.hours.show} onChange={v => edit(s => { s.buttons.hours.show = v })} />
         {st.buttons.hours.show && T('Testo dell\'orario', s => s.buttons.hours.text, [8, 16], undefined, true)}
         <Toggle label={'Scritta "Scegli il menu" sopra i pulsanti'} value={st.chooseLabel.show} onChange={v => edit(s => { s.chooseLabel.show = v })} />
