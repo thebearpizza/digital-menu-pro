@@ -395,6 +395,14 @@ function MenuButton({ st, name, hours, first, left, gl, onClick, move, fade }: {
     : { borderTop: first ? 'none' : `1px solid ${rgba(ink, 0.22)}`, borderRadius: 0 }
   // Bordo scelto (pieno e vetro; il bordato lo ha già nel suo contorno).
   const border = B.border.width && (B.style === 'solid' || B.style === 'glass') ? { outline: `${B.border.width}px solid ${borderColor}`, outlineOffset: -B.border.width } : {}
+  // Bagliore lungo il bordo (dentro e fuori), sopra l'ombra già scelta.
+  const glowC = landingColor(B.glowColor, st)
+  if (B.glow > 0) {
+    const g = B.glow
+    const halo = `inset 0 0 ${(16 * g).toFixed(1)}px ${rgba(glowC, 0.6 * g)}, 0 0 ${(16 * g).toFixed(1)}px ${rgba(glowC, 0.45 * g)}`
+    surface.boxShadow = surface.boxShadow && surface.boxShadow !== 'none' ? `${surface.boxShadow}, ${halo}` : halo
+  }
+  const prefix = B.prefix.text.trim() ? <span style={{ ...css(B.prefix.style, st), marginRight: '0.45em' }}>{B.prefix.style.upper ? B.prefix.text.toLocaleUpperCase('it-IT') : B.prefix.text}</span> : null
   // Sul colore pieno il testo si adatta (chiaro su fondo scuro, e viceversa)
   // se il ristoratore ha lasciato i colori della pagina.
   const solidText = B.style === 'solid' && (B.name.color === 'ink' || B.name.color === 'soft')
@@ -421,11 +429,11 @@ function MenuButton({ st, name, hours, first, left, gl, onClick, move, fade }: {
           ...fade, transform: `scale(${scale})`, transition: `transform 300ms ${SPRING}, ${fade.transition ?? 'none'}` }}>
         {B.style === 'glass' && !gl && <GlassSheen />}
         {split ? (<>
-          <span className="relative flex-1 min-w-0 text-left" style={{ ...nameCss, lineHeight: 1.15 }}>{name}</span>
+          <span className="relative flex-1 min-w-0 text-left" style={{ lineHeight: 1.15 }}>{prefix}<span style={nameCss}>{name}</span></span>
           {hours && <span className="relative shrink-0" style={hoursCss}>{hours}</span>}
         </>) : (
           <span className="relative flex-1 min-w-0 flex flex-col" style={{ alignItems: left ? 'flex-start' : 'center' }}>
-            <span style={{ ...nameCss, lineHeight: 1.15, textAlign: left ? 'left' : 'center' }}>{name}</span>
+            <span style={{ lineHeight: 1.15, textAlign: left ? 'left' : 'center' }}>{prefix}<span style={nameCss}>{name}</span></span>
             {hours && <span style={{ ...hoursCss, marginTop: 4 }}>{hours}</span>}
           </span>
         )}
