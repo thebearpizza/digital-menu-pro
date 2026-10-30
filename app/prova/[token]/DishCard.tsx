@@ -30,6 +30,7 @@ import { readyImages, warmImage } from './preload'
 import { DEFAULT_STYLE, fontStack, formatPrice, mix, resolveColor, resolveFace, type MenuStyle, type TextStyle } from '@/lib/menuStyle'
 import { GlassButton, GlassTint, LiquidOn, glassSheet } from './Glass'
 import CardGlass from './CardGlass'
+import { holdTint } from './tint'
 import { PHOTO_ASPECT, frameFor, frameStyle } from '@/lib/photoFrame'
 import { t } from './i18n'
 import type { Lang } from '@/lib/translations'
@@ -414,19 +415,22 @@ export default function DishCard({ dish: first, style, lang, sequence, siblings,
   // ── Apertura (e colore sotto la barra di Safari uguale alla scheda)
   useLayoutEffect(() => {
     const s = st.current
-    const html = document.documentElement
-    const prevBg = html.style.backgroundColor
     apply()
     warmAround()
     tween('o', 0, 1, 520, easeOutQuint, v => { s.o = v })
     return () => {
       cancelAnimationFrame(s.raf); s.raf = 0
       s.tweens.clear()
-      html.style.backgroundColor = prevBg
     }
   }, [apply, tween, warmAround])
-  // Colore sotto la barra di Safari uguale alla scheda (ripristinato alla chiusura, sopra).
-  useLayoutEffect(() => { document.documentElement.style.backgroundColor = SURFACE }, [SURFACE])
+  // Colore sotto la barra di Safari uguale alla scheda finché è aperta.
+  const tintRef = useRef<ReturnType<typeof holdTint> | null>(null)
+  useLayoutEffect(() => {
+    const h = holdTint(SURFACE)
+    tintRef.current = h
+    return () => { h.release(); tintRef.current = null }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  useLayoutEffect(() => { tintRef.current?.set(SURFACE) }, [SURFACE])
   useLayoutEffect(() => { apply() }, [layers, apply])
 
   // ── Gesti
@@ -703,6 +707,8 @@ function Page({ layer, lang, siblings, onLink, register }: {
   const { dish } = layer
   const ref = useCallback((el: HTMLDivElement | null) => register(layer.key, el), [layer.key, register])
   const others = siblings(dish).filter(d => d.id !== dish.id)
+  const moreRef = useRef<HTMLDivElement>(null)
+  useFitNames(moreRef, 16, `${others.map(o => o.name).join('|')}|${NAME_PLAIN.fontFamily}|${NAME_PLAIN.letterSpacing}`)
   const pairing = dish.pairing
   return (
     // Due lastre di vetro per pagina (la pagina in sé è trasparente, così
@@ -775,14 +781,14 @@ function Page({ layer, lang, siblings, onLink, register }: {
               {card.showMore && others.length > 0 && (
                 <Block title={`${t('moreIn', lang)} ${dish.category}`}>
                   {/* data-noswipe: qui lo scorrimento orizzontale è della fila, non cambia piatto. */}
-                  <div data-noswipe className="flex items-start overflow-x-auto"
+                  <div ref={moreRef} data-noswipe className="flex items-start overflow-x-auto"
                     style={{ gap: 12, margin: '0 -24px', padding: '2px 24px 6px', scrollSnapType: 'x mandatory', overscrollBehaviorX: 'contain' }}>
                     {others.map(o => (
                       <button key={o.id} type="button" onClick={() => onLink(o)}
                         className="shrink-0 flex flex-col items-stretch justify-start text-left active:opacity-60 transition-opacity"
                         style={{ width: 132, scrollSnapAlign: 'start' }}>
                         <Thumb dish={o} size={132} />
-                        <span className="block" style={{ ...NAME_PLAIN, fontSize: 16, lineHeight: 1.2, marginTop: 8 }}>{o.name}</span>
+                        <span data-fit-name className="block" style={{ ...NAME_PLAIN, fontSize: 16, lineHeight: 1.2, marginTop: 8, overflow: 'hidden' }}>{o.name}</span>
                         {o.price !== null && <span className="block" style={{ ...DETAIL_PLAIN, fontWeight: 400, fontSize: 12, color: DETAIL.color, marginTop: 2 }}>{price(o.price)}</span>}
                       </button>
                     ))}
@@ -797,6 +803,28 @@ function Page({ layer, lang, siblings, onLink, register }: {
       <div data-dim aria-hidden className="absolute inset-0 pointer-events-none" style={{ background: '#000', opacity: 0 }} />
     </div>
   )
+}
+
+/** Nomi sotto le miniature: con i caratteri larghi una parola lunga uscirebbe
+ *  dalla colonna (e finirebbe sotto la vicina). Si cerca la misura a cui ci
+ *  stanno tutti e la si dà a tutti: nella fila i nomi restano uguali. */
+function useFitNames(row: React.RefObject<HTMLElement>, size: number, key: string) {
+  useLayoutEffect(() => {
+    const el = row.current
+    if (!el) return
+    const fit = () => {
+      const names = Array.from(el.querySelectorAll<HTMLElement>('[data-fit-name]'))
+      let px = size
+      const set = (v: number) => names.forEach(n => { n.style.fontSize = `${v}px` })
+      set(px)
+      while (px > 9 && names.some(n => n.scrollWidth > n.clientWidth + 0.5)) { px -= 0.5; set(px) }
+    }
+    fit()
+    // Il carattere può arrivare dopo: si rimisura quando è pronto.
+    let live = true
+    document.fonts?.ready.then(() => { if (live) fit() })
+    return () => { live = false }
+  }, [row, size, key])
 }
 
 function Header({ dish, lang }: { dish: Dish; lang: Lang }) {

@@ -25,13 +25,14 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { ALL_LANGS, LANG_LABELS, isLang, menuName, type Lang } from '@/lib/translations'
 import { fontStack, resolveFace, type TextStyle } from '@/lib/menuStyle'
-import { introVideo, landingColor, landingFaces, landingFontsUrl, parseLanding, type LandingStyle } from '@/lib/landingStyle'
+import { introVideo, landingColor, landingFaces, landingFontsUrl, landingTexts, parseLanding, type LandingStyle } from '@/lib/landingStyle'
 import { registerCustomFonts } from '@/lib/menuStyle'
 import { PrefetchKind } from 'next/dist/client/components/router-reducer/router-reducer-types'
 import { GlassButton, GlassMenu, GlassMenuItem, GlassSheen, GlassTint, LiquidOn, glassSurface, SPRING } from './Glass'
 import { Flag } from './Chrome'
 import { t, type MenuChoice } from './i18n'
 import { loadCustomFonts, loadFontCss, loadStyleAssets } from './fonts'
+import { holdTint } from './tint'
 import { warmImage, whenIdle } from './preload'
 import { paintPaper } from './paper'
 import { drawOrnament } from './typeset'
@@ -88,7 +89,17 @@ export default function Landing({ token, base: basePath = '/prova', fromAdmin = 
   const [st, setSt] = useState(initialStyle)
   const bg = st.background
   const onMedia = bg.kind === 'media' && bg.media.length > 0
-  const base = onMedia ? '#14110e' : bg.paper
+  // Con foto/video sotto le barre del browser va il loro colore dominante
+  // (ricavato dall'immagine d'attesa o dalla foto), non un colore fisso.
+  const edgeSrc = onMedia ? (bg.media[0].video ? bg.media[0].poster ?? bg.introImage : bg.media[0].url) : null
+  const [mediaTint, setMediaTint] = useState<string | null>(null)
+  useEffect(() => {
+    if (!edgeSrc) { setMediaTint(null); return }
+    let live = true
+    dominantColor(edgeSrc).then(c => { if (live) setMediaTint(c) })
+    return () => { live = false }
+  }, [edgeSrc])
+  const base = onMedia ? mediaTint ?? '#14110e' : bg.paper
 
   const [lang, setLangState] = useState<Lang>('it')
   const [langOpen, setLangOpen] = useState(false)
@@ -125,7 +136,7 @@ export default function Landing({ token, base: basePath = '/prova', fromAdmin = 
     let done = false
     const show = () => { if (!done) { done = true; setReady(true) } }
     const url = landingFontsUrl(st)
-    Promise.all([url ? loadFontCss(url) : Promise.resolve(), loadCustomFonts(st.customFonts)])
+    Promise.all([url ? loadFontCss(url) : Promise.resolve(), loadCustomFonts(st.customFonts, landingTexts(st))])
       .then(() => Promise.all(landingFaces(st).map(f => document.fonts.load(f).catch(() => undefined))))
       .then(show, show)
     const tm = window.setTimeout(show, 2500)
@@ -151,12 +162,13 @@ export default function Landing({ token, base: basePath = '/prova', fromAdmin = 
   }, [ready, preview, menus, preloadMenu])
 
   // Sotto le barre di Safari: lo stesso fondo della pagina.
+  const tintRef = useRef<ReturnType<typeof holdTint> | null>(null)
   useEffect(() => {
-    const html = document.documentElement
-    const prev = html.style.backgroundColor
-    html.style.backgroundColor = base
-    return () => { html.style.backgroundColor = prev }
-  }, [base])
+    const h = holdTint(base)
+    tintRef.current = h
+    return () => { h.release(); tintRef.current = null }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { tintRef.current?.set(base) }, [base])
 
   const setLang = useCallback((l: Lang) => {
     setLangState(l)
@@ -239,8 +251,8 @@ export default function Landing({ token, base: basePath = '/prova', fromAdmin = 
   const left = st.layout.align === 'left'
   const B = st.buttons
   const hasLogo = !!st.logo.url && !restaurant.hide?.logo
-  const showName = !restaurant.hide?.name && (st.logo.mode !== 'logo' || !hasLogo)
-  const showLogo = st.logo.mode !== 'name' && hasLogo
+  const showName = !restaurant.hide?.name && st.logo.showName
+  const showLogo = st.logo.showLogo && hasLogo
   const shadow = onMedia ? '0 2px 18px rgba(0,0,0,0.35)' : 'none'
   const glassTint = B.tint
   const header = (
@@ -619,4 +631,48 @@ function SocialIcon({ kind }: { kind: SocialKind }) {
     case 'tripadvisor': return <svg {...common}><circle cx="7.5" cy="13" r="3.5" /><circle cx="16.5" cy="13" r="3.5" /><path d="M4 9.5c2.3-1.6 5-2.5 8-2.5s5.7.9 8 2.5M12 13v.01" /></svg>
     case 'maps':      return <svg {...common}><path d="M12 21s-6.5-5.6-6.5-11a6.5 6.5 0 0113 0c0 5.4-6.5 11-6.5 11z" /><circle cx="12" cy="10" r="2.3" /></svg>
   }
+}
+
+/** Colore più presente in un'immagine (a fasce di tinta), per le barre del
+ *  browser sopra foto e video. null se non si può leggere (CORS). */
+const dominantCache = new Map<string, Promise<string | null>>()
+function dominantColor(src: string): Promise<string | null> {
+  let p = dominantCache.get(src)
+  if (!p) {
+    // Un secondo tentativo se la rete perde la richiesta; un fallimento non resta in memoria.
+    p = readDominant(src)
+      .then(c => c ?? new Promise<string | null>(r => setTimeout(() => readDominant(src).then(r), 1500)))
+      .then(c => { if (!c) dominantCache.delete(src); return c })
+    dominantCache.set(src, p)
+  }
+  return p
+}
+function readDominant(src: string): Promise<string | null> {
+  return new Promise(resolve => {
+    const im = new Image()
+    im.crossOrigin = 'anonymous'
+    im.onerror = () => resolve(null)
+    im.onload = () => {
+      try {
+        const N = 32
+        const cv = document.createElement('canvas'); cv.width = N; cv.height = N
+        const c = cv.getContext('2d', { willReadFrequently: true })
+        if (!c) { resolve(null); return }
+        c.drawImage(im, 0, 0, N, N)
+        const px = c.getImageData(0, 0, N, N).data
+        const buckets = new Map<number, { n: number; r: number; g: number; b: number }>()
+        for (let i = 0; i < px.length; i += 4) {
+          const k = ((px[i] >> 5) << 6) | ((px[i + 1] >> 5) << 3) | (px[i + 2] >> 5)
+          const e = buckets.get(k) ?? { n: 0, r: 0, g: 0, b: 0 }
+          e.n++; e.r += px[i]; e.g += px[i + 1]; e.b += px[i + 2]
+          buckets.set(k, e)
+        }
+        let best = { n: 0, r: 0, g: 0, b: 0 }
+        buckets.forEach(e => { if (e.n > best.n) best = e })
+        const h = (v: number) => Math.round(v / best.n).toString(16).padStart(2, '0')
+        resolve(best.n ? `#${h(best.r)}${h(best.g)}${h(best.b)}` : null)
+      } catch { resolve(null) }
+    }
+    im.src = src
+  })
 }

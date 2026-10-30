@@ -155,6 +155,41 @@ export function resolveFace(name: string, weight: number, italic: boolean): { we
 /** Colore: uno dei colori della carta ('ink' testo, 'soft' testo secondario,
  *  'accent') oppure un colore libero #rrggbb. */
 export type ColorRef = 'ink' | 'soft' | 'accent' | string
+
+export const CATEGORY_STYLES = ['rules', 'ornament', 'underline', 'frame', 'pill', 'band', 'marquee', 'plain'] as const
+export type CategoryStyle = typeof CATEGORY_STYLES[number]
+/** Effetti dei titoli (categorie e copertina). */
+export const TITLE_EFFECTS = ['none', 'shadow', 'outline', 'glow', 'neon', 'foil', 'letterpress', 'retro'] as const
+export type TitleEffect = typeof TITLE_EFFECTS[number]
+/** Animazioni dei titoli: 'pulse' e 'flicker' con luce o neon, 'chase' con
+ *  le lampadine, le altre con tutti. */
+export const TITLE_ANIMATIONS = ['none', 'pulse', 'flicker', 'shimmer', 'chase', 'wave', 'sparkle', 'rainbow', 'glitch'] as const
+export type TitleAnimation = typeof TITLE_ANIMATIONS[number]
+export const CATEGORY_EFFECTS = TITLE_EFFECTS
+export type CategoryEffect = TitleEffect
+export const CATEGORY_ANIMATIONS = TITLE_ANIMATIONS
+export type CategoryAnimation = TitleAnimation
+/** Effetto e animazione di un titolo. */
+export interface TitleFx {
+  effect:    TitleEffect
+  glow:      number         // intensità: 0.2 – 1
+  animation: TitleAnimation
+  speed:     number         // 0.5 – 2
+}
+export const TITLE_FX_NONE: TitleFx = { effect: 'none', glow: 0.7, animation: 'none', speed: 1 }
+/** L'animazione scelta vale con questo titolo? (marquee: ha le lampadine) */
+export function fxAnimates(fx: TitleFx, marquee: boolean): boolean {
+  switch (fx.animation) {
+    case 'pulse': case 'flicker': return fx.effect === 'glow' || fx.effect === 'neon'
+    case 'chase': return marquee
+    case 'none': return false
+    default: return true
+  }
+}
+export function categoryAnimates(c: TitleFx & { style: CategoryStyle }): boolean {
+  return fxAnimates(c, c.style === 'marquee')
+}
+
 /** Spessori: 400–700 nel catalogo; i caratteri caricati possono avere anche
  *  100–300 (sottili) e 800–900 (nerissimi). */
 export type Weight = 100 | 200 | 300 | 400 | 500 | 600 | 700 | 800 | 900
@@ -171,7 +206,7 @@ export interface TextStyle {
 }
 
 export const ORNAMENTS = [
-  'diamond', 'star', 'circle', 'cross', 'leaf', 'flourish', 'asterism', 'line', 'double', 'wave', 'dots', 'none',
+  'diamond', 'star', 'circle', 'cross', 'leaf', 'flourish', 'asterism', 'bolt', 'line', 'double', 'wave', 'dots', 'none',
 ] as const
 export type Ornament = typeof ORNAMENTS[number]
 export type Divider = 'none' | 'line' | 'short' | 'dots' | 'ornament'
@@ -234,12 +269,28 @@ export interface MenuStyle {
     ornamentSize: number      // 0.6 – 2
     ornamentGap: number       // distanza tra titolo e ornamento: 10 – 60
     space: number             // spazio sotto il titolo prima dei piatti: 0 – 80
+    restaurantFx: TitleFx
+    titleFx: TitleFx
+    /** Cornice attorno al titolo del menu. */
+    titleFrame: 'none' | 'frame' | 'marquee'
+    titleFrameRadius: number  // 0 – 30
   }
   runningHead: { show: boolean; content: 'both' | 'restaurant' | 'menu'; text: TextStyle }
   category: {
     text: TextStyle
-    style: 'rules' | 'ornament' | 'underline' | 'frame' | 'plain'
+    style: CategoryStyle
     ornament: Ornament        // quello sotto il titolo, con lo stile 'ornament'
+    /** Filetti, cornice, lampadine: 'auto' = accento tenue (col neon: colore del testo). */
+    lineColor: ColorRef | 'auto'
+    lineWidth: number         // 0.5 – 3
+    /** Fondo della pillola e della fascia. */
+    fill: ColorRef
+    radius: number            // angoli di cornice, pillola e lampadine: 0 – 30
+    /** Luce del titolo (il colore della luce è quello del testo). */
+    effect: CategoryEffect
+    glow: number              // intensità della luce / dell'ombra: 0.2 – 1
+    animation: CategoryAnimation
+    speed: number             // velocità dell'animazione: 0.5 – 2
     align: 'center' | 'left'
     before: number            // spazio prima: 0 – 80
     after: number             // spazio dopo: 0 – 60
@@ -346,9 +397,16 @@ export const DEFAULT_STYLE: MenuStyle = {
     ornamentSize: 1,
     ornamentGap: 24,
     space: 0,
+    restaurantFx: { ...TITLE_FX_NONE },
+    titleFx: { ...TITLE_FX_NONE },
+    titleFrame: 'none',
+    titleFrameRadius: 10,
   },
   runningHead: { show: true, content: 'both', text: T(SANS, 9.5, 500, 'accent', { upper: true, tracking: 0.25 }) },
-  category: { text: T(SANS, 11, 600, 'accent', { upper: true, tracking: 0.25 }), style: 'rules', ornament: 'diamond', align: 'center', before: 30, after: 18, continued: true, newPage: false },
+  category: {
+    text: T(SANS, 11, 600, 'accent', { upper: true, tracking: 0.25 }), style: 'rules', ornament: 'diamond', align: 'center', before: 30, after: 18, continued: true, newPage: false,
+    lineColor: 'auto', lineWidth: 0.7, fill: 'accent', radius: 0, effect: 'none', glow: 0.7, animation: 'none', speed: 1,
+  },
   dish: {
     align: 'left', spacing: 20, divider: 'none', dividerOrnament: 'diamond',
     name: T(SERIF, 19.5, 600, 'ink'), nameLineHeight: 1.18,
@@ -436,6 +494,16 @@ export function parseCustomFonts(raw: unknown): CustomFont[] {
   return list
 }
 
+export function parseFx(v: unknown, d: TitleFx): TitleFx {
+  const r = obj(v)
+  return {
+    effect: pick(r.effect, TITLE_EFFECTS, d.effect),
+    glow: num(r.glow, 0.2, 1, d.glow),
+    animation: pick(r.animation, TITLE_ANIMATIONS, d.animation),
+    speed: num(r.speed, 0.5, 2, d.speed),
+  }
+}
+
 export function parseStyle(raw: unknown): MenuStyle {
   const r0 = obj(raw)
   const r = r0.version === 2 ? r0 : fromV1(r0)
@@ -478,6 +546,10 @@ export function parseStyle(raw: unknown): MenuStyle {
       ornamentSize: num(hd.ornamentSize, 0.6, 2, d.head.ornamentSize),
       ornamentGap: num(hd.ornamentGap, 10, 60, d.head.ornamentGap),
       space: num(hd.space, 0, 80, d.head.space),
+      restaurantFx: parseFx(hd.restaurantFx, d.head.restaurantFx),
+      titleFx: parseFx(hd.titleFx, d.head.titleFx),
+      titleFrame: pick(hd.titleFrame, ['none', 'frame', 'marquee'] as const, d.head.titleFrame),
+      titleFrameRadius: num(hd.titleFrameRadius, 0, 30, d.head.titleFrameRadius),
     },
     runningHead: {
       show: bool(rh.show, d.runningHead.show),
@@ -486,13 +558,21 @@ export function parseStyle(raw: unknown): MenuStyle {
     },
     category: {
       text: tx(ct.text, d.category.text),
-      style: pick(ct.style, ['rules', 'ornament', 'underline', 'frame', 'plain'] as const, d.category.style),
+      style: pick(ct.style, CATEGORY_STYLES, d.category.style),
       ornament: orn(ct.ornament, d.category.ornament),
       align: pick(ct.align, ['center', 'left'] as const, d.category.align),
       before: num(ct.before, 0, 80, d.category.before),
       after: num(ct.after, 0, 60, d.category.after),
       continued: bool(ct.continued, d.category.continued),
       newPage: bool(ct.newPage, d.category.newPage),
+      lineColor: ct.lineColor === 'auto' ? 'auto' : colorRef(ct.lineColor, d.category.lineColor),
+      lineWidth: num(ct.lineWidth, 0.5, 3, d.category.lineWidth),
+      fill: colorRef(ct.fill, d.category.fill),
+      radius: num(ct.radius, 0, 30, d.category.radius),
+      effect: pick(ct.effect, CATEGORY_EFFECTS, d.category.effect),
+      glow: num(ct.glow, 0.2, 1, d.category.glow),
+      animation: pick(ct.animation, CATEGORY_ANIMATIONS, d.category.animation),
+      speed: num(ct.speed, 0.5, 2, d.category.speed),
     },
     dish: {
       align: pick(ds.align, ['left', 'center'] as const, d.dish.align),

@@ -301,6 +301,22 @@ export function Choice<T extends string>({ label, hint, value, options, onChange
   )
 }
 
+/** Come Segmented, ma ogni voce si accende e spegne per conto suo. */
+export function MultiChoice({ label, hint, options }: FieldBase & { options: { label: string; on: boolean; toggle: () => void }[] }) {
+  return (
+    <FieldShell label={label} hint={hint}>
+      <div className="inline-flex flex-wrap rounded-lg border border-gray-200 p-0.5 bg-gray-50">
+        {options.map(o => (
+          <button key={o.label} type="button" onClick={o.toggle} aria-pressed={o.on}
+            className={`rounded-md px-3 py-1.5 text-xs font-medium transition ${o.on ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-800'}`}>
+            {o.on ? '✓ ' : ''}{o.label}
+          </button>
+        ))}
+      </div>
+    </FieldShell>
+  )
+}
+
 export function Pill({ on, disabled, title, onClick, children }: { on: boolean; disabled?: boolean; title?: string; onClick: () => void; children: React.ReactNode }) {
   return (
     <button type="button" onClick={onClick} disabled={disabled} title={title} aria-pressed={on}
@@ -338,7 +354,7 @@ export function Toggle({ label, hint, value, onChange }: FieldBase & { value: bo
 
 export const ORNAMENT_LABEL: Record<Ornament, string> = {
   diamond: 'Rombo', star: 'Stella', circle: 'Cerchio', cross: 'Croce', leaf: 'Rametto', flourish: 'Ricciolo',
-  asterism: 'Tre stelle', line: 'Linea', double: 'Doppia linea', wave: 'Onda', dots: 'Puntini', none: 'Nessuno',
+  asterism: 'Tre stelle', bolt: 'Saetta', line: 'Linea', double: 'Doppia linea', wave: 'Onda', dots: 'Puntini', none: 'Nessuno',
 }
 
 export function OrnamentThumb({ kind, accent, paper }: { kind: Ornament; accent: string; paper: string }) {

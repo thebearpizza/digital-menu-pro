@@ -1,4 +1,4 @@
-import { customFamily, styleFaces, styleFontsUrl, type CustomFont, type MenuStyle } from '@/lib/menuStyle'
+import { CUSTOM_PREFIX, customFamily, resolveFace, styleFaces, styleFontsUrl, textStyles, type CustomFont, type MenuStyle, type TextStyle } from '@/lib/menuStyle'
 
 // Caratteri del menu (Cormorant Garamond + Inter), serviti dal nostro proxy
 // /api/gfonts: il telefono del cliente non contatta Google. Un solo foglio di
@@ -27,9 +27,15 @@ export function loadFontCss(href: string = FONTS_CSS): Promise<void> {
 
 const customLoaded = new Map<string, Promise<void>>()
 /** Registra (una volta per file) le facce dei caratteri caricati dal
- *  ristoratore: ogni file con il suo spessore e corsivo. */
-export function loadCustomFonts(fonts: CustomFont[]): Promise<void> {
-  return Promise.all(fonts.flatMap(f => f.faces.map(x => {
+ *  ristoratore: ogni file con il suo spessore e corsivo. Con `used` (i testi
+ *  che le pagine scrivono davvero) solo le facce che servono: una famiglia
+ *  intera sono una dozzina di file da scaricare sul telefono del cliente. */
+export function loadCustomFonts(fonts: CustomFont[], used?: TextStyle[]): Promise<void> {
+  const need = used && new Set(used.filter(t => t.font.startsWith(CUSTOM_PREFIX)).map(t => {
+    const f = resolveFace(t.font, t.weight, t.italic)
+    return `${t.font.slice(CUSTOM_PREFIX.length)}|${f.weight}|${f.italic}`
+  }))
+  return Promise.all(fonts.flatMap(f => f.faces.filter(x => !need || need.has(`${f.id}|${x.weight}|${x.italic}`)).map(x => {
     const key = `${f.id}|${x.url}|${x.weight}|${x.italic}`
     let p = customLoaded.get(key)
     if (!p) {
@@ -67,7 +73,7 @@ export async function loadStyleAssets(st: MenuStyle): Promise<{ background: HTML
   const css = styleFontsUrl(st)
   const [, , background] = await Promise.all([
     css ? loadFontCss(css) : Promise.resolve(),
-    loadCustomFonts(st.customFonts),
+    loadCustomFonts(st.customFonts, textStyles(st)),
     loadImage(st.page.background.url),
   ])
   await Promise.all(styleFaces(st).map(f => document.fonts.load(f).catch(() => undefined)))
