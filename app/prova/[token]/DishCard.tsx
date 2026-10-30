@@ -782,7 +782,7 @@ function Page({ layer, lang, siblings, onLink, register }: {
                         className="shrink-0 flex flex-col items-stretch justify-start text-left active:opacity-60 transition-opacity"
                         style={{ width: 132, scrollSnapAlign: 'start' }}>
                         <Thumb dish={o} size={132} />
-                        <span className="block" style={{ ...NAME_PLAIN, fontSize: 16, lineHeight: 1.2, marginTop: 8 }}>{o.name}</span>
+                        <FitName style={{ ...NAME_PLAIN, lineHeight: 1.2, marginTop: 8 }} size={16}>{o.name}</FitName>
                         {o.price !== null && <span className="block" style={{ ...DETAIL_PLAIN, fontWeight: 400, fontSize: 12, color: DETAIL.color, marginTop: 2 }}>{price(o.price)}</span>}
                       </button>
                     ))}
@@ -797,6 +797,28 @@ function Page({ layer, lang, siblings, onLink, register }: {
       <div data-dim aria-hidden className="absolute inset-0 pointer-events-none" style={{ background: '#000', opacity: 0 }} />
     </div>
   )
+}
+
+/** Nome sotto la miniatura: con i caratteri larghi una parola lunga
+ *  uscirebbe dalla colonna (e finirebbe sotto la vicina), quindi si
+ *  rimpicciolisce finché ogni parola ci sta. */
+function FitName({ style, size, children }: { style: React.CSSProperties; size: number; children: string }) {
+  const ref = useRef<HTMLSpanElement>(null)
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const fit = () => {
+      let px = size
+      el.style.fontSize = `${px}px`
+      while (el.scrollWidth > el.clientWidth + 0.5 && px > 9) { px -= 0.5; el.style.fontSize = `${px}px` }
+    }
+    fit()
+    // Il carattere può arrivare dopo: si rimisura quando è pronto.
+    let live = true
+    document.fonts?.ready.then(() => { if (live) fit() })
+    return () => { live = false }
+  }, [size, children, style.fontFamily, style.letterSpacing])
+  return <span ref={ref} className="block" style={{ ...style, fontSize: size, overflow: 'hidden' }}>{children}</span>
 }
 
 function Header({ dish, lang }: { dish: Dish; lang: Lang }) {

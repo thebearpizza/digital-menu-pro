@@ -25,7 +25,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { ALL_LANGS, LANG_LABELS, isLang, menuName, type Lang } from '@/lib/translations'
 import { fontStack, resolveFace, type TextStyle } from '@/lib/menuStyle'
-import { introVideo, landingColor, landingFaces, landingFontsUrl, parseLanding, type LandingStyle } from '@/lib/landingStyle'
+import { introVideo, landingColor, landingFaces, landingFontsUrl, landingTexts, parseLanding, type LandingStyle } from '@/lib/landingStyle'
 import { registerCustomFonts } from '@/lib/menuStyle'
 import { PrefetchKind } from 'next/dist/client/components/router-reducer/router-reducer-types'
 import { GlassButton, GlassMenu, GlassMenuItem, GlassSheen, GlassTint, LiquidOn, glassSurface, SPRING } from './Glass'
@@ -125,7 +125,7 @@ export default function Landing({ token, base: basePath = '/prova', fromAdmin = 
     let done = false
     const show = () => { if (!done) { done = true; setReady(true) } }
     const url = landingFontsUrl(st)
-    Promise.all([url ? loadFontCss(url) : Promise.resolve(), loadCustomFonts(st.customFonts)])
+    Promise.all([url ? loadFontCss(url) : Promise.resolve(), loadCustomFonts(st.customFonts, landingTexts(st))])
       .then(() => Promise.all(landingFaces(st).map(f => document.fonts.load(f).catch(() => undefined))))
       .then(show, show)
     const tm = window.setTimeout(show, 2500)
