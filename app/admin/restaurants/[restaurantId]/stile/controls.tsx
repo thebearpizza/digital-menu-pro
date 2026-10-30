@@ -354,7 +354,7 @@ export function Toggle({ label, hint, value, onChange }: FieldBase & { value: bo
 
 export const ORNAMENT_LABEL: Record<Ornament, string> = {
   diamond: 'Rombo', star: 'Stella', circle: 'Cerchio', cross: 'Croce', leaf: 'Rametto', flourish: 'Ricciolo',
-  asterism: 'Tre stelle', line: 'Linea', double: 'Doppia linea', wave: 'Onda', dots: 'Puntini', none: 'Nessuno',
+  asterism: 'Tre stelle', bolt: 'Saetta', line: 'Linea', double: 'Doppia linea', wave: 'Onda', dots: 'Puntini', none: 'Nessuno',
 }
 
 export function OrnamentThumb({ kind, accent, paper }: { kind: Ornament; accent: string; paper: string }) {

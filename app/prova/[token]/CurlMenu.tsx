@@ -26,6 +26,7 @@ import { parseStyle, registerCustomFonts, type MenuStyle } from '@/lib/menuStyle
 import { isLang, type Lang } from '@/lib/translations'
 import DishCard from './DishCard'
 import { loadStyleAssets } from './fonts'
+import { holdTint } from './tint'
 import { warmImage } from './preload'
 import Chrome, { BAR_HIDE } from './Chrome'
 import { localize, t, type I18nData } from './i18n'
@@ -207,9 +208,7 @@ export default function CurlMenu({ data: base0, style: initialStyle, preview = f
     const probe  = probeRef.current!
     let disposed = false
     // Sotto le barre di Safari si vede lo sfondo della pagina: color carta.
-    const html = document.documentElement
-    const prevBg = html.style.backgroundColor
-    html.style.backgroundColor = styleRef.current.page.paper
+    const tint = holdTint(styleRef.current.page.paper)
 
     // ── Font: prima il foglio di stile (dichiara le facce), POI la richiesta
     // delle facce: chiesta prima, document.fonts.load risponde "pronto" a vuoto.
@@ -609,7 +608,7 @@ export default function CurlMenu({ data: base0, style: initialStyle, preview = f
       for (const t of Array.from(textures.values())) renderer?.deleteTexture(t)
       textures.clear(); bitmaps.clear()
       renderer?.setPaper(styleRef.current.page.paper)
-      html.style.backgroundColor = styleRef.current.page.paper
+      tint.set(styleRef.current.page.paper)
       layout = layoutMenu(sctx, dataRef.current, { w: pageW, h: H, insets: insets() }, styleRef.current, { ...assetsRef.current, media: getMedia })
       syncMedia()
       // Anteprima: la pagina foto/video aperta nel pannello si mostra subito.
@@ -928,7 +927,7 @@ export default function CurlMenu({ data: base0, style: initialStyle, preview = f
     window.addEventListener('keydown', onKey)
     return () => {
       disposed = true
-      html.style.backgroundColor = prevBg
+      tint.release()
       cancelAnimationFrame(raf)
       cancelAnimationFrame(glassRaf)
       cancelAnimationFrame(animRaf)

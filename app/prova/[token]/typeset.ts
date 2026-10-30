@@ -1504,6 +1504,15 @@ export function drawOrnament(c: Ctx, kind: Ornament, cx: number, cy: number, u: 
     case 'diamond':
       wings(9); diamond(c, cx, cy, 3.2 * u)
       break
+    case 'bolt': {
+      // Saetta inclinata tra i filetti.
+      wings(9)
+      const P: [number, number][] = [[2.6, -7], [-3.6, 1], [-0.2, 1], [-2.6, 7], [3.6, -1.6], [0.2, -1.6]]
+      c.beginPath()
+      P.forEach(([x, y], i) => (i ? c.lineTo(cx + x * u, cy + y * u) : c.moveTo(cx + x * u, cy + y * u)))
+      c.closePath(); c.fill()
+      break
+    }
     case 'none': break
   }
 }

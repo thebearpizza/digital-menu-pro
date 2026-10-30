@@ -30,6 +30,7 @@ import { readyImages, warmImage } from './preload'
 import { DEFAULT_STYLE, fontStack, formatPrice, mix, resolveColor, resolveFace, type MenuStyle, type TextStyle } from '@/lib/menuStyle'
 import { GlassButton, GlassTint, LiquidOn, glassSheet } from './Glass'
 import CardGlass from './CardGlass'
+import { holdTint } from './tint'
 import { PHOTO_ASPECT, frameFor, frameStyle } from '@/lib/photoFrame'
 import { t } from './i18n'
 import type { Lang } from '@/lib/translations'
@@ -414,19 +415,22 @@ export default function DishCard({ dish: first, style, lang, sequence, siblings,
   // ── Apertura (e colore sotto la barra di Safari uguale alla scheda)
   useLayoutEffect(() => {
     const s = st.current
-    const html = document.documentElement
-    const prevBg = html.style.backgroundColor
     apply()
     warmAround()
     tween('o', 0, 1, 520, easeOutQuint, v => { s.o = v })
     return () => {
       cancelAnimationFrame(s.raf); s.raf = 0
       s.tweens.clear()
-      html.style.backgroundColor = prevBg
     }
   }, [apply, tween, warmAround])
-  // Colore sotto la barra di Safari uguale alla scheda (ripristinato alla chiusura, sopra).
-  useLayoutEffect(() => { document.documentElement.style.backgroundColor = SURFACE }, [SURFACE])
+  // Colore sotto la barra di Safari uguale alla scheda finché è aperta.
+  const tintRef = useRef<ReturnType<typeof holdTint> | null>(null)
+  useLayoutEffect(() => {
+    const h = holdTint(SURFACE)
+    tintRef.current = h
+    return () => { h.release(); tintRef.current = null }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  useLayoutEffect(() => { tintRef.current?.set(SURFACE) }, [SURFACE])
   useLayoutEffect(() => { apply() }, [layers, apply])
 
   // ── Gesti

@@ -206,7 +206,7 @@ export interface TextStyle {
 }
 
 export const ORNAMENTS = [
-  'diamond', 'star', 'circle', 'cross', 'leaf', 'flourish', 'asterism', 'line', 'double', 'wave', 'dots', 'none',
+  'diamond', 'star', 'circle', 'cross', 'leaf', 'flourish', 'asterism', 'bolt', 'line', 'double', 'wave', 'dots', 'none',
 ] as const
 export type Ornament = typeof ORNAMENTS[number]
 export type Divider = 'none' | 'line' | 'short' | 'dots' | 'ornament'
