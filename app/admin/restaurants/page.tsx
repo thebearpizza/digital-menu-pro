@@ -53,7 +53,7 @@ export default async function RestaurantsPage() {
                 <tr key={r.id} className="hover:bg-gray-50">
                   <td className="w-full max-w-0 px-3 sm:px-4 py-3">
                     <Link
-                      href={`/admin/restaurants/${r.id}`}
+                      href={`/admin/restaurants/${r.id}/menus`}
                       className="block truncate text-sm font-medium text-gray-900 hover:text-blue-600 hover:underline"
                     >
                       {r.name}

@@ -43,7 +43,7 @@ export default function RestaurantRowActions({ restaurantId, restaurantName }: P
     setOpen(false); setBusy(true); setError(null)
     try {
       const { id } = await duplicateRestaurant(restaurantId)
-      router.push(`/admin/restaurants/${id}`)
+      router.push(`/admin/restaurants/${id}/menus`)
     } catch (e: any) {
       setError(e.message ?? 'Errore duplicazione')
       setBusy(false)
@@ -84,7 +84,7 @@ export default function RestaurantRowActions({ restaurantId, restaurantName }: P
           style={{ top: dropPos.top, right: dropPos.right }}
         >
           <a
-            href={`/admin/restaurants/${restaurantId}`}
+            href={`/admin/restaurants/${restaurantId}/menus`}
             className="block px-4 py-2.5 text-sm text-blue-600 hover:bg-blue-50"
             onClick={() => setOpen(false)}
           >
