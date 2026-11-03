@@ -48,20 +48,6 @@ export async function saveLandingStyle(restaurantId: string, style: LandingStyle
   return { ok: true }
 }
 
-/** Interruttore del QR: true = /m/<token> mostra il nuovo menu. Solo il
- *  proprietario. Effetto immediato per i clienti (nessun nuovo deploy). */
-export async function setNewMenu(restaurantId: string, on: boolean): Promise<{ ok: true } | { ok: false; error: string }> {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return { ok: false, error: 'Sessione scaduta: accedi di nuovo.' }
-  const { data, error } = await supabase.from('restaurants')
-    .update({ new_menu: on })
-    .eq('id', restaurantId).eq('owner_id', user.id)
-    .select('id')
-  if (error || !data?.length) return { ok: false, error: 'Modifica non riuscita, riprova.' }
-  return { ok: true }
-}
-
 /** Salva le pagine foto/video di un menu (solo il proprietario; ripulite). */
 export async function saveMenuMedia(restaurantId: string, menuId: string, pages: MediaPage[]): Promise<{ ok: true } | { ok: false; error: string }> {
   const supabase = await createClient()

@@ -4,9 +4,6 @@ import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import DishList from './DishList'
 import DownloadPDFButton from './DownloadPDFButton'
-import { defaultExtraPages } from '../menuExtraPages'
-import { parseTheme } from '@/lib/theme'
-import type { MenuExtraPages } from '../menuExtraPages'
 
 export default async function MenuDishesPage({
   params,
@@ -38,38 +35,22 @@ export default async function MenuDishesPage({
       .order('sort_order', { ascending: true }),
     supabase
       .from('restaurants')
-      .select('name, theme_config, menu_style, new_menu')
+      .select('name, menu_style')
       .eq('id', params.restaurantId)
       .single(),
   ])
 
   if (!menu) notFound()
 
-  const rawPages = (menu as any).text_content
-  const extraPages: MenuExtraPages = (rawPages?.info || rawPages?.allergen)
-    ? rawPages as MenuExtraPages
-    : defaultExtraPages()
-
-  const theme = parseTheme((restaurant as any)?.theme_config ?? null)
-
-  // Formato della foto nella scheda del nuovo menu (stile del menu o del
-  // ristorante) e menu attivo sul QR: decidono il riquadro di "Inquadra".
+  // Formato della foto nella scheda del piatto (stile del menu o del
+  // ristorante): decide il riquadro di "Inquadra".
   const photoFormat = {
     shape:   parseStyle((menu as any).menu_style ?? (restaurant as any)?.menu_style).card.photo,
-    newMenu: (restaurant as any)?.new_menu === true,
+    newMenu: true,
   }
 
-  // Only active dishes are included in the PDF (mirrors the public menu).
-  const pdfDishes = (dishes ?? [])
-    .filter((d: any) => d.is_active)
-    .map((d: any) => ({
-      id:          d.id as string,
-      name:        d.name as string,
-      description: (d.description ?? null) as string | null,
-      price:       (d.price ?? null) as number | null,
-      category:    d.category as string,
-      allergens:   (d.allergens ?? []) as number[],
-    }))
+  // Il PDF comprende i piatti attivi (come il menu sul telefono).
+  const hasActive = (dishes ?? []).some((d: any) => d.is_active)
 
   return (
     <div>
@@ -90,12 +71,11 @@ export default async function MenuDishesPage({
             segnalata. */}
         <div className="sm:hidden">
           <DownloadPDFButton
+            restaurantId={params.restaurantId}
             restaurantName={(restaurant as any)?.name ?? ''}
             menuId={menu.id}
             menuName={menu.name}
-            dishes={pdfDishes}
-            extraPages={extraPages}
-            theme={theme}
+            hasDishes={hasActive}
           />
         </div>
       </div>
@@ -112,12 +92,11 @@ export default async function MenuDishesPage({
         pdfButton={
           <DownloadPDFButton
             fill
+            restaurantId={params.restaurantId}
             restaurantName={(restaurant as any)?.name ?? ''}
             menuId={menu.id}
             menuName={menu.name}
-            dishes={pdfDishes}
-            extraPages={extraPages}
-            theme={theme}
+            hasDishes={hasActive}
           />
         }
       />
@@ -127,7 +106,7 @@ export default async function MenuDishesPage({
       <div className="mt-6 border border-gray-200 bg-white px-4 py-3 text-sm text-gray-600" style={{ borderRadius: 12 }}>
         Pagina informativa e pagina allergeni ora si modificano in{' '}
         <Link href={`/admin/restaurants/${params.restaurantId}/stile`} className="font-medium text-gray-900 underline underline-offset-2">
-          Stile (nuovo menu)
+          Personalizzazione
         </Link>
         , con l&apos;anteprima del menu accanto.
       </div>

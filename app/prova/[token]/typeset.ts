@@ -258,8 +258,11 @@ export interface Layout {
   vp:     Viewport
   pages:  Page[]
   /** t = secondi dell'animazione dei titoli (assente = fotogramma fermo);
-   *  skipAnimated: senza i titoli animati (fondo da ridisegnare sotto). */
-  paint:  (ctx: Ctx, pageIndex: number, opts?: { t?: number; skipAnimated?: boolean }) => void
+   *  skipAnimated: senza i titoli animati (fondo da ridisegnare sotto);
+   *  layer: solo la carta o solo i testi (PDF: la carta si salva una volta). */
+  paint:  (ctx: Ctx, pageIndex: number, opts?: { t?: number; skipAnimated?: boolean; layer?: 'paper' | 'content' }) => void
+  /** Variante della carta di una pagina (sfondo solo sulla prima, o sulle altre). */
+  paperKey: (pageIndex: number) => string
   /** Strisce della pagina con un titolo animato (coordinate della pagina). */
   animated: (pageIndex: number) => { x: number; y: number; w: number; h: number }[]
   /** Solo i titoli animati della pagina, al tempo t. */
@@ -622,10 +625,20 @@ export function layoutMenu(ctx: Ctx, data: MenuData, vp: Viewport, style: MenuSt
 
   /** Disegna la pagina `index`; fuori dall'intervallo disegna carta vuota
    *  (es. la destra dell'ultima doppia pagina quando le pagine sono dispari). */
-  const paint = (c: Ctx, index: number, opts: { t?: number; skipAnimated?: boolean } = {}) => {
+  const paint = (c: Ctx, index: number, opts: { t?: number; skipAnimated?: boolean; layer?: 'paper' | 'content' } = {}) => {
     const page = pages[index] as Page | undefined
     const { w, h } = vp
-    if (page?.media) { paintMedia(c, page.media); return }
+    if (page?.media) { if (opts.layer !== 'content') paintMedia(c, page.media); return }
+    if (opts.layer !== 'content') paintPaperLayer(c, index)
+    if (opts.layer === 'paper') return
+    c.textBaseline = 'alphabetic'
+    if (!page) return
+    paintContent(c, page, index, opts)
+  }
+
+  /** Carta della pagina: tinta, luce, superficie, immagine di sfondo. */
+  const paintPaperLayer = (c: Ctx, index: number) => {
+    const { w, h } = vp
     // Carta: tinta scelta, luce appena più chiara al centro, superficie.
     c.fillStyle = st.page.paper
     c.fillRect(0, 0, w, h)
@@ -663,9 +676,11 @@ export function layoutMenu(ctx: Ctx, data: MenuData, vp: Viewport, style: MenuSt
       }
       c.globalAlpha = 1
     }
-    c.textBaseline = 'alphabetic'
-    if (!page) return
+  }
 
+  /** Testi e decorazioni della pagina (sopra la carta). */
+  const paintContent = (c: Ctx, page: Page, index: number, opts: { t?: number; skipAnimated?: boolean }) => {
+    const { w } = vp
     // Testatina (dalla seconda pagina) e numero di pagina.
     if (index > 0 && st.runningHead.show) {
       const r = measure(c, RUN, RUN_TEXT) > m.cw ? fit(st.runningHead.text, RUN_TEXT, m.cw) : RUN
@@ -1346,7 +1361,12 @@ export function layoutMenu(ctx: Ctx, data: MenuData, vp: Viewport, style: MenuSt
   }
   const animCacheable = [CAT_ANIM, REST_ANIM, TITLE_ANIM].every(a => CACHEABLE.includes(a))
 
-  return { vp, pages, paint, animated, paintAnimated, animKey, animCacheable, hit, categoryStarts, pick, dishesOn }
+  const paperKey = (index: number) => {
+    const BG = st.page.background
+    return pages[index]?.media ? `media${index}` : BG.pages === 'all' ? 'all' : BG.pages === 'first' ? String(index === 0) : String(index > 0)
+  }
+
+  return { vp, pages, paint, paperKey, animated, paintAnimated, animKey, animCacheable, hit, categoryStarts, pick, dishesOn }
 }
 
 // ── Titoli di categoria: aiuti ─────────────────────────────────────────────────

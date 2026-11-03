@@ -1,27 +1,16 @@
 'use client'
 
 import { useState } from 'react'
-import type { RestaurantTheme } from '@/lib/theme'
-import type { MenuExtraPages } from '../menuExtraPages'
 import { Spinner } from '@/components/ui/Spinner'
-import { useAllergenCatalog } from '@/components/AllergenCatalog'
-
-interface PDFDishMin {
-  id:          string
-  name:        string
-  description: string | null
-  price:       number | null
-  category:    string
-  allergens:   number[]
-}
+import { menuPdfData } from '@/app/admin/restaurants/pdfActions'
 
 interface Props {
+  restaurantId:   string
   restaurantName: string
   menuId:         string
   menuName:       string
-  dishes:         PDFDishMin[]
-  extraPages:     MenuExtraPages | null
-  theme:          RestaurantTheme
+  /** Il menu ha piatti attivi (altrimenti il pulsante è spento). */
+  hasDishes:      boolean
   // true quando il bottone è annegato nella riga azioni unificata di
   // DishList (tablet/desktop): riempie la cella flex che lo ospita invece
   // di restare dimensionato al proprio contenuto come nel posizionamento
@@ -29,60 +18,22 @@ interface Props {
   fill?: boolean
 }
 
-export default function DownloadPDFButton({
-  restaurantName, menuId, menuName, dishes, extraPages, theme, fill,
-}: Props) {
-  const allergenCatalog = useAllergenCatalog()
+/** PDF del menu con la grafica del menu sul telefono (Personalizzazione). */
+export default function DownloadPDFButton({ restaurantId, restaurantName, menuId, menuName, hasDishes, fill }: Props) {
   const [loading, setLoading] = useState(false)
   const [error,   setError]   = useState<string | null>(null)
 
   async function handleDownload() {
-    if (!dishes.length) return
+    if (!hasDishes) return
     setLoading(true)
     setError(null)
     try {
-      const [{ createElement }, reactPdf, { MenuPDFDocument }, { registerThemeFonts }] = await Promise.all([
-        import('react'),
-        import('@react-pdf/renderer'),
-        import('@/app/m/[token]/MenuPDFDocument'),
-        import('@/lib/pdfFonts'),
+      const [{ menus }, { renderMenuPdf, saveFile }] = await Promise.all([
+        menuPdfData(restaurantId, menuId),
+        import('@/app/prova/[token]/menuPdf'),
       ])
-      const { pdf, Font } = reactPdf as any
-
-      const extraFonts = [
-        extraPages?.info?.enabled     ? (extraPages.info.font     ?? '') : '',
-        extraPages?.allergen?.enabled ? (extraPages.allergen.font ?? '') : '',
-      ]
-      const registeredFonts = registerThemeFonts(
-        Font,
-        [
-          theme.menu.dishes.titleFont,
-          theme.menu.descriptions.font,
-          theme.menu.prices.font,
-          theme.menu.categories.font,
-          ...extraFonts,
-        ].filter(Boolean),
-        theme.customFonts,
-      )
-
-      const restaurant = { name: restaurantName, allergenCatalog }
-      const menu = { id: menuId, name: menuName, lang: 'it' as const, dishes, extra_pages: extraPages }
-
-      let blob: Blob
-      try {
-        blob = await pdf(createElement(MenuPDFDocument, { restaurant, menu, theme, registeredFonts })).toBlob()
-      } catch {
-        blob = await pdf(createElement(MenuPDFDocument, { restaurant, menu, theme, registeredFonts: new Set<string>() })).toBlob()
-      }
-
-      const url = URL.createObjectURL(blob)
-      const a   = document.createElement('a')
-      a.href     = url
-      a.download = `${restaurantName} - ${menuName}.pdf`
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-      URL.revokeObjectURL(url)
+      if (!menus.length) throw new Error('Nessun piatto attivo nel menu.')
+      saveFile(await renderMenuPdf(menus), `${restaurantName} - ${menuName}.pdf`)
     } catch (e: any) {
       setError(e?.message ?? 'Errore nella generazione del PDF.')
     } finally {
@@ -102,8 +53,8 @@ export default function DownloadPDFButton({
       <button
         type="button"
         onClick={handleDownload}
-        disabled={loading || !dishes.length}
-        title={!dishes.length ? 'Aggiungi piatti per scaricare il PDF' : 'Scarica PDF del menu'}
+        disabled={loading || !hasDishes}
+        title={!hasDishes ? 'Aggiungi piatti per scaricare il PDF' : 'Scarica PDF del menu'}
         className={
           fill
             ? 'w-full flex items-center justify-center gap-1.5 text-sm font-medium border border-gray-300 text-gray-700 px-4 py-2 hover:bg-blue-600 hover:text-white hover:border-blue-600 active:bg-blue-700 active:border-blue-700 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-gray-700 disabled:hover:border-gray-300 transition-colors'

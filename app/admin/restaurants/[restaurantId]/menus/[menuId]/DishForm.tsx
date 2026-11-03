@@ -905,7 +905,7 @@ export default function DishForm({
           round={cropState.mode === 'frame' && shape === 'circle'}
           hint={cropState.mode === 'frame' ? { frame: photoFrame, focus: origUrl ? imageCrop : null } : undefined}
           note={cropState.mode === 'frame'
-            ? `Il riquadro è ciò che si vedrà nella scheda del piatto del nuovo menu (foto ${PHOTO_LABEL[shape]}, come nello stile del menu).`
+            ? `Il riquadro è ciò che si vedrà nella scheda del piatto del menu (foto ${PHOTO_LABEL[shape]}, come nello stile del menu).`
             : undefined}
           busy={cropSaving}
           onConfirm={handleCropConfirm}
