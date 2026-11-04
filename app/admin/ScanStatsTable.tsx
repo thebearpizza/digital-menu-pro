@@ -34,6 +34,7 @@ export default async function ScanStatsTable({
         Scansioni QR
       </h2>
       <ScanStatsLive
+        key={restaurantIds.join(',')}
         initial={initial}
         restaurantIds={restaurantIds}
         restaurantNames={restaurantNames}

@@ -4,6 +4,7 @@ import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import DishList from './DishList'
 import DownloadPDFButton from './DownloadPDFButton'
+import MenuSwitcher from './MenuSwitcher'
 
 export default async function MenuDishesPage({
   params,
@@ -60,9 +61,13 @@ export default async function MenuDishesPage({
             <Link href={`/admin/restaurants/${params.restaurantId}/menus`}
               className="hover:text-gray-600">← Menu</Link>
             <span>/</span>
-            <span className="text-gray-700 font-medium">{menu.name}</span>
+            <MenuSwitcher restaurantId={params.restaurantId} currentId={menu.id} currentName={menu.name}
+              menus={allMenus ?? []} className="text-gray-700 font-medium hover:text-gray-900" />
           </div>
-          <h1 className="text-lg font-semibold text-gray-900">{menu.name}</h1>
+          <h1 className="text-lg font-semibold text-gray-900">
+            <MenuSwitcher restaurantId={params.restaurantId} currentId={menu.id} currentName={menu.name}
+              menus={allMenus ?? []} chevron={12} />
+          </h1>
         </div>
 
         {/* Solo mobile: su tablet/desktop lo stesso bottone è annegato

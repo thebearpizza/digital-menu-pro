@@ -82,6 +82,7 @@ export default async function MenuStatsTable({
   return (
     <div className="mt-8">
       <MenuStatsLive
+        key={restaurantIds.join(',')}
         initialMenuRows={initialMenuRows}
         initialDishRows={initialDishRows}
         restaurantIds={restaurantIds}

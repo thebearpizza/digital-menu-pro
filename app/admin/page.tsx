@@ -4,8 +4,9 @@ import DashboardCounters from './DashboardCounters'
 import InactiveDishesPanel from './InactiveDishesPanel'
 import ScanStatsTable from './ScanStatsTable'
 import MenuStatsTable from './MenuStatsTable'
+import RestaurantFilter from './RestaurantFilter'
 
-export default async function AdminPage() {
+export default async function AdminPage({ searchParams }: { searchParams?: { r?: string } }) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
 
@@ -15,8 +16,14 @@ export default async function AdminPage() {
     .eq('owner_id', user!.id)
     .order('name')
 
-  const restaurantIds   = (restaurants ?? []).map(r => r.id)
-  const restaurantNames = Object.fromEntries((restaurants ?? []).map(r => [r.id, r.name]))
+  // Ristoranti scelti nel filtro (?r=id1,id2); nessuno o non validi = tutti.
+  const allRestaurants = restaurants ?? []
+  const wanted   = new Set((searchParams?.r ?? '').split(',').filter(Boolean))
+  const selected = allRestaurants.filter(r => wanted.has(r.id)).map(r => r.id)
+  const shown    = selected.length ? allRestaurants.filter(r => wanted.has(r.id)) : allRestaurants
+
+  const restaurantIds   = shown.map(r => r.id)
+  const restaurantNames = Object.fromEntries(allRestaurants.map(r => [r.id, r.name]))
 
   let activeDishCount   = 0
   let inactiveDishCount = 0
@@ -44,7 +51,7 @@ export default async function AdminPage() {
     inactiveDishes    = r4.data ?? []
   }
 
-  const groups = (restaurants ?? []).map(r => ({
+  const groups = shown.map(r => ({
     id:   r.id,
     name: r.name,
     dishes: inactiveDishes
@@ -66,14 +73,20 @@ export default async function AdminPage() {
         <p className="text-sm text-gray-500 mt-1">Panoramica del gestionale</p>
       </div>
 
+      <RestaurantFilter
+        restaurants={allRestaurants.map(r => ({ id: r.id, name: r.name }))}
+        selected={selected}
+      />
+
       <DashboardCounters
+        key={restaurantIds.join(',')}
         restaurantCount={restaurantIds.length}
         activeMenuCount={activeMenuCount}
         activeDishCount={activeDishCount}
         inactiveDishCount={inactiveDishCount}
       />
 
-      {restaurantIds.length === 0 && (
+      {allRestaurants.length === 0 && (
         <div className="bg-white border border-gray-200 p-8 max-w-md">
           <p className="text-sm text-gray-600 mb-4">
             Nessun ristorante configurato. Crea il primo per iniziare.
