@@ -1,6 +1,7 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
+import { cleanDays } from '@/lib/menuSchedule'
 import { revalidatePath } from 'next/cache'
 import { translateItems, translateEnabled } from '@/lib/translateEngine'
 import { TARGET_LANGS, type DishTranslations } from '@/lib/translations'
@@ -325,20 +326,21 @@ export async function renameCategory(
 // Stessa semantica dei menu: fuori dalla fascia (ora italiana, fasce a cavallo
 // di mezzanotte supportate) l'elemento sparisce dal menu pubblico.
 
-function validateSchedule(schedule: { enabled: boolean; from: string | null; until: string | null }) {
-  if (schedule.enabled && (!schedule.from || !schedule.until)) {
-    throw new Error('Indica orario di inizio e di fine.')
-  }
-  if (schedule.enabled && schedule.from === schedule.until) {
-    throw new Error('Orario di inizio e di fine coincidono: scegli una fascia valida.')
-  }
+type ScheduleInput = { enabled: boolean; from: string | null; until: string | null; days?: number[] | null }
+/** Programmazione: giorni (1–7) e/o fascia oraria; senza fascia tutto il giorno. */
+function validateSchedule(s: ScheduleInput) {
+  if (!s.enabled) return
+  if (Array.isArray(s.days) && s.days.length === 0) throw new Error('Scegli almeno un giorno.')
+  if (!!s.from !== !!s.until) throw new Error('Indica orario di inizio e di fine.')
+  if (s.from && s.from === s.until) throw new Error('Orario di inizio e di fine coincidono: scegli una fascia valida.')
+  if (!s.from && !cleanDays(s.days)) throw new Error('Togli almeno un giorno o scegli una fascia oraria.')
 }
 
 export async function updateDishSchedule(
   restaurantId: string,
   menuId: string,
   dishId: string,
-  schedule: { enabled: boolean; from: string | null; until: string | null },
+  schedule: ScheduleInput,
 ) {
   validateSchedule(schedule)
   const supabase = await createClient()
@@ -349,6 +351,7 @@ export async function updateDishSchedule(
       schedule_enabled: schedule.enabled,
       schedule_from:    schedule.enabled ? schedule.from : null,
       schedule_until:   schedule.enabled ? schedule.until : null,
+      schedule_days:    schedule.enabled ? cleanDays(schedule.days) : null,
       updated_at:       new Date().toISOString(),
     })
     .eq('id', dishId)
@@ -361,7 +364,7 @@ export async function updateCategorySchedule(
   restaurantId: string,
   menuId: string,
   category: string,
-  schedule: { enabled: boolean; from: string | null; until: string | null },
+  schedule: ScheduleInput,
 ) {
   validateSchedule(schedule)
   const supabase = await createClient()
@@ -371,7 +374,7 @@ export async function updateCategorySchedule(
   if (readErr) throw new Error(readErr.message)
   const schedules = ((menu?.category_schedules ?? {}) as Record<string, unknown>)
   if (schedule.enabled) {
-    schedules[category] = { enabled: true, from: schedule.from, until: schedule.until }
+    schedules[category] = { enabled: true, from: schedule.from, until: schedule.until, days: cleanDays(schedule.days) }
   } else {
     delete schedules[category]  // spenta = nessuna voce: JSONB pulito
   }
@@ -523,7 +526,7 @@ export async function bulkCreateDishes(
 // ── MODULO 4: riordino piatti, duplicazione, spostamento ────────────────────────
 
 const DISH_COLUMNS =
-  'id, name, description, price, category, image_url, image_original_url, image_crop, photo_frame, allergens, sort_order, is_active, pairing_dish_id, pairing_label, master_dish_id, schedule_enabled, schedule_from, schedule_until'
+  'id, name, description, price, category, image_url, image_original_url, image_crop, photo_frame, allergens, sort_order, is_active, pairing_dish_id, pairing_label, master_dish_id, schedule_enabled, schedule_from, schedule_until, schedule_days'
 
 /** Riscrive sort_order = indice per ogni piatto, nell'ordine ricevuto. */
 export async function reorderDishes(
@@ -1013,7 +1016,7 @@ export async function bulkDuplicateDishes(
 
   const { data: srcs, error: readErr } = await supabase
     .from('dishes')
-    .select('id, name, description, price, category, image_url, image_original_url, image_crop, photo_frame, allergens, pairing_dish_id, translations, schedule_enabled, schedule_from, schedule_until, sort_order')
+    .select('id, name, description, price, category, image_url, image_original_url, image_crop, photo_frame, allergens, pairing_dish_id, translations, schedule_enabled, schedule_from, schedule_until, schedule_days, sort_order')
     .in('id', dishIds)
     .eq('menu_id', menuId)
   if (readErr) throw new Error(readErr.message)
@@ -1043,6 +1046,7 @@ export async function bulkDuplicateDishes(
       schedule_enabled: src.schedule_enabled ?? false,
       schedule_from:    src.schedule_from,
       schedule_until:   src.schedule_until,
+      schedule_days:    src.schedule_days,
       is_active:        true,
       sort_order:       nextOrder++,
     }))
@@ -1058,7 +1062,7 @@ export async function bulkUpdateDishSchedules(
   restaurantId: string,
   menuId: string,
   dishIds: string[],
-  schedule: { enabled: boolean; from: string | null; until: string | null },
+  schedule: ScheduleInput,
 ) {
   if (!dishIds.length) return
   validateSchedule(schedule)
@@ -1070,6 +1074,7 @@ export async function bulkUpdateDishSchedules(
       schedule_enabled: schedule.enabled,
       schedule_from:    schedule.enabled ? schedule.from : null,
       schedule_until:   schedule.enabled ? schedule.until : null,
+      schedule_days:    schedule.enabled ? cleanDays(schedule.days) : null,
       updated_at:       new Date().toISOString(),
     })
     .in('id', dishIds)

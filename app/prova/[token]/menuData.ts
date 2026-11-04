@@ -16,8 +16,8 @@ import { fromOldAds, parseMedia } from '@/lib/menuMedia'
 import type { DishTranslations, MenuTranslations } from '@/lib/translations'
 import type { I18nData } from './i18n'
 
-export const DISH_COLS = 'id, name, description, price, category, allergens, sort_order, image_url, image_original_url, image_crop, photo_frame, pairing_dish_id, pairing_label, translations, schedule_enabled, schedule_from, schedule_until'
-export const MENU_COLS = 'id, name, category_order, translations, schedule_enabled, schedule_from, schedule_until, category_schedules, text_content, menu_style, media_pages'
+export const DISH_COLS = 'id, name, description, price, category, allergens, sort_order, image_url, image_original_url, image_crop, photo_frame, pairing_dish_id, pairing_label, translations, schedule_enabled, schedule_from, schedule_until, schedule_days'
+export const MENU_COLS = 'id, name, category_order, translations, schedule_enabled, schedule_from, schedule_until, schedule_days, category_schedules, text_content, menu_style, media_pages'
 // Nome con cui il gestionale mostra (e programma) i piatti senza categoria.
 const NO_CATEGORY = 'Senza categoria'
 
@@ -33,7 +33,7 @@ export async function buildMenuData(supabase: Supa, restaurant: Row, menu: Row, 
 
   // Programmazione oraria di piatti e categorie: fuori fascia non compaiono.
   const catSchedules = (menu.category_schedules ?? {}) as CategorySchedules
-  const dishOpen = (d: Row) => !opts.schedules || isWindowOpenNow(d.schedule_enabled as boolean | null, d.schedule_from as string | null, d.schedule_until as string | null)
+  const dishOpen = (d: Row) => !opts.schedules || isWindowOpenNow(d.schedule_enabled as boolean | null, d.schedule_from as string | null, d.schedule_until as string | null, undefined, d.schedule_days as number[] | null)
   const catOpen = (c: string) => !opts.schedules || isCategoryOpenNow(catSchedules[c])
 
   const [{ data: allDishes }, { data: overrides }] = await Promise.all([
