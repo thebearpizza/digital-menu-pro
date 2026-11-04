@@ -68,6 +68,7 @@ export async function duplicateRestaurant(restaurantId: string): Promise<{ id: s
         schedule_enabled: menu.schedule_enabled,
         schedule_from:    menu.schedule_from,
         schedule_until:   menu.schedule_until,
+        schedule_days:    menu.schedule_days,
         text_content:     menu.text_content,
         translations:     menu.translations,
         category_order:   menu.category_order,

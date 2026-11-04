@@ -8,8 +8,7 @@ interface Props { restaurantId: string }
 const TABS = [
   { label: 'Informazioni', suffix: '' },
   { label: 'Menu',         suffix: '/menus' },
-  { label: 'Personalizzazione', suffix: '/customization' },
-  { label: 'Stile (nuovo menu)', suffix: '/stile' },
+  { label: 'Personalizzazione', suffix: '/stile' },
 ]
 
 export default function TabNav({ restaurantId }: Props) {

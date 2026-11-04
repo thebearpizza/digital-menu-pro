@@ -3,6 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { ALLERGENI_DEFAULT_TEXT } from './menuExtraPages'
+import { cleanDays } from '@/lib/menuSchedule'
 import type { MenuExtraPages } from './menuExtraPages'
 
 async function verifyOwnership(supabase: any, restaurantId: string) {
@@ -12,6 +13,15 @@ async function verifyOwnership(supabase: any, restaurantId: string) {
     .from('restaurants').select('id').eq('id', restaurantId).eq('owner_id', user.id).single()
   if (!r) throw new Error('Non autorizzato')
   return user
+}
+
+/** Programmazione: giorni (1–7) e/o fascia oraria; senza fascia tutto il giorno. */
+function validateSchedule(s: { enabled: boolean; from: string | null; until: string | null; days?: number[] | null }) {
+  if (!s.enabled) return
+  if (Array.isArray(s.days) && s.days.length === 0) throw new Error('Scegli almeno un giorno.')
+  if (!!s.from !== !!s.until) throw new Error('Indica orario di inizio e di fine.')
+  if (s.from && s.from === s.until) throw new Error('Orario di inizio e di fine coincidono: scegli una fascia valida.')
+  if (!s.from && !cleanDays(s.days)) throw new Error('Togli almeno un giorno o scegli una fascia oraria.')
 }
 
 function revalidate(restaurantId: string) {
@@ -72,14 +82,9 @@ export async function updateMenuName(restaurantId: string, menuId: string, name:
 export async function updateMenuSchedule(
   restaurantId: string,
   menuId: string,
-  schedule: { enabled: boolean; from: string | null; until: string | null },
+  schedule: { enabled: boolean; from: string | null; until: string | null; days?: number[] | null },
 ) {
-  if (schedule.enabled && (!schedule.from || !schedule.until)) {
-    throw new Error('Indica orario di inizio e di fine.')
-  }
-  if (schedule.enabled && schedule.from === schedule.until) {
-    throw new Error('Orario di inizio e di fine coincidono: scegli una fascia valida.')
-  }
+  validateSchedule(schedule)
   const supabase = await createClient()
   await verifyOwnership(supabase, restaurantId)
 
@@ -87,8 +92,9 @@ export async function updateMenuSchedule(
     .from('menus')
     .update({
       schedule_enabled: schedule.enabled,
-      schedule_from:    schedule.from,
-      schedule_until:   schedule.until,
+      schedule_from:    schedule.enabled ? schedule.from : null,
+      schedule_until:   schedule.enabled ? schedule.until : null,
+      schedule_days:    schedule.enabled ? cleanDays(schedule.days) : null,
     })
     .eq('id', menuId).eq('restaurant_id', restaurantId)
   if (error) throw new Error(error.message)

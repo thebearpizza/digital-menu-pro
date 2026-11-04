@@ -14,7 +14,8 @@ L'utente scrive in italiano: rispondere in italiano, in modo chiaro e non tecnic
 - **Merge su `main` solo quando l'utente scrive "merge"**: si apre una PR (GitHub MCP `create_pull_request`) e la si unisce (`merge_pull_request`, metodo merge). Poi si verifica che parta il deploy di produzione.
 - Link anteprima: Vercel MCP `list_deployments` con `projectId: prj_b8WrdpZ6p9k0vasfGiZiT3iwKyaM`, `teamId: team_Cs7hzXgCmjtavJpTfK8vNEoz`, `branch: <branch>`; il campo `url` è l'anteprima (se `BUILDING`, dirlo).
 - **Non rompere le funzionalità esistenti**: modifiche minime e mirate. Se un tentativo rompe tutto, si butta il branch e si riparte da `main` rifacendo solo le modifiche richieste.
-- **La Personalizzazione deve restare allineata**: ogni elemento nuovo del menu cliente/card va reso configurabile in `CustomizationClient.tsx` (voci `MOBILE_TARGETS`, `MOBILE_LABELS`, `EDITOR_TARGETS`, `case` dell'editor, setter), con default e back-compat in `lib/theme.ts` (`DEFAULT_THEME` + `parseTheme`); le opzioni diventate inutili vanno tolte dall'editor.
+- **La Personalizzazione deve restare allineata**: ogni elemento nuovo del menu cliente (pagine, scheda del piatto, pagina d'apertura) va reso configurabile nella Personalizzazione (`stile/StyleEditor.tsx` per il menu, `stile/LandingEditor.tsx` per la pagina d'apertura), con default e back-compat in `lib/menuStyle.ts` (`DEFAULT_STYLE` + `parseStyle`) o `lib/landingStyle.ts` (`DEFAULT_LANDING` + `parseLanding`); le opzioni diventate inutili vanno tolte dall'editor.
+- **Il menu deve essere sempre fluido**: niente lavoro pesante nei fotogrammi in cui si sfoglia (es. le animazioni dei titoli si fermano mentre si gira pagina).
 - La cancellazione di branch remoti è bloccata dal proxy git: dire all'utente di eliminarli a mano dalla pagina Branches di GitHub.
 
 ## Vincoli inviolabili
@@ -44,7 +45,7 @@ Implicazioni pratiche:
 - **Supabase** (Postgres DB + Auth + RLS policies)
 - **TailwindCSS** + TypeScript
 - **Drag-and-drop**: `@dnd-kit` per riordinamento menu/piatti/categorie
-- **PDF generation**: `@react-pdf/renderer` + `pdf-lib`
+- **PDF**: pagine disegnate dal motore del menu (`app/prova/[token]/menuPdf.ts`) e unite con `pdf-lib`
 - **Excel import/export**: `xlsx` (non è un CSV plugin — gestisce il file completo)
 - **QR code**: `qrcode`
 
@@ -65,26 +66,26 @@ Configurazione Supabase: le variabili sono in `.env.local` (chiave pubblica + UR
 ### Directory layout
 
 - **`app/admin/`** — Gestionale del ristoratore (protetto da auth Supabase + middleware)
-  - `restaurants/` — lista ristoranti; per ristorante: menus, customization, Telegram
+  - `restaurants/` — lista ristoranti; per ristorante: menus, Personalizzazione (`stile/`), Telegram
   - `restaurants/[restaurantId]/menus/` — CRUD menu + drag-drop reorder
   - `restaurants/[restaurantId]/menus/[menuId]/` — CRUD piatti + categorie, Excel import/export, sincronizzazione piatti
-  - `restaurants/[restaurantId]/customization/` — Theming: colori, font, layout PDF
+  - `restaurants/[restaurantId]/stile/` — Personalizzazione: stile del menu (`StyleEditor`) e pagina d'apertura (`apertura/`, `LandingEditor`); `customization/` reindirizza qui
   - `restaurants/[restaurantId]/telegram/` — Pairing codes + webhook test
 - **`app/auth/`, `app/login/`** — Login / signup Supabase
 - **`app/api/`** — API Server Actions + webhook
   - `api/telegram/route.ts` — Webhook Telegram bot (gestione comandi elastici)
   - `api/menus/` — Endpoint per operazioni menu (CRUD, reorder, delete)
   - `api/dishes/` — Endpoint piatti (CRUD)
-- **`app/m/[token]/`** — Menu pubblico (NO auth richiesta)
-  - `page.tsx` — Entry point: landing page con flipbook viewer + PDF download
-  - `PublicMenuView.tsx` — Wrapper che applica theming
-  - `FlipbookViewer.tsx` — Viewer a pagine (sfogliabile) — utilizza theme per colori e font
-  - `DishModal.tsx` — Modal con dettagli piatto + allergeni
-  - `MenuPDFDocument.tsx` — Documento PDF renderizzato
+- **`app/m/[token]/`** — Menu pubblico del QR (NO auth): `page.tsx` serve `NewMenuPage` (conta visite e aperture), `privacy/`
+- **`app/prova/[token]/`** — Il menu vero e proprio (stesso contenuto anche su `/prova/<token>`, usato dalle anteprime senza statistiche)
+  - `NewMenuPage.tsx` — server: pagina d'apertura (`Landing.tsx`) o menu (`CurlMenu.tsx`) con `?menu=<id>`
+  - `menuData.ts` — dati del menu per il motore (condiviso con il PDF)
+  - `typeset.ts` — impaginazione e disegno delle pagine su canvas; `curl.ts` — giro pagina WebGL
+  - `DishCard.tsx` — scheda del piatto; `menuPdf.ts` — PDF con la stessa grafica
 - **`lib/`** — Utilità condivise
   - `menuSchedule.ts` — Logica programmazione oraria menu
-  - `theme.ts` — Validazione + defaults tema (quando sarà completo)
-  - `googleFontsCatalog.ts` — Lista curata font Google
+  - `menuStyle.ts` / `landingStyle.ts` — stile del menu e della pagina d'apertura (schema, default, back-compat)
+  - `theme.ts` — vecchio tema (`theme_config`): ne restano solo le pubblicità convertite (`lib/menuMedia.ts`) e poco altro
   - `supabaseAdmin.ts` — Client Supabase con service role (backend-only)
 - **`components/ui/`** — Componenti riusabili (VisibilityToggle, modali, ecc.)
 
@@ -118,40 +119,21 @@ Tabelle chiave:
 - `telegram_links(chat_id, user_id)` — mapping chat ↔ account admin
 - `telegram_pairing_codes(code, user_id, expires_at)` — one-time pairing codes
 
-### Menu pubblico (`app/m/[token]/`)
+### Menu pubblico (`app/m/[token]/` → `app/prova/[token]/`)
 
-Dato `restaurants.qr_public_token`, il server:
-1. Recupera il ristorante + tutti i menu + piatti
-2. Applica scheduling (menu visibili solo in fascia oraria? hide se disattivo)
-3. Applica theming (colori, font, layout PDF)
-4. Renderizza landing page + flipbook + PDF download button
+Dato `restaurants.qr_public_token`, `NewMenuPage`:
+1. Recupera il ristorante e i menu attivi (programmazione oraria: fuori fascia menu, categorie e piatti non compaiono)
+2. Senza `?menu=` mostra la pagina d'apertura (`Landing.tsx`, stile in `restaurants.landing_style`)
+3. Con `?menu=<id>` mostra il menu a tutto schermo con giro pagina (`CurlMenu.tsx`, stile in `menus.menu_style` o `restaurants.menu_style`)
 
-Flipbook è sfogliabile pagina per pagina; DishModal mostra allergeni/descrizione. PDF generato lato server via `@react-pdf/renderer`.
+Le pagine sono disegnate su canvas da `typeset.ts` e diventano texture WebGL (`curl.ts`). I titoli animati (neon, riflesso, lampadine…) ridisegnano solo la loro striscia, solo quando lo stato cambia, e restano fermi mentre si sfoglia. I Google Fonts passano dal proxy `app/api/gfonts`, mai direttamente da Google; dei caratteri caricati si scaricano solo le facce usate.
 
-Il flipbook (`FlipbookViewer.tsx`) usa turn.js + jQuery (`/public/turn.min.js`, `/public/jquery.min.js`) e pdf.js servito in locale da `public/vendor/pdfjs/3.11.174/` (niente CDN esterni: privacy). I Google Fonts passano dal proxy `app/api/gfonts` (`googleFontsUrl`, `lib/pdfFonts.ts`), mai direttamente da Google. Decisioni prese con l'utente (non cambiarle senza richiesta):
-- **Libro inclinato** `BOOK_TILT_DEG = 14` con spessore pagine / curva / costa decorativi; navigazione dentro la pagina (`drawPageNav`); pagine pubblicitarie a tutta pagina con sfumatura e navigazione in basso.
-- **Scheda piatto come pagina del libro** (`DISH_AS_PAGE = true`, `DishModal asPage`): la pagina corrente si gira con uno **sfoglio "rigido" CSS** (`.fv-page-flap`, snapshot della pagina) e scopre la scheda. **NON usare un mini-libro turn.js per la scheda: ha rotto tutto ed è stato scartato.**
-  - Apertura senza flash: la scheda resta nascosta (`phase 'prep'`) finché lo snapshot non è decodificato; girata di apertura 1s.
-  - Chiusura: torna alla pagina del menu dell'**ultimo piatto visto** (mappa piatto→pagina PDF dal text layer, `dishPdfPageRef`), la pagina si rigira sopra.
-  - Abbinamento: la scheda corrente (copia statica) si gira via e scopre l'abbinamento; "Indietro" torna alla scheda da cui è stato aperto (non al primo piatto).
-  - In alto: sfumatura scura dall'alto (come le pubblicitarie) con testo chiaro "‹ Torna al menu" / "‹ Indietro" (niente X, niente contorni); colore = `card.backLink.color` schiarito con `readableOn()` quanto basta per il contrasto; auto-fit su una riga.
-  - Foto incorniciata (margine, angoli = `card.borderRadius` → "Angoli foto" in Personalizzazione); indicatore "scorri" (⌄) finché sotto c'è altro.
-  - Swipe tra piatti: asse deciso dai primi 10px; se il gesto parte in verticale o il testo scorre non cambia mai piatto; swipe orizzontale da 40px.
-- PDF (`MenuPDFDocument.tsx`): prezzi allineati alla baseline del nome (strut + lift ottico); con nome centrato un prezzo "fantasma" trasparente sul lato opposto tiene il nome sull'asse della pagina.
-- Anteprima dal gestionale (dock "Anteprima"): mostra la L **intera e ferma** (`LitoMark progress={1}`) e naviga solo dopo averla disegnata (Safari smette di ridisegnare durante la navigazione).
+Il PDF (gestionale: "Scarica PDF" del menu e "tutti i menu" del ristorante) usa gli stessi dati (`menuData.ts`, senza orari) e lo stesso motore: pagine A4, carta salvata una volta e testi in un livello trasparente sopra (`menuPdf.ts`).
 
-### Customization / Theming (`app/admin/.../customization/`)
+### Personalizzazione (`app/admin/.../stile/`)
 
-Pannello per ristoratore:
-- Colori (accent, sfondo landing, testo)
-- Font (serif, sans-serif — da lista curata Google Fonts)
-- Border radius (none, sm, md)
-- Immagine di sfondo landing (upload Supabase storage)
-- Layout PDF (classic 1 categoria/pagina, compact denser)
-
-Salvato in `restaurants.theme_config` (JSONB). Preview live aggiornato in real-time.
-
-Il tema reale è strutturato (`RestaurantTheme` in `lib/theme.ts`: `landing`, `menu`, `menuThemes`, `card`, `ads`, `customFonts`); `parseTheme` applica default e back-compat. L'anteprima "Card" è un iframe di `/m/[token]?preview=1` che mostra la scheda-pagina reale (`PublicMenuView.tsx`, `cardPreviewOpen`). `card.closeButton` resta nello schema solo per la vecchia scheda a comparsa (non più usata nel menu pubblico).
+- **Menu** (`StyleEditor.tsx`): carta e sfondo, caratteri (anche caricati), copertina, categorie (decorazioni, effetti, animazioni), piatti, prezzi, pagine informativa e allergeni, foto/video, scheda del piatto, comandi in vetro, sfoglio. Anteprima: iframe di `/prova/<token>?preview=1` che riceve lo stile con `postMessage`.
+- **Pagina d'apertura** (`LandingEditor.tsx`): sfondo (carta, gradiente, foto e video), logo e nome, pulsanti dei menu, vetro, social.
 
 ### Excel import/export (`app/admin/.../menus/[menuId]/ExcelImportExport.tsx`)
 
@@ -164,14 +146,14 @@ Riconosce piatti uguali tra menu diversi (stesso nome + categoria). Se l'utente 
 
 ## Database schema (keys)
 
-- `restaurants(id, owner_id, name, qr_public_token, theme_config, ...)`
+- `restaurants(id, owner_id, name, qr_public_token, landing_style, menu_style, theme_config, ...)`
 - `menus(id, restaurant_id, name, is_active, sort_order, schedule_enabled, schedule_from, schedule_until, ...)`
 - `dishes(id, menu_id, name, description, price, category, is_active, image_url, allergens[], sort_order, ...)`
 - `categories(menu_id, name)` — relazione virtualizzata (ogni piatto ha una categoria string)
 - `telegram_links(chat_id, user_id)` — link admin ↔ Telegram chat
 - `telegram_pairing_codes(code, user_id, expires_at)`
 
-`allergens` è un array di int (ID allergen standard); nomi/numeri personalizzabili per account nella tabella `allergen_overrides`. `theme_config` è JSONB con la struttura `RestaurantTheme` (vedi sopra).
+`allergens` è un array di int (ID allergen standard); nomi/numeri personalizzabili per account nella tabella `allergen_overrides`. Lo stile è JSONB: `menus.menu_style` / `restaurants.menu_style` (`MenuStyle`, `lib/menuStyle.ts`) e `restaurants.landing_style` (`LandingStyle`); `menus.media_pages` le pagine foto/video. `theme_config` (vecchio tema) e `restaurants.new_menu` non servono più al menu.
 
 Supabase project id: `spwyryxoqsiahfwnpaoo`.
 
@@ -187,7 +169,7 @@ Supabase project id: `spwyryxoqsiahfwnpaoo`.
 - Rete: accesso "Personalizzato" con `*.vercel.app`, `spwyryxoqsiahfwnpaoo.supabase.co`, `cdnjs.cloudflare.com`, `fonts.googleapis.com`, `fonts.gstatic.com` + elenco predefinito. Tutto passa da un proxy che ri-firma l'HTTPS.
 - **Browser**: MCP `chrome-devtools` (`.mcp.json`) con il Chromium preinstallato, headless, `--no-sandbox`, `--acceptInsecureCerts` (certificato del proxy). In alternativa Playwright installato globalmente (percorso da `npm root -g`, opzione `ignoreHTTPSErrors: true`).
 - Le anteprime Vercel sono protette da login Vercel: senza bypass il browser vede la pagina di accesso; la produzione è libera. Il gestionale richiede login Supabase (serve un account di test, mai credenziali personali).
-- Test locali del menu senza database: pagina temporanea `app/splash-test/page.tsx` che monta `FlipbookViewer`/`DishModal` con dati finti (PDF di prova generato con `pdf-lib` in `public/`), `npx next dev -p 3100` con env Supabase fittizie. **Rimuovere sempre** la pagina, i file di prova in `public/` e `.next/types/app/splash-test` prima del commit.
+- Test locali: `npx next dev -p 3100` con le chiavi pubbliche di Supabase; il menu vero si prova su `/prova/<token>?menu=<id>` (con `&preview=1` accetta lo stile via `postMessage` `lito-style`). Per i pannelli del gestionale (serve il login) si usa una pagina temporanea `app/splash-test/page.tsx`. **Rimuovere sempre** la pagina e `.next/types/app/splash-test` prima del commit. Il Chromium di prova non riproduce MP4/H.264: per i video si usa una copia WebM servita con `page.route`.
 - Fermare i dev server con `ps aux | grep -E "next" | grep -v grep | awk '{print $2}' | xargs -r kill` (NON `pkill -f "next dev"`: uccide la shell).
 - Verifiche prima del push: `npx tsc --noEmit` e `npx eslint <file>`.
 

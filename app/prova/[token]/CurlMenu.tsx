@@ -400,7 +400,11 @@ export default function CurlMenu({ data: base0, style: initialStyle, preview = f
         const a = animOf.get(tex)
         if (!a) return
         any = true
-        if (cardOpen.current) return
+        // Mentre si sfoglia (dito sulla pagina, pagina che gira o che si
+        // assesta, invito a sfogliare) i titoli restano fermi: ridisegnarli e
+        // ricaricarli nello stesso fotogramma del giro pagina lo farebbe
+        // scattare. Ripartono appena la pagina è ferma.
+        if (cardOpen.current || drag || turn || anim || peeking) return
         const key = L.animKey(a.page, t)
         if (key === a.key) return
         a.key = key
