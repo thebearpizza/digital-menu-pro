@@ -4,6 +4,7 @@ import { parseStyle } from '@/lib/menuStyle'
 import { fromOldAds, parseMedia } from '@/lib/menuMedia'
 import StyleEditor from './StyleEditor'
 import type { MenuTextPages } from './actions'
+import { parseCategoryTexts } from '@/lib/categoryText'
 
 // Personalizzazione del nuovo menu: anteprima vera del menu e comandi accanto.
 // Ogni menu ha il suo stile; chi non ne ha uno usa quello del ristorante.
@@ -60,5 +61,6 @@ function textPagesOf(tc: unknown): MenuTextPages {
       align: i.align === 'center' || i.align === 'right' ? i.align : 'left',
     },
     allergen: { enabled: t.allergen?.enabled === true },
+    categories: Object.fromEntries(Object.entries(parseCategoryTexts(tc)).map(([k, v]) => [k, { mode: v.mode, body: v.body }])),
   }
 }

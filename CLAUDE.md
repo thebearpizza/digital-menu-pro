@@ -132,8 +132,12 @@ Il PDF (gestionale: "Scarica PDF" del menu e "tutti i menu" del ristorante) usa 
 
 ### Personalizzazione (`app/admin/.../stile/`)
 
-- **Menu** (`StyleEditor.tsx`): carta e sfondo, caratteri (anche caricati), copertina, categorie (decorazioni, effetti, animazioni), piatti, prezzi, pagine informativa e allergeni, foto/video, scheda del piatto, comandi in vetro, sfoglio. Anteprima: iframe di `/prova/<token>?preview=1` che riceve lo stile con `postMessage`.
+- **Menu** (`StyleEditor.tsx`): carta e sfondo, caratteri (anche caricati), copertina, categorie (decorazioni, effetti, animazioni), descrizioni delle categorie (testi e aspetto), piatti, prezzi, pagine informativa e allergeni, foto/video, scheda del piatto, comandi in vetro, sfoglio. Anteprima: iframe di `/prova/<token>?preview=1` che riceve lo stile con `postMessage`.
 - **Pagina d'apertura** (`LandingEditor.tsx`): sfondo (carta, gradiente, foto e video), logo e nome, pulsanti dei menu, vetro, social.
+
+### Descrizioni delle categorie
+
+Testo per categoria e per menu in `menus.text_content.categories` (`lib/categoryText.ts`; salvataggio e traduzione automatica in `lib/categoryTextSave.ts`). Modo breve (sotto il titolo) o pagina intera (titolo + testo prima dei piatti; la prima foto/video della categoria diventa lo sfondo velato, i video con l'immagine d'attesa). Si scrive dal ⋮ della categoria o nella Personalizzazione; l'aspetto in `MenuStyle.categoryText`. Rinomina/elimina categoria spostano/tolgono la descrizione.
 
 ### Excel import/export (`app/admin/.../menus/[menuId]/ExcelImportExport.tsx`)
 

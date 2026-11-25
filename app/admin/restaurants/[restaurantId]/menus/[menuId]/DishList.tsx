@@ -26,7 +26,7 @@ import { FlagIcon } from '@/components/ui/FlagIcon'
 import VisibilityToggle from '@/components/ui/VisibilityToggle'
 import { Spinner } from '@/components/ui/Spinner'
 import {
-  deleteDish, reorderCategories, reorderDishes,
+  deleteDish, reorderCategories, reorderDishes, updateCategoryText,
   duplicateDish, duplicateCategory, deleteCategory, renameCategory, bulkUpdateDishPrices, findDishTwins, DishTwin,
   toggleDishActive, toggleCategoryActive,
   moveDishesToCategory, bulkDeleteDishes, bulkMoveDishesToMenu, getMenuCategoriesForMove,
@@ -35,6 +35,7 @@ import {
 import { useStaggerEntrance } from '@/lib/animations'
 import { windowLabel, type CategorySchedules } from '@/lib/menuSchedule'
 import ScheduleModal from '../ScheduleModal'
+import CategoryTextModal, { type CategoryTextValue } from './CategoryTextModal'
 
 interface Dish {
   id: string
@@ -69,6 +70,8 @@ interface Props {
   allMenus: SimpleMenu[]
   initialCategoryOrder: string[] | null
   initialCategorySchedules: CategorySchedules
+  /** Descrizioni delle categorie (testo e modo), per nome. */
+  initialCategoryTexts?: Record<string, CategoryTextValue>
   // Bottone "Scarica PDF": costruito dal chiamante (page.tsx, che ha già
   // tutti i dati serviti — nome ristorante/menu, tema, pagine extra) e
   // annegato qui nella riga azioni unificata di tablet/desktop, invece di
@@ -306,7 +309,9 @@ function SortableCategory({
   onToggleCategory,
   onScheduleCategory,
   onScheduleDish,
+  onTextCategory,
   catScheduleLabel,
+  catTextLabel,
   deletingId,
   selectedIds,
   onSelectDish,
@@ -328,7 +333,9 @@ function SortableCategory({
   onToggleCategory: (cat: string, active: boolean) => void
   onScheduleCategory: (cat: string) => void
   onScheduleDish: (dish: Dish) => void
+  onTextCategory: (cat: string) => void
   catScheduleLabel: string | null
+  catTextLabel: string | null
   deletingId: string | null
   selectedIds: Set<string>
   onSelectDish: (dish: Dish, checked: boolean) => void
@@ -387,6 +394,9 @@ function SortableCategory({
           {catScheduleLabel && (
             <span className="text-[10px] text-blue-500 shrink-0 whitespace-nowrap">🕐 {catScheduleLabel}</span>
           )}
+          {catTextLabel && (
+            <span className="text-[10px] text-gray-400 shrink-0 whitespace-nowrap">¶ {catTextLabel}</span>
+          )}
         </button>
 
         <div className="flex items-center shrink-0" ref={kebabRef}>
@@ -425,6 +435,12 @@ function SortableCategory({
                   className="w-full text-left px-4 py-3 text-sm text-gray-700 hover:bg-gray-50"
                 >
                   Rinomina
+                </button>
+                <button
+                  onClick={() => { onTextCategory(cat); setKebabOpen(false) }}
+                  className="w-full text-left px-4 py-3 text-sm text-gray-700 hover:bg-gray-50"
+                >
+                  Descrizione
                 </button>
                 <button
                   onClick={() => { onScheduleCategory(cat); setKebabOpen(false) }}
@@ -498,8 +514,11 @@ function SortableCategory({
 
 export default function DishList({
   restaurantId, menuId, initialDishes, allDishes, allMenus, initialCategoryOrder,
-  initialCategorySchedules, pdfButton, photoFormat,
+  initialCategorySchedules, initialCategoryTexts, pdfButton, photoFormat,
 }: Props) {
+  // Descrizioni delle categorie e categoria di cui si scrive la descrizione.
+  const [catTexts, setCatTexts] = useState<Record<string, CategoryTextValue>>(initialCategoryTexts ?? {})
+  const [textCat, setTextCat] = useState<string | null>(null)
   const [dishes,       setDishes]       = useState(initialDishes)
   // Programmazione oraria: bersaglio della modale (piatto o categoria) e
   // mappa locale delle fasce per categoria (specchia menus.category_schedules).
@@ -870,6 +889,10 @@ export default function DishList({
       if (!prev.has(cat)) return prev
       const next = new Set(prev); next.delete(cat); next.add(newName); return next
     })
+    setCatTexts(prev => {
+      if (!(cat in prev)) return prev
+      const next = { ...prev, [newName]: prev[cat] }; delete next[cat]; return next
+    })
     try {
       await renameCategory(restaurantId, menuId, cat, newName)
     } catch { alert('Errore durante la rinomina della categoria.') }
@@ -1197,6 +1220,23 @@ export default function DishList({
         />
       )}
 
+      {textCat && (
+        <CategoryTextModal
+          category={textCat}
+          initial={catTexts[textCat] ?? null}
+          styleHref={`/admin/restaurants/${restaurantId}/stile`}
+          onClose={() => setTextCat(null)}
+          onSave={async v => {
+            await updateCategoryText(restaurantId, menuId, textCat, v)
+            setCatTexts(prev => {
+              const next = { ...prev }
+              if (v) next[textCat] = v; else delete next[textCat]
+              return next
+            })
+          }}
+        />
+      )}
+
       {schedTarget && (
         <ScheduleModal
           subject={
@@ -1302,6 +1342,8 @@ export default function DishList({
                   onToggleCategory={handleToggleCategory}
                   onScheduleCategory={c => setSchedTarget({ type: 'category', cat: c })}
                   onScheduleDish={d => setSchedTarget({ type: 'dish', dish: d })}
+                  onTextCategory={setTextCat}
+                  catTextLabel={catTexts[cat]?.body ? (catTexts[cat].mode === 'page' ? 'Pagina intera' : 'Descrizione') : null}
                   catScheduleLabel={windowLabel(catSchedules[cat]?.enabled, catSchedules[cat]?.from, catSchedules[cat]?.until, catSchedules[cat]?.days)}
                   deletingId={deletingId}
                   selectedIds={selectedIds}

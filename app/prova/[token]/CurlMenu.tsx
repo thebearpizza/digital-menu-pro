@@ -19,8 +19,9 @@ import { CurlRenderer, constrain, solveCurl, type Rect, type Scene, type Sheet, 
 import AdminReturn from './AdminReturn'
 import FpsMeter from './FpsMeter'
 import { useRouter } from 'next/navigation'
-import { layoutMenu, mediaViews, SANS, type Dish, type Layout, type MenuData, type MediaView, type Insets } from './typeset'
+import { introStill, layoutMenu, mediaViews, SANS, type Dish, type Layout, type MenuData, type MediaView, type Insets } from './typeset'
 import { parseMedia } from '@/lib/menuMedia'
+import { cleanCategoryText, type CategoryTexts } from '@/lib/categoryText'
 import { parseRichText } from './richText'
 import { parseStyle, registerCustomFonts, type MenuStyle } from '@/lib/menuStyle'
 import { isLang, type Lang } from '@/lib/translations'
@@ -122,7 +123,13 @@ export default function CurlMenu({ data: base0, style: initialStyle, preview = f
   // Anteprima della Personalizzazione: pagine foto/video e pagine di testo in modifica.
   const [mediaOverride, setMediaOverride] = useState<MediaView[] | null>(null)
   const [textOverride, setTextOverride] = useState<Pick<MenuData, 'info' | 'allergenLegend'> | null>(null)
-  const base = useMemo(() => (textOverride ? { ...base0, ...textOverride } : base0), [base0, textOverride])
+  // Descrizioni delle categorie in modifica (per nome italiano).
+  const [catTextOverride, setCatTextOverride] = useState<CategoryTexts | null>(null)
+  const base = useMemo(() => {
+    const b = textOverride ? { ...base0, ...textOverride } : base0
+    if (!catTextOverride) return b
+    return { ...b, categories: b.categories.map(c => ({ ...c, text: catTextOverride[c.name] ?? null })) }
+  }, [base0, textOverride, catTextOverride])
   const data = useMemo(() => localize(mediaOverride ? { ...base, media: mediaOverride } : base, i18n, lang), [base, i18n, lang, mediaOverride])
   const dataRef = useRef(data)
   dataRef.current = data
@@ -138,6 +145,7 @@ export default function CurlMenu({ data: base0, style: initialStyle, preview = f
   // Sfondo delle pagine già caricato (serve all'impaginazione).
   const assetsRef = useRef<{ background: HTMLImageElement | null }>({ background: null })
   const mediaFocus = useRef<string | null>(null)
+  const catFocus = useRef<string | null>(null)
   useEffect(() => {
     if (!preview) return
     const onMsg = (e: MessageEvent) => {
@@ -156,6 +164,14 @@ export default function CurlMenu({ data: base0, style: initialStyle, preview = f
           allergenLegend: tp?.allergen?.enabled ? legendAll ?? null : null,
         })
         if (msg.focus) mediaFocus.current = msg.focus
+        const cats = (tp as { categories?: unknown } | undefined)?.categories
+        if (cats && typeof cats === 'object') {
+          const out: CategoryTexts = {}
+          for (const [k, v] of Object.entries(cats as Record<string, unknown>)) { const c = cleanCategoryText(v); if (c) out[k] = c }
+          setCatTextOverride(out)
+        }
+        const fc = (e.data as { focusCategory?: unknown }).focusCategory
+        if (typeof fc === 'string') catFocus.current = fc
       }
       if (msg?.type === 'lito-media') {
         setMediaOverride(mediaViews(parseMedia(msg.pages), base0.categories.flatMap(c => c.dishes)))
@@ -270,7 +286,8 @@ export default function CurlMenu({ data: base0, style: initialStyle, preview = f
       if (!layout) return
       layout.pages.forEach((p, i) => {
         const mp = p.media
-        if (!mp || ((mp.url ?? mp.dish?.image) !== url && mp.poster !== url)) return
+        const still = p.intro?.media ? introStill(p.intro.media) : null
+        if (still !== url && (!mp || ((mp.url ?? mp.dish?.image) !== url && mp.poster !== url))) return
         const t = textures.get(i)
         if (t) { renderer?.deleteTexture(t); textures.delete(i) }
         bitmaps.delete(i)
@@ -281,12 +298,14 @@ export default function CurlMenu({ data: base0, style: initialStyle, preview = f
       if (!layout) return
       for (const p of layout.pages) {
         const mp = p.media
-        if (!mp) continue
-        const src = mp.url ?? mp.dish?.image ?? null
         const want: { url: string; video: boolean }[] = []
+        // Pagina della descrizione di una categoria: solo la foto ferma.
+        const still = p.intro?.media ? introStill(p.intro.media) : null
+        if (still) want.push({ url: still, video: false })
+        const src = mp ? mp.url ?? mp.dish?.image ?? null : null
         // Senza WebGL il video non si può mostrare: resta l'immagine d'attesa.
-        if (src && !(isVideoUrl(mp, src) && !renderer)) want.push({ url: src, video: isVideoUrl(mp, src) })
-        if (mp.poster) want.push({ url: mp.poster, video: false })
+        if (mp && src && !(isVideoUrl(mp, src) && !renderer)) want.push({ url: src, video: isVideoUrl(mp, src) })
+        if (mp?.poster) want.push({ url: mp.poster, video: false })
         for (const w of want) {
           if (mediaEls.has(w.url)) continue
           if (w.video) {
@@ -617,8 +636,12 @@ export default function CurlMenu({ data: base0, style: initialStyle, preview = f
       syncMedia()
       // Anteprima: la pagina foto/video aperta nel pannello si mostra subito.
       // (àncora: media:<id>, 'info' o 'allergens')
-      const focusIdx = mediaFocus.current ? layout.pages.findIndex(p => p.anchor === mediaFocus.current) : -1
-      mediaFocus.current = null
+      const catStart = catFocus.current ? layout.categoryStarts.find(c => c.name === catFocus.current) : undefined
+      // Descrizione a pagina intera: si va alla sua pagina (non alle foto prima).
+      const introIdx = catStart ? layout.pages.findIndex(p => p.intro?.cat === catStart.index) : -1
+      const focusIdx = mediaFocus.current ? layout.pages.findIndex(p => p.anchor === mediaFocus.current)
+        : introIdx >= 0 ? introIdx : catStart ? catStart.page : -1
+      mediaFocus.current = null; catFocus.current = null
       const found = focusIdx >= 0 ? focusIdx : anchor ? layout.pages.findIndex(p => p.anchor === anchor) : -1
       index = found >= 0 ? found : Math.min(index, layout.pages.length - 1)
       if (spread) index -= index % 2

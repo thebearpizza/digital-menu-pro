@@ -6,7 +6,7 @@
 // pagine foto/video sono sostituiti dalla loro immagine d'attesa.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { layoutMenu, type MenuData } from './typeset'
+import { introStill, layoutMenu, type MenuData } from './typeset'
 import { parseStyle, type MenuStyle } from '@/lib/menuStyle'
 import { loadImage, loadStyleAssets } from './fonts'
 
@@ -29,6 +29,9 @@ export async function renderMenuPdf(menus: { data: MenuData; style: MenuStyle }[
       if (mp.url && !mp.video) urls.add(mp.url)
       if (mp.poster) urls.add(mp.poster)
       if (!mp.url && mp.dish?.image) urls.add(mp.dish.image)
+      // Sfondo della pagina di descrizione della categoria.
+      const still = introStill(mp)
+      if (still) urls.add(still)
     }
     const imgs = new Map<string, HTMLImageElement>()
     await Promise.all(Array.from(urls).map(async u => { const im = await loadImage(u); if (im) imgs.set(u, im) }))

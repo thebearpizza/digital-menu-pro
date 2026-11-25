@@ -1,4 +1,5 @@
 import { parseStyle } from '@/lib/menuStyle'
+import { parseCategoryTexts } from '@/lib/categoryText'
 import { createClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
@@ -93,6 +94,7 @@ export default async function MenuDishesPage({
         allMenus={(allMenus ?? []) as any[]}
         initialCategoryOrder={(menu.category_order as string[] | null) ?? null}
         initialCategorySchedules={((menu as any).category_schedules ?? {}) as Record<string, { enabled?: boolean; from?: string | null; until?: string | null }>}
+        initialCategoryTexts={Object.fromEntries(Object.entries(parseCategoryTexts((menu as any).text_content)).map(([k, v]) => [k, { mode: v.mode, body: v.body }]))}
         photoFormat={photoFormat}
         pdfButton={
           <DownloadPDFButton

@@ -297,6 +297,24 @@ export interface MenuStyle {
     continued: boolean        // "segue" quando la categoria continua
     newPage: boolean          // ogni categoria comincia su una pagina nuova
   }
+  /** Descrizione delle categorie: breve (sotto il titolo) e a pagina intera. */
+  categoryText: {
+    text: TextStyle           // breve
+    align: 'title' | 'center' | 'left'   // 'title' = come il titolo della categoria
+    width: number             // quota della colonna: 0.5 – 1
+    lineHeight: number        // 1 – 1.8
+    gap: number               // spazio tra titolo e descrizione: 0 – 40
+    page: {
+      text: TextStyle         // a pagina intera
+      position: 'center' | 'top'
+      align: 'title' | 'center' | 'left'
+      width: number           // 0.5 – 1
+      lineHeight: number      // 1 – 1.8
+      gap: number             // spazio tra titolo e testo: 10 – 90
+      ornament: Ornament      // tra titolo e testo ('none' = niente)
+      veil: number            // velatura della foto (colore della carta): 0.4 – 0.95
+    }
+  }
   dish: {
     align: 'left' | 'center'
     spacing: number           // spazio tra i piatti: 0 – 60
@@ -407,6 +425,10 @@ export const DEFAULT_STYLE: MenuStyle = {
     text: T(SANS, 11, 600, 'accent', { upper: true, tracking: 0.25 }), style: 'rules', ornament: 'diamond', align: 'center', before: 30, after: 18, continued: true, newPage: false,
     lineColor: 'auto', lineWidth: 0.7, fill: 'accent', radius: 0, effect: 'none', glow: 0.7, animation: 'none', speed: 1,
   },
+  categoryText: {
+    text: T(SERIF, 15.5, 400, 'soft', { italic: true }), align: 'title', width: 0.86, lineHeight: 1.3, gap: 8,
+    page: { text: T(SERIF, 20, 400, 'ink', { italic: true }), position: 'center', align: 'center', width: 0.86, lineHeight: 1.42, gap: 30, ornament: 'diamond', veil: 0.8 },
+  },
   dish: {
     align: 'left', spacing: 20, divider: 'none', dividerOrnament: 'diamond',
     name: T(SERIF, 19.5, 600, 'ink'), nameLineHeight: 1.18,
@@ -509,6 +531,7 @@ export function parseStyle(raw: unknown): MenuStyle {
   const r = r0.version === 2 ? r0 : fromV1(r0)
   const d = DEFAULT_STYLE
   const pg = obj(r.page), hd = obj(r.head), rh = obj(r.runningHead), ct = obj(r.category), ds = obj(r.dish)
+  const cx = obj(r.categoryText), cxp = obj(cx.page)
   const al = obj(r.allergens), pn = obj(r.pageNumber), tp = obj(r.textPages), cd = obj(r.card), ch = obj(r.chrome), ef = obj(r.effects)
   const bg = obj(pg.background)
   // Caratteri caricati: prima si leggono (e si registrano), poi i testi che li usano.
@@ -519,6 +542,11 @@ export function parseStyle(raw: unknown): MenuStyle {
   const orn = (v: unknown, dd: Ornament) => pick(v, ORNAMENTS, dd)
   // Formato del prezzo della versione precedente (un solo campo).
   const oldFmt = ds.priceFormat
+  // Descrizioni delle categorie mai regolate: nel carattere delle descrizioni
+  // dei piatti (a pagina intera un po' più grande), coerenti col menu.
+  const dishDesc = tx(ds.description, d.dish.description)
+  const ctDefault = { ...d.categoryText.text, font: dishDesc.font, weight: dishDesc.weight, color: dishDesc.color }
+  const ctPageDefault = { ...d.categoryText.page.text, font: dishDesc.font, weight: dishDesc.weight }
   return {
     version: 2,
     page: {
@@ -574,6 +602,23 @@ export function parseStyle(raw: unknown): MenuStyle {
       animation: pick(ct.animation, CATEGORY_ANIMATIONS, d.category.animation),
       speed: num(ct.speed, 0.5, 2, d.category.speed),
     },
+    categoryText: {
+      text: tx(cx.text, ctDefault),
+      align: pick(cx.align, ['title', 'center', 'left'] as const, d.categoryText.align),
+      width: num(cx.width, 0.5, 1, d.categoryText.width),
+      lineHeight: num(cx.lineHeight, 1, 1.8, d.categoryText.lineHeight),
+      gap: num(cx.gap, 0, 40, d.categoryText.gap),
+      page: {
+        text: tx(cxp.text, ctPageDefault),
+        position: pick(cxp.position, ['center', 'top'] as const, d.categoryText.page.position),
+        align: pick(cxp.align, ['title', 'center', 'left'] as const, d.categoryText.page.align),
+        width: num(cxp.width, 0.5, 1, d.categoryText.page.width),
+        lineHeight: num(cxp.lineHeight, 1, 1.8, d.categoryText.page.lineHeight),
+        gap: num(cxp.gap, 10, 90, d.categoryText.page.gap),
+        ornament: orn(cxp.ornament, d.categoryText.page.ornament),
+        veil: num(cxp.veil, 0.4, 0.95, d.categoryText.page.veil),
+      },
+    },
     dish: {
       align: pick(ds.align, ['left', 'center'] as const, d.dish.align),
       spacing: num(ds.spacing, 0, 60, d.dish.spacing),
@@ -581,7 +626,7 @@ export function parseStyle(raw: unknown): MenuStyle {
       dividerOrnament: orn(ds.dividerOrnament, d.dish.dividerOrnament),
       name: tx(ds.name, d.dish.name),
       nameLineHeight: num(ds.nameLineHeight, 1, 1.6, d.dish.nameLineHeight),
-      description: tx(ds.description, d.dish.description),
+      description: dishDesc,
       descGap: num(ds.descGap, 0, 24, d.dish.descGap),
       descLineHeight: num(ds.descLineHeight, 1.05, 1.8, d.dish.descLineHeight),
       descWidth: num(ds.descWidth, 0.55, 1, d.dish.descWidth),
@@ -677,6 +722,8 @@ export function textStyles(st: MenuStyle): TextStyle[] {
     st.head.restaurant, st.head.title, st.runningHead.text, st.category.text,
     st.dish.name, st.dish.description, st.dish.price, st.allergens.text, st.pageNumber.text,
     st.textPages.title, st.textPages.body, st.textPages.legendName, st.textPages.legendNum,
+    // Descrizioni delle categorie (con corsivo e grassetto nel testo).
+    ...[st.categoryText.text, st.categoryText.page.text].flatMap(t => [t, { ...t, italic: !t.italic }, { ...t, weight: 700 as Weight }]),
     // Pagine di testo: sottotitoli e corsivi del corpo.
     { ...st.textPages.title, weight: 500 }, { ...st.textPages.body, italic: true }, { ...st.textPages.body, weight: 600 },
     // "Segue" delle categorie (corsivo del carattere delle descrizioni).

@@ -15,6 +15,7 @@ import { parseFrame, parseRect } from '@/lib/photoFrame'
 import { fromOldAds, parseMedia } from '@/lib/menuMedia'
 import type { DishTranslations, MenuTranslations } from '@/lib/translations'
 import type { I18nData } from './i18n'
+import { parseCategoryTexts } from '@/lib/categoryText'
 
 export const DISH_COLS = 'id, name, description, price, category, allergens, sort_order, image_url, image_original_url, image_crop, photo_frame, pairing_dish_id, pairing_label, translations, schedule_enabled, schedule_from, schedule_until, schedule_days'
 export const MENU_COLS = 'id, name, category_order, translations, schedule_enabled, schedule_from, schedule_until, schedule_days, category_schedules, text_content, menu_style, media_pages'
@@ -80,6 +81,8 @@ export async function buildMenuData(supabase: Supa, restaurant: Row, menu: Row, 
     const c = (d.category as string | null) ?? ''
     if (!order.includes(c)) order.push(c)
   }
+  // Descrizioni delle categorie (breve o a pagina intera).
+  const catTexts = parseCategoryTexts(menu.text_content)
   const data: MenuData = {
     restaurantName: restaurant.name as string,
     menuName: menu.name as string,
@@ -88,6 +91,7 @@ export async function buildMenuData(supabase: Supa, restaurant: Row, menu: Row, 
       dishes: dishes
         .filter(d => ((d.category as string | null) ?? '') === name)
         .map(d => toDish(d, true)),
+      text: catTexts[name || NO_CATEGORY] ?? null,
     })).filter(c => c.dishes.length > 0),
     info: infoPage(menu.text_content),
     allergenLegend: allergenLegendOf(menu.text_content, catalog),

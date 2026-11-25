@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { parseStyle, type MenuStyle } from '@/lib/menuStyle'
 import { parseLanding, type LandingStyle } from '@/lib/landingStyle'
 import { parseMedia, type MediaPage } from '@/lib/menuMedia'
+import { saveCategoryTexts, type CategoryTextInput } from '@/lib/categoryTextSave'
 
 /** Salva gli stili del nuovo menu, menu per menu. Solo il proprietario del
  *  ristorante; ogni stile viene ripulito (valori ammessi, colori validi).
@@ -68,6 +69,8 @@ export async function saveMenuMedia(restaurantId: string, menuId: string, pages:
 export interface MenuTextPages {
   info:     { enabled: boolean; position: 'first' | 'last'; body: string; align: 'left' | 'center' | 'right' }
   allergen: { enabled: boolean }
+  /** Descrizioni delle categorie mostrate (testo vuoto = nessuna). */
+  categories: Record<string, { mode: 'short' | 'page'; body: string }>
 }
 
 export async function saveMenuText(restaurantId: string, menuId: string, pages: MenuTextPages): Promise<{ ok: true } | { ok: false; error: string }> {
@@ -93,6 +96,13 @@ export async function saveMenuText(restaurantId: string, menuId: string, pages: 
   }
   const { error } = await supabase.from('menus').update({ text_content: next }).eq('id', menuId).eq('restaurant_id', restaurantId)
   if (error) return { ok: false, error: 'Salvataggio non riuscito, riprova.' }
+  // Descrizioni delle categorie: solo quelle mostrate (le altre restano), tradotte.
+  const cats = Object.entries(pages.categories ?? {}).slice(0, 200)
+  if (cats.length) {
+    try {
+      await saveCategoryTexts(supabase, menuId, Object.fromEntries(cats.map(([k, v]): [string, CategoryTextInput] => [k, v])))
+    } catch (e: any) { return { ok: false, error: e?.message ?? 'Salvataggio non riuscito, riprova.' } }
+  }
   return { ok: true }
 }
 

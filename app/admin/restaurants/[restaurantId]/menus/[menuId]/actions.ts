@@ -5,6 +5,7 @@ import { cleanDays } from '@/lib/menuSchedule'
 import { revalidatePath } from 'next/cache'
 import { translateItems, translateEnabled } from '@/lib/translateEngine'
 import { TARGET_LANGS, type DishTranslations } from '@/lib/translations'
+import { moveCategoryText, saveCategoryTexts, type CategoryTextInput } from '@/lib/categoryTextSave'
 
 // ── Allergen AI detection ─────────────────────────────────────────────────────
 
@@ -247,17 +248,20 @@ export async function deleteCategory(restaurantId: string, menuId: string, categ
   if (error) throw new Error(error.message)
 
   const { data: menu } = await supabase
-    .from('menus').select('category_order, category_schedules').eq('id', menuId).single()
+    .from('menus').select('category_order, category_schedules, text_content').eq('id', menuId).single()
   const order = (menu?.category_order as string[] | null) ?? []
   const catSched = ((menu?.category_schedules ?? {}) as Record<string, unknown>)
   const hadSched = category in catSched
   if (hadSched) delete catSched[category]
-  if (order.includes(category) || hadSched) {
+  // La descrizione della categoria se ne va con lei.
+  const textContent = moveCategoryText(menu?.text_content, category, null)
+  if (order.includes(category) || hadSched || textContent) {
     const { error: err2 } = await supabase
       .from('menus')
       .update({
         category_order: order.filter(c => c !== category),
         ...(hadSched ? { category_schedules: catSched } : {}),
+        ...(textContent ? { text_content: textContent } : {}),
       })
       .eq('id', menuId)
     if (err2) throw new Error(err2.message)
@@ -282,7 +286,7 @@ export async function renameCategory(
   if (error) throw new Error(error.message)
 
   const { data: menu } = await supabase
-    .from('menus').select('category_order, translations, category_schedules').eq('id', menuId).single()
+    .from('menus').select('category_order, translations, category_schedules, text_content').eq('id', menuId).single()
   const order = (menu?.category_order as string[] | null) ?? []
 
   // La programmazione oraria della categoria è indicizzata per nome: il
@@ -308,17 +312,34 @@ export async function renameCategory(
     }
   }
 
-  if (order.includes(oldName) || trChanged || schedChanged) {
+  // Anche la descrizione della categoria segue il nome.
+  const textContent = moveCategoryText(menu?.text_content, oldName, newName)
+
+  if (order.includes(oldName) || trChanged || schedChanged || textContent) {
     const { error: err2 } = await supabase
       .from('menus')
       .update({
         category_order: order.map(c => (c === oldName ? newName : c)),
         ...(trChanged ? { translations: menuTr } : {}),
         ...(schedChanged ? { category_schedules: catSched } : {}),
+        ...(textContent ? { text_content: textContent } : {}),
       })
       .eq('id', menuId)
     if (err2) throw new Error(err2.message)
   }
+  revalidate(restaurantId, menuId)
+}
+
+// ── Descrizione di una categoria (breve o a pagina intera) ────────────────────
+
+/** Salva (o toglie, con testo vuoto) la descrizione di una categoria; il
+ *  testo nuovo viene tradotto nelle altre lingue. */
+export async function updateCategoryText(restaurantId: string, menuId: string, category: string, value: CategoryTextInput) {
+  const supabase = await createClient()
+  await verifyOwnership(supabase, restaurantId)
+  const { data: menu } = await supabase.from('menus').select('id').eq('id', menuId).eq('restaurant_id', restaurantId).maybeSingle()
+  if (!menu) throw new Error('Menu non trovato')
+  await saveCategoryTexts(supabase, menuId, { [category]: value })
   revalidate(restaurantId, menuId)
 }
 

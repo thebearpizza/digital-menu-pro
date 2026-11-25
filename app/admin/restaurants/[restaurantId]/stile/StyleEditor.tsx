@@ -33,9 +33,10 @@ import TextPageEditor from './TextPageEditor'
 import MediaPanel, { type MediaDish } from './MediaPanel'
 import type { MediaPage } from '@/lib/menuMedia'
 import StyleNav from './StyleNav'
+import CategoryTextPanel from './CategoryTextPanel'
 
 type PanelId =
-  | 'presets' | 'paper' | 'fonts' | 'head' | 'runningHead' | 'category' | 'dish' | 'price' | 'description'
+  | 'presets' | 'paper' | 'fonts' | 'head' | 'runningHead' | 'category' | 'categoryText' | 'dish' | 'price' | 'description'
   | 'allergens' | 'pageNumber' | 'infoPage' | 'allergenPage' | 'card' | 'chrome' | 'effects' | 'media'
 
 const PANELS: { id: PanelId; title: string; sub: string }[] = [
@@ -45,6 +46,7 @@ const PANELS: { id: PanelId; title: string; sub: string }[] = [
   { id: 'head',        title: 'Copertina',            sub: 'Nome del ristorante, titolo del menu, ornamento' },
   { id: 'runningHead', title: 'Testatina',            sub: 'La riga in cima alle pagine' },
   { id: 'category',    title: 'Categorie',            sub: 'Titoli delle sezioni del menu' },
+  { id: 'categoryText', title: 'Descrizioni delle categorie', sub: 'Testo sotto il titolo o a pagina intera' },
   { id: 'dish',        title: 'Piatti e nome',        sub: 'Allineamento, spazi, separatori, nome' },
   { id: 'price',       title: 'Prezzo',               sub: 'Posizione, formato, guida' },
   { id: 'description', title: 'Descrizione',          sub: 'Testo sotto il nome del piatto' },
@@ -62,7 +64,7 @@ const PANELS: { id: PanelId; title: string; sub: string }[] = [
 const PICK_PANEL: Record<PickTarget, PanelId> = {
   paper: 'paper', restaurant: 'head', title: 'head', runningHead: 'runningHead', category: 'category',
   name: 'dish', price: 'price', description: 'description', allergens: 'allergens', pageNumber: 'pageNumber', text: 'infoPage',
-  legend: 'allergenPage', media: 'media',
+  legend: 'allergenPage', media: 'media', categoryText: 'categoryText',
 }
 
 // Tavolozze pronte (carta, testo, secondario, accento).
@@ -273,9 +275,12 @@ export default function StyleEditor({ restaurantId, token, menus }: Props) {
   useEffect(() => { post({ type: 'lito-style', style }) }, [style, post])
   useEffect(() => { post({ type: 'lito-media', pages: media, focus: mediaOpen }) }, [media, mediaOpen, post])
   // Pagine di testo: si vedono mentre si scrive; col pannello aperto l'anteprima va lì.
+  // Descrizione di categoria in modifica: l'anteprima va alla sua pagina.
+  const [catFocus, setCatFocus] = useState<string | null>(null)
   useEffect(() => {
-    post({ type: 'lito-text', pages: text, focus: open === 'infoPage' ? 'info' : open === 'allergenPage' ? 'allergens' : null })
-  }, [text, open, post])
+    post({ type: 'lito-text', pages: text, focus: open === 'infoPage' ? 'info' : open === 'allergenPage' ? 'allergens' : null,
+      focusCategory: open === 'categoryText' ? catFocus : null })
+  }, [text, open, catFocus, post])
   // Pannello della scheda aperto: l'anteprima mostra la scheda di un piatto.
   useEffect(() => { post({ type: 'lito-card', open: open === 'card' }) }, [open, post])
   const live = useRef({ style, open, media, text })
@@ -532,6 +537,31 @@ export default function StyleEditor({ restaurantId, token, menus }: Props) {
         <Slider label="Spazio prima della categoria" value={st.category.before} min={0} max={80} step={1} format={px} onChange={v => edit(s => { s.category.before = v })} />
         <Slider label="Spazio dopo la categoria" value={st.category.after} min={0} max={60} step={1} format={px} onChange={v => edit(s => { s.category.after = v })} />
         <Toggle label="Scrivi &quot;segue&quot; quando la categoria continua nella pagina dopo" value={st.category.continued} onChange={v => edit(s => { s.category.continued = v })} />
+      </>)
+      case 'categoryText': return (<>
+        <p className="text-[11px] text-gray-400 -mt-1">I testi valgono per il menu scelto in alto; l&apos;aspetto, come il resto dello stile.</p>
+        <CategoryTextPanel categories={current?.categories ?? []} value={text.categories}
+          onChange={c => setText(t => ({ ...t, categories: c }))} onFocus={setCatFocus} />
+        <Sub>Breve, sotto il titolo</Sub>
+        {T('Testo', s => s.categoryText.text, [9, 28])}
+        <Choice label="Allineamento" value={st.categoryText.align} onChange={v => edit(s => { s.categoryText.align = v })}
+          options={[{ value: 'title', label: 'Come il titolo' }, { value: 'center', label: 'Centrato' }, { value: 'left', label: 'A sinistra' }]} />
+        <Slider label="Larghezza" hint="Più stretta = righe più corte." value={st.categoryText.width} min={0.5} max={1} step={0.01} format={pct} onChange={v => edit(s => { s.categoryText.width = v })} />
+        <Slider label="Interlinea" value={st.categoryText.lineHeight} min={1} max={1.8} step={0.01} format={v => v.toFixed(2)} onChange={v => edit(s => { s.categoryText.lineHeight = v })} />
+        <Slider label="Spazio tra titolo e descrizione" value={st.categoryText.gap} min={0} max={40} step={1} format={px} onChange={v => edit(s => { s.categoryText.gap = v })} />
+        <Sub>Pagina intera</Sub>
+        <p className="text-[11px] text-gray-400 -mt-1">Il titolo è quello delle categorie (stile, effetti, animazioni). I piatti cominciano dalla pagina dopo, con il titolo ripetuto. Se il testo non sta in una pagina, il carattere si riduce.</p>
+        {T('Testo', s => s.categoryText.page.text, [12, 40])}
+        <Choice label="Posizione" value={st.categoryText.page.position} onChange={v => edit(s => { s.categoryText.page.position = v })}
+          options={[{ value: 'center', label: 'Al centro della pagina' }, { value: 'top', label: 'In alto' }]} />
+        <Choice label="Allineamento del testo" value={st.categoryText.page.align} onChange={v => edit(s => { s.categoryText.page.align = v })}
+          options={[{ value: 'center', label: 'Centrato' }, { value: 'title', label: 'Come il titolo' }, { value: 'left', label: 'A sinistra' }]} />
+        <Slider label="Larghezza" value={st.categoryText.page.width} min={0.5} max={1} step={0.01} format={pct} onChange={v => edit(s => { s.categoryText.page.width = v })} />
+        <Slider label="Interlinea" value={st.categoryText.page.lineHeight} min={1} max={1.8} step={0.01} format={v => v.toFixed(2)} onChange={v => edit(s => { s.categoryText.page.lineHeight = v })} />
+        <Slider label="Spazio tra titolo e testo" value={st.categoryText.page.gap} min={10} max={90} step={1} format={px} onChange={v => edit(s => { s.categoryText.page.gap = v })} />
+        {O('Ornamento tra titolo e testo', st.categoryText.page.ornament, (s, v) => { s.categoryText.page.ornament = v })}
+        <Slider label="Velatura sulla foto" hint="Solo se la categoria ha una foto o un video in Foto e video: la foto fa da sfondo, velata col colore della carta perché il testo si legga."
+          value={st.categoryText.page.veil} min={0.4} max={0.95} step={0.01} format={pct} onChange={v => edit(s => { s.categoryText.page.veil = v })} />
       </>)
       case 'dish': return (<>
         <Choice label="Allineamento dei piatti" value={st.dish.align} onChange={v => edit(s => { s.dish.align = v })}
@@ -856,7 +886,7 @@ const CARD_COLORS = (paper: string) => [
   { name: 'Notte',   surface: '#141618', box: '#2c3034', dark: true },
 ]
 
-const EMPTY_TEXT: MenuTextPages = { info: { enabled: false, position: 'first', body: '', align: 'left' }, allergen: { enabled: false } }
+const EMPTY_TEXT: MenuTextPages = { info: { enabled: false, position: 'first', body: '', align: 'left' }, allergen: { enabled: false }, categories: {} }
 
 // ── Effetto e animazione di un titolo (categorie, copertina) ──────────────────
 

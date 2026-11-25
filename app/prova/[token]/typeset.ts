@@ -3,6 +3,7 @@ import {
   type MenuStyle, type Ornament, type TextStyle, type TitleAnimation, type TitleFx,
 } from '@/lib/menuStyle'
 import { paintPaper } from './paper'
+import { categoryTextRuns } from '@/lib/categoryText'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Impaginazione del menu (prototipo "pageCurl").
@@ -37,7 +38,8 @@ export interface Dish {
   pairing:     { label: string | null; dish: Dish } | null
 }
 
-export interface Category { name: string; dishes: Dish[] }
+/** text: descrizione della categoria (body già nella lingua scelta). */
+export interface Category { name: string; dishes: Dish[]; text?: import('@/lib/categoryText').CategoryText | null }
 
 /** Testo ricco delle pagine informative: titoli, paragrafi, grassetto, corsivo. */
 export interface TextRun { text: string; bold?: boolean; italic?: boolean }
@@ -238,10 +240,14 @@ interface TextLineBlock {
   width: number
   size:  number
   align: TextBlock['align']
-  from:  'info' | 'legend'
+  from:  'info' | 'legend' | 'cat'
+  /** Riquadro delle righe (descrizioni delle categorie); assente = colonna intera. */
+  box?:  { x: number; w: number }
 }
 interface LegendBlock { kind: 'legend'; n: number; name: string; col: number }
-type Block = DishBlock | CatBlock | HeadBlock | TextLineBlock | LegendBlock
+/** Ornamento tra titolo e testo della pagina intera di una categoria. */
+interface OrnBlock { kind: 'orn'; x: number }
+type Block = DishBlock | CatBlock | HeadBlock | TextLineBlock | LegendBlock | OrnBlock
 
 interface Placed { block: Block; y: number; h: number }
 
@@ -250,6 +256,9 @@ export interface Page {
   items:   Placed[]
   /** Pagina intera con foto/video (categoria o promo): niente testo del menu. */
   media?:  MediaView
+  /** Pagina intera della descrizione di una categoria (cat = posizione in
+   *  data.categories), con la foto della categoria velata sotto, se c'è. */
+  intro?:  { cat: number; media: MediaView | null }
   /** Primo piatto della pagina: serve a ritrovare la pagina dopo un resize. */
   anchor:  string | null
 }
@@ -284,7 +293,7 @@ export interface Layout {
 /** Elementi del menu che si possono toccare nell'anteprima per modificarli. */
 export type PickTarget =
   | 'paper' | 'restaurant' | 'title' | 'runningHead' | 'category' | 'name' | 'price'
-  | 'description' | 'allergens' | 'pageNumber' | 'text' | 'legend' | 'media'
+  | 'description' | 'allergens' | 'pageNumber' | 'text' | 'legend' | 'media' | 'categoryText'
 
 const TEXT_GAP = 14
 
@@ -400,50 +409,60 @@ export function layoutMenu(ctx: Ctx, data: MenuData, vp: Viewport, style: MenuSt
     : k === 'h3' ? { t: { ...TP.body, italic: true, color: 'soft' }, lh: 1.32 * LHK, after: PG }
     : { t: TP.body, lh: 1.36 * LHK, after: PG }
   type Piece = { block: Block | null; h: number }   // null = spazio vuoto
+  /** Righe di un paragrafo di testo ricco, a capo per parole (caratteri
+   *  diversi nella riga). k: riduzione; toggle: il *corsivo* inverte quello
+   *  del testo (descrizioni delle categorie, spesso già in corsivo). */
+  const runLines = (runs: TextRun[], t: TextStyle, lh: number, align: TextBlock['align'], maxW: number,
+    from: TextLineBlock['from'], k: number, box?: TextLineBlock['box'], toggle = false): Piece[] => {
+    const out: Piece[] = []
+    const base = rt(t, k)
+    const size = base.size
+    const fontOf = (r: TextRun) => cssFont({ ...t, italic: toggle ? t.italic !== !!r.italic : t.italic || !!r.italic, weight: r.bold ? 700 : t.weight }, s * k)
+    // Parole con il loro carattere; '\n' = a capo forzato.
+    const words: { text: string; font: string; br: boolean; space: boolean }[] = []
+    for (const r of runs) {
+      const f = fontOf(r)
+      const parts = tx(base, r.text).split(/(\n|\s+)/)
+      for (const part of parts) {
+        if (!part) continue
+        if (part === '\n') { words.push({ text: '', font: f, br: true, space: false }); continue }
+        if (/^\s+$/.test(part)) { if (words.length) words[words.length - 1].space = true; continue }
+        words.push({ text: part, font: f, br: false, space: false })
+      }
+    }
+    let line: TextLineBlock['segs'] = []
+    let lw = 0
+    const flush = () => {
+      if (!line.length) return
+      out.push({ block: { kind: 'tline', segs: line, width: lw, size, align, from, box }, h: size * lh })
+      line = []; lw = 0
+    }
+    let pendingSpace = 0
+    for (let i = 0; i < words.length; i++) {
+      const wd = words[i]
+      if (wd.br) { flush(); pendingSpace = 0; continue }
+      ctx.font = wd.font
+      const w = ctx.measureText(wd.text).width
+      const sp = line.length ? pendingSpace : 0
+      if (line.length && lw + sp + w > maxW) { flush() }
+      const lead = line.length ? pendingSpace : 0
+      line.push({ text: wd.text, font: wd.font, color: base.color, w: lead + w })
+      lw += lead + w
+      ctx.font = wd.font
+      pendingSpace = wd.space ? ctx.measureText(' ').width : 0
+    }
+    flush()
+    return out
+  }
   /** k: riduzione (testo e spazi) per far stare il testo in una pagina. */
   const textPieces = (blocks: TextBlock[], from: TextLineBlock['from'], k = 1): Piece[] => {
     const out: Piece[] = []
     for (const b of blocks) {
       if (b.kind === 'gap') { out.push({ block: null, h: TEXT_GAP * s * k }); continue }
       const ts = textStyleOf(b.kind)
-      const base = rt(ts.t, k)
-      const size = base.size
-      const fontOf = (r: TextRun) => cssFont({ ...ts.t, italic: ts.t.italic || !!r.italic, weight: r.bold ? 700 : ts.t.weight }, s * k)
-      // Parole con il loro carattere; '\n' = a capo forzato.
-      const words: { text: string; font: string; br: boolean; space: boolean }[] = []
-      for (const r of b.runs) {
-        const f = fontOf(r)
-        const parts = tx(base, r.text).split(/(\n|\s+)/)
-        for (const part of parts) {
-          if (!part) continue
-          if (part === '\n') { words.push({ text: '', font: f, br: true, space: false }); continue }
-          if (/^\s+$/.test(part)) { if (words.length) words[words.length - 1].space = true; continue }
-          words.push({ text: part, font: f, br: false, space: false })
-        }
-      }
-      let line: TextLineBlock['segs'] = []
-      let lw = 0
-      const flush = () => {
-        if (!line.length) return
-        out.push({ block: { kind: 'tline', segs: line, width: lw, size, align: b.align, from }, h: size * ts.lh })
-        line = []; lw = 0
-      }
-      let pendingSpace = 0
-      for (let i = 0; i < words.length; i++) {
-        const wd = words[i]
-        if (wd.br) { flush(); pendingSpace = 0; continue }
-        ctx.font = wd.font
-        const w = ctx.measureText(wd.text).width
-        const sp = line.length ? pendingSpace : 0
-        if (line.length && lw + sp + w > m.cw) { flush() }
-        const lead = line.length ? pendingSpace : 0
-        line.push({ text: wd.text, font: wd.font, color: base.color, w: lead + w })
-        lw += lead + w
-        ctx.font = wd.font
-        pendingSpace = wd.space ? ctx.measureText(' ').width : 0
-      }
-      flush()
-      if (out.length) out[out.length - 1].h += ts.after * s * k
+      const ps = runLines(b.runs, ts.t, ts.lh, b.align, m.cw, from, k)
+      if (ps.length) ps[ps.length - 1].h += ts.after * s * k
+      out.push(...ps)
     }
     // Niente spazi vuoti in testa o in coda.
     while (out.length && !out[0].block) out.shift()
@@ -459,11 +478,45 @@ export function layoutMenu(ctx: Ctx, data: MenuData, vp: Viewport, style: MenuSt
     return ps
   }
 
+  // ── Descrizioni delle categorie (breve sotto il titolo, o a pagina intera)
+  const CT = st.categoryText
+  const catTextAlign = (page: boolean): 'center' | 'left' => {
+    const a = page ? CT.page.align : CT.align
+    return a === 'title' ? CC.align : a
+  }
+  /** Righe della descrizione, ridotte (fino al 40%) per stare in `avail` px. */
+  const catTextPieces = (body: string, page: boolean, avail: number): Piece[] => {
+    const cfg = page ? CT.page : CT
+    const al = catTextAlign(page)
+    const w = m.cw * cfg.width
+    // A sinistra: dove comincia il titolo (che ha il suo rientro).
+    const x = al === 'left' ? m.x0 + (CC.align === 'left' && cfg.align === 'title' ? CAT_PAD * 1.5 : 0) : m.x0 + (m.cw - w) / 2
+    const paras = categoryTextRuns(body)
+    const build = (k: number) => {
+      const out: Piece[] = []
+      paras.forEach((runs, i) => {
+        const ps = runLines(runs, cfg.text, cfg.lineHeight, al, w, 'cat', k, { x, w }, true)
+        if (i < paras.length - 1 && ps.length) ps[ps.length - 1].h += cfg.text.size * s * k * 0.65
+        out.push(...ps)
+      })
+      return out
+    }
+    let k = 1, ps = build(k)
+    while (piecesHeight(ps) > avail && k > 0.4) { k *= 0.94; ps = build(k) }
+    return ps
+  }
+  const PAGE_ORN = CT.page.ornament !== 'none'
+  const PAGE_ORN_H = PAGE_ORN ? 28 * s : 0
+
   // ── Impaginazione
   const pages: Page[] = []
   let cur: Placed[] = []
   let y = m.top
-  const newPage = () => { pages.push({ index: pages.length, items: cur, anchor: null }); cur = []; y = m.top }
+  let curIntro: Page['intro'] | undefined
+  const newPage = () => {
+    pages.push({ index: pages.length, items: cur, anchor: null, ...(curIntro ? { intro: curIntro } : {}) })
+    cur = []; y = m.top; curIntro = undefined
+  }
   // Pagine foto/video: sempre intere. Se la pagina in corso ha solo il titolo
   // del menu, la pagina foto/video va prima di lei (il titolo resta sopra la
   // categoria); altrimenti la pagina in corso si chiude.
@@ -516,8 +569,43 @@ export function layoutMenu(ctx: Ctx, data: MenuData, vp: Viewport, style: MenuSt
     // Prima della categoria: le sue foto/video, poi le promo legate a lei.
     // Dalla barra delle categorie si arriva alla foto/video della categoria.
     const catMedia = mediaAt('before', cat.name).filter(mp => mp.kind === 'category')
-    const firstMedia = putMedia(catMedia)
-    putMedia(mediaAt('before', cat.name).filter(mp => mp.kind === 'promo'))
+    const promos = mediaAt('before', cat.name).filter(mp => mp.kind === 'promo')
+    const ctext = cat.text?.body ? cat.text : null
+    let firstMedia = -1
+    if (ctext?.mode === 'page') {
+      // Pagina intera della descrizione: la prima foto/video della categoria
+      // le fa da sfondo (velata); prima le altre foto e le promo.
+      firstMedia = putMedia(catMedia.slice(1))
+      const p2 = putMedia(promos)
+      if (firstMedia < 0) firstMedia = p2
+      // Sulla copertina (solo il titolo del menu) resta sotto il titolo.
+      const onlyHead = cur.length > 0 && cur.every(it => it.block.kind === 'head')
+      if (cur.length && !onlyHead) newPage()
+      const introPage = pages.length
+      const gap = CT.page.gap * s
+      const fixed = CAT_H + gap + PAGE_ORN_H
+      const ps = catTextPieces(ctext.body, true, Math.max(60 * s, room() - fixed))
+      const total = fixed + piecesHeight(ps)
+      const free = Math.max(0, room() - total)
+      y += CT.page.position === 'center' ? free * 0.44 : Math.min(free, room() * 0.08)
+      cur.push({ block: { kind: 'cat', name: cat.name, cont: false }, y, h: CAT_H }); y += CAT_H
+      if (PAGE_ORN) {
+        y += gap / 2
+        const left = catTextAlign(true) === 'left'
+        cur.push({ block: { kind: 'orn', x: left ? m.x0 + 26 * s : m.x0 + m.cw / 2 }, y, h: PAGE_ORN_H })
+        y += PAGE_ORN_H + gap / 2
+      } else y += gap
+      for (const pc of ps) { if (pc.block) cur.push({ block: pc.block, y, h: pc.h }); y += pc.h }
+      curIntro = { cat: ci, media: catMedia[0] ?? null }
+      newPage()
+      categoryStarts.push({ index: ci, name: cat.name, page: firstMedia >= 0 ? firstMedia : introPage })
+    } else {
+      firstMedia = putMedia(catMedia)
+      putMedia(promos)
+    }
+    // Descrizione breve: sotto il titolo, insieme al titolo e al primo piatto.
+    const shortText = ctext?.mode === 'short' ? catTextPieces(ctext.body, false, (m.bottom - m.top) * 0.45) : []
+    const TXT_H = shortText.length ? CT.gap * s + piecesHeight(shortText) : 0
     const dishes = cat.dishes.map(measureDish)
     // Titolo + primo piatto devono stare insieme.
     const firstH = dishes.length ? dishHeight(dishes[0]) : 0
@@ -526,10 +614,15 @@ export function layoutMenu(ctx: Ctx, data: MenuData, vp: Viewport, style: MenuSt
     if (st.category.newPage && cur.some(it => it.block.kind !== 'head')) newPage()
     const afterHead = !cur.length || cur[cur.length - 1].block.kind === 'head'
     const before = afterHead ? 0 : CAT_BEFORE
-    if (before + CAT_H + CAT_AFTER + Math.min(firstH, m.bottom - m.top - CAT_H - CAT_AFTER) > room()) newPage()
+    if (before + CAT_H + TXT_H + CAT_AFTER + Math.min(firstH, m.bottom - m.top - CAT_H - TXT_H - CAT_AFTER) > room()) newPage()
     y += cur.length && cur[cur.length - 1].block.kind !== 'head' ? CAT_BEFORE : 0
-    categoryStarts.push({ index: ci, name: cat.name, page: firstMedia >= 0 ? firstMedia : pages.length })
-    cur.push({ block: { kind: 'cat', name: cat.name, cont: false }, y, h: CAT_H }); y += CAT_H + CAT_AFTER
+    if (ctext?.mode !== 'page') categoryStarts.push({ index: ci, name: cat.name, page: firstMedia >= 0 ? firstMedia : pages.length })
+    cur.push({ block: { kind: 'cat', name: cat.name, cont: false }, y, h: CAT_H }); y += CAT_H
+    if (shortText.length) {
+      y += CT.gap * s
+      for (const pc of shortText) { if (pc.block) cur.push({ block: pc.block, y, h: pc.h }); y += pc.h }
+    }
+    y += CAT_AFTER
 
     for (let i = 0; i < dishes.length; i++) {
       const b = dishes[i]
@@ -605,12 +698,13 @@ export function layoutMenu(ctx: Ctx, data: MenuData, vp: Viewport, style: MenuSt
   if (cur.length) newPage()
   for (const p of pages) {
     if (p.media) continue   // àncora già data (media:<id>)
+    if (p.intro) { p.anchor = `intro:${p.intro.cat}`; continue }
     const d = p.items.find(it => it.block.kind === 'dish')
     // Àncora per ritrovare la pagina (resize, lingua): primo piatto, oppure
     // il tipo di pagina di testo.
     p.anchor = d ? (d.block as DishBlock).dish.id
       : p.items.some(it => it.block.kind === 'legend') ? 'allergens'
-      : p.items.some(it => it.block.kind === 'tline') ? 'info'
+      : p.items.some(it => it.block.kind === 'tline' && it.block.from === 'info') ? 'info'
       : null
   }
 
@@ -658,6 +752,22 @@ export function layoutMenu(ctx: Ctx, data: MenuData, vp: Viewport, style: MenuSt
       c.fillRect(0, 0, w, h)
     }
     paintPaper(c, st.page.texture, st.page.textureStrength, w, h)
+    // Pagina intera della descrizione di una categoria: la sua foto (dei
+    // video l'immagine d'attesa), velata col colore della carta, così titolo
+    // e testo restano quelli del menu e si leggono.
+    const intro = pages[index]?.intro
+    if (intro?.media) {
+      const src = introStill(intro.media)
+      const im = src ? assets.media?.(src) ?? null : null
+      if (im instanceof HTMLImageElement && im.naturalWidth) {
+        coverPhoto(c, im, intro.media)
+        c.globalAlpha = CT.page.veil
+        c.fillStyle = st.page.paper
+        c.fillRect(0, 0, w, h)
+        c.globalAlpha = 1
+      }
+      return
+    }
     // Sfondo scelto dal ristoratore, sopra la carta e sotto il testo.
     const BG = st.page.background
     const bgOn = BG.pages === 'all' || (BG.pages === 'first' ? index === 0 : index > 0)
@@ -695,6 +805,7 @@ export function layoutMenu(ctx: Ctx, data: MenuData, vp: Viewport, style: MenuSt
       else if (b.kind === 'cat') { if (!(opts.skipAnimated && CAT_ANIM !== 'none')) paintCat(c, b, it.y, opts.t) }
       else if (b.kind === 'tline') paintTextLine(c, b, it.y)
       else if (b.kind === 'legend') paintLegend(c, b, it.y)
+      else if (b.kind === 'orn') ornament(c, CT.page.ornament, b.x, it.y + it.h / 2, 0.8)
       else {
         if (prev?.block.kind === 'dish' && b.showHead) paintDivider(c, (prev.y + prev.h + it.y) / 2)
         paintDish(c, b, it.y)
@@ -717,17 +828,7 @@ export function layoutMenu(ctx: Ctx, data: MenuData, vp: Viewport, style: MenuSt
     else {
       c.fillStyle = '#16120e'
       c.fillRect(0, 0, w, h)
-      if (still instanceof HTMLImageElement && still.naturalWidth) {
-        // Foto del piatto collegato: con la sua inquadratura (centro), le altre al centro.
-        const iw = still.naturalWidth, ih = still.naturalHeight
-        const k = Math.max(w / iw, h / ih)
-        const fr = !mp.url ? (mp.dish?.frame ?? mp.dish?.focus ?? null) : null
-        const cx = fr ? (fr.x + fr.w / 2) * iw * k : (iw * k) / 2
-        const cy = fr ? (fr.y + fr.h / 2) * ih * k : (ih * k) / 2
-        const ox = Math.max(w - iw * k, Math.min(0, w / 2 - cx))
-        const oy = Math.max(h - ih * k, Math.min(0, h / 2 - cy))
-        c.drawImage(still, ox, oy, iw * k, ih * k)
-      }
+      if (still instanceof HTMLImageElement && still.naturalWidth) coverPhoto(c, still, mp)
     }
     const title = mp.title ?? (mp.kind === 'category' ? mp.category : mp.dish?.name ?? null)
     const hasText = !!(title || mp.description || mp.badge || mp.promoPrice !== null || mp.price !== null)
@@ -792,8 +893,22 @@ export function layoutMenu(ctx: Ctx, data: MenuData, vp: Viewport, style: MenuSt
     }
   }
 
+  /** Foto a tutta pagina; quella del piatto collegato con la sua inquadratura (centro). */
+  function coverPhoto(c: Ctx, im: HTMLImageElement, mp: MediaView) {
+    const { w, h } = vp
+    const iw = im.naturalWidth, ih = im.naturalHeight
+    const k = Math.max(w / iw, h / ih)
+    const fr = !mp.url ? (mp.dish?.frame ?? mp.dish?.focus ?? null) : null
+    const cx = fr ? (fr.x + fr.w / 2) * iw * k : (iw * k) / 2
+    const cy = fr ? (fr.y + fr.h / 2) * ih * k : (ih * k) / 2
+    const ox = Math.max(w - iw * k, Math.min(0, w / 2 - cx))
+    const oy = Math.max(h - ih * k, Math.min(0, h / 2 - cy))
+    c.drawImage(im, ox, oy, iw * k, ih * k)
+  }
+
   function paintTextLine(c: Ctx, b: TextLineBlock, top: number) {
-    let x = b.align === 'left' ? m.x0 : b.align === 'right' ? m.x0 + m.cw - b.width : m.x0 + (m.cw - b.width) / 2
+    const bx = b.box?.x ?? m.x0, bw = b.box?.w ?? m.cw
+    let x = b.align === 'left' ? bx : b.align === 'right' ? bx + bw - b.width : bx + (bw - b.width) / 2
     const base = top + b.size * 0.95
     c.textAlign = 'right'
     for (const sg of b.segs) {
@@ -1268,6 +1383,7 @@ export function layoutMenu(ctx: Ctx, data: MenuData, vp: Viewport, style: MenuSt
       if (b.kind === 'head') return H.showRestaurant && y < it.y + restBase + 6 * s ? 'restaurant' : 'title'
       if (b.kind === 'cat') return 'category'
       if (b.kind === 'legend' || (b.kind === 'tline' && b.from === 'legend')) return 'legend'
+      if (b.kind === 'orn' || (b.kind === 'tline' && b.from === 'cat')) return 'categoryText'
       if (b.kind === 'tline') return 'text'
       let yy = it.y
       if (b.showHead) {
@@ -1363,10 +1479,18 @@ export function layoutMenu(ctx: Ctx, data: MenuData, vp: Viewport, style: MenuSt
 
   const paperKey = (index: number) => {
     const BG = st.page.background
-    return pages[index]?.media ? `media${index}` : BG.pages === 'all' ? 'all' : BG.pages === 'first' ? String(index === 0) : String(index > 0)
+    return pages[index]?.media ? `media${index}` : pages[index]?.intro?.media ? `intro${index}` : BG.pages === 'all' ? 'all' : BG.pages === 'first' ? String(index === 0) : String(index > 0)
   }
 
   return { vp, pages, paint, paperKey, animated, paintAnimated, animKey, animCacheable, hit, categoryStarts, pick, dishesOn }
+}
+
+/** Immagine ferma di una foto/video di categoria (sfondo della sua pagina
+ *  di descrizione): la foto, o l'immagine d'attesa del video, o la foto del
+ *  piatto collegato. */
+export function introStill(mp: MediaView): string | null {
+  if (mp.url && !mp.video) return mp.url
+  return mp.poster ?? mp.dish?.image ?? null
 }
 
 // ── Titoli di categoria: aiuti ─────────────────────────────────────────────────

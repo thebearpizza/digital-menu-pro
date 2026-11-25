@@ -12,6 +12,7 @@ import {
 } from '@/lib/translations'
 import type { Dish, MenuData } from './typeset'
 import type { MenuStyle } from '@/lib/menuStyle'
+import { categoryTextIn } from '@/lib/categoryText'
 
 export interface I18nData {
   /** Traduzioni del menu aperto (nome e categorie). */
@@ -89,6 +90,7 @@ export function localize(base: MenuData, i18n: I18nData, lang: Lang): MenuData {
     categories: base.categories.map(c => ({
       name:   categoryName(c.name, i18n.menu, lang),
       dishes: c.dishes.map(d => dish(d, i18n.menu)),
+      text:   c.text ? { ...c.text, body: categoryTextIn(c.text, lang) } : null,
     })),
     // Pagine foto/video: la categoria di riferimento segue i nomi tradotti;
     // titoli e descrizioni scritti dal ristoratore restano come sono.
